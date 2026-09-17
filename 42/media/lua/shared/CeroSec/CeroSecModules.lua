@@ -1198,6 +1198,33 @@ local function stateRefusal(object, id)
 	return nil
 end
 
+-- The same envelope a module's own fitting or removal asks for -- needsInside,
+-- and then whichever module actually fitted answers its own moment -- asked
+-- again for a CABLE. The rule: a stranger who could not walk in and unscrew
+-- a strike off a shut door may not wire it, or unwire it, from the street
+-- either. A fixture can carry more than one of our modules (a door's
+-- own operator beside a contact, or a curtain motor on its sheet) and each
+-- keeps its own moment, so every one fitted is asked and the first "no" wins
+-- -- never a copy of stateRefusal's rules, the same calls fittingRefusal makes.
+local function envelopeRefusal(object, playerObj)
+	if not needsInside(object) then return nil end
+	-- A bare fixture (a module already taken off, the cable left behind and
+	-- still owed its wire) has no state to protect and asks nothing here: the
+	-- comment on unlinkRefusal's own bare-fixture case still holds.
+	if not CeroSecModules.anyFitted(object) then return nil end
+	local square = playerObj:getCurrentSquare()
+	if square == nil or not square:isInARoom() then return "outside" end
+	local fitted = CeroSecModules.installedOn(object)
+	for i = 1, #CeroSecModules.LIST do
+		local module = CeroSecModules.LIST[i]
+		if fitted[module.id] then
+			local stop = stateRefusal(object, module.id)
+			if stop ~= nil then return stop end
+		end
+	end
+	return nil
+end
+
 function CeroSecModules.fittingRefusal(object, id, playerObj)
 	if object == nil or playerObj == nil then return "outside" end
 	if CeroSecModules.byId(id) == nil then return "outside" end
@@ -1231,32 +1258,38 @@ function CeroSecModules.anyFitted(object)
 end
 
 --
--- RUNNING A CABLE, and the three questions it does NOT ask
+-- RUNNING A CABLE
 --
 -- A link is not a module: nothing is screwed to the fixture and nothing comes out
--- of a box. It is a cable from a machine to hardware that is already there, so the
--- two rules about the MOMENT that the fitting wears are not asked of it:
+-- of a box. It is a cable from a machine to hardware that is already there. It
+-- USED to skip the two rules about the moment the fitting wears -- inside, and
+-- open or off or drawn back -- on the reasoning that a cable lands on the
+-- terminals of a box somebody had already fitted and does not need the door to
+-- swing.
 --
---   INSIDE. Not asked, and this is the one that matters: the fixture a cable is
---   most often run to is on the OUTSIDE of a building -- a porch lamp, a gate, a
---   lamppost on the street -- and a rule that wanted a room round it would be a
---   feature that cannot be used on the things it was written for. A cable run is
---   not a screw in the frame, and nothing about it is easier from indoors.
+-- That let a stranger stand in the street, wire a shut front door from outside
+-- it, and unlock it -- a job unscrewing the strike itself would have refused him.
+-- The rule since 2026-09-17, written because of that hole: wiring a fixture is
+-- only possible where fitting or removing one of its modules would be, so
+-- linking and unlinking now
+-- ask envelopeRefusal (above) too, the SAME needsInside and stateRefusal calls
+-- fittingRefusal makes and never a second copy of them.
 --
---   OPEN, OFF, DRAWN BACK. Not asked either, for the same reason read the other
---   way: what a cable lands on is the terminals of a box somebody has already
---   fitted, and a door does not have to swing for a wire to reach it.
---
--- WHAT IT DOES ASK is whose house it is, because that rule is not about the hand:
--- a stranger who may not fit a strike to your door may not re-route your door to
--- HIS machine either, and of the two that is the worse one. Same option, same
--- word, same one function it is asked through.
+-- WHAT IT ASKS, in order: whose house it is (a stranger who may not fit a strike
+-- to your door may not re-route your door to HIS machine either, and of the two
+-- that is the worse one), then the envelope, same as fitting or unfitting a
+-- module would.
 --
 -- nil for "he may", or the reason in one word, which is the key the menu greys
--- with (Tooltip_CeroSec_Link<Reason>):
+-- with (Tooltip_CeroSec_Link<Reason>, except outside/closed/drawn, which read
+-- the module menu's own Tooltip_CeroSec_Module<Reason> -- one sentence for one
+-- shut door, not two):
 --
 --   fixture   nothing is wired here at all, so there is nothing to reach
 --   safehouse somebody else's, with the option on
+--   outside   needs a room, and he is not standing in one
+--   closed    a door or window fitted here is shut
+--   drawn     a curtain fitted here is not open
 --   linked    this machine is already on the list
 --   links     the fixture is full (LINKS_MAX)
 --   far       past LINK_RANGE
@@ -1278,6 +1311,11 @@ function CeroSecModules.linkRefusal(object, x, y, z, playerObj)
 	-- Whose house, first and for fittingRefusal's own reason.
 	local house = houseRefusal(object, playerObj)
 	if house ~= nil then return house end
+
+	-- Then the envelope: wiring a closed door is the same job as unscrewing a
+	-- strike from it, and asks the same question (envelopeRefusal, above).
+	local envelope = envelopeRefusal(object, playerObj)
+	if envelope ~= nil then return envelope end
 
 	local square = object:getSquare()
 	if square == nil then return "fixture" end
@@ -1309,6 +1347,10 @@ function CeroSecModules.unlinkRefusal(object, x, y, z, playerObj)
 	if object == nil or playerObj == nil then return "fixture" end
 	local house = houseRefusal(object, playerObj)
 	if house ~= nil then return house end
+	-- The same envelope taking a module off asks: unjamming a door is the
+	-- price of unscrewing a strike from it, and of unwiring it too.
+	local envelope = envelopeRefusal(object, playerObj)
+	if envelope ~= nil then return envelope end
 	if CeroSecModules.wireOf(object, x, y, z) == nil then return "fixture" end
 	return nil
 end

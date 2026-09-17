@@ -19,6 +19,7 @@
     "ContextMenu_CeroSec_Link": "Relier à un ordinateur",
     "ContextMenu_CeroSec_LinkTo": "%1, %2 cases, %3 fils",
     "ContextMenu_CeroSec_Unlink": "Débrancher de %1",
+    "ContextMenu_CeroSec_UnlinkLoose": "Débrancher le câble libre",
     "ContextMenu_CeroSec_Fixture": "CeroSec : %1",
     "ContextMenu_CeroSec_GenreDoor": "Porte",
     "ContextMenu_CeroSec_GenreWindow": "Fenêtre",

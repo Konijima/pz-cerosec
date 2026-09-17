@@ -259,6 +259,29 @@ function ContextMenu:addSubMenu(option, menu)
 	self.subs[#self.subs + 1] = { option = option, menu = menu }
 	menu.hungOff = option
 end
+
+-- THE CHAIN A CLICK WALKS, transcribed and not invented, because keeping `parent`
+-- as a field nobody read is exactly what let a third level hung off the ROOT look
+-- right here and stay on the glass in the game. Vanilla: the click calls
+-- closeAll() on the menu the option was clicked in (ISContextMenu.lua:60-70),
+-- closeAll hides that menu and its children and then walks `parent` UP, hiding
+-- each ancestor in turn (:278-292). Nothing else puts an ancestor away -- and an
+-- ancestor left visible re-shows its own submenu every frame while the mouse
+-- rests on the option (:441-452), which is why a skipped level brings its child
+-- back with it.
+ContextMenu.visible = true
+function ContextMenu:hideAndChildren()
+	self.visible = false
+	for i = 1, #self.subs do self.subs[i].menu:hideAndChildren() end
+end
+function ContextMenu:closeAll()
+	self:hideAndChildren()
+	local parent = self.parent
+	while parent do
+		parent.visible = false
+		parent = parent.parent
+	end
+end
 ISContextMenu = { getNew = function(_, parent)
 	local menu = ContextMenu.new()
 	menu.parent = parent
@@ -2009,8 +2032,12 @@ do
 		{ "ContextMenu_CeroSec_Use", "ContextMenu_CeroSec_TurnOff",
 			"ContextMenu_CeroSec_InsertFloppy", "ContextMenu_CeroSec_EjectFloppy" })
 	eq("the full drive greys the insert", insert.notAvailable, true)
+	-- In RED, and the tag spelled out: a refusal is the one line on a tooltip a
+	-- survivor has to see first, and "<RGB:1,0,0> " is what vanilla writes for a
+	-- refusal with no description in front of it
+	-- (ISUI/ISWorldObjectContextMenu.lua:377).
 	eq("with the one sentence that says what to do", insert.toolTip.description,
-		"Tooltip_CeroSec_DriveFull")
+		"<RGB:1,0,0> Tooltip_CeroSec_DriveFull")
 	eq("and the eject is offered", eject.notAvailable, nil)
 
 	-- Out of reach greys both, for the same reason the machine's own two options
@@ -2026,7 +2053,8 @@ do
 	end
 	check("out of reach still offers the entry", insert ~= nil)
 	eq("greyed", insert.notAvailable, true)
-	eq("with the walk's own reason", insert.toolTip.description, "Tooltip_CeroSec_NoAccess")
+	eq("with the walk's own reason", insert.toolTip.description,
+		"<RGB:1,0,0> Tooltip_CeroSec_NoAccess")
 	CeroSecReach.canStandInFront = reach
 
 	-- The slot is mechanical: a dark machine takes a disk and gives one back.
@@ -2167,7 +2195,7 @@ do
 	check("with nothing to choose between", sub == nil)
 	eq("greyed", parent.notAvailable, true)
 	eq("with the drive's own reason", parent.toolTip.description,
-		"Tooltip_CeroSec_DriveFull")
+		"<RGB:1,0,0> Tooltip_CeroSec_DriveFull")
 	eq("and nothing on it to fire", parent.callback, nil)
 
 	-- Out of reach, same shape and the walk's own reason.
@@ -2179,7 +2207,7 @@ do
 	check("out of reach keeps the entry", parent ~= nil)
 	check("and drops the submenu", sub == nil)
 	eq("greyed with the walk's reason", parent.toolTip.description,
-		"Tooltip_CeroSec_NoAccess")
+		"<RGB:1,0,0> Tooltip_CeroSec_NoAccess")
 	CeroSecReach.canStandInFront = reach2
 
 	-- floppiesOn itself: the order, and every copy.
@@ -4344,11 +4372,19 @@ do
 	-- bench's getText answers the key alone, so the line is two keys with a break
 	-- between them and each half reads on its own -- which is also what makes
 	-- "it has a description and no reason" a thing that can be asserted.
+	--
+	-- The break is the GAME's markup and the bench spells it out rather than
+	-- skipping to the text after it: "<br>" is not a command ISRichTextPanel knows
+	-- (ISUI/ISRichTextPanel.lua:16-27) and its tokeniser eats the word in front of
+	-- an unspaced tag (:456-481), so a pattern loose about the separator is a
+	-- pattern that would have stayed green through the very defect this pins.
+	local SEP = " <LINE> <RGB:1,0,0> "
 	local function desc(option)
-		return string.match(option.toolTip.description, "^([^<]*)")
+		local head = string.match(option.toolTip.description, "^(.-)" .. SEP)
+		return head or option.toolTip.description
 	end
 	local function reason(option)
-		return string.match(option.toolTip.description, "<br>([^<]*)$")
+		return string.match(option.toolTip.description, SEP .. "(.*)$")
 	end
 	-- The ids the submenu offers, in the order it offers them.
 	local function idsOn(object)
@@ -4964,11 +5000,15 @@ do
 		end
 		return nil
 	end
+	-- Same two halves as the module block above, and the same reason the separator
+	-- is spelled out instead of skipped over.
+	local SEP = " <LINE> <RGB:1,0,0> "
 	local function desc(option)
-		return string.match(option.toolTip.description, "^([^<]*)")
+		local head = string.match(option.toolTip.description, "^(.-)" .. SEP)
+		return head or option.toolTip.description
 	end
 	local function reason(option)
-		return string.match(option.toolTip.description, "<br>([^<]*)$")
+		return string.match(option.toolTip.description, SEP .. "(.*)$")
 	end
 	-- The click, dispatched the way the engine dispatches one: the target and then
 	-- the tail addOption was given (ISContextMenu.lua:873-887).
@@ -5013,6 +5053,34 @@ do
 	local fixSub = fixtureSubOn(post)
 	check("with Link to computer nested inside it",
 		fixSub ~= nil and fixSub.labels[1] == "ContextMenu_CeroSec_Link")
+
+	-- THE THIRD LEVEL IS HUNG OFF THE SECOND, not off the root. getNew's argument
+	-- is what sets `parent` (ISContextMenu.lua:1244) and `parent` is the chain
+	-- closeAll walks up after a click (:278-292): handed the root, the walk skips
+	-- the fixture's own menu, which stays on the glass and re-shows the cable list
+	-- every frame (:441-452). Asserted on the STATE of all three levels after the
+	-- click, because the row's own callback fires either way.
+	do
+		local rootMenu = menuOn(post)
+		local fixMenu, rowMenu = nil, nil
+		for i = 1, #rootMenu.subs do
+			if startsWith(rootMenu.subs[i].option.label,
+					"ContextMenu_CeroSec_Fixture") then
+				fixMenu = rootMenu.subs[i].menu
+				for j = 1, #fixMenu.subs do
+					if fixMenu.subs[j].option.label == "ContextMenu_CeroSec_Link" then
+						rowMenu = fixMenu.subs[j].menu
+					end
+				end
+			end
+		end
+		check("the cable list is a menu of its own", rowMenu ~= nil)
+		eq("hung off the fixture's menu and not the root", rowMenu.parent, fixMenu)
+		rowMenu:closeAll()
+		check("a click in it puts the cable list away", rowMenu.visible == false)
+		check("and the fixture's own menu with it", fixMenu.visible == false)
+		check("and the root menu too", rootMenu.visible == false)
+	end
 	-- The floor is in the PRICE and not in the walk: the loft is three tiles away
 	-- and costs seven, which is the one line on this menu where the two numbers
 	-- differ and the reason both of them are shown.
@@ -5106,11 +5174,36 @@ do
 	-- line of that and this one greys none of it.
 	eq("a cable to an outdoor fixture from the pavement is not greyed",
 		rowFor(post, "ksp-front-01").notAvailable, nil)
+
+	-- A DOOR is not a lamppost: wiring or unwiring it now asks the same
+	-- envelope fitting or removing its own module would (the rule since
+	-- 2026-09-17: a stranger in the street was wiring a shut door and
+	-- unlocking it). Standing outside a room refuses before the door's own
+	-- state is even read.
 	local shut = fixture("IsoDoor", square(10, 10, 0))
 	shut.modData.cerosec = { contact = true }
 	shut.open = false
-	eq("and a shut door takes a cable too",
-		rowFor(shut, "ksp-front-01").notAvailable, nil)
+	local shutRow = rowFor(shut, "ksp-front-01")
+	eq("a shut door refuses a cable from outside a room", shutRow.notAvailable,
+		true)
+	eq("standing outside is refused first", reason(shutRow),
+		"Tooltip_CeroSec_ModuleOutside(0)")
+
+	-- Inside a room, the same shut door still refuses -- now for the reason
+	-- fitting or removing its contact module would give, in the module menu's
+	-- own words.
+	stand.isInARoom = function() return true end
+	shutRow = rowFor(shut, "ksp-front-01")
+	eq("and a shut door refuses one from inside too", shutRow.notAvailable, true)
+	eq("with the module menu's own word for a shut door", reason(shutRow),
+		"Tooltip_CeroSec_ModuleClosed(0)")
+
+	-- Opened, the same door takes a cable again. Left standing inside a room
+	-- for the rest of this section, whose remaining doors care about the
+	-- SKILL and OPEN state and not about where the survivor stands.
+	shut.open = true
+	eq("an open door takes the cable", rowFor(shut, "ksp-front-01").notAvailable,
+		nil)
 
 	--
 	-- 3. WHAT IS GREYED, and the word it is greyed with
@@ -5245,23 +5338,30 @@ do
 	_G.SafeHouse = nil
 
 	-- A cable to a computer whose chunk is away is still here to be cut: the
-	-- FIXTURE carries it, so the line is there and the computer is named the way
-	-- one with no mirror is named -- which is a survivor who can get his wire
-	-- back out of a machine somebody drove off with.
+	-- FIXTURE carries it, so the line is there. But no LIVE object stands on
+	-- that square either, so this is the "loose cable" case: never a hostname
+	-- CeroSec.hostnameFor made up for an empty tile, which a survivor would
+	-- read as his machine's real name.
 	objects = { loft }
-	cut = rowFor(post, CeroSec.hostnameFor(22, 10), true)
+	local sub = subOn(post)
+	cut = nil
+	for i = 1, #sub.labels do
+		if sub.labels[i] == "ContextMenu_CeroSec_UnlinkLoose" then
+			cut = sub.options[i]
+		end
+	end
 	check("a cable to a computer that is not loaded is still a line", cut ~= nil)
-	eq("named after its square", cut.label,
-		"ContextMenu_CeroSec_Unlink(" .. CeroSec.hostnameFor(22, 10) .. ")")
-	eq("with the wire it cost", desc(cut),
-		"Tooltip_CeroSec_UnlinkDesc(5," .. CeroSec.hostnameFor(22, 10) .. ")")
+	eq("named as a loose cable, not a fabricated hostname", cut.label,
+		"ContextMenu_CeroSec_UnlinkLoose")
+	eq("with the distance and the wire it cost", desc(cut),
+		"Tooltip_CeroSec_UnlinkLooseDesc(12,5)")
 	eq("and there is no run offered to it either", rowFor(post, "ksp-front-01"), nil)
 
 	-- A fixture with a cable and no computer in reach still opens the submenu:
 	-- the cut is the reason the menu exists at all for him.
 	objects = {}
 	eq("a fixture with nothing in reach still offers the cut", rowsOn(post),
-		"ContextMenu_CeroSec_Unlink(" .. CeroSec.hostnameFor(22, 10) .. ")")
+		"ContextMenu_CeroSec_UnlinkLoose")
 
 	--
 	-- 5. A COMPUTER RENAMED KEEPS ITS CABLE, which is the naming rule itself
@@ -5331,8 +5431,10 @@ do
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreSet", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_LinkTo", 3 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_Unlink", 1 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_UnlinkLoose", 0 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkDesc", 2 },
 		{ "Tooltip.json", "Tooltip_CeroSec_UnlinkDesc", 2 },
+		{ "Tooltip.json", "Tooltip_CeroSec_UnlinkLooseDesc", 2 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkFixture", 0 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkSafehouse", 0 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkLinked", 0 },

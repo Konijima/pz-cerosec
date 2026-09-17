@@ -65,6 +65,22 @@ date.
   A `reboot` that loses the room's power in its three dark seconds is the first
   case: the machine comes up when the wire does, though nobody's window comes
   back with it.
+- The tooltips on CeroSec's own menu entries read properly again. They were
+  losing a word wherever a line was meant to break, and running the next
+  sentence straight into the one before it without a space. A greyed entry now
+  says why it is greyed on a line of its own, in red.
+- A cable can be cut again after the computer at the other end of it has been
+  carried off its tile. A run is to the spot the machine stood on, not to the
+  machine, so putting a computer back on that spot reconnects it; before this,
+  "Unlink" on a cable going nowhere did nothing at all and the wire was lost.
+- That same cable, with no computer standing on the spot it runs to, now reads
+  "Unlink loose cable" and says how far off the machine used to be. It used to
+  print a made-up hostname for the empty tile, which read like the machine had
+  been renamed.
+- A door, window or curtain can only be cabled to a computer, or cut from one,
+  the way a module is fitted to it or taken off it: open, drawn or from the
+  right side. A closed front door can no longer be wired, or unwired, from the
+  street.
 
 ## 0.5.0 - 2026-09-16
 

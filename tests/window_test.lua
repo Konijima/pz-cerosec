@@ -14746,6 +14746,39 @@ do
 	check("the relay is still on the post",
 		CeroSecModules.installedOn(post).relay == true)
 
+	-- AND A COMPUTER CARRIED OFF ITS TILE LEAVES THE CABLE ON THE FLOOR, which is
+	-- the one end a survivor must still be able to cut. A run is keyed on the
+	-- SQUARE the machine stood on (CeroSecModules.LINK_KEY), so a machine picked up
+	-- and put down a tile over is not a cable that went with it -- the cable is
+	-- still on the post and still owed. linkJob wanted a machine on that square for
+	-- BOTH packets and returned nothing without one, so the cut was refused in
+	-- silence and the reel was owed to a survivor who could never be handed it.
+	--
+	-- The machine is taken off the tile by the one question the server asks about
+	-- it, because that is the whole of what "no computer there any more" is on this
+	-- side: getLuaObjectAt answers nothing for that square.
+	reel(30)
+	send("linkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("the post is cabled again", cables(post), 1)
+	local carriedOff = bench.system.getLuaObjectAt
+	bench.system.getLuaObjectAt = function(system, lx, ly, lz)
+		if lx == MACHINE[1] and ly == MACHINE[2] and lz == MACHINE[3] then
+			return nil
+		end
+		return carriedOff(system, lx, ly, lz)
+	end
+	check("the tile answers no machine any more",
+		bench.system:getLuaObjectAt(MACHINE[1], MACHINE[2], MACHINE[3]) == nil)
+	reel(0)
+	send("unlinkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	bench.system.getLuaObjectAt = carriedOff
+	check("and the machine is back on it for the rest of the block",
+		bench.system:getLuaObjectAt(MACHINE[1], MACHINE[2], MACHINE[3]) ~= nil)
+	eq("cutting a loose cable takes it off the post", cables(post), 0)
+	eq("and hands back every reel it cost", wires(), 12)
+	check("and the post keeps no line to that square",
+		CeroSecModules.wireOf(post, MACHINE[1], MACHINE[2], MACHINE[3]) == nil)
+
 	-- AND A CABLE THAT IS NOT THERE PAYS NOBODY. `unlinkmodule` on the same post
 	-- again is the double-click, and the answer is no wire out of nothing.
 	send("unlinkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
@@ -14797,6 +14830,34 @@ do
 	eq("and he walks away with nothing", wires(), 0)
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
 	_G.SafeHouse = nil
+
+	-- AND THE ENVELOPE GATE IS ON THE WIRE TOO (the rule since 2026-09-17,
+	-- written because a stranger outside could wire a shut door and unlock it): a
+	-- packet is not a right-click, and Commands.linkmodule and unlinkmodule
+	-- call CeroSecModules.linkRefusal/unlinkRefusal exactly as the menu does
+	-- (CeroSecModules.envelopeRefusal), so a MODIFIED CLIENT that skips the
+	-- menu meets the same "closed" a stranger unscrewing the door's own
+	-- operator would. Standing in a room (isAdjacent asks only distance and
+	-- floor, never isInARoom, so this does not disturb it).
+	local insideRoom = { getZ = function() return 0 end,
+		isInARoom = function() return true end }
+	bench.player.getCurrentSquare = function() return insideRoom end
+	local gate = fit(world.wall(walk, fakeDoor(false, true, nil, true), "N"),
+		"operator")
+	reel(30)
+	send("linkmodule", walk, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("a shut door refuses the cable on the wire, not just the menu",
+		cables(gate), 0)
+	eq("and no wire was spent on the refusal", wires(), 30)
+	gate.open = true
+	send("linkmodule", walk, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("opened, the same packet buys the cable", cables(gate), 1)
+	gate.open = false
+	send("unlinkmodule", walk, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("shut again, the same packet cannot cut it either", cables(gate), 1)
+	gate.open = true
+	send("unlinkmodule", walk, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("opened, cutting it goes through", cables(gate), 0)
 
 	_G.__world, _G.SandboxVars, _G.Perks = hadWorld, hadSandbox, hadPerks
 	CeroSecDevices.invalidate()
@@ -23528,7 +23589,14 @@ do
 		return claim
 	end }
 	local stranger = { getUsername = function() return "hacker" end }
-	local owner = { getUsername = function() return "king" end }
+	-- The owner needs a square to stand in too now that linkRefusal asks the
+	-- same envelope fitting or removing the door's own module would
+	-- (CeroSecModules.envelopeRefusal): a room to stand in, and the door open,
+	-- so the ONLY thing this block still isolates is the safehouse gate.
+	local insideRoom = { isInARoom = function() return true end }
+	local owner = { getUsername = function() return "king" end,
+		getCurrentSquare = function() return insideRoom end }
+	frontDoor.open = true
 
 	_G.__world = world
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true,

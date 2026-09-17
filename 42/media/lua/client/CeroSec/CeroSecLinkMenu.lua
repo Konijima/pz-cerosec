@@ -164,6 +164,13 @@ end
 -- menu's is: the words are decided in the shared rule and a table here would be a
 -- second list to keep in step.
 function CeroSecLinkMenu.tooltipFor(why)
+	-- The three envelope reasons (CeroSecModules.envelopeRefusal) are the
+	-- module menu's own words, verbatim: fitting or unfitting a module on this
+	-- same fixture reads the same sentence, and a survivor should not learn
+	-- two different lines for one shut door.
+	if why == "outside" then return "Tooltip_CeroSec_ModuleOutside" end
+	if why == "closed" then return "Tooltip_CeroSec_ModuleClosed" end
+	if why == "drawn" then return "Tooltip_CeroSec_ModuleDrawn" end
 	return "Tooltip_CeroSec_Link" ..
 		string.upper(string.sub(why, 1, 1)) .. string.sub(why, 2)
 end
@@ -240,17 +247,10 @@ function CeroSecLinkMenu.onUnlink(worldobjects, object, playerObj, row)
 end
 
 -- The tooltip an entry gets: what the cable is, and the reason under it when
--- there is one. Greyed is also notAvailable, which is what stops the click.
+-- there is one. CeroSecMenu.tooltip is what greys it and what puts the reason on
+-- its own line, in red, the way vanilla writes a refusal.
 local function describe(option, key, desc, number)
-	if type(option) ~= "table" then return end
-	option.toolTip = ISWorldObjectContextMenu.addToolTip()
-	option.toolTip:setVisible(false)
-	local text = desc
-	if key then
-		option.notAvailable = true
-		text = text .. "<br>" .. getText(key, number)
-	end
-	option.toolTip.description = text
+	CeroSecMenu.tooltip(option, desc, key and getText(key, number) or nil)
 end
 
 function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobjects, test)
@@ -280,7 +280,16 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 	-- the door and not two unnamed ones.
 	local fixtureSub = CeroSecModuleMenu.fixtureParent(context, object)
 	local parent = fixtureSub:addOption(getText("ContextMenu_CeroSec_Link"))
-	local sub = ISContextMenu:getNew(context)
+	-- getNew's argument is the PARENT MENU, not the root: vanilla hangs a third
+	-- level off the second one the same way (ISWorldObjectContextMenu.lua:1216
+	-- getNew(lightSwitchSubmenu), ISInventoryPaneContextMenu.lua:1590
+	-- getNew(subMenuPatch)). It is the line that sets `parent`
+	-- (ISContextMenu.lua:1244), and `parent` is the chain closeAll walks up to put
+	-- every ancestor away after a click (:278-292). Handed the root instead, the
+	-- walk skipped this fixture's own menu, which stayed visible -- and a visible
+	-- menu with the mouse on a submenu option re-shows that submenu every frame
+	-- (:441-452), so the third level came straight back too.
+	local sub = ISContextMenu:getNew(fixtureSub)
 	fixtureSub:addSubMenu(parent, sub)
 
 	for i = 1, #rows do
@@ -301,19 +310,33 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 	-- the end that carries them, so a cable to a machine whose chunk is away is
 	-- still here to be cut -- and the wire it gives back is the wire that was paid,
 	-- never the price worked out again (Commands.unlinkmodule).
+	local square = object:getSquare()
 	for i = 1, #links do
 		local at = links[i]
 		local row = { x = at.x, y = at.y, z = at.z, wire = at.wire }
 		local luaObject = nil
 		local system = CCeroSecSystem ~= nil and CCeroSecSystem.instance or nil
 		if system ~= nil then luaObject = system:getLuaObjectAt(at.x, at.y, at.z) end
-		local host = CeroSec.hostnameFor(at.x, at.y)
-		if luaObject ~= nil then host = CeroSecLinkMenu.hostOf(luaObject) end
-		local option = sub:addOption(getText("ContextMenu_CeroSec_Unlink", host),
-			worldobjects, CeroSecLinkMenu.onUnlink, object, playerObj, row)
+		local option, tooltipDesc
+		if luaObject ~= nil then
+			-- A machine still stands there: the name it answers to today, same
+			-- as the "Link to computer" rows above.
+			local host = CeroSecLinkMenu.hostOf(luaObject)
+			option = sub:addOption(getText("ContextMenu_CeroSec_Unlink", host),
+				worldobjects, CeroSecLinkMenu.onUnlink, object, playerObj, row)
+			tooltipDesc = getText("Tooltip_CeroSec_UnlinkDesc", at.wire, host)
+		else
+			-- No machine on that square: the link is indexed by where a
+			-- computer STOOD (CeroSecModules.LINK_KEY), so a survivor never
+			-- reads a hostname CeroSec.hostnameFor made up for an empty tile.
+			local tiles = CeroSecModules.linkTiles(square:getX(), square:getY(),
+				at.x, at.y)
+			option = sub:addOption(getText("ContextMenu_CeroSec_UnlinkLoose"),
+				worldobjects, CeroSecLinkMenu.onUnlink, object, playerObj, row)
+			tooltipDesc = getText("Tooltip_CeroSec_UnlinkLooseDesc", tiles, at.wire)
+		end
 		local key, number = CeroSecLinkMenu.unlinkRefusal(object, playerObj, row)
-		describe(option, key,
-			getText("Tooltip_CeroSec_UnlinkDesc", at.wire, host), number)
+		describe(option, key, tooltipDesc, number)
 		local iso = CeroSecLinkMenu.isoOf(luaObject)
 		if iso then CeroSecModuleMenu.highlightOn(option, iso) end
 	end

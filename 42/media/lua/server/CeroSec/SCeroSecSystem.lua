@@ -1683,10 +1683,17 @@ function SCeroSecSystem:linkJob(playerObj, x, y, z, args)
 	-- first to wire his porch light would be a survivor wiring it in the dark. It
 	-- does have to be a machine this build can read the OS of -- that is where the
 	-- other end of the cable is written.
+	--
+	-- MAY BE NIL, and the caller decides. A cable is keyed on the SQUARE the
+	-- machine stood on (CeroSecModules.LINK_KEY), so a computer picked up and put
+	-- down a tile over leaves the run going to an empty spot -- physically what
+	-- happens, the cable is still on the floor. Running a new cable needs a machine
+	-- to run it to and linkmodule asks for one; CUTTING one must not, or the reel
+	-- is owed to a survivor who can never be given it back and the fixture keeps a
+	-- line nothing answers.
 	local luaObject = self:getLuaObjectAt(mx, my, mz)
-	if luaObject == nil then return nil end
-	local state = luaObject:osState()
-	if state == nil then return nil end
+	local state = luaObject ~= nil and luaObject:osState() or nil
+	if luaObject ~= nil and state == nil then return nil end
 
 	-- What he knows, and it is the fixture's own trade: anybody who could fit the
 	-- hardware can cable it (CeroSecModules.linkSkill).
@@ -1741,6 +1748,9 @@ Commands.linkmodule = function(self, playerObj, x, y, z, token, args)
 	local object, luaObject, state, inv, wire, mx, my, mz =
 		self:linkJob(playerObj, x, y, z, args)
 	if object == nil then return end
+	-- A cable is run TO a machine: no machine on that square, nothing to run it to
+	-- (linkJob hands back nil for it now, because cutting one does not need it).
+	if luaObject == nil then return end
 
 	-- The rule both sides ask, in the words the menu greys with: whose house it is,
 	-- whether there is hardware here at all, whether this machine is already on the
@@ -1811,8 +1821,13 @@ Commands.unlinkmodule = function(self, playerObj, x, y, z, token, args)
 		self:takeWire(inv, given)
 		return
 	end
-	CeroSecOS.dropLink(state, x, y, z)
-	luaObject:publishOS()
+	-- The machine's own end of it, when there is still a machine on that square. A
+	-- cable to a square a computer has been carried off keeps only the fixture's
+	-- end, so that is the only end there is to drop.
+	if luaObject ~= nil then
+		CeroSecOS.dropLink(state, x, y, z)
+		luaObject:publishOS()
+	end
 	CeroSecDevices.invalidate()
 	CeroSec.log("cable of " .. wire .. " cut at " .. x .. "," .. y .. "," .. z
 		.. " from " .. mx .. "," .. my .. "," .. mz)

@@ -165,10 +165,7 @@ function CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj,
 
 	local function grey(option, key)
 		if not key then return end
-		option.notAvailable = true
-		option.toolTip = ISWorldObjectContextMenu.addToolTip()
-		option.toolTip:setVisible(false)
-		option.toolTip.description = getText(key)
+		CeroSecMenu.tooltip(option, nil, getText(key))
 	end
 
 	-- Nothing to insert is not an entry at all: a player with no disk on him has
@@ -354,10 +351,7 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 		end
 
 		if useReason then
-			use.notAvailable = true
-			use.toolTip = ISWorldObjectContextMenu.addToolTip()
-			use.toolTip:setVisible(false)
-			use.toolTip.description = getText(useReason)
+			CeroSecMenu.tooltip(use, nil, getText(useReason))
 		end
 	end
 
@@ -378,10 +372,7 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 	end
 
 	if reason then
-		option.notAvailable = true
-		option.toolTip = ISWorldObjectContextMenu.addToolTip()
-		option.toolTip:setVisible(false)
-		option.toolTip.description = getText(reason)
+		CeroSecMenu.tooltip(option, nil, getText(reason))
 	end
 
 	CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj, height)
