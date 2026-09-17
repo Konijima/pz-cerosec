@@ -1,0 +1,18 @@
+[b]0.5.0 - The building answers back[/b]
+Safe for existing saves. Nothing to redo.
+
+[b]Fixed[/b]
+[*] Doors, windows, curtains and lamps on the south or east wall of a building were invisible to /dev. Every wall is found now, porch lamps included. Your existing device numbers do not change: a newly found door takes the next free number.
+[*] A porch lamp takes a relay from the sidewalk. The "from inside" rule now applies only to doors, windows and curtains.
+[*] The debug window was missing for server admins. It is back, [b]CeroSec (dev)[/b] at the bottom of a computer's menu.
+[*] Every machine has /usr/local/bin, and it is on the PATH: [b]sudo cp /mnt/curtains.sh /usr/local/bin[/b] works as the HOME disk says, and [b]curtains.sh auto[/b] runs by name. Machines already in your save gain the directory on load.
+[*] The device table ran [b]curtain0[/b] into the room name. The columns line up again.
+
+[b]New[/b]
+[*] A program you left running with [b]&[/b] is still running when you come back to your save. What cannot survive is what was waiting on you or on the wire: a question on the screen, a call in progress, a login from another machine.
+[*] You can hear the building work: a door the machine shuts, a window it opens, a curtain it draws makes the same sound as a hand would, for everybody in the room.
+[*] A module comes off with its fixture. Pick up a TV, sledge a door, take down a curtain, let zombies break the door in: the modules are on the floor, never lost, never duplicated.
+[*] One word in front of the value works a whole kind at once: [b]dev window close[/b] shuts every window, [b]dev light off[/b] turns off every light in the building. You get one answer line back per device, same as if you had typed each name.
+[*] Right-click a fixture that carries a module and take [b]Wire to computer[/b] to reach a lamppost, a gate or the shop across the street. One Electric Wire per tile, up to thirty tiles; a storey on the way costs four. Up to four computers can share one fixture, one computer can hold thirty-two cables, and disconnecting gives the wire back, so a porch lamp or a street lamp can answer a computer indoors.
+
+Full notes: github.com/Konijima/pz-cerosec/blob/main/CHANGELOG.md
