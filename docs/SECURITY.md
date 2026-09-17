@@ -120,6 +120,31 @@ neither file, and what `who`, `last` and `/var/log/wtmp` record: the name the
 receiving machine's own `/etc/hosts` gives the caller's address, else the bare
 address.
 
+## Standing outside reaches nothing inside
+
+Three rungs used to give a survivor on the pavement something that belongs to the
+house beside him, and all three now read the same test -- a square whose
+`getRoom()` is not `nil` is not his:
+
+- **the `/dev` walk.** A machine in no building falls back to a ten-tile radius,
+  and the radius takes nothing of a building: not the light switch inside, not the
+  front door or the porch lamp, whose objects stand on the pavement square itself
+  (`scanOutdoorSquare`, `facesARoom`). See [DEVICES.md](DEVICES.md).
+- **the coax.** A machine carried out of a house keeps its address -- somebody
+  wrote it in `/etc/hosts` -- and loses the wire: to be on a premises' segment a
+  machine must be standing in that premises (`oneWire`). Two machines *outdoors*
+  with one pair of bytes are on a wire within `CeroSecDevices.RADIUS` of each
+  other, which is the base somebody built and nothing else. See
+  [NETWORK.md](NETWORK.md).
+- **the TNC.** The one-tile fallback skips a neighbouring square that has a room,
+  so a computer on a pavement is not wired to the household's set through the wall
+  (`CeroSecRadio.tncAt`).
+
+`getRoom()` and not `isInARoom()`, in all three: the second answers true for a
+player-built base off `getIsoWorldRegion().isPlayerRoom()`, and a base is what
+every one of these fallbacks exists for. Anything of a building, from outside,
+costs a cable.
+
 ## The debug window is not a player's door
 
 The debug window can reset a machine, clear an account's password, hand out root at

@@ -416,6 +416,24 @@ passé réellement, même quand ça correspond au texte attendu.
      revendiquée. Le propriétaire, lui, câble sa porte normalement. Reste
      ouvert et connu : la LAMPE DE PORCHE d'une maison revendiquée est encore
      câblable par n'importe qui. [ ]
+91d. **L'ordinateur du trottoir n'est pas sur l'Ethernet de la maison.** C'est
+     le deuxième rapport du propriétaire. Deux ordinateurs allumés dans une
+     maison : `ifconfig` donne `10.x.y.1` et `10.x.y.2`, et `arp -a` sur l'un
+     montre l'autre. Ramasser le premier, le poser DEHORS sur le trottoir à
+     cinq cases, le rallumer. Attendu : son adresse n'a PAS changé (quelqu'un a
+     pu l'écrire dans `/etc/hosts`, c'est le contrat), mais `arp -a` ne montre
+     plus rien de la maison et `rlogin 10.x.y.2` répond
+     « rlogin: 10.x.y.2: No route to host ». Depuis la maison, pareil dans
+     l'autre sens. [ ]
+91e. **Deux machines sorties de la même maison se reparlent dans le camp.**
+     Poser les deux dehors, côte à côte, moins de dix cases et même plancher :
+     `arp -a` les remontre l'une à l'autre et `rlogin` passe. À onze cases,
+     plus rien. Une machine qui n'a JAMAIS été dans un bâtiment n'a toujours
+     aucune adresse : `eth0` sans ligne `inet` sous lui. [ ]
+91f. **Le poste de radio à travers le mur.** Ordinateur sur le trottoir, poste
+     émetteur-récepteur allumé dans la maison, sur la case juste de l'autre
+     côté du mur. Attendu : `dev radio` ne monte AUCUN `radio0`. Déplacer le
+     poste sur le trottoir, à une case de l'ordinateur : `radio0` apparaît. [ ]
 92. Cadenasser la porte du joueur → `cat /dev/lockN` dit `padlock`.
      `echo unlock > /dev/lockN` → le cadenas tombe dans l'inventaire comme si
      on l'avait retiré à la main ; `echo lock > /dev/lockN` le remet. Une

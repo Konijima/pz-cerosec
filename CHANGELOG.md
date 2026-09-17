@@ -31,6 +31,18 @@ date.
   one tile, only CeroSec's menu shows on that tile. Nothing changes in a game
   without that mod.
 
+- A machine set down outside a house is no longer on that house's network
+  either. A computer you carry out of a building keeps the address it was given
+  there, because somebody may have written it in /etc/hosts, and it used to keep
+  the WIRE with it: parked on the pavement, arp showed it the machines still
+  inside, and rlogin, rcp and ping all worked. Drop a looted computer in the
+  street and you were on the household's Ethernet. To be on a building's cable a
+  machine now has to be standing in that building. Two computers carried out of
+  the same one and set down together, in a base you built or on the same verge,
+  are on a wire again within ten tiles of each other and on nobody else's, so a
+  camp made of looted machines still works. Nothing is renumbered: no address and
+  no netmask changes. The radio went the same way, a computer on a pavement is no
+  longer wired to the set on the other side of the wall.
 - A machine set down outside a house no longer sees that house. A computer
   standing on the ground with no building around it reaches ten tiles, which is
   what a base you built yourself is made of; those ten tiles were taking the
