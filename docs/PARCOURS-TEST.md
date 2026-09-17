@@ -4077,6 +4077,35 @@ seuls au tour de ronde suivant. La règle complète est dans
      vérifications sont refaites côté serveur : ce que le menu décide est ce qu'un
      joueur **voit**, jamais ce qu'il a le droit de faire. [ ]
 
+## AR. Vivre à côté de Computer Mod (palier cohabitation)
+
+Le mod d'atelier **Computer Mod** (`ComputerModkum`) pose sa machine sur les huit
+mêmes tuiles d'ordinateur de bureau que CeroSec, et son menu contextuel réécrit le
+sprite à chaque clic droit : un écran que CeroSec a allumé s'éteignait dès le clic
+suivant et la session devenait inatteignable. Désormais un bureau appartient au mod
+qui l'a amorcé, jusqu'à l'extinction. **Cette section est la seule preuve qui vaut :
+le banc hors jeu ne juge qu'une doublure.** Les deux mods abonnés et actifs.
+
+438. **L'écran reste allumé — la contre-épreuve.** Avec les deux mods actifs, clic
+     droit sur un ordinateur **éteint** : les deux menus sont là, **Allumer
+     l'ordinateur** (CeroSec) et **Computer** (l'autre). Choisir celui de CeroSec,
+     attendre que l'écran s'allume, puis **recliquer droit sur la même machine**.
+     Attendu : l'écran **reste allumé**, **Utiliser l'ordinateur** est toujours dans
+     le menu, et l'entrée **Computer** de l'autre mod **n'est plus proposée** sur
+     cette machine. Ouvrir le terminal : la session est celle d'avant. [ ]
+439. **L'autre sens : leur machine reste la leur.** Sur un autre ordinateur éteint,
+     choisir **Computer → Turn On** et laisser leur fenêtre s'ouvrir. Refermer, clic
+     droit sur la même machine. Attendu : leur menu seul ; **aucune** entrée CeroSec,
+     ni **Utiliser**, ni **Éteindre**, ni lecteur de disquette. Éteindre la machine
+     par leur fenêtre, puis reclic droit : les deux menus sont revenus. [ ]
+440. **Le reste de leur mod vit encore.** Poser leur **portable** par terre (addon
+     `ComputerModLaptop`) et cliquer droit dessus : leur menu répond comme avant —
+     CeroSec ne voit jamais un portable. Idem sur un de leurs terminaux réseau. [ ]
+441. **Sans leur mod, rien n'a bougé.** Désabonner ou désactiver Computer Mod,
+     recharger la sauvegarde : le parcours existant passe **inchangé**, aucune ligne
+     de plus à l'écran, et une machine laissée allumée est toujours allumée. Dans le
+     journal, **aucune** ligne `compat:`. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

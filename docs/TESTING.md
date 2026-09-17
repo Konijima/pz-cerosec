@@ -15,6 +15,11 @@ The suites, in the order they run:
 - `defs_test.lua` — the shared definitions (sprites, facings, state).
 - `os_test.lua` — the OS core: filesystem, permissions, users, shell, passwords.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
+- `compat_computermod_test.lua` — living beside the Workshop mod *Computer Mod*:
+  who owns a desktop, and which of the two fillers gets the right-click. Against
+  a **double** of that mod, not the mod itself, so what it proves is the decision
+  and the wire between our two client files -- never that the game behaves. The
+  step that decides is in `docs/PARCOURS-TEST.md`, section AR.
 - `window_test.lua` — the window wired to the machine end to end: type a line, get
   an answer on the glass, and a script's output, question and `^C` through it.
 - `window_test.lua` also holds the network bench: three real machines on one real
