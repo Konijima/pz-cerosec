@@ -39,13 +39,15 @@ that file is not a tag, it is a typo that will be dropped in silence.
 The reserve
 -----------
 
-`workshop.txt` carries ten commented `# SHOT` slots, one per screenshot, that
-become `[img]<url>[/img]` lines once the item has been uploaded and its
-screenshots have URLs. Those lines do not exist yet and therefore do not count
-today, which is exactly how a description that fits now stops fitting later. So
-the check counts them too, at `SHOT_RESERVE_BYTES` each, and holds the sum to
-the same 8000. A page that only fits before its pictures are in it is a page
-that is going to be rejected on the day the pictures go in.
+`workshop.txt` carries five commented `# SHOT` slots, two screenshots to a
+slot, that become one `[img]<url>[/img] [img]<url>[/img]` line once the item
+has been uploaded and its screenshots have URLs. That line does not exist yet
+and therefore does not count today, which is exactly how a description that
+fits now stops fitting later. So the check counts every `<url of ...>`
+placeholder it finds, at `SHOT_RESERVE_BYTES` each -- two per slot, ten in
+all -- and holds the sum to the same 8000. A page that only fits before its
+pictures are in it is a page that is going to be rejected on the day the
+pictures go in.
 """
 
 import re
@@ -96,14 +98,16 @@ VISIBILITY = ("public", "friendsOnly", "private", "unlisted")
 
 def read_item(path):
     """Parse it the way SteamWorkshopItem.readWorkshopTxt does, and count the
-    commented screenshot slots on the way past, which it does not."""
+    commented screenshot placeholders on the way past, which it does not. A
+    slot line pairs two screenshots (SHOT 01+02, ...) and so can hold two
+    `<url of ...>` placeholders; each one counts on its own."""
     item = {"title": "", "description": "", "tags": [], "visibility": "",
             "id": None, "slots": 0}
     seen_description = False
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if SHOT_SLOT.match(line):
-            item["slots"] += 1
+            item["slots"] += line.count("<url of ")
             continue
         if not line or line.startswith("#") or line.startswith("//"):
             continue
