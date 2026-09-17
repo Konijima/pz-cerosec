@@ -175,14 +175,17 @@ function CeroSecLinkMenu.tooltipFor(why)
 		string.upper(string.sub(why, 1, 1)) .. string.sub(why, 2)
 end
 
--- The number a refusal's own sentence has in it, which is a CAP and never a word
--- in a translation: "a cable runs 30 tiles" and "already answers 4 computers" are
+-- The %1 a refusal's own sentence has in it, which is a CAP and never a word in
+-- a translation: "a cable runs 30 tiles" and "already answers 4 computers" are
 -- CeroSecModules.LINK_RANGE and LINKS_MAX, so the day one of them moves the menu
--- moves with it. A word with no number in its line gets 0 and prints a sentence
--- that does not ask for one.
-function CeroSecLinkMenu.numberFor(why)
+-- moves with it. "reach" names the machine instead -- row.host, the same word
+-- ContextMenu_CeroSec_LinkTo already puts on this row -- because the sentence is
+-- about what THAT computer already sees, not a count. A word with no %1 in its
+-- line gets 0 and prints a sentence that does not ask for one.
+function CeroSecLinkMenu.numberFor(why, row)
 	if why == "far" then return CeroSecModules.LINK_RANGE end
 	if why == "links" then return CeroSecModules.LINKS_MAX end
+	if why == "reach" then return row.host end
 	return 0
 end
 
@@ -193,7 +196,7 @@ end
 function CeroSecLinkMenu.refusal(object, playerObj, row)
 	local stop = CeroSecModules.linkRefusal(object, row.x, row.y, row.z, playerObj)
 	if stop ~= nil then
-		return CeroSecLinkMenu.tooltipFor(stop), CeroSecLinkMenu.numberFor(stop)
+		return CeroSecLinkMenu.tooltipFor(stop), CeroSecLinkMenu.numberFor(stop, row)
 	end
 	if row.full then return "Tooltip_CeroSec_LinkFull", CeroSecOS.LINKS_PER_MACHINE end
 

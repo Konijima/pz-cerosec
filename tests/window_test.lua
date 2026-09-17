@@ -14859,6 +14859,45 @@ do
 	send("unlinkmodule", walk, 0, MACHINE[1], MACHINE[2], MACHINE[3])
 	eq("opened, cutting it goes through", cables(gate), 0)
 
+	-- AND REACH REFUSES THE WIRE TOO (CeroSecModules.linkRefusal's "reach"): a
+	-- packet is not a right-click either, and Commands.linkmodule asks the same
+	-- shared function the menu does, so no second code is needed on this end
+	-- (SCeroSecSystem.lua, Commands.linkmodule). `inside`, fitted above at
+	-- MACHINE's own square (10,10,0), is in the SAME office room as the machine
+	-- and so the SAME building the walk already lists it under -- a cable to it
+	-- buys nothing.
+	bench.player.getCurrentSquare = function() return insideRoom end
+	reel(30)
+	send("linkmodule", world.squares["10,10,0"], 0,
+		MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("(a) a fixture the machine already sees takes no cable", cables(inside), 0)
+	eq("and no wire is spent refusing it", wires(), 30)
+	eq("the shared rule gives the same word", CeroSecModules.linkRefusal(inside,
+		MACHINE[1], MACHINE[2], MACHINE[3], bench.player), "reach")
+
+	-- (b) A fixture of ANOTHER building is not reach. FakeWorld hands out ONE
+	-- building for every room it holds (world.building, FakeWorld.new above),
+	-- so a second one is forced by hand on `post`'s own square (bare of any
+	-- cable since the refund above) -- and the disagreement is asserted
+	-- first, or a green below proves nothing (a banc that never provoked the
+	-- branch it claims).
+	local otherBuilding = {}
+	street.getBuilding = function() return otherBuilding end
+	check("(b) sanity: the street's building really differs from the office's",
+		street:getBuilding() ~= world.squares["10,10,0"]:getBuilding())
+	eq("(b) a fixture of a different building is not reach",
+		CeroSecModules.linkRefusal(post, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), nil)
+
+	-- (c) The machine itself outside a room: no building walk would ever run
+	-- for it, so reach never asks the second question at all.
+	local hadRoom = world.squares["10,10,0"].getRoom
+	world.squares["10,10,0"].getRoom = function() return nil end
+	eq("(c) a machine standing outside a room is not reach",
+		CeroSecModules.linkRefusal(inside, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), nil)
+	world.squares["10,10,0"].getRoom = hadRoom
+
 	_G.__world, _G.SandboxVars, _G.Perks = hadWorld, hadSandbox, hadPerks
 	CeroSecDevices.invalidate()
 end

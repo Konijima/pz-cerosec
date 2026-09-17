@@ -1291,12 +1291,54 @@ end
 --   closed    a door or window fitted here is shut
 --   drawn     a curtain fitted here is not open
 --   linked    this machine is already on the list
+--   reach     the machine's OWN /dev already has this fixture, cable-free
 --   links     the fixture is full (LINKS_MAX)
 --   far       past LINK_RANGE
 --
 -- What he is CARRYING is not asked here, for the reason the module's bag is not
 -- asked in fittingRefusal: it is a fact about him and it is asked by each side in
 -- its own words (the menu greys with the count, the server refuses).
+
+-- Would SCeroSecDevices' own building walk (server/CeroSec/SCeroSecDevices.lua)
+-- have listed this fixture on the machine's /dev without any cable at all? If
+-- so, a link buys nothing and would list the same device twice.
+--
+-- DELIBERATELY NARROW, because a wrong "reach" is the one refusal that leaves
+-- a survivor no way at all to reach a fixture: it only fires when BOTH squares
+-- carry a real building, never a guess.
+--
+-- The machine's square asks getRoom() ~= nil, not isInARoom() -- a player-built
+-- base is isInARoom() true with getBuilding() nil on every one of its squares
+-- ("a base has no building and no rooms", SCeroSecDevices.lua), and the
+-- building walk never runs for one, so a base machine never reaches this far.
+--
+-- The fixture's square is its own, UNLESS it is one of the three envelope
+-- kinds (needsInside, above) -- a door, window or curtain IS the wall and can
+-- stand on the pavement, outside every building, while its building is read
+-- off the INSIDE square instead (the same getOppositeSquare houseRefusal
+-- reads, above). Same call, same reason, never a second geometry.
+--
+-- getBuilding() is getRoom() and then IsoRoom.getBuilding
+-- (javap -c zombie.iso.IsoGridSquare.getBuilding, offsets 0-15,
+-- SCeroSecDevices.lua), so it answers nil for a chunk that has not streamed in
+-- as much as for a square with no building at all -- either way, nil is "do
+-- not refuse", never "refuse".
+local function reachRefusal(object, mx, my, mz)
+	if getCell == nil then return nil end
+	local cell = getCell()
+	if cell == nil then return nil end
+	local machineSquare = cell:getGridSquare(mx, my, mz)
+	if machineSquare == nil or machineSquare:getRoom() == nil then return nil end
+	local building = machineSquare:getBuilding()
+	if building == nil then return nil end
+
+	local deviceSquare = object:getSquare()
+	if needsInside(object) then deviceSquare = object:getOppositeSquare() end
+	if deviceSquare == nil then return nil end
+	if deviceSquare:getBuilding() == building then return "reach" end
+	return nil
+end
+
 function CeroSecModules.linkRefusal(object, x, y, z, playerObj)
 	if object == nil or playerObj == nil then return "fixture" end
 	if type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
@@ -1321,6 +1363,8 @@ function CeroSecModules.linkRefusal(object, x, y, z, playerObj)
 	if square == nil then return "fixture" end
 	local links = CeroSecModules.linksOn(object)
 	if CeroSecModules.linkIndexOf(links, x, y, z) ~= nil then return "linked" end
+	local reach = reachRefusal(object, x, y, z)
+	if reach ~= nil then return reach end
 	if #links >= CeroSecModules.LINKS_MAX then return "links" end
 	if CeroSecModules.linkWire(square:getX(), square:getY(), square:getZ(), x, y, z)
 			> CeroSecModules.LINK_RANGE then

@@ -5206,6 +5206,57 @@ do
 		nil)
 
 	--
+	-- 2b. REACH -- a cable the building walk already gave him for free
+	--
+	-- SCeroSecDevices lists every fixture of a machine's own BUILDING with no
+	-- cable at all (docs/DEVICES.md). Reusing that here would be a second
+	-- geometry, so the bench only proves the shared rule's OWN two gates:
+	-- getRoom() on the machine and getBuilding() matching on the fixture
+	-- (CeroSecModules.lua, reachRefusal).
+	local buildingA, buildingB = {}, {}
+	local reachMachineSq = square(30, 10, 0)
+	reachMachineSq.getRoom = function() return {} end
+	reachMachineSq.getBuilding = function() return buildingA end
+	local cells = { ["30,10,0"] = reachMachineSq }
+	_G.getCell = function()
+		return { getGridSquare = function(_, x, y, z)
+			return cells[x .. "," .. y .. "," .. z]
+		end }
+	end
+	local reachDeviceSq = square(10, 10, 0)
+	reachDeviceSq.getBuilding = function() return buildingA end
+	local reachFixture = fixture("IsoLightSwitch", reachDeviceSq)
+	reachFixture.modData.cerosec = { relay = true }
+	objects = { machine(30, 10, 0, "ksp-reach-01") }
+
+	row = rowFor(reachFixture, "ksp-reach-01")
+	eq("(a) same building, no cable needed: the row is greyed",
+		row.notAvailable, true)
+	eq("with the reach word and the machine's own name", reason(row),
+		"Tooltip_CeroSec_LinkReach(ksp-reach-01)")
+
+	-- (b) the same machine, but the fixture is in a DIFFERENT building: the
+	-- walk would never have found it there, so no reach. First the sanity a
+	-- banc of Diagnostic knows to want: the two squares must really disagree,
+	-- or a green here proves nothing.
+	reachDeviceSq.getBuilding = function() return buildingB end
+	check("(b) sanity: the two squares really disagree on the building",
+		reachDeviceSq:getBuilding() ~= reachMachineSq:getBuilding())
+	row = rowFor(reachFixture, "ksp-reach-01")
+	eq("(b) a fixture of another building is not reach", row.notAvailable, nil)
+
+	-- (c) the machine itself is outdoors: getRoom() nil, so no building walk
+	-- would ever run for it.
+	reachDeviceSq.getBuilding = function() return buildingA end
+	reachMachineSq.getRoom = function() return nil end
+	row = rowFor(reachFixture, "ksp-reach-01")
+	eq("(c) a machine standing outside is not reach", row.notAvailable, nil)
+
+	reachMachineSq.getRoom = function() return {} end
+	_G.getCell = nil
+	objects = { front, loft }
+
+	--
 	-- 3. WHAT IS GREYED, and the word it is greyed with
 	--
 	-- The reel, last and with the number in it: the one refusal on this menu a

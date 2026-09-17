@@ -40,6 +40,7 @@
     "Tooltip_CeroSec_LinkFixture": "Aucun module CeroSec n'est installé ici.",
     "Tooltip_CeroSec_LinkSafehouse": "C'est le refuge de quelqu'un d'autre.",
     "Tooltip_CeroSec_LinkLinked": "Cet ordinateur y est déjà relié.",
+    "Tooltip_CeroSec_LinkReach": "%1 voit déjà ceci dans son /dev. Aucun câble requis.",
     "Tooltip_CeroSec_LinkLinks": "Cet appareil répond déjà à %1 ordinateurs.",
     "Tooltip_CeroSec_LinkFar": "Trop loin : un câble va jusqu'à %1 cases.",
     "Tooltip_CeroSec_LinkFull": "Cet ordinateur a déjà %1 câbles.",

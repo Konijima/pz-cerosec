@@ -40,6 +40,7 @@
     "Tooltip_CeroSec_LinkFixture": "Nothing of ours is fitted here.",
     "Tooltip_CeroSec_LinkSafehouse": "This is somebody else's safehouse.",
     "Tooltip_CeroSec_LinkLinked": "This computer is already on it.",
+    "Tooltip_CeroSec_LinkReach": "%1 already sees this on its own /dev. No cable needed.",
     "Tooltip_CeroSec_LinkLinks": "This fixture already answers %1 computers.",
     "Tooltip_CeroSec_LinkFar": "Too far: a cable runs %1 tiles.",
     "Tooltip_CeroSec_LinkFull": "This computer already has %1 cables.",
