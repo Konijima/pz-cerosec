@@ -57,12 +57,23 @@ ART_WORDMARK = (0.289, 0.769, 0.968, 0.917)
 
 TAGLINE = "THE NETWORK NEVER DIED."
 
-# Panel B's status lines: the same "> " prompt idiom as the section headers,
-# generic enough that it is not a claim about what the terminal shows
-# elsewhere in the description (only workshop/art/banner.png's own terminal
-# screen, which this does not attempt to reproduce pixel for pixel).
-TERM_TITLE = "cerosec@zomboid:~"
-TERM_LINES = ["status: up", "users: 3", "uptime: 1993"]
+# Panel B's title and lines are real, not invented: the project's own rule
+# ("Never invent Unix behaviour") applies to a banner as much as to a string
+# in the mod. The title is the premises name from the BIOS
+# example already quoted in the manual, and the five lines below it are the
+# same example's boot lines plus a login and a command run against the
+# actual engine (lua5.1 on _verify/vmrun.lua, which loads the real
+# CeroSecOS):
+#   - "Ethernet: eth0 10.4.17.3" and "Phone line: 555-0417" --
+#     CeroSecManualAdmin.lua:1596-1598, the BIOS's own worked example.
+#   - "login: admin" -- the real prompt string (CeroSecContent.lua login
+#     text) and the account a machine with no owner takes (see workshop.txt).
+#   - "$ date" / "Tue Jun 15 12:00:00 1993" -- Vmrun.exec(vm, "date") on a
+#     fresh machine at vmrun.lua's own fixed clock (FIXED_TIME, 1993-06-15
+#     12:00:00), which is why the wiki's own examples never drift.
+TERM_TITLE = "CoffeeShop"
+TERM_LINES = ["Ethernet: eth0 10.4.17.3", "Phone line: 555-0417",
+              "login: admin", "$ date", "Tue Jun 15 12:00:00 1993"]
 
 LINE_EVERY = 3
 LINE_DROP = 0.72
@@ -130,28 +141,29 @@ def panel_a(poster, green):
 
 
 def panel_b(green):
-    """A terminal window: a title bar, then a few '> ' status lines."""
+    """A terminal window: the premises name as a title, then real BIOS and
+    shell lines (see TERM_TITLE/TERM_LINES above for where each comes from).
+
+    The title used to be a solid green fill, which read as a second, heavier
+    frame stacked on this panel alone. It is now a line of text and a 2px
+    rule -- the same weight as `framed()`'s own border below -- so A and B
+    share one frame style, not two.
+    """
     panel = scanline_field((W, H), phosphor=green, line_every=LINE_EVERY,
                            line_drop=LINE_DROP, glow=GLOW, vignette=VIGNETTE)
     draw = ImageDraw.Draw(panel)
 
-    bar_h = 22
-    draw.rectangle([0, 0, W - 1, bar_h - 1], fill=green)
-    title = pixel_text(TERM_TITLE, BASE_PX, SCALE, (10, 18, 12),
-                       tracking=TRACKING)
-    panel.paste(title.convert("RGB"), (PAD, (bar_h - title.height) // 2),
-               title)
+    title = pixel_text(TERM_TITLE, BASE_PX, SCALE, green, tracking=TRACKING)
+    title_y = 10
+    panel.paste(title.convert("RGB"), (PAD, title_y), title)
+    bar_h = title_y + title.height + 8
+    draw.line([(0, bar_h), (W - 1, bar_h)], fill=green, width=FRAME_PX)
 
-    prompt = pixel_text(">", BASE_PX, SCALE, green, tracking=0)
-    y = bar_h + 16
+    y = bar_h + 12
     for line in TERM_LINES:
         text = pixel_text(line, BASE_PX, SCALE, BONE, tracking=TRACKING)
-        halo = glow_behind(prompt)
-        panel.paste(halo.convert("RGB"), (PAD, y), halo)
-        panel.paste(prompt.convert("RGB"), (PAD, y), prompt)
-        tx = PAD + prompt.width + 10
-        panel.paste(text.convert("RGB"), (tx, y), text)
-        y += text.height + 14
+        panel.paste(text.convert("RGB"), (PAD, y), text)
+        y += text.height + 10
 
     return framed(panel, green)
 
