@@ -5252,7 +5252,30 @@ do
 	row = rowFor(reachFixture, "ksp-reach-01")
 	eq("(c) a machine standing outside is not reach", row.notAvailable, nil)
 
+	-- (d) and (e) are the envelope geometry itself: a door's OWN square and its
+	-- OPPOSITE square can each be the one the building walk actually finds it
+	-- from (SCeroSecDevices.lua:913-919), so either side matching is reach.
 	reachMachineSq.getRoom = function() return {} end
+	reachDeviceSq.getBuilding = function() return buildingA end
+	local reachDoor = fixture("IsoDoor", reachDeviceSq)
+	reachDoor.modData.cerosec = { relay = true }
+
+	-- (d) a north/west door: its own tile is in the building, the opposite
+	-- tile (the pavement) is not.
+	local reachOutsideSq = square(11, 10, 0)
+	reachOutsideSq.getBuilding = function() return nil end
+	reachDoor.getOppositeSquare = function() return reachOutsideSq end
+	row = rowFor(reachDoor, "ksp-reach-01")
+	eq("(d) own tile in the building, opposite outside: still reach",
+		row.notAvailable, true)
+
+	-- (e) a south/east door: the inverse, its own tile is the one outside.
+	reachDeviceSq.getBuilding = function() return nil end
+	reachOutsideSq.getBuilding = function() return buildingA end
+	row = rowFor(reachDoor, "ksp-reach-01")
+	eq("(e) opposite tile in the building, own outside: reach too",
+		row.notAvailable, true)
+
 	_G.getCell = nil
 	objects = { front, loft }
 

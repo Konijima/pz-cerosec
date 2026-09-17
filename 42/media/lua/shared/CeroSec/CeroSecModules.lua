@@ -1312,11 +1312,16 @@ end
 -- ("a base has no building and no rooms", SCeroSecDevices.lua), and the
 -- building walk never runs for one, so a base machine never reaches this far.
 --
--- The fixture's square is its own, UNLESS it is one of the three envelope
--- kinds (needsInside, above) -- a door, window or curtain IS the wall and can
--- stand on the pavement, outside every building, while its building is read
--- off the INSIDE square instead (the same getOppositeSquare houseRefusal
--- reads, above). Same call, same reason, never a second geometry.
+-- The fixture's square is its own, and for one of the three envelope kinds
+-- (needsInside, above) its opposite square too -- a door, window or curtain
+-- IS the wall, and which of its two squares carries the room depends on the
+-- wall: a north or west door stands on its OWN square and SCeroSecDevices'
+-- building walk finds it there, a south or east door stands on its NEIGHBOUR
+-- and the walk finds it off that square instead (SCeroSecDevices.lua:913-919,
+-- the far-edge scan). Asking only object:getSquare() left every south and
+-- east exterior door unrefused: the walk had already listed the fixture off
+-- the far side. Checking either side is the same rule the walk itself reads
+-- by, never a second geometry.
 --
 -- getBuilding() is getRoom() and then IsoRoom.getBuilding
 -- (javap -c zombie.iso.IsoGridSquare.getBuilding, offsets 0-15,
@@ -1332,10 +1337,12 @@ local function reachRefusal(object, mx, my, mz)
 	local building = machineSquare:getBuilding()
 	if building == nil then return nil end
 
-	local deviceSquare = object:getSquare()
-	if needsInside(object) then deviceSquare = object:getOppositeSquare() end
-	if deviceSquare == nil then return nil end
-	if deviceSquare:getBuilding() == building then return "reach" end
+	local ownSquare = object:getSquare()
+	if ownSquare ~= nil and ownSquare:getBuilding() == building then return "reach" end
+	if needsInside(object) then
+		local opposite = object:getOppositeSquare()
+		if opposite ~= nil and opposite:getBuilding() == building then return "reach" end
+	end
 	return nil
 end
 
