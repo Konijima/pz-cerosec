@@ -5176,8 +5176,9 @@ do
 		rowFor(post, "ksp-front-01").notAvailable, nil)
 
 	-- A DOOR is not a lamppost: wiring or unwiring it now asks the same
-	-- envelope fitting or removing its own module would (Mathieu's rule,
-	-- 2026-09-17). Standing outside a room refuses before the door's own
+	-- envelope fitting or removing its own module would (the rule since
+	-- 2026-09-17: a stranger in the street was wiring a shut door and
+	-- unlocking it). Standing outside a room refuses before the door's own
 	-- state is even read.
 	local shut = fixture("IsoDoor", square(10, 10, 0))
 	shut.modData.cerosec = { contact = true }

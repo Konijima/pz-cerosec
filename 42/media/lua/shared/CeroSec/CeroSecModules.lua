@@ -1200,9 +1200,9 @@ end
 
 -- The same envelope a module's own fitting or removal asks for -- needsInside,
 -- and then whichever module actually fitted answers its own moment -- asked
--- again for a CABLE. Mathieu's rule: a stranger who could not walk in and
--- unscrew a strike off a shut door may not wire it, or unwire it, from the
--- street either. A fixture can carry more than one of our modules (a door's
+-- again for a CABLE. The rule: a stranger who could not walk in and unscrew
+-- a strike off a shut door may not wire it, or unwire it, from the street
+-- either. A fixture can carry more than one of our modules (a door's
 -- own operator beside a contact, or a curtain motor on its sheet) and each
 -- keeps its own moment, so every one fitted is asked and the first "no" wins
 -- -- never a copy of stateRefusal's rules, the same calls fittingRefusal makes.
@@ -1269,8 +1269,9 @@ end
 --
 -- That let a stranger stand in the street, wire a shut front door from outside
 -- it, and unlock it -- a job unscrewing the strike itself would have refused him.
--- Mathieu's rule, the night of 2026-09-17: wiring a fixture is only possible when
--- fitting or removing one of its modules would be, so linking and unlinking now
+-- The rule since 2026-09-17, written because of that hole: wiring a fixture is
+-- only possible where fitting or removing one of its modules would be, so
+-- linking and unlinking now
 -- ask envelopeRefusal (above) too, the SAME needsInside and stateRefusal calls
 -- fittingRefusal makes and never a second copy of them.
 --

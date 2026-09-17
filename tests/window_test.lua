@@ -14831,7 +14831,8 @@ do
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
 	_G.SafeHouse = nil
 
-	-- AND THE ENVELOPE GATE IS ON THE WIRE TOO (Mathieu's rule, 2026-09-17): a
+	-- AND THE ENVELOPE GATE IS ON THE WIRE TOO (the rule since 2026-09-17,
+	-- written because a stranger outside could wire a shut door and unlock it): a
 	-- packet is not a right-click, and Commands.linkmodule and unlinkmodule
 	-- call CeroSecModules.linkRefusal/unlinkRefusal exactly as the menu does
 	-- (CeroSecModules.envelopeRefusal), so a MODIFIED CLIENT that skips the
