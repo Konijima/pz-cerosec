@@ -3818,6 +3818,12 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      démarre seul. Ramasser puis reposer une machine restée allumée pendant une
      coupure : elle aussi reste éteinte au retour du courant, comme si on venait
      de la débrancher et de la rebrancher. [ ]
+402c. **`reboot` pendant une coupure.** Rester à l'écran, taper `reboot`, et
+     couper la génératrice dans les trois secondes noires : l'écran reste noir
+     passé le délai, aucune fenêtre ne revient, la machine est éteinte.
+     Remettre la génératrice : dans la minute de jeu qui suit, la machine
+     redémarre seule jusqu'à `login:` (l'interrupteur n'a jamais été touché),
+     mais personne ne récupère sa fenêtre. [ ]
 403. **Ce qu'ils disent quand il n'y a rien.** Sur une machine **sans rien de
      vissé** : `sh /mnt/curtains.sh open` → `curtains.sh: no curtain in /dev`,
      `sh /mnt/tvguide.sh` → `tvguide.sh: no tv0 in /dev`, `sh /mnt/genwatch.sh` →

@@ -20,6 +20,9 @@ date.
   wire is live again, no hand needed: BIOS, any `@reboot` job, all the way to a
   bare `login:` prompt. One you turned off on purpose, at the machine or with
   `halt` or `shutdown`, stays off no matter how many times the power returns.
+  A `reboot` that loses the room's power in its three dark seconds is the first
+  case: the machine comes up when the wire does, though nobody's window comes
+  back with it.
 
 ## 0.5.0 - 2026-09-16
 

@@ -672,9 +672,9 @@ window open on it closes. halt is its older name, and is shutdown -h now.
 
 reboot is a power CYCLE, and shutdown -r now says it the long way: off the
 same way, dark about three seconds, then on again by itself. Stay at the
-keyboard and your window comes back where it was; step away while it is
-dark and it comes up without you. A room that loses its power in those
-seconds leaves the machine off, as an outage leaves any machine off.
+keyboard and your window comes back where it was; step away and it comes up
+without you. A room that loses its power in those seconds stays dark, and
+reboot left the switch on: it starts itself when the wire is live.
 
 Neither is a repair: the disk comes through untouched. What mends a
 machine whose /bin is empty is the firmware's question on the way back up,
