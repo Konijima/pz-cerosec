@@ -37,7 +37,7 @@
     "Tooltip_CeroSec_LinkDesc": "Tire %1 cases de fil électrique jusqu'à %2. Cet ordinateur<br>voit alors cet appareil dans son /dev. Débrancher rend le fil.",
     "Tooltip_CeroSec_UnlinkDesc": "Retire le câble qui va à %2 et rend les %1 fils<br>électriques.",
     "Tooltip_CeroSec_LinkFixture": "Aucun module CeroSec n'est installé ici.",
-    "Tooltip_CeroSec_LinkSafehouse": "C'est la base de quelqu'un d'autre.",
+    "Tooltip_CeroSec_LinkSafehouse": "C'est le refuge de quelqu'un d'autre.",
     "Tooltip_CeroSec_LinkLinked": "Cet ordinateur y est déjà relié.",
     "Tooltip_CeroSec_LinkLinks": "Cet appareil répond déjà à %1 ordinateurs.",
     "Tooltip_CeroSec_LinkFar": "Trop loin : un câble va jusqu'à %1 cases.",

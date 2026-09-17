@@ -3890,7 +3890,8 @@ le **même mot**. Le tableau complet est dans
      de plus, « exterior », sur le mur qu'elle éclaire, et `dev light1 off`
      l'éteint depuis le clavier. Poser un relais sur un **lampadaire** de la rue
      (un poteau, pas un mur) : il ne paraît **jamais** dans `dev` — il n'est
-     accroché à aucun mur du bâtiment. [ ]
+     accroché à aucun mur du bâtiment. C'est le cas que le **câble** existe pour
+     (section AQ) ; sans câble, rien ne l'entend. [ ]
 
 ## AP. Le module reste sur place quand le support s'en va (palier chute)
 
@@ -3932,6 +3933,123 @@ laisse déjà. Les neuf chemins et les deux qui ne doivent rien lâcher sont dan
      l'embrasure (il est créé par le serveur et diffusé), et sur les deux machines
      `dev` ne liste plus la porte. Le client ramasse le contact : il est dans son
      sac. [ ]
+
+## AQ. Le câble jusqu'à l'ordinateur (palier lien)
+
+Un module posé sur un lampadaire ne sert à rien tant qu'aucune machine ne l'entend :
+la machine voit son **bâtiment** et rien d'autre. Le câble est la réponse — un fil
+électrique par case, trente cases au plus, rendu quand on le débranche. Le lien est
+écrit sur l'**appareil** (la liste des machines et ce que chaque câble a coûté) et sur
+la **machine** (la liste des cases à visiter) ; les deux se remettent d'accord tout
+seuls au tour de ronde suivant. La règle complète est dans
+[DEVICES.md](DEVICES.md#the-cable-when-the-fixture-is-in-no-building).
+
+424. **Le lampadaire de la rue entre dans `dev`.** Sur un **lampadaire** (un poteau,
+     pas un mur) à une douzaine de cases d'un ordinateur : poser un **relais**
+     dessus (étape 418 : il ne paraît dans aucun `dev`). Avec un tournevis,
+     Électricité 1 et une vingtaine de **fils électriques** dans le sac, clic droit
+     sur le lampadaire → **Relier à un ordinateur**. Attendu : un sous-menu avec une
+     ligne par machine à portée, la plus proche en haut, écrite
+     « `ksp-front-01, 12 cases, 12 fils` » — le **nom d'hôte** de la machine, la
+     distance et le prix. Cliquer : le survivant se tourne vers le poteau, une barre
+     de progression, et à la fin **12 fils en moins** dans le sac. Retourner au
+     terminal : `dev` liste un `lightN` de plus et `dev lightN off` éteint le
+     lampadaire depuis le clavier. [ ]
+425. **Ce que le câble a coûté se lit dans `dev find`.** Sur ce même `lightN` :
+     `dev find lightN` répond `lightN: blinking, linked, 12 tiles of wire` — le
+     lampadaire clignote six secondes comme n'importe quelle lumière, et la ligne
+     dit en plus qu'il est au bout d'un câble et ce qu'il a coûté. Sur une lumière
+     du bâtiment, **pas** de `linked` : la ligne est celle d'avant. [ ]
+426. **Le prix est la distance, à la case près, plus les étages.** Compter les cases
+     entre l'appareil et la machine en diagonale : la ligne du menu annonce la
+     **distance arrondie au-dessus** et le même nombre de fils. Recommencer vers une
+     machine **à l'étage au-dessus**, trois cases plus loin sur le plan : la ligne dit
+     « `3 cases, 7 fils` » — quatre fils de plus par étage, parce qu'un câble monte
+     dans un mur et court dans un plafond. Une machine sur la **case même** de
+     l'appareil : 1 fil, jamais 0. [ ]
+427. **Trente cases, et pas une de plus.** Une machine à plus de trente cases n'a
+     **aucune ligne** dans le sous-menu — rien de grisé, rien du tout : c'est la
+     seule chose qu'un survivant ne peut pas corriger d'où il est. Vérifier la
+     bordure : à trente cases la ligne est là, à trente et une elle a disparu. Une
+     machine à vingt-huit cases mais **un étage plus haut** coûte 32 fils et n'est
+     donc pas non plus dans la liste. Une machine dont le quartier n'est **pas
+     chargé** n'y est pas non plus. [ ]
+428. **Les lignes grisées disent laquelle.** Chaque refus, une ligne grise avec sa
+     phrase sous la description :
+     - moins de fils qu'il n'en faut → « Il faut 14 fils électriques. » (le nombre
+       est celui de ce câble-là) ;
+     - un câble déjà tiré entre ces deux-là → « Cet ordinateur y est déjà relié. » ;
+     - quatre câbles déjà sur l'appareil → « Cet appareil répond déjà à 4
+       ordinateurs. » ;
+     - trente-deux câbles déjà sur la machine → « Cet ordinateur a déjà 32
+       câbles. » ;
+     - sans tournevis → « Il vous faut un tournevis. » ; Électricité trop basse →
+       « Électricité 3 requise. » (le niveau du **plus exigeant** des modules posés
+       sur l'appareil) ;
+     - refuge d'un autre, option activée → « C'est le refuge de quelqu'un
+       d'autre. ».
+     Un appareil **nu** (aucun module dessus) n'a pas d'entrée **Relier à un
+     ordinateur** du tout : c'est le seul refus que le menu cache, et le sous-menu
+     du matériel juste au-dessus dit déjà quoi faire. [ ]
+429. **Ce qu'un câble ne demande pas.** Debout **sur le trottoir**, la porte du
+     bâtiment **fermée**, l'ordinateur **éteint** : la ligne est vivante et le câble
+     se tire. Aucune des trois règles de la pose (dedans, ouvert, allumé) ne vaut ici
+     — un câble va au dos de la machine, pas à une session, et c'est justement la
+     réponse à « je ne peux pas atteindre cette chose ». [ ]
+430. **Débrancher rend le fil.** Clic droit sur le lampadaire → **Débrancher de
+     ksp-front-01** (une ligne par câble déjà tiré). Attendu : les **12 fils
+     reviennent dans le sac**, `dev` ne montre plus le `lightN`, et `dev lightN`
+     répond `lightN: no such device` — le numéro reste dépensé, comme toujours.
+     Débrancher ne demande ni la portée, ni les fils, ni le tournevis : seulement le
+     refuge. [ ]
+431. **Un appareil dont le module est parti garde son câble.** Câbler le lampadaire,
+     puis **retirer le relais** (clic droit → Retirer). Attendu : le câble est
+     toujours là, l'entrée **Débrancher** aussi, et elle rend les fils. Sans ça, le
+     seul moyen de récupérer son fil serait d'abattre le poteau. `dev` ne liste plus
+     rien pour ce poteau : le fil va à un appareil qui n'a plus de périphérique
+     dessus. [ ]
+432. **Quatre machines sur le même appareil.** Sur une porte déjà dans le `dev` de la
+     machine du bâtiment, tirer un câble vers une **deuxième** machine, dans une autre
+     maison à portée. Attendu : la porte est dans les **deux** `dev`, chacune avec son
+     propre numéro, et les deux la commandent. Sur la machine du bâtiment,
+     `dev find doorN` ne dit **rien de plus** (elle l'a par le bâtiment) ; sur la
+     deuxième, la ligne dit `linked, N tiles of wire`. Tirer un troisième et un
+     quatrième câble : ça passe. Le **cinquième** est grisé, « Cet appareil répond
+     déjà à 4 ordinateurs. ». [ ]
+433. **Le quartier qui se décharge ne coupe rien.** Avec deux câbles tirés,
+     s'éloigner assez pour décharger le quartier (section V), ouvrir un terminal sur
+     une machine hors de portée, puis revenir. Attendu : les câbles sont **toujours
+     là**, `dev` remontre les appareils avec les **mêmes numéros** et le même coût
+     dans `dev find`. Une case que le jeu n'a pas chargée est gardée telle quelle :
+     une machine qui oublierait un câble pendant que le quartier dort serait une
+     machine qui a fait payer un câble puis l'a repris. [ ]
+434. **Ramasser l'appareil rend les boîtiers ET le fil.** Sur un **interrupteur**
+     avec un relais dessus et un câble de 12 cases vers une machine : le ramasser
+     (clic droit → Ramasser, ou le démonter). Attendu : sur la case où il était, le
+     **relais** par terre **et 12 fils électriques**, ramassables. Retourner au
+     terminal de la machine : le `lightN` a disparu de `dev` au tour suivant, sans
+     que personne n'ait rien débranché. [ ]
+435. **Renommer la machine ne coupe rien.** Sur la machine au bout du câble :
+     `hostname ksp-renommee` (ou éditer `/etc/hostname` et redémarrer). Clic droit
+     sur l'appareil câblé : les deux lignes — **Relier** et **Débrancher de** —
+     portent le **nouveau nom**, et le câble n'a pas bougé. Le lien est écrit sur la
+     **case** où la machine se tient, jamais sur son nom. Déplacer la machine d'une
+     case (la ramasser et la reposer à côté) : le câble ne la suit **pas**, c'est un
+     autre endroit ; la ligne **Débrancher** disparaît et l'appareil sort de son
+     `dev` au tour suivant. [ ]
+436. **Une sauvegarde d'avant ce palier ne change pas.** Charger une sauvegarde faite
+     avant cette version, avec des modules posés (section Z). Attendu : les appareils
+     ont exactement les mêmes périphériques et les mêmes numéros, aucune ligne
+     **Débrancher** nulle part, et le sous-menu **Relier à un ordinateur** est là,
+     vide de câbles. Aucun numéro de version n'a bougé pour ce palier : une machine
+     sans câble est une machine sans la clé. [ ]
+437. **En multijoueur (si testé).** L'hôte tire un câble d'un lampadaire vers sa
+     machine ; le client regarde le même lampadaire : il voit l'entrée **Débrancher
+     de** (le lien est diffusé avec le reste du modData de l'appareil) et, sur un
+     terminal de cette machine, le `lightN`. Le client débranche : les fils vont dans
+     **son** sac, et les deux voient le périphérique disparaître. Toutes les
+     vérifications sont refaites côté serveur : ce que le menu décide est ce qu'un
+     joueur **voit**, jamais ce qu'il a le droit de faire. [ ]
 
 ## Rapport
 
