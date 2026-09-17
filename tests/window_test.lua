@@ -23299,4 +23299,78 @@ do
 	CeroSecDevices.invalidate()
 end
 
+--
+-- 59. A claimed safehouse and the door that stands outside its box
+--
+-- The other half of the report, and the one the radius fix does not close on its
+-- own: with the radius shut, the way in from the street is a CABLE, and the only
+-- thing that refuses a cable to somebody else's fixture is the safehouse gate
+-- (houseRefusal, SandboxVars.CeroSec.SafehouseModules).
+--
+-- The gate asks the engine whether the FIXTURE'S SQUARE is in a claim, and
+-- findSafeHouse is a plain rectangle test over the building's own tiles (javap
+-- -c zombie.iso.areas.SafeHouse.findSafeHouse, offsets 28-69). A south or east
+-- exterior door stands on the PAVEMENT -- the wall is on that square's north or
+-- west edge -- so the front door of a claimed house was outside the box and
+-- open to anybody, while the switch three feet behind it was refused.
+--
+do
+	local hadWorld, hadSandbox, hadHouse = _G.__world, _G.SandboxVars, _G.SafeHouse
+	local world = FakeWorld.new()
+	world.room("house", { {30,30,0}, {31,30,0} })
+	local inside = fit(world.put(world.squares["30,30,0"],
+		fakeLight(true, true)), "relay")
+	-- The pavement south of the room, and the two things on it: the front door,
+	-- whose opposite square is the room, and the porch lamp hung on the same
+	-- wall from the outside.
+	local walk = world.square(30, 31, 0, nil)
+	local frontDoor = fit(world.wall(walk, fakeDoor(false, true, nil, true), "N"),
+		"operator")
+	local porch = fit(world.lamp(walk, fakeLight(false, true), "S", "N"), "relay")
+	world.square(30, 36, 0, nil)
+
+	-- The claim, over the two tiles of the room and nothing else, faked to the
+	-- bytecode: x >= X and x < X2, y >= Y and y < Y2.
+	local claim = { x = 30, y = 30, x2 = 32, y2 = 31, owner = "king" }
+	claim.playerAllowed = function(self, player)
+		return self.owner == player:getUsername()
+	end
+	_G.SafeHouse = { getSafeHouse = function(square)
+		if square == nil then return nil end
+		local x, y = square:getX(), square:getY()
+		if x < claim.x or x >= claim.x2 then return nil end
+		if y < claim.y or y >= claim.y2 then return nil end
+		return claim
+	end }
+	local stranger = { getUsername = function() return "hacker" end }
+	local owner = { getUsername = function() return "king" end }
+
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true,
+		SafehouseModules = true, PrefilledMachines = false } }
+
+	-- The control: the switch inside is on a claimed tile and always was refused.
+	eq("a stranger cannot cable the switch inside a claimed house",
+		CeroSecModules.linkRefusal(inside, 30, 36, 0, stranger), "safehouse")
+	-- The hole: the front door, on the pavement, which no box holds.
+	eq("and not the front door standing on the pavement either",
+		CeroSecModules.linkRefusal(frontDoor, 30, 36, 0, stranger), "safehouse")
+	-- Both ways, or the guard would be a door nobody can wire: the owner is not
+	-- refused his own front door.
+	eq("while the owner cables his own front door",
+		CeroSecModules.linkRefusal(frontDoor, 30, 36, 0, owner), nil)
+	-- AND WHAT IS STILL OPEN, said out loud rather than left to be found: a lamp
+	-- HANGS on a wall and has no opposite square to ask (there is no
+	-- getOppositeSquare on IsoLightSwitch), so the porch lamp of a claimed house
+	-- is still cablable by a stranger. It is a light on the outside of the house,
+	-- which is also why fitting a module to one never asked for a room
+	-- (needsInside); closing it means reading `attached` and `Facing` from here,
+	-- which is a walk this file's gate cannot do.
+	eq("the porch lamp of a claimed house is still anybody's",
+		CeroSecModules.linkRefusal(porch, 30, 36, 0, stranger), nil)
+
+	_G.__world, _G.SandboxVars, _G.SafeHouse = hadWorld, hadSandbox, hadHouse
+	CeroSecDevices.invalidate()
+end
+
 print("window_test: " .. count .. " checks passed")

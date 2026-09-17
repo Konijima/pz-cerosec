@@ -738,9 +738,9 @@ The building it stands in is wired to it, and wired is the word: under
 and writing a word into one works the thing itself. The modules are the
 next page.
 
-The reach is the BUILDING: every room, upstairs and down, and all four
-of its walls; ten tiles of its floor where the map knows none. 256 at
-the outside.
+The reach is the BUILDING: every room, upstairs and down, and all
+four walls; ten bare tiles where the map knows none, never a
+building's. 256 at most.
 
   root@ksp-04-11:~# dev
   curtain0 office                1E 0        N  closed
@@ -948,9 +948,9 @@ single-player game has no safehouses.]],
 
 [[Running a cable to a computer.
 
-The building is free. Anything OUTSIDE it -- a lamppost on the street, a
-gate, a porch lamp round the far side -- is a cable, and you pay for the
-cable.
+The building is free, and ten bare tiles where there is none. Anything
+OUTSIDE one -- a lamppost, a gate, a porch lamp, the house you stand
+beside -- is a cable, and you pay for it.
 
 Right-click the fixture, take Link to computer, and every machine a reel
 would reach is a line:

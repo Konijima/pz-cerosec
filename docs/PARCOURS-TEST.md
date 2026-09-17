@@ -392,6 +392,30 @@ passé réellement, même quand ça correspond au texte attendu.
 91. Un deuxième étage avec un interrupteur : absent de la liste, un seul
      plancher est couvert. La porte du joueur lit `built` dans la colonne
      description, avec le côté qu'elle regarde. [ ]
+91a. **L'ordinateur du trottoir ne voit pas la maison.** C'est le rapport du
+     propriétaire. Prendre un ordinateur, le poser DEHORS sur le trottoir, à
+     cinq cases d'une maison dont les appareils sont équipés (modules posés, ou
+     option « Modules matériels obligatoires » décochée), ne rien câbler.
+     Attendu : `dev` ne montre AUCUN appareil de cette maison, ni la lumière
+     de l'intérieur, ni la porte d'entrée (dont l'objet est pourtant posé sur
+     une case de trottoir), ni la lampe de porche. Ce qui est dehors et à
+     personne reste listé : un générateur traîné sur le trottoir, une lampe de
+     rue sur son poteau. [ ]
+91b. **Le câble, lui, est payé.** Même ordinateur du trottoir : tirer un câble
+     jusqu'à la lampe du porche (clic droit sur la lampe, sous-menu CeroSec,
+     avec une bobine de fil). Attendu : `ls -l /dev` la montre enfin, avec les
+     tuiles de fil qu'elle a coûté dans `dev find`. La porte d'entrée, posée
+     sur la même case, reste absente : le câble est sur la lampe, pas sur la
+     case. [ ]
+91c. **Une safehouse revendiquée (multijoueur).** Maison revendiquée par un
+     autre joueur, option « Modules dans les safehouses » cochée. Un
+     non-membre, depuis le trottoir : le clic droit refuse le câble sur la
+     porte d'entrée et sur les fenêtres (« C'est le refuge de quelqu'un
+     d'autre. »),
+     même si l'objet est posé sur une case de trottoir hors de la zone
+     revendiquée. Le propriétaire, lui, câble sa porte normalement. Reste
+     ouvert et connu : la LAMPE DE PORCHE d'une maison revendiquée est encore
+     câblable par n'importe qui. [ ]
 92. Cadenasser la porte du joueur → `cat /dev/lockN` dit `padlock`.
      `echo unlock > /dev/lockN` → le cadenas tombe dans l'inventaire comme si
      on l'avait retiré à la main ; `echo lock > /dev/lockN` le remet. Une

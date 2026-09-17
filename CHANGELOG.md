@@ -8,6 +8,21 @@ date.
 
 ## Unreleased
 
+- A machine set down outside a house no longer sees that house. A computer
+  standing on the ground with no building around it reaches ten tiles, which is
+  what a base you built yourself is made of; those ten tiles were taking the
+  doors, the windows and the porch lamps of any map house that happened to be
+  inside them, for free and with nothing wired. Somebody could drop a computer
+  on your pavement and open your front door. From outside, a building's fixtures
+  now cost a cable, exactly as the manual always said. A machine INSIDE a
+  building still reaches the whole of it, and a base with no building still
+  reaches everything in its ten tiles.
+- With **Modules in safehouses** on, a stranger can no longer cable the front
+  door or the windows of a house somebody has claimed. A door is part of the
+  wall and stands on the tile OUTSIDE the room, which is a tile no safehouse
+  claim covers, so the refusal was never being asked about it. The porch lamp of
+  a claimed house is still open to anybody: it hangs on the outside wall and
+  there is nothing on it to say which house it belongs to.
 - A street lamppost you have cabled can be switched now. It read `on` and then
   answered `no power` to every order, with the grid up and the lamp burning:
   the game refuses to let a hand flip a light that stands outside on no floor
