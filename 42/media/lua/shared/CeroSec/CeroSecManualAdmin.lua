@@ -949,8 +949,8 @@ single-player game has no safehouses.]],
 [[Running a cable to a computer.
 
 The building is free, and ten bare tiles where there is none. Anything
-OUTSIDE one -- a lamppost, a gate, a porch lamp, the house you stand
-beside -- is a cable, and you pay for it.
+OUTSIDE one -- a lamppost, a gate, the house you stand beside -- is a
+cable, and you pay for it.
 
 Right-click the fixture, take Link to computer, and every machine a reel
 would reach is a line:
@@ -960,10 +960,10 @@ would reach is a line:
 
 One electric wire a tile, four more for every storey between the two, and
 thirty tiles is as far as a cable goes. Carry the wire, a screwdriver and
-the trade the boxes on that fixture asked for.
+the trade the fixture asked for.
 
 Nothing asks where you stand, or that the door be open: a cable lands on
-the terminals of a box somebody has already fitted.
+a box somebody has fitted.
 
 Then the fixture is in that machine's /dev like anything else, and dev
 find -- further down this chapter -- says what the run cost:
@@ -972,7 +972,7 @@ find -- further down this chapter -- says what the run cost:
   light1: blinking, linked, 12 tiles of wire
 
 Unlink from ksp-front-01 gives the wire back. So does taking the fixture
-down.]],
+down, or unlinking a loose cable a moved machine left behind.]],
 
 [[When the cable menu says no.
 

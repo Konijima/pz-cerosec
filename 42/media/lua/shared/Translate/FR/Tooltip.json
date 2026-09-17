@@ -36,6 +36,7 @@
     "Tooltip_item_CeroSecWiringGuide": "Manuel de chantier CeroSec Systems. Schémas de câblage et <LINE> nomenclatures des quatre modules d'interface : contact <LINE> magnétique, relais, gâche électrique et opérateur de porte.",
     "Tooltip_CeroSec_LinkDesc": "Tire %1 cases de fil électrique jusqu'à %2. Cet ordinateur <LINE> voit alors cet appareil dans son /dev. Débrancher rend le fil.",
     "Tooltip_CeroSec_UnlinkDesc": "Retire le câble qui va à %2 et rend les %1 fils <LINE> électriques.",
+    "Tooltip_CeroSec_UnlinkLooseDesc": "Ce câble va encore là où se trouvait un ordinateur, à %1 <LINE> cases. Remettez un ordinateur à cet endroit pour le <LINE> rebrancher, ou débranchez pour récupérer les %2 fils <LINE> électriques.",
     "Tooltip_CeroSec_LinkFixture": "Aucun module CeroSec n'est installé ici.",
     "Tooltip_CeroSec_LinkSafehouse": "C'est le refuge de quelqu'un d'autre.",
     "Tooltip_CeroSec_LinkLinked": "Cet ordinateur y est déjà relié.",

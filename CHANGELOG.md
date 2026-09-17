@@ -69,6 +69,10 @@ date.
   carried off its tile. A run is to the spot the machine stood on, not to the
   machine, so putting a computer back on that spot reconnects it; before this,
   "Unlink" on a cable going nowhere did nothing at all and the wire was lost.
+- That same cable, with no computer standing on the spot it runs to, now reads
+  "Unlink loose cable" and says how far off the machine used to be. It used to
+  print a made-up hostname for the empty tile, which read like the machine had
+  been renamed.
 
 ## 0.5.0 - 2026-09-16
 

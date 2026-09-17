@@ -4086,6 +4086,14 @@ seuls au tour de ronde suivant. La règle complète est dans
      répond `lightN: no such device`, le numéro reste dépensé, comme toujours.
      Débrancher ne demande ni la portée, ni les fils, ni le tournevis : seulement le
      refuge. [ ]
+430b. **La machine partie laisse un câble libre, jamais un faux nom.** Câbler le
+     lampadaire à `ksp-front-01`, puis faire disparaître cette machine de la case
+     (la ramasser, ou juste s'éloigner assez pour que le quartier se décharge et
+     revenir sans qu'elle soit rechargée). Clic droit sur le lampadaire → **Relier
+     à un ordinateur** : la ligne de câble dit « Débrancher le câble libre », pas
+     « Débrancher de ksp-8e5-7qs » ou un autre nom fabriqué pour la case vide.
+     L'infobulle donne la distance et le fil à récupérer. Cliquer débranche et rend
+     les fils, comme n'importe quel autre débranchement. [ ]
 431. **Un appareil dont le module est parti garde son câble.** Câbler le lampadaire,
      puis **retirer le relais** (clic droit → Retirer). Attendu : le câble est
      toujours là, l'entrée **Débrancher** aussi, et elle rend les fils. Sans ça, le

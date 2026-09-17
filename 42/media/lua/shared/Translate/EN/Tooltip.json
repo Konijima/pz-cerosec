@@ -36,6 +36,7 @@
     "Tooltip_item_CeroSecWiringGuide": "CeroSec Systems field handbook. Wiring diagrams and parts <LINE> lists for the four interface modules: magnetic contact, relay, <LINE> electric strike and door operator.",
     "Tooltip_CeroSec_LinkDesc": "Runs %1 tiles of electric wire to %2. That computer <LINE> sees this fixture on its own /dev. Unlinking gives the wire back.",
     "Tooltip_CeroSec_UnlinkDesc": "Takes the cable to %2 off this fixture and gives the <LINE> %1 electric wire back.",
+    "Tooltip_CeroSec_UnlinkLooseDesc": "This cable still runs to where a computer stood, %1 <LINE> tiles away. Put a computer back on that spot to reconnect <LINE> it, or unlink to get the %2 electric wire back.",
     "Tooltip_CeroSec_LinkFixture": "Nothing of ours is fitted here.",
     "Tooltip_CeroSec_LinkSafehouse": "This is somebody else's safehouse.",
     "Tooltip_CeroSec_LinkLinked": "This computer is already on it.",

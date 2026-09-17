@@ -5313,23 +5313,30 @@ do
 	_G.SafeHouse = nil
 
 	-- A cable to a computer whose chunk is away is still here to be cut: the
-	-- FIXTURE carries it, so the line is there and the computer is named the way
-	-- one with no mirror is named -- which is a survivor who can get his wire
-	-- back out of a machine somebody drove off with.
+	-- FIXTURE carries it, so the line is there. But no LIVE object stands on
+	-- that square either, so this is the "loose cable" case: never a hostname
+	-- CeroSec.hostnameFor made up for an empty tile, which a survivor would
+	-- read as his machine's real name.
 	objects = { loft }
-	cut = rowFor(post, CeroSec.hostnameFor(22, 10), true)
+	local sub = subOn(post)
+	cut = nil
+	for i = 1, #sub.labels do
+		if sub.labels[i] == "ContextMenu_CeroSec_UnlinkLoose" then
+			cut = sub.options[i]
+		end
+	end
 	check("a cable to a computer that is not loaded is still a line", cut ~= nil)
-	eq("named after its square", cut.label,
-		"ContextMenu_CeroSec_Unlink(" .. CeroSec.hostnameFor(22, 10) .. ")")
-	eq("with the wire it cost", desc(cut),
-		"Tooltip_CeroSec_UnlinkDesc(5," .. CeroSec.hostnameFor(22, 10) .. ")")
+	eq("named as a loose cable, not a fabricated hostname", cut.label,
+		"ContextMenu_CeroSec_UnlinkLoose")
+	eq("with the distance and the wire it cost", desc(cut),
+		"Tooltip_CeroSec_UnlinkLooseDesc(12,5)")
 	eq("and there is no run offered to it either", rowFor(post, "ksp-front-01"), nil)
 
 	-- A fixture with a cable and no computer in reach still opens the submenu:
 	-- the cut is the reason the menu exists at all for him.
 	objects = {}
 	eq("a fixture with nothing in reach still offers the cut", rowsOn(post),
-		"ContextMenu_CeroSec_Unlink(" .. CeroSec.hostnameFor(22, 10) .. ")")
+		"ContextMenu_CeroSec_UnlinkLoose")
 
 	--
 	-- 5. A COMPUTER RENAMED KEEPS ITS CABLE, which is the naming rule itself
@@ -5399,8 +5406,10 @@ do
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreSet", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_LinkTo", 3 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_Unlink", 1 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_UnlinkLoose", 0 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkDesc", 2 },
 		{ "Tooltip.json", "Tooltip_CeroSec_UnlinkDesc", 2 },
+		{ "Tooltip.json", "Tooltip_CeroSec_UnlinkLooseDesc", 2 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkFixture", 0 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkSafehouse", 0 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkLinked", 0 },

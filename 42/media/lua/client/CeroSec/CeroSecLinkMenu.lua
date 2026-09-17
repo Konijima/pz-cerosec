@@ -303,19 +303,33 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 	-- the end that carries them, so a cable to a machine whose chunk is away is
 	-- still here to be cut -- and the wire it gives back is the wire that was paid,
 	-- never the price worked out again (Commands.unlinkmodule).
+	local square = object:getSquare()
 	for i = 1, #links do
 		local at = links[i]
 		local row = { x = at.x, y = at.y, z = at.z, wire = at.wire }
 		local luaObject = nil
 		local system = CCeroSecSystem ~= nil and CCeroSecSystem.instance or nil
 		if system ~= nil then luaObject = system:getLuaObjectAt(at.x, at.y, at.z) end
-		local host = CeroSec.hostnameFor(at.x, at.y)
-		if luaObject ~= nil then host = CeroSecLinkMenu.hostOf(luaObject) end
-		local option = sub:addOption(getText("ContextMenu_CeroSec_Unlink", host),
-			worldobjects, CeroSecLinkMenu.onUnlink, object, playerObj, row)
+		local option, tooltipDesc
+		if luaObject ~= nil then
+			-- A machine still stands there: the name it answers to today, same
+			-- as the "Link to computer" rows above.
+			local host = CeroSecLinkMenu.hostOf(luaObject)
+			option = sub:addOption(getText("ContextMenu_CeroSec_Unlink", host),
+				worldobjects, CeroSecLinkMenu.onUnlink, object, playerObj, row)
+			tooltipDesc = getText("Tooltip_CeroSec_UnlinkDesc", at.wire, host)
+		else
+			-- No machine on that square: the link is indexed by where a
+			-- computer STOOD (CeroSecModules.LINK_KEY), so a survivor never
+			-- reads a hostname CeroSec.hostnameFor made up for an empty tile.
+			local tiles = CeroSecModules.linkTiles(square:getX(), square:getY(),
+				at.x, at.y)
+			option = sub:addOption(getText("ContextMenu_CeroSec_UnlinkLoose"),
+				worldobjects, CeroSecLinkMenu.onUnlink, object, playerObj, row)
+			tooltipDesc = getText("Tooltip_CeroSec_UnlinkLooseDesc", tiles, at.wire)
+		end
 		local key, number = CeroSecLinkMenu.unlinkRefusal(object, playerObj, row)
-		describe(option, key,
-			getText("Tooltip_CeroSec_UnlinkDesc", at.wire, host), number)
+		describe(option, key, tooltipDesc, number)
 		local iso = CeroSecLinkMenu.isoOf(luaObject)
 		if iso then CeroSecModuleMenu.highlightOn(option, iso) end
 	end
