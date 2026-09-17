@@ -18,9 +18,11 @@ require "CeroSec/ISCeroSecLinkAction"
 --
 -- A listener of its own on Events.OnFillWorldObjectContextMenu, beside the
 -- module menu's and for the same reason: it is about the fixture under the
--- cursor and not about a computer. It shares that file's two helpers -- which
--- fixture the click landed on, and the walk to it -- because they are the same
--- question about the same object.
+-- cursor and not about a computer. It shares that file's helpers -- which
+-- fixture the click landed on, the walk to it, and the parent named after the
+-- fixture (CeroSecModuleMenu.fixtureParent) -- because they are the same
+-- question about the same object. "Link to computer" nests inside that shared
+-- parent rather than sitting on its own at the top of the menu.
 --
 -- THE MENU SHOWS THE HOSTNAME AND THE CABLE IS WRITTEN AGAINST THE SQUARE. That
 -- is the whole of the naming rule: a hostname is what a survivor knows his
@@ -99,6 +101,17 @@ end
 -- away is not offered. That is the rule /dev has always run on read from the
 -- other end: a cable to a machine nobody has been near is a cable to a machine
 -- the discovery could not visit either.
+-- The live IsoObject a mirrored computer stands for, or nil when its chunk is
+-- away -- the same call mirrorOf itself makes before it ever reaches modData,
+-- guarded the same way, so a machine nobody is near never gets an object handed
+-- to the highlight below.
+function CeroSecLinkMenu.isoOf(luaObject)
+	if type(luaObject) ~= "table" or type(luaObject.getIsoObject) ~= "function" then
+		return nil
+	end
+	return luaObject:getIsoObject()
+end
+
 function CeroSecLinkMenu.machines(object)
 	local out = {}
 	local square = object ~= nil and object:getSquare() or nil
@@ -127,6 +140,7 @@ function CeroSecLinkMenu.machines(object)
 					wire = wire,
 					full = CeroSecOS.linkAt(book, fx, fy, fz) == nil
 						and #book >= CeroSecOS.LINKS_PER_MACHINE,
+					iso = CeroSecLinkMenu.isoOf(luaObject),
 				}
 			end
 		end
@@ -260,9 +274,14 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 	local links = CeroSecModules.linksOn(object)
 	if #rows == 0 and #links == 0 then return end
 
-	local parent = CeroSecMenu.addTop(context, getText("ContextMenu_CeroSec_Link"))
+	-- The fixture's own parent, shared with the module menu (CeroSecModuleMenu.
+	-- fixtureParent): "Link to computer" nests inside it rather than sitting at
+	-- the top of the menu on its own, so a survivor reads one entry named after
+	-- the door and not two unnamed ones.
+	local fixtureSub = CeroSecModuleMenu.fixtureParent(context, object)
+	local parent = fixtureSub:addOption(getText("ContextMenu_CeroSec_Link"))
 	local sub = ISContextMenu:getNew(context)
-	context:addSubMenu(parent, sub)
+	fixtureSub:addSubMenu(parent, sub)
 
 	for i = 1, #rows do
 		local row = rows[i]
@@ -272,6 +291,10 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 		local key, number = CeroSecLinkMenu.refusal(object, playerObj, row)
 		describe(option, key,
 			getText("Tooltip_CeroSec_LinkDesc", row.wire, row.host), number)
+		-- The COMPUTER lights up here, not the fixture: this line names a
+		-- machine and the survivor is choosing which one to wire. Nothing at
+		-- all when its chunk is away (row.iso is nil then).
+		if row.iso then CeroSecModuleMenu.highlightOn(option, row.iso) end
 	end
 
 	-- And the cables that are already run, under them. Off the FIXTURE, which is
@@ -291,6 +314,8 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 		local key, number = CeroSecLinkMenu.unlinkRefusal(object, playerObj, row)
 		describe(option, key,
 			getText("Tooltip_CeroSec_UnlinkDesc", at.wire, host), number)
+		local iso = CeroSecLinkMenu.isoOf(luaObject)
+		if iso then CeroSecModuleMenu.highlightOn(option, iso) end
 	end
 end
 

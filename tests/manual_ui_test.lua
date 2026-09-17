@@ -78,7 +78,8 @@ _G.getTextManager = function()
 end
 _G.getCore = function()
 	return { getScreenWidth = function() return 1920 end,
-		getScreenHeight = function() return 1080 end }
+		getScreenHeight = function() return 1080 end,
+		getObjectHighlitedColor = function() return { r = 1, g = 1, b = 1 } end }
 end
 _G.getText = function(key) return key end
 _G.getMouseX = function() return 0 end
@@ -4239,6 +4240,14 @@ do
 			if class ~= "IsoTelevision" and class ~= "IsoRadio" then return nil end
 			return { getIsTurnedOn = function() return o.deviceOn end }
 		end
+		-- The four calls a hover is supposed to make, recorded rather than
+		-- rendered: what the bench below proves is that they are made and
+		-- unmade, not what they draw.
+		o.lit = nil
+		o.setHighlighted = function(_, player, on) o.lit = on end
+		o.setHighlightColor = function() end
+		o.setOutlineHighlight = function(_, player, on) o.outline = on end
+		o.setOutlineHighlightCol = function() end
 		return o
 	end
 
@@ -4332,12 +4341,12 @@ do
 		end
 		return table.concat(out, " ")
 	end
-	-- Is there a "CeroSec hardware" parent at all?
+	-- Is there a "CeroSec: <object>" parent at all?
 	local function parentOn(object)
 		local context = withVanilla(ContextMenu.new())
 		CeroSecModuleMenu.OnFillWorldObjectContextMenu(0, context, { object }, false)
 		for i = 1, #context.labels do
-			if context.labels[i] == "ContextMenu_CeroSec_Modules" then return true end
+			if context.labels[i] == "ContextMenu_CeroSec_Fixture" then return true end
 		end
 		return false
 	end
@@ -4373,8 +4382,72 @@ do
 	door.hasCurtain = false
 	-- And nothing this mod has anything to say about gets no menu at all.
 	eq("a fridge offers nothing", idsOn(fridge), "")
-	check("and has no CeroSec hardware entry over it", not parentOn(fridge))
+	check("and has no CeroSec: parent entry over it", not parentOn(fridge))
 	check("while a door does", parentOn(door))
+
+	--
+	-- 0b. THE PARENT IS NAMED BY THE OBJECT, and the two survol rules
+	--
+	-- Genre first, since neither fake fixture carries a sprite: a door and a
+	-- window read as two different genres, which is what lets a click on both
+	-- at once (a curtained window) show two parents and not one merged guess.
+	eq("a door genre-names itself", CeroSecModuleMenu.genreName(door),
+		"ContextMenu_CeroSec_GenreDoor")
+	eq("a window differently", CeroSecModuleMenu.genreName(window),
+		"ContextMenu_CeroSec_GenreWindow")
+	check("the two genres disagree",
+		CeroSecModuleMenu.genreName(door) ~= CeroSecModuleMenu.genreName(window))
+	-- The sprite's own name wins when there is one -- RED first: a fake with
+	-- no getSprite at all answers the genre, then a sprite with CustomName on
+	-- it answers that instead.
+	eq("with no sprite, the door falls back to its genre",
+		CeroSecModuleMenu.nameOf(door), "ContextMenu_CeroSec_GenreDoor")
+	_G.Translator = { getMoveableDisplayName = function(n) return n end }
+	door.getSprite = function()
+		return { getProperties = function()
+			return { has = function(_, k) return k == "CustomName" end,
+				get = function(_, k) return "Vault Door" end }
+		end }
+	end
+	eq("a sprite's CustomName beats the genre", CeroSecModuleMenu.nameOf(door),
+		"Vault Door")
+	door.getSprite = nil
+
+	-- Two objects sharing one right-click get two parents, one call each: the
+	-- shared helper hands the SAME sub back the second time it is asked about
+	-- the SAME object, and a different one the same context.
+	do
+		local shared = withVanilla(ContextMenu.new())
+		local subA = CeroSecModuleMenu.fixtureParent(shared, door)
+		local subA2 = CeroSecModuleMenu.fixtureParent(shared, door)
+		check("the same object gets the same submenu twice", subA == subA2)
+		local subB = CeroSecModuleMenu.fixtureParent(shared, window)
+		check("a different object gets a different one", subA ~= subB)
+		local parents = 0
+		for i = 1, #shared.options do
+			if shared.options[i].cerosecFixture ~= nil then parents = parents + 1 end
+		end
+		eq("and the context carries exactly one parent per object", parents, 2)
+	end
+
+	-- The survol itself: RED first (nothing lit before the hover), then lit,
+	-- then dark again -- the exact toggle ISContextMenu drives through
+	-- onHighlight, never called here directly by name.
+	do
+		local lone = withVanilla(ContextMenu.new())
+		CeroSecModuleMenu.fixtureParent(lone, door)
+		local parent = lone.options[1]
+		local menu = { player = 0 }
+		check("nothing is lit before any hover", door.lit == nil and door.outline == nil)
+		parent.onHighlight(parent, menu, true, unpack(parent.onHighlightParams))
+		check("hovering the parent lights the door", door.lit == true and door.outline == true)
+		-- The same call with isHighlighted false is what
+		-- ISContextMenu:checkHighlightedOption makes on every exit -- close,
+		-- Escape, a click elsewhere, another entry hovered -- and this file never
+		-- has to call it by name.
+		parent.onHighlight(parent, menu, false, unpack(parent.onHighlightParams))
+		check("and every exit turns it back off", door.lit == false and door.outline == false)
+	end
 
 	-- EVERY LINE CARRIES ITS DESCRIPTION, and a survivor carrying nothing at all
 	-- is the case this rung exists for: greyed, with what the box does on the
@@ -4682,8 +4755,15 @@ do
 				[CeroSec.MOVABLE_DATA_KEY] = { os = state } } } }
 			iso.hasModData = function() return true end
 			iso.getModData = function() return iso.modData end
+			-- Recorded, not rendered, exactly like the fixture's own -- what a
+			-- row's survol lights is the COMPUTER and this is how the bench tells.
+			iso.setHighlighted = function(_, player, on) iso.lit = on end
+			iso.setHighlightColor = function() end
+			iso.setOutlineHighlight = function(_, player, on) iso.outline = on end
+			iso.setOutlineHighlightCol = function() end
 			luaObject.state = state
 			luaObject.getIsoObject = function() return iso end
+			luaObject.iso = iso
 		end
 		return luaObject
 	end
@@ -4742,16 +4822,36 @@ do
 		CeroSecLinkMenu.OnFillWorldObjectContextMenu(0, context, { object }, false)
 		return context
 	end
-	local function subOn(object)
+	-- Matched by the FRONT of the label and not the whole of it, for the same
+	-- reason rowFor below reads "ContextMenu_CeroSec_LinkTo(" that way: this
+	-- block's own getText keeps its arguments, so the fixture's parent reads
+	-- "ContextMenu_CeroSec_Fixture(Door)" and not the bare key.
+	local function startsWith(label, want)
+		return type(label) == "string" and string.sub(label, 1, #want) == want
+	end
+	-- The fixture's own parent -- "CeroSec: <name>" -- now shared with the
+	-- module menu, one level above where "Link to computer" used to sit.
+	local function fixtureSubOn(object)
 		local context = menuOn(object)
 		for i = 1, #context.subs do
 			local parent = context.subs[i].option
 			if type(parent) == "table"
-					and parent.label == "ContextMenu_CeroSec_Link" then
+					and startsWith(parent.label, "ContextMenu_CeroSec_Fixture") then
 				return context.subs[i].menu, context
 			end
 		end
 		return nil, context
+	end
+	local function subOn(object)
+		local fixtureSub = fixtureSubOn(object)
+		if fixtureSub == nil then return nil end
+		for i = 1, #fixtureSub.subs do
+			local parent = fixtureSub.subs[i].option
+			if type(parent) == "table" and parent.label == "ContextMenu_CeroSec_Link" then
+				return fixtureSub.subs[i].menu
+			end
+		end
+		return nil
 	end
 	-- The rows, in the order the glass shows them.
 	local function rowsOn(object)
@@ -4818,7 +4918,10 @@ do
 		.. "ContextMenu_CeroSec_LinkTo(" .. CeroSec.hostnameFor(16, 14) .. ",8,8) | "
 		.. "ContextMenu_CeroSec_LinkTo(ksp-front-01,12,12)")
 	check("and our entry is at the top of the menu",
-		menuOn(post).labels[1] == "ContextMenu_CeroSec_Link")
+		startsWith(menuOn(post).labels[1], "ContextMenu_CeroSec_Fixture"))
+	local fixSub = fixtureSubOn(post)
+	check("with Link to computer nested inside it",
+		fixSub ~= nil and fixSub.labels[1] == "ContextMenu_CeroSec_Link")
 	-- The floor is in the PRICE and not in the walk: the loft is three tiles away
 	-- and costs seven, which is the one line on this menu where the two numbers
 	-- differ and the reason both of them are shown.
@@ -4869,6 +4972,24 @@ do
 	eq("it says what the cable does, with the price and the computer in it",
 		desc(row), "Tooltip_CeroSec_LinkDesc(12,ksp-front-01)")
 	eq("and has nothing under it", reason(row), nil)
+
+	-- Hovering this line highlights the COMPUTER it names, not the fixture --
+	-- and turns back off exactly like the fixture's own parent does.
+	check("nothing lit before the hover", front.iso.lit == nil)
+	row.onHighlight(row, { player = 0 }, true, unpack(row.onHighlightParams))
+	check("the computer lights up", front.iso.lit == true and front.iso.outline == true)
+	row.onHighlight(row, { player = 0 }, false, unpack(row.onHighlightParams))
+	check("and every exit turns it back off",
+		front.iso.lit == false and front.iso.outline == false)
+	check("the fixture itself is never touched by this row", post.lit == nil)
+
+	-- A row for a machine whose chunk is away carries no highlight at all --
+	-- nothing to call, and nothing that errors for not calling it.
+	objects = { naked }
+	local row2 = rowFor(post, CeroSec.hostnameFor(16, 14))
+	check("an unloaded computer's row has no highlight hook", row2 ~= nil
+		and row2.onHighlight == nil)
+	objects = { front, loft }
 
 	-- The click: the walk first, then the action, carrying the MACHINE's square
 	-- and the price the line showed. Never the hostname -- that is a thing he
@@ -5107,6 +5228,15 @@ do
 	-- much, and one that has a %1 nothing fills prints the digit 0.
 	local NUMBERED = {
 		{ "ContextMenu.json", "ContextMenu_CeroSec_Link", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_Fixture", 1 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreDoor", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreWindow", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreLightSwitch", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreCurtain", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreStove", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreWasher", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreGenerator", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreSet", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_LinkTo", 3 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_Unlink", 1 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkDesc", 2 },
