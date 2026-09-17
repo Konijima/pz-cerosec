@@ -8,6 +8,14 @@ date.
 
 ## Unreleased
 
+- A street lamppost you have cabled can be switched now. It read `on` and then
+  answered `no power` to every order, with the grid up and the lamp burning:
+  the game refuses to let a hand flip a light that stands outside on no floor
+  of any building, and the machine was passing that refusal on as if the
+  current had gone. A relay on the post is what your hand is not. With the grid
+  down and no generator, the lamp still answers `no power`, because then it
+  really has none.
+
 ## 0.5.0 - 2026-09-16
 
 The fixes of the first day of 0.4.0, and what was built while they were being

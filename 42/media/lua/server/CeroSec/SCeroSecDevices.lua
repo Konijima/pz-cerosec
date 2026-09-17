@@ -1960,6 +1960,46 @@ local function syncWave(entry, data, class, sprite)
 	})
 end
 
+-- THROW A LIGHT SWITCH, INCLUDING ONE THE SURVIVOR'S HAND COULD NOT REACH.
+--
+-- IsoLightSwitch.setActive(boolean, boolean, boolean) has a gate of its own
+-- BEFORE it ever asks canSwitchLight -- offsets 22-43, and canSwitchLight is
+-- not invoked until offset 49:
+--
+--   22: getfield  square        26: invokevirtual IsoGridSquare.getRoom
+--   29: ifnonnull 44            33: getfield      canBeModified
+--   36: ifne      44            39: getfield      activated
+--   43: ireturn
+--
+-- which is
+--   if (this.square.getRoom() == null && !this.canBeModified) {
+--       return this.activated;
+--   }
+--
+-- No room and not player-built is a STREET LAMPPOST, and the engine hands the
+-- write straight back, unchanged and silent. Nothing on the read side passes
+-- there -- a light reads through isActivated(), and the constructor's `else`
+-- branch sets a roomless switch activated = true -- which is why a cabled
+-- lamppost reads `on` while a write to it looked like missing current. It is
+-- not missing: canSwitchLight said the grid is there one line up.
+--
+-- canBeModified is the engine's word for "this switch can be worked at all",
+-- and a relay screwed onto the post is exactly that. Lifted for the one call
+-- and put straight back, so setActive does all of its own work -- the light
+-- sources, the global relight, the sync to every client -- rather than this
+-- file doing three quarters of it by hand. Nothing can save the object between
+-- the two lines: it is one Lua call, and save() writes the flag it finds after.
+local function throwLight(object, want)
+	local square = object:getSquare()
+	if square ~= nil and square:getRoom() == nil and not object:getCanBeModified() then
+		object:setCanBeModified(true)
+		object:setActive(want)
+		object:setCanBeModified(false)
+		return
+	end
+	object:setActive(want)
+end
+
 -- The world action, per kind. ok, reason, state.
 local function act(entry, value)
 	local object = entry.object
@@ -1993,7 +2033,7 @@ local function act(entry, value)
 		-- A switch with no bulb in it reads the same way, which is what a
 		-- survivor flicking it would find too.
 		if not object:canSwitchLight() then return false, "no power" end
-		object:setActive(want)
+		throwLight(object, want)
 		-- setActive syncs itself from the server and answers with what it
 		-- settled on; the state is read back rather than assumed.
 		local now = object:isActivated() and "on" or "off"
@@ -2379,7 +2419,8 @@ end
 
 local function throw(blink, on)
 	if not stillThere(blink) then return false end
-	blink.object:setActive(on)
+	-- The same throw a write takes, so a lamppost blinks for `dev find` too.
+	throwLight(blink.object, on)
 	return true
 end
 

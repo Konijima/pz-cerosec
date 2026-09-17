@@ -435,6 +435,14 @@ passé réellement, même quand ça correspond au texte attendu.
      groupe `sudo` : `dev` affiche le tableau, mais `dev light0 off` répond
      `light0: permission denied`. [ ]
 
+98b. **Le lampadaire de rue.** Poser un relais sur un lampadaire dehors,
+     le câbler à la machine, la nuit, réseau debout. `dev lightN` →
+     `lightN: on`. `dev lightN off` → **le lampadaire s'éteint dans le
+     monde** et la ligne répond `lightN: off` ; `dev lightN on` le
+     rallume. Puis couper le réseau (l'électricité du comté tombée, aucune
+     génératrice en portée) : `dev lightN on` répond `lightN: no power` et
+     rien ne bouge. [ ]
+
 99. `dev find lightN` sur une lumière allumée → la ligne répond
      `lightN: blinking`, la lumière clignote environ six secondes (deux
      changements par seconde) et **revient allumée** à la fin. Recommencer sur

@@ -3129,10 +3129,27 @@ local function fakeLight(on, powered)
 	o.getSprite = function() return sprite end
 	o.isActivated = function() return o.activated end
 	o.canSwitchLight = function() return o.powered end
+	-- The engine's "this switch can be worked at all" flag: false on every map
+	-- switch, true on one a player built and can put a battery in
+	-- (IsoLightSwitch.canBeModified, set from the sprite's IsMoveAble).
+	o.modifiable = false
+	o.getCanBeModified = function() return o.modifiable end
+	o.setCanBeModified = function(_, val) o.modifiable = val end
 	o.setActive = function(_, want)
 		-- The real one refuses silently when it cannot be thrown, and syncs
 		-- itself from the server when it can.
 		if not o.powered then return o.activated end
+		-- And it has a second refusal BEFORE the power one, which is the whole
+		-- reason this double carries a square at all (IsoLightSwitch.setActive):
+		--   if (this.square.getRoom() == null && !this.canBeModified) {
+		--       return this.activated;
+		--   }
+		-- Outdoors and not player-built is a street lamppost, and the write goes
+		-- back unchanged and SILENT -- no error, no sync, nothing to see.
+		local square = o.getSquare ~= nil and o:getSquare() or nil
+		if square ~= nil and square:getRoom() == nil and not o.modifiable then
+			return o.activated
+		end
 		o.activated = want
 		o.syncs = o.syncs + 1
 		return o.activated
@@ -23041,6 +23058,84 @@ do
 	local log = bench.fileText("/var/log/cron")
 	check("and the log names the line as it was written",
 		string.find(log, "(admin) CMD (curtains.sh)", 1, true) ~= nil)
+end
+
+--
+-- A STREET LAMPPOST, WIRED, THROWN FROM THE MACHINE
+--
+-- Reported from a game on 2026-09-17: a cabled lamppost READ `on`, which was
+-- true on the screen, and every write to it came back `no power` with the grid
+-- up and the lamp burning. Two answers because two paths -- a read is
+-- isActivated(), a write is setActive() -- and setActive has a gate of its own
+-- that the read never passes:
+--
+--   if (this.square.getRoom() == null && !this.canBeModified) {
+--       return this.activated;
+--   }
+--
+-- Outdoors and not player-built is every lamppost on the map, so the write went
+-- back unchanged and SILENT, and the read-back after it called an untouched
+-- switch missing current.
+--
+-- The lamp is the only light in this county, so it is light0 and the number is
+-- not a question. Its square has no room at all, which is what makes it a
+-- lamppost and not a porch light.
+--
+do
+	local hadWorld = _G.__world
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0} })
+	local post = fit(world.hung(world.square(11, 9, 0, nil), fakeLight(true, true),
+		nil), "relay")
+	-- The cable, because a lamppost is never in a machine's room and the run is
+	-- the only thing that puts it on the list.
+	if not CeroSecModules.linkOn(post, 10, 10, 0, 2) then
+		error("cannot cable the lamppost")
+	end
+	_G.__world = world
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	bench.login("admin")
+	-- The machine's end of the same cable, the way the command leaves it.
+	if not CeroSecOS.addLink(bench.object:osState(), 11, 9, 0) then
+		error("cannot cable the machine")
+	end
+	CeroSecDevices.invalidate()
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+	bench.enter("dev light0")
+	bench.frame()
+	check("the lamppost reads on", bench.painted("light0: on"))
+
+	-- The glass wiped, because what follows is partly an assertion of ABSENCE.
+	bench.enter("clear")
+	bench.enter("echo off > /dev/light0")
+	bench.frame()
+	check("with nothing said about current",
+		not bench.painted("light0: no power"))
+	eq("the switch really moved", post.activated, false)
+	bench.enter("dev light0")
+	bench.frame()
+	check("and the machine reads it off", bench.painted("light0: off"))
+	eq("and the engine flag the throw was lifted through is back down",
+		post.modifiable, false)
+
+	-- THE OTHER HALF, and the reason this is not "a lamppost always has
+	-- current": the grid goes down and there is no generator, so the switch's own
+	-- rule refuses and the refusal is the true one. A fix that had simply stopped
+	-- asking would be green above AND green here.
+	post.powered = false
+	bench.enter("clear")
+	bench.enter("echo on > /dev/light0")
+	bench.frame()
+	check("with the grid down it is no power again",
+		bench.painted("light0: no power"))
+	eq("and nothing moved", post.activated, false)
+
+	_G.__world = hadWorld
+	CeroSecDevices.invalidate()
 end
 
 print("window_test: " .. count .. " checks passed")
