@@ -8,6 +8,10 @@ date.
 
 ## Unreleased
 
+- Every hardware module (Magnetic Contact, Relay, Electric Strike, Door
+  Operator, Curtain Motor, Window Operator, Appliance Switch, Generator
+  Switch, Tuner Control) now looks the same small circuit board when
+  dropped on the ground, instead of some of them looking like scrap metal.
 - Right-clicking a fixture with CeroSec hardware on it now shows one entry,
   "CeroSec: Door" (or Window, Stove, Microwave, and so on), instead of two
   separate menus fighting for the same spot. Hovering it, or a row inside it,

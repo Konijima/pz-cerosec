@@ -1908,6 +1908,14 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      **quitte le sac**, le tournevis reste, et un petit gain d'XP Électricité
      apparaît. Puis sur l'ordinateur : `dev` → l'interrupteur est là,
      `echo off > /dev/light0` éteint bien la pièce. [ ]
+229a. **Tous les modules ont la même allure au sol.** Sortir du sac et
+     déposer par terre, un par un, un `CeroSec.MagneticContact`, un
+     `CeroSec.Relay`, un `CeroSec.ElectricStrike`, un `CeroSec.DoorOperator`,
+     un `CeroSec.CurtainMotor`, un `CeroSec.WindowOperator`, un
+     `CeroSec.ApplianceSwitch`, un `CeroSec.GeneratorSwitch` et un
+     `CeroSec.TunerControl`. Attendu : les neuf ont le même petit boîtier de
+     circuit au sol (le modèle de l'Appliance Switch), aucun ne ressemble
+     plus à un morceau de ferraille. [ ]
 230. **Le contact seul : on regarde, on ne touche pas.** Poser un
      `CeroSec.MagneticContact` sur une porte **extérieure**. `ls -l /dev` → la
      ligne de cette porte porte `cr--r-----` (pas de `w`). En `admin` :
