@@ -1637,6 +1637,182 @@ Commands.uninstallmodule = function(self, playerObj, x, y, z, token, args)
 end
 
 --
+-- Running a cable from a fixture to a machine, and cutting it
+--
+-- Two more commands about a DOOR, named the same way -- the square, the object's
+-- index on it -- with the MACHINE named the same way again: its square, which is
+-- what the cable is written against on both ends. Never the hostname. A hostname is
+-- a thing a player types and changes; a cable is a thing he laid, and a machine
+-- renamed in the morning is the same machine in the afternoon.
+--
+-- Nothing a client sends is believed, and a link has more to disbelieve than a
+-- module does: the distance decides the price, so the price is worked out HERE from
+-- two squares the server read itself. A forged packet cannot buy thirty tiles of
+-- cable for one wire.
+--
+-- The wire leaves his bag BEFORE the cable is written and comes back BEFORE it is
+-- cut, which is the rule the floppy and the modules already run on: a survivor
+-- holding the reel that is also on the fixture is a duplication, and that is the one
+-- failure worse than the gesture not happening.
+
+-- What both cable commands ask before either does anything: the fixture, the
+-- machine, the trade and the tool. Answers the fixture, the machine's object, its
+-- state, the inventory and what the run costs -- or nil.
+function SCeroSecSystem:linkJob(playerObj, x, y, z, args)
+	if type(args) ~= "table" then return nil end
+	if type(args.index) ~= "number" then return nil end
+	if type(args.mx) ~= "number" or type(args.my) ~= "number"
+			or type(args.mz) ~= "number" then
+		return nil
+	end
+	local mx, my, mz = math.floor(args.mx), math.floor(args.my), math.floor(args.mz)
+
+	local object = self:fixtureFor(playerObj, x, y, z, math.floor(args.index))
+	if object == nil then return nil end
+	local square = object:getSquare()
+	if square == nil then return nil end
+
+	-- The machine, and it does NOT have to be switched on: a cable is run to a
+	-- terminal block, not to a login, and a survivor who has to boot the thing
+	-- first to wire his porch light would be a survivor wiring it in the dark. It
+	-- does have to be a machine this build can read the OS of -- that is where the
+	-- other end of the cable is written.
+	local luaObject = self:getLuaObjectAt(mx, my, mz)
+	if luaObject == nil then return nil end
+	local state = luaObject:osState()
+	if state == nil then return nil end
+
+	-- What he knows, and it is the fixture's own trade: anybody who could fit the
+	-- hardware can cable it (CeroSecModules.linkSkill).
+	if playerObj:getPerkLevel(Perks.Electricity) < CeroSecModules.linkSkill(object) then
+		return nil
+	end
+
+	local inv = playerObj:getInventory()
+	if inv == nil then return nil end
+	if inv:getFirstTypeRecurse(CeroSecModules.TOOL) == nil then return nil end
+
+	-- The price, from the two squares and nothing else (CeroSecModules.linkWire).
+	local wire = CeroSecModules.linkWire(square:getX(), square:getY(), square:getZ(),
+		mx, my, mz)
+	return object, luaObject, state, inv, wire, mx, my, mz
+end
+
+-- Take N tiles of wire out of his bags, the way vanilla takes what a job consumes:
+-- getSomeTypeRecurse hands back the items themselves and each one is removed from
+-- the container it was actually in (ISWorldObjectContextMenu.lua:2312, the rope).
+-- How many came out, which is never more than were there.
+function SCeroSecSystem:takeWire(inv, count)
+	local items = inv:getSomeTypeRecurse(CeroSecModules.WIRE, count)
+	if items == nil then return 0 end
+	local taken = 0
+	for i = 0, items:size() - 1 do
+		local item = items:get(i)
+		if item ~= nil and taken < count then
+			local from = item:getContainer() or inv
+			from:Remove(item)
+			if isServer() then sendRemoveItemFromContainer(from, item) end
+			taken = taken + 1
+		end
+	end
+	return taken
+end
+
+-- And back into his hands, one item a tile: a cable that comes off is cable, not
+-- scrap. How many he got.
+function SCeroSecSystem:giveWire(inv, count)
+	local given = 0
+	for _ = 1, count do
+		local item = inv:AddItem(CeroSecModules.WIRE)
+		if item == nil then break end
+		if isServer() then sendAddItemToContainer(inv, item) end
+		given = given + 1
+	end
+	return given
+end
+
+Commands.linkmodule = function(self, playerObj, x, y, z, token, args)
+	local object, luaObject, state, inv, wire, mx, my, mz =
+		self:linkJob(playerObj, x, y, z, args)
+	if object == nil then return end
+
+	-- The rule both sides ask, in the words the menu greys with: whose house it is,
+	-- whether there is hardware here at all, whether this machine is already on the
+	-- list, whether the fixture is full and whether it is out of range
+	-- (CeroSecModules.linkRefusal). The range is in there, so the price below is
+	-- one a cable can be paid for.
+	if CeroSecModules.linkRefusal(object, mx, my, mz, playerObj) ~= nil then return end
+	-- And the machine's own end of the cap, which the fixture cannot know about
+	-- ("full", CeroSecOS.LINKS_PER_MACHINE). Asked before anything is spent and
+	-- WRITTEN after both ends have taken, so there is no order in which a survivor
+	-- pays for a cable the machine has no room for.
+	local book = CeroSecOS.linkSquares(state)
+	if CeroSecOS.linkAt(book, x, y, z) == nil
+			and #book >= CeroSecOS.LINKS_PER_MACHINE then
+		return
+	end
+	if CeroSecModules.wireCount(inv) < wire then return end
+
+	local taken = self:takeWire(inv, wire)
+	if taken < wire then
+		-- He had it a moment ago and does not now. Put back what came out: nothing
+		-- is written anywhere yet, so nothing has been bought.
+		self:giveWire(inv, taken)
+		return
+	end
+
+	if not CeroSecModules.linkOn(object, mx, my, mz, wire) then
+		-- The fixture would not take it. The reel goes back: nothing happened to the
+		-- fixture and nothing should have happened to him.
+		self:giveWire(inv, wire)
+		CeroSec.log(CeroSec.LOG_ERROR,
+			"the cable would not go onto the fixture at " .. x .. "," .. y .. "," .. z)
+		return
+	end
+	-- The fixture has it; now the machine, which is the end the discovery reads.
+	CeroSecOS.addLink(state, x, y, z)
+
+	-- Both ends are written, so the machine's copy goes out to the clients: the menu
+	-- counts a machine's cables off that mirror, and so does the pickup code
+	-- (SCeroSecObject:publishOS).
+	luaObject:publishOS()
+	-- And what any machine in the county can reach just changed (Commands.
+	-- installmodule's own reason, read wider: this one changes it for a machine that
+	-- is not even in the building).
+	CeroSecDevices.invalidate()
+	CeroSec.log("cable of " .. wire .. " run from " .. x .. "," .. y .. "," .. z
+		.. " to " .. mx .. "," .. my .. "," .. mz)
+end
+
+Commands.unlinkmodule = function(self, playerObj, x, y, z, token, args)
+	local object, luaObject, state, inv, _, mx, my, mz =
+		self:linkJob(playerObj, x, y, z, args)
+	if object == nil then return end
+
+	-- Less than running one asks, and one thing differently: a fixture whose module
+	-- has come off is still owed its reel (CeroSecModules.unlinkRefusal).
+	if CeroSecModules.unlinkRefusal(object, mx, my, mz, playerObj) ~= nil then return end
+
+	-- What THIS cable cost, off the fixture -- never worked out again from the two
+	-- squares. A refund is the price that was paid, and a run that was paid for
+	-- under different arithmetic is refunded under the arithmetic it was paid under.
+	local wire = CeroSecModules.wireOf(object, mx, my, mz)
+	if wire == nil then return end
+
+	local given = self:giveWire(inv, wire)
+	if CeroSecModules.unlinkOn(object, mx, my, mz) == nil then
+		-- It is still on the fixture, so the reel is not his: take back what went in.
+		self:takeWire(inv, given)
+		return
+	end
+	CeroSecOS.dropLink(state, x, y, z)
+	luaObject:publishOS()
+	CeroSecDevices.invalidate()
+	CeroSec.log("cable of " .. wire .. " cut at " .. x .. "," .. y .. "," .. z
+		.. " from " .. mx .. "," .. my .. "," .. mz)
+end
+
+--
 -- HOW OFTEN ONE PLAYER MAY OPEN A WINDOW
 --
 -- `open` is the dearest packet in this mod and the only one that is dear on the

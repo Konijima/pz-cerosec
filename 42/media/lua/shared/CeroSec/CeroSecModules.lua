@@ -1093,6 +1093,21 @@ function CeroSecModules.safehouseGated()
 	return group[CeroSecModules.SANDBOX_SAFEHOUSE] == true
 end
 
+-- Whose house is it? nil or "safehouse", and it is one function because it is one
+-- rule: every gesture at a fixture asks it the same way, off the same option, and a
+-- rule written out three times is a rule that will one day answer three things.
+--
+-- It is the one refusal a survivor cannot get round by doing something at the
+-- fixture, which is why it is asked first everywhere it is asked at all.
+local function houseRefusal(object, playerObj)
+	if not CeroSecModules.safehouseGated() or SafeHouse == nil then return nil end
+	local square = object:getSquare()
+	if square == nil then return nil end
+	local house = SafeHouse.getSafeHouse(square)
+	if house ~= nil and not house:playerAllowed(playerObj) then return "safehouse" end
+	return nil
+end
+
 -- Does a survivor have to be standing INSIDE to work on this fixture?
 --
 -- THE ENVELOPE, and only the envelope: the door, the window and the curtain -- the
@@ -1167,15 +1182,8 @@ function CeroSecModules.fittingRefusal(object, id, playerObj)
 	-- anything at the fixture, and it is the one that should not be answered
 	-- round: a stranger told "open it first" has been told what state somebody
 	-- else's door is in.
-	if CeroSecModules.safehouseGated() and SafeHouse ~= nil then
-		local square = object:getSquare()
-		if square ~= nil then
-			local house = SafeHouse.getSafeHouse(square)
-			if house ~= nil and not house:playerAllowed(playerObj) then
-				return "safehouse"
-			end
-		end
-	end
+	local house = houseRefusal(object, playerObj)
+	if house ~= nil then return house end
 
 	if needsInside(object) then
 		local square = playerObj:getCurrentSquare()
@@ -1238,15 +1246,8 @@ function CeroSecModules.linkRefusal(object, x, y, z, playerObj)
 	if not any then return "fixture" end
 
 	-- Whose house, first and for fittingRefusal's own reason.
-	if CeroSecModules.safehouseGated() and SafeHouse ~= nil then
-		local square = object:getSquare()
-		if square ~= nil then
-			local house = SafeHouse.getSafeHouse(square)
-			if house ~= nil and not house:playerAllowed(playerObj) then
-				return "safehouse"
-			end
-		end
-	end
+	local house = houseRefusal(object, playerObj)
+	if house ~= nil then return house end
 
 	local square = object:getSquare()
 	if square == nil then return "fixture" end
@@ -1257,6 +1258,28 @@ function CeroSecModules.linkRefusal(object, x, y, z, playerObj)
 			> CeroSecModules.LINK_RANGE then
 		return "far"
 	end
+	return nil
+end
+
+-- TAKING ONE OFF, which asks less -- and asks one thing differently.
+--
+-- Nothing is paid, so nothing is counted: no range, no room on the fixture, and
+-- nothing about what he is carrying. What is left is whose house it is, for the
+-- reason above read the other way -- a stranger must not be able to cut your door
+-- off your machine -- and that there is a cable here at all.
+--
+-- AND A BARE FIXTURE IS NOT REFUSED HERE, where running a cable to one is. A module
+-- that has come off a fixture somebody had cabled leaves the cable run and the reel
+-- owed: refusing the unlink would be a survivor who can only get his wire back by
+-- taking the door down.
+--
+--   fixture   no fixture, or no cable from that machine to this one
+--   safehouse somebody else's, with the option on
+function CeroSecModules.unlinkRefusal(object, x, y, z, playerObj)
+	if object == nil or playerObj == nil then return "fixture" end
+	local house = houseRefusal(object, playerObj)
+	if house ~= nil then return house end
+	if CeroSecModules.wireOf(object, x, y, z) == nil then return "fixture" end
 	return nil
 end
 

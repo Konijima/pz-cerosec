@@ -197,6 +197,66 @@ function SCeroSecFixtures.dropModules(object)
 	return paid
 end
 
+-- AND THE CABLE, for the reason the modules come off: it was thirty tiles of real
+-- wire an hour ago and the fixture it was run to has just left the world. The
+-- number of tiles paid back, which is 0 for nearly every object this is called with.
+--
+-- ONE END IS ALL THIS FILE WRITES. The machine at the other end keeps a square on
+-- its list and finds nothing there on its next walk, which is the moment that entry
+-- was always going to be dropped -- the cable is on the fixture and the fixture is
+-- the thing that went (the link walk in SCeroSecDevices). Reaching for every machine
+-- named in the list to correct it here would be the walk the pair of lists exists to
+-- avoid, and it would be a walk done from inside an engine hook that is not allowed
+-- to touch the world.
+--
+-- The tiles are paid ONE ITEM A TILE, on the square, exactly as the boxes are: the
+-- refund for a cable is cable. A reel is not an item in this game -- Base.Electric-
+-- Wire is one wire -- so twelve tiles is twelve of them, which is the same pile the
+-- survivor would have dropped there taking it down himself.
+function SCeroSecFixtures.dropLinks(object)
+	if object == nil then return 0 end
+	local links = CeroSecModules.linksOn(object)
+	if #links == 0 then return 0 end
+	local square = object:getSquare()
+	-- dropModules' own reason: no floor, no refund, and the modData goes with the
+	-- object as it always did.
+	if square == nil then return 0 end
+
+	local paid = 0
+	for i = 1, #links do
+		local entry = links[i]
+		local given = 0
+		for _ = 1, entry.wire do
+			if square:AddWorldInventoryItem(CeroSecModules.WIRE, 0, 0, 0) == nil then break end
+			given = given + 1
+		end
+		if given < entry.wire then
+			-- Part of it went onto the floor and the rest would not. The cable is cut
+			-- anyway: what is on the floor is his, and a cable left on a fixture that
+			-- is leaving the world is a cable nobody can ever cut.
+			CeroSec.log(CeroSec.LOG_WARN, "the floor took " .. given .. " of " ..
+				entry.wire .. " tiles of wire off the fixture at " .. square:getX() ..
+				"," .. square:getY() .. "," .. square:getZ())
+		end
+		if CeroSecModules.unlinkOn(object, entry.x, entry.y, entry.z) ~= nil then
+			paid = paid + given
+		end
+	end
+
+	if paid > 0 then
+		-- dropModules' own reason, and the stronger half of it: what a cable reaches
+		-- is a machine that is not in this building at all.
+		CeroSecDevices.invalidate()
+		CeroSec.log(paid .. " tile(s) of wire came off the fixture leaving the world at "
+			.. square:getX() .. "," .. square:getY() .. "," .. square:getZ())
+	end
+	return paid
+end
+
 Events.OnObjectAboutToBeRemoved.Add(function(isoObject)
+	-- Both, and in either order: whichever of the two writes last is the one that
+	-- finds the table empty and takes it away (CeroSecModules.isBare). The boxes go
+	-- first because they are what a survivor came for.
 	SCeroSecFixtures.dropModules(isoObject)
+	SCeroSecFixtures.dropLinks(isoObject)
 end)

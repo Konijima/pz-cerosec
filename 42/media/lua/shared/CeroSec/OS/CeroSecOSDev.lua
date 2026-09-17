@@ -381,6 +381,69 @@ function CeroSecOS.linksOk(links)
 	return true
 end
 
+-- Every square on the machine's list, as copies: never nil, and never the table the
+-- state holds. An entry this build cannot read is not READ -- the same answer
+-- linksOk gives the boot gate, one entry at a time instead of the whole key,
+-- because a walk is not a gate and has somewhere to go.
+function CeroSecOS.linkSquares(state)
+	local out = {}
+	if type(state) ~= "table" or type(state.links) ~= "table" then return out end
+	local links = state.links
+	for i = 1, #links do
+		local entry = links[i]
+		if type(entry) == "table" and type(entry.x) == "number"
+				and type(entry.y) == "number" and type(entry.z) == "number" then
+			out[#out + 1] = { x = entry.x, y = entry.y, z = entry.z }
+		end
+	end
+	return out
+end
+
+-- Which entry of that list is that square, or nil.
+function CeroSecOS.linkAt(links, x, y, z)
+	if type(links) ~= "table" then return nil end
+	for i = 1, #links do
+		local entry = links[i]
+		if type(entry) == "table" and entry.x == x and entry.y == y and entry.z == z then
+			return i
+		end
+	end
+	return nil
+end
+
+-- Put a square on the machine's list. true, or false and the word the menu greys
+-- with: "full" is the machine's end of the cap the fixture's end calls "links".
+--
+-- Writing an entry that is already there is not a failure and not a second entry:
+-- the two ends are written by one gesture and the fixture's end has already refused
+-- a second cable to the same machine, so this is the belt on that (CeroSecModules.
+-- linkOn, "linked").
+function CeroSecOS.addLink(state, x, y, z)
+	if type(state) ~= "table" then return false, "full" end
+	local links = CeroSecOS.linkSquares(state)
+	if CeroSecOS.linkAt(links, x, y, z) ~= nil then
+		state.links = links
+		return true
+	end
+	if #links >= CeroSecOS.LINKS_PER_MACHINE then return false, "full" end
+	links[#links + 1] = { x = x, y = y, z = z }
+	state.links = links
+	return true
+end
+
+-- Take one off. true when there was one, and the key goes with the last of them:
+-- absent is what every machine with no cables looks like, in this save and in every
+-- save written before the key existed.
+function CeroSecOS.dropLink(state, x, y, z)
+	if type(state) ~= "table" then return false end
+	local links = CeroSecOS.linkSquares(state)
+	local at = CeroSecOS.linkAt(links, x, y, z)
+	if at == nil then return false end
+	table.remove(links, at)
+	if #links == 0 then state.links = nil else state.links = links end
+	return true
+end
+
 -- What `dev find` answers about a device a cable was run to, and it is the one
 -- place that sentence is written.
 --
