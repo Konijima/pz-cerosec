@@ -344,6 +344,7 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 	if isOn then
 		local use = CeroSecMenu.addTop(context, getText("ContextMenu_CeroSec_Use"),
 			worldobjects, CeroSecContextMenu.onUse, computer, playerObj, height)
+		CeroSecMenu.setIcon(use)
 
 		local useReason
 		if height == "high" then
@@ -363,6 +364,7 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 	local label = isOn and "ContextMenu_CeroSec_TurnOff" or "ContextMenu_CeroSec_TurnOn"
 	local option = CeroSecMenu.addTop(context, getText(label), worldobjects,
 		CeroSecContextMenu.onToggle, computer, playerObj, height)
+	CeroSecMenu.setIcon(option)
 
 	-- One reason at a time, cheapest first: out of reach beats no access beats no
 	-- power, because a computer nobody can touch never gets as far as its wiring.
@@ -427,6 +429,7 @@ function CeroSecContextMenu.addDevMenu(context, playerObj, computer)
 	-- built in (ISWorldObjectContextMenu.lua:1167-1169). addSubMenu copies the
 	-- child's number onto the parent option, so the child has to exist first.
 	local option = context:addOption(getText("ContextMenu_CeroSec_Dev"))
+	CeroSecMenu.setIcon(option)
 	local sub = ISContextMenu:getNew(context)
 	context:addSubMenu(option, sub)
 

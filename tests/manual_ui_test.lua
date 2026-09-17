@@ -82,6 +82,11 @@ _G.getCore = function()
 		getObjectHighlitedColor = function() return { r = 1, g = 1, b = 1 } end }
 end
 _G.getText = function(key) return key end
+-- A stub texture: distinct from a real one but truthy, so CeroSecMenu.setIcon's
+-- nil check is the thing under test, not what a table equality would already
+-- pass. Some rungs below replace this with a function returning nil, to prove
+-- a missing texture never breaks the menu.
+_G.getTexture = function(path) return { path = path } end
 _G.getMouseX = function() return 0 end
 _G.getMouseY = function() return 0 end
 _G.Events = setmetatable({}, { __index = function(t, key)
@@ -1813,6 +1818,24 @@ do
 	eq("a lit computer with both doors is five entries", #labels, 5)
 	eq("and the dev submenu is the last of them", labels[#labels],
 		"ContextMenu_CeroSec_Dev")
+	-- The icon: every first-level CeroSec entry carries it (RED first, see the
+	-- CeroSecMenu.lua bench below for the mutation), and it never leaks onto a
+	-- row inside a submenu.
+	for i = 1, #menu.options do
+		local opt = menu.options[i]
+		if opt.name == "ContextMenu_CeroSec_Use"
+				or opt.name == "ContextMenu_CeroSec_TurnOff"
+				or opt.name == "ContextMenu_CeroSec_Dev" then
+			check("first-level entry " .. opt.name .. " carries the icon",
+				opt.iconTexture ~= nil)
+		end
+	end
+	for i = 1, #menu.subs do
+		for j = 1, #menu.subs[i].menu.options do
+			check("no submenu row carries the icon",
+				menu.subs[i].menu.options[j].iconTexture == nil)
+		end
+	end
 
 	-- Off: no terminal, so the toggle IS the primary action and leads; and the
 	-- submenu is still there and still last, because neither door asks anything of
@@ -4440,6 +4463,35 @@ do
 			if shared.options[i].cerosecFixture ~= nil then parents = parents + 1 end
 		end
 		eq("and the context carries exactly one parent per object", parents, 2)
+		for i = 1, #shared.options do
+			if shared.options[i].cerosecFixture ~= nil then
+				check("each fixture parent carries the icon",
+					shared.options[i].iconTexture ~= nil)
+			end
+		end
+	end
+
+	-- getTexture answering nil (asset missing, or a build without it) must not
+	-- break the menu: setIcon leaves iconTexture unset rather than crash, and
+	-- the option is otherwise unharmed. Reload the file with getTexture
+	-- replaced, since the loaded texture is cached in a local the first time
+	-- setIcon runs.
+	do
+		local savedGetTexture = _G.getTexture
+		_G.getTexture = function() return nil end
+		local chunk = assert(loadfile(LUA .. "client/CeroSec/CeroSecMenu.lua"))
+		chunk()
+		local lone = withVanilla(ContextMenu.new())
+		CeroSecModuleMenu.fixtureParent(lone, door)
+		local parent
+		for i = 1, #lone.options do
+			if lone.options[i].cerosecFixture == door then parent = lone.options[i] end
+		end
+		check("a missing texture leaves iconTexture unset", parent.iconTexture == nil)
+		check("but the entry itself still exists", parent.name ~= nil)
+		_G.getTexture = savedGetTexture
+		chunk = assert(loadfile(LUA .. "client/CeroSec/CeroSecMenu.lua"))
+		chunk()
 	end
 
 	-- Two of the SAME genre under one click -- two doors, not a door and a

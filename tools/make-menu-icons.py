@@ -28,13 +28,15 @@ sys.path.insert(0, str(REPO / "tools"))
 from cerosec_art import PHOSPHOR, PHOSPHOR_DIM, CRT_BLACK, BONE  # noqa: E402
 
 OUT_DIR = REPO / "42" / "media" / "ui"
-SCRATCH = Path("/tmp/claude-1000/-home-mathieu/09b4a74b-e00f-45b8-b717-d78fa4f22a4c"
-               "/scratchpad/icone")
+# Candidates and the judging sheet are throwaway, never shipped: a plain
+# shared /tmp path, not a path out of anybody's home directory.
+SCRATCH = Path("/tmp/cerosec-menu-icons")
 CANDIDATES_DIR = SCRATCH / "candidates"
 
-# The chosen candidate (see the report): the mod's own ">_" prompt glyph,
-# reduced. This is the only file the mod actually ships.
-WINNER = "a"
+# The chosen candidate (owner's call, 2026-09-17): the green terminal screen
+# with ">_" lit inside, not the bare glyph. This is the only file the mod
+# actually ships.
+WINNER = "b"
 WINNER_NAME = "cerosec-menu.png"
 
 N = 16          # base grid, hand pixel art

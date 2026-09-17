@@ -3461,7 +3461,9 @@ Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
      porte. Sortir la souris du menu, ou le fermer : plus rien n'est surligné
      nulle part. Refaire le clic droit sur un micro-ondes câblé de la même
      façon : le parent lit **CeroSec: Microwave**, jamais **CeroSec: Stove**.
-     [ ]
+     Chaque entrée CeroSec de premier niveau (le parent, **Turn on/off/use
+     computer**, **CeroSec (dev)**) porte la petite icône d'écran vert `>_` à
+     gauche du texte; aucune ligne d'un sous-menu ne l'a. [ ]
 
 ## AK. L'onglet Fichiers dit de qui sont les fichiers (fenêtre de débogage)
 

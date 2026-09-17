@@ -13,6 +13,10 @@ date.
   separate menus fighting for the same spot. Hovering it, or a row inside it,
   highlights the fixture; opening "Link to computer" and hovering a line to a
   named machine highlights that computer instead, never the fixture.
+- Every CeroSec entry at the top of a menu now carries a small green terminal
+  icon, so the mod's own lines ("Turn on/off/use computer", a fixture's
+  "CeroSec: Door", "CeroSec (dev)") are told apart from vanilla's at a glance.
+  Nothing inside a submenu grows one.
 - CeroSec and the Workshop mod *Computer Mod* can be subscribed together now.
   Both put a machine on the same eight desktop computers, and their menu turned
   the screen off again on the first right-click after you had switched a machine

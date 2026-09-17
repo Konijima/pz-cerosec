@@ -214,6 +214,7 @@ function CeroSecModuleMenu.fixtureParent(context, object)
 	end
 	local option = CeroSecMenu.addTop(context,
 		getText("ContextMenu_CeroSec_Fixture", CeroSecModuleMenu.nameOf(object)))
+	CeroSecMenu.setIcon(option)
 	option.cerosecFixture = object
 	CeroSecModuleMenu.highlightOn(option, object)
 	local sub = ISContextMenu:getNew(context)

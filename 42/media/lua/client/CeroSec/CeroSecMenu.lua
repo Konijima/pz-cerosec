@@ -96,3 +96,22 @@ function CeroSecMenu.addTop(context, name, target, onSelect,
 	if type(option) == "table" then option.cerosec = true end
 	return option
 end
+
+-- The menu icon, loaded once and reused: ISContextMenu draws
+-- `option.iconTexture` with drawTextureScaledAspect at
+-- `iconSize = itemHgt - 12` (ISUI/ISContextMenu.lua, the option-row branch),
+-- the same field vanilla's own inventory menu sets
+-- (ISInventoryPaneContextMenu.lua:4652). Fetched lazily, not at require time:
+-- getTexture can run before every asset in media/ui is registered, and a
+-- module-local cache means one file read for however many entries this
+-- right-click adds.
+local iconTexture, iconLoaded = nil, false
+
+function CeroSecMenu.setIcon(option)
+	if not iconLoaded then
+		iconTexture = getTexture("media/ui/cerosec-menu.png")
+		iconLoaded = true
+	end
+	if type(option) ~= "table" or iconTexture == nil then return end
+	option.iconTexture = iconTexture
+end
