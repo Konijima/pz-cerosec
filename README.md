@@ -22,6 +22,11 @@ turned into the Knox County directory.
 Project Zomboid **Build 42** (42.20.0+). Written from scratch, vanilla Lua only,
 no dependencies, server-authoritative. Made by Konijima.
 
+**The [wiki](https://github.com/Konijima/pz-cerosec/wiki) is the reference for
+players, modders and server admins.** Start there before this README for how
+to play, what a sandbox option does, or how the engine works; this file stays
+about building and contributing to the code.
+
 ## Install
 
 **From the Steam Workshop.** Subscribe to *CeroSec* (item `3801094056`) and
