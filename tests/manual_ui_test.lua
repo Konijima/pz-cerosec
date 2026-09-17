@@ -5271,9 +5271,38 @@ do
 
 	-- (e) a south/east door: the inverse, its own tile is the one outside.
 	reachDeviceSq.getBuilding = function() return nil end
+	reachDeviceSq.getRoom = function() return nil end
 	reachOutsideSq.getBuilding = function() return buildingA end
 	row = rowFor(reachDoor, "ksp-reach-01")
 	eq("(e) opposite tile in the building, own outside: reach too",
+		row.notAvailable, true)
+
+	-- (f) a party wall: a door whose OWN tile has a room, in building A, whose
+	-- OPPOSITE tile is building B (scanFarEdge, SCeroSecDevices.lua:1073, only
+	-- lists the far side when the own tile has none -- this door is B's wall,
+	-- never A's). B's machine must not claim reach for a door its /dev never
+	-- lists, or the menu greys the survivor's only way to it.
+	local mitoyenOwnSq = square(12, 10, 0)
+	mitoyenOwnSq.getBuilding = function() return buildingA end
+	mitoyenOwnSq.getRoom = function() return {} end
+	local mitoyenOppSq = square(13, 10, 0)
+	mitoyenOppSq.getBuilding = function() return buildingB end
+	local mitoyenDoor = fixture("IsoDoor", mitoyenOwnSq)
+	mitoyenDoor.modData.cerosec = { relay = true }
+	mitoyenDoor.getOppositeSquare = function() return mitoyenOppSq end
+	check("(f) sanity: the two buildings really differ",
+		mitoyenOwnSq:getBuilding() ~= mitoyenOppSq:getBuilding())
+	check("(f) sanity: the door's own tile really has a room",
+		mitoyenOwnSq:getRoom() ~= nil)
+
+	reachMachineSq.getBuilding = function() return buildingB end
+	row = rowFor(mitoyenDoor, "ksp-reach-01")
+	eq("(f) building B does not reach the neighbour's own-room door",
+		row.notAvailable, nil)
+
+	reachMachineSq.getBuilding = function() return buildingA end
+	row = rowFor(mitoyenDoor, "ksp-reach-01")
+	eq("(f) building A still reaches it, by its own tile",
 		row.notAvailable, true)
 
 	_G.getCell = nil

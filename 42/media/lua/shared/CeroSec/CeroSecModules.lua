@@ -1339,7 +1339,15 @@ local function reachRefusal(object, mx, my, mz)
 
 	local ownSquare = object:getSquare()
 	if ownSquare ~= nil and ownSquare:getBuilding() == building then return "reach" end
-	if needsInside(object) then
+	-- Mirror of SCeroSecDevices.scanFarEdge (SCeroSecDevices.lua:1073): the walk
+	-- only lists a south/east envelope fixture off its OPPOSITE square when its
+	-- OWN square has no room -- a door whose own square has a room is the
+	-- neighbouring building's wall (SCeroSecDevices.lua:~1109-1112) and never
+	-- makes it into this building's /dev. Checking the opposite square without
+	-- that same guard claimed "reach" for a door this machine's /dev never
+	-- lists, which is worse than the original unrefused door: it greys the row
+	-- AND the server refuses, so the machine loses its only way to the door.
+	if needsInside(object) and ownSquare ~= nil and ownSquare:getRoom() == nil then
 		local opposite = object:getOppositeSquare()
 		if opposite ~= nil and opposite:getBuilding() == building then return "reach" end
 	end
