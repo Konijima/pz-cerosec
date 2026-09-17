@@ -53,6 +53,14 @@ date.
   current had gone. A relay on the post is what your hand is not. With the grid
   down and no generator, the lamp still answers `no power`, because then it
   really has none.
+- A computer's power switch is mechanical now, the way an old AT machine's was.
+  One left switched on when the power dies comes back on its own the moment the
+  wire is live again, no hand needed: BIOS, any `@reboot` job, all the way to a
+  bare `login:` prompt. One you turned off on purpose, at the machine or with
+  `halt` or `shutdown`, stays off no matter how many times the power returns.
+  A `reboot` that loses the room's power in its three dark seconds is the first
+  case: the machine comes up when the wire does, though nobody's window comes
+  back with it.
 
 ## 0.5.0 - 2026-09-16
 

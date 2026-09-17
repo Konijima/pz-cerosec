@@ -833,6 +833,10 @@ local function newBench(saved)
 		-- housekeeping section in SCeroSecSystem.lua). The REAL paths into that index
 		-- are benched on their own, in the county block of hostile_test.lua.
 		object.on = true
+		-- And the switch that being on implies: a machine benched as already
+		-- running is a machine whose case was already thrown, same as `on`
+		-- above is set by hand instead of through turnOn.
+		object.switchOn = true
 		object:reindex()
 		object.console = CeroSec.newConsole()
 		object.consoleChecked = true
@@ -2320,14 +2324,81 @@ do
 	eq("and nobody is watching it", bench.object.watchers, nil)
 end
 
--- The power went while the machine was down, which is the one thing a real
--- machine cannot come back from on its own.
+-- The block below moves the game clock with bench.minute(): saved here and put
+-- back once it is done with, so the fixed times the "date" tests further down
+-- expect are the ones they still get.
+local __switchClockHour, __switchClockMin, __switchClockDay =
+	_G.__gameTime.hour, _G.__gameTime.minutes, _G.__gameTime.day
+
+-- The minute hand falls inside a reboot's three dark seconds, and the power
+-- never went anywhere. The machine is off with its switch on, which is the
+-- restart list's own shape, but this one is not the sweep's to wake: the boot
+-- it is owed is resumeReboot's, and so are the windows of everybody who was at
+-- the glass when it went dark. A turnOn from the sweep got it up early, and
+-- resumeReboot then found it already on and returned at its first line --
+-- bootScreen and reopenFor never ran and the watchers lost their window for
+-- good.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+
+	bench.sounds = {}
+	bench.object.playSound = function(_, name) bench.sounds[#bench.sounds + 1] = name end
+	local function bootCount()
+		local n = 0
+		for i = 1, #bench.sounds do
+			if bench.sounds[i] == "CeroSecBootStart" then n = n + 1 end
+		end
+		return n
+	end
+
+	bench.enter("reboot")
+	bench.frame()
+	eq("it is dark", bench.object.on, false)
+	eq("the switch was never thrown", bench.object.switchOn, true)
+	check("and the reboot is pending", bench.object.rebooting ~= nil)
+	eq("the window it had shut", #bench.windows, 1)
+
+	-- The sweep, inside the dark. The wire never left, so the restart list's
+	-- one question answers yes and the old code booted it here. bench.minute
+	-- carries the scheduler four passes (400ms) after the sweep, which is well
+	-- inside CeroSec.REBOOT_DARK_MS: the dark is still on when it returns.
+	bench.minute()
+	eq("the sweep left it dark", bench.object.on, false)
+	eq("the tile with it", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	check("and the reboot still pending", bench.object.rebooting ~= nil)
+	eq("nothing booted", bootCount(), 0)
+
+	waitOutTheDark(bench)
+	eq("then the reboot itself brought it up", bench.object.on, true)
+	eq("the tile is lit", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+	eq("one boot, not two", bootCount(), 1)
+	eq("and the window came back", #bench.windows, 2)
+	local back = bench.windows[2]
+	eq("at the same machine", back.cx, 10)
+	eq("watching the BIOS type itself out", back.revealing, true)
+end
+
+-- The power went while the machine was down. A real AT machine's switch is
+-- still on through a reboot -- the case never told it otherwise -- so it does
+-- not need a hand at all: the next minute the wire is live again, the sweep
+-- is what brings it back, exactly as SCeroSecSystem:checkPower's restart list
+-- does for any machine whose switch is on and light is not.
 do
 	local bench = newBench()
 	local kit = embody(bench)
 	bench.login("root")
 	bench.enter("reboot")
 	bench.frame()
+
+	-- A minute inside the dark first, so the crossed case is the one measured:
+	-- the sweep has seen this machine with its reboot pending and stepped over
+	-- it. Stepped over and NOT taken out of the restart list, because the reboot
+	-- is about to fail for want of power -- a machine dropped from the index
+	-- here is a machine nothing ever asks the power question of again.
+	bench.minute()
+	check("the sweep left the reboot pending", bench.object.rebooting ~= nil)
 	bench.object.hasPower = function() return false end
 
 	waitOutTheDark(bench)
@@ -2335,13 +2406,127 @@ do
 	eq("the tile stays unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
 	eq("no window came back", #bench.windows, 1)
 	eq("and nothing is pending any more", bench.object.rebooting, nil)
+	eq("but the switch is still on", bench.object.switchOn, true)
 
-	-- And a hand at the switch is what brings it back, once there is a wire again.
+	-- A minute with no power yet: still nothing to see, and the sweep costs
+	-- this machine one visit and not a boot.
+	bench.minute()
+	eq("still dark with no wire", bench.object.on, false)
+
+	-- And the wire returns, with no hand anywhere near the case.
 	bench.object.hasPower = function() return true end
-	bench.object:toggle()
-	eq("switched on by hand", bench.object.on, true)
+	bench.minute()
+	eq("the sweep switched it back on", bench.object.on, true)
 	eq("and the tile with it", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
 end
+
+-- A hand at the switch is a different thing from the wire going: `halt`
+-- throws it, so an outage after it finds nothing to restart.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("halt")
+	bench.frame()
+	eq("halt takes it down", bench.object.on, false)
+	eq("and the switch goes with it", bench.object.switchOn, false)
+
+	bench.object.hasPower = function() return false end
+	bench.minute()
+	bench.object.hasPower = function() return true end
+	bench.minute()
+	eq("a voluntary halt does not come back on its own", bench.object.on, false)
+	eq("the tile stays unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+end
+
+-- A save from before this field existed: nothing has ever written `switchOn`
+-- true on this machine, which is what "absent" reads as (CeroSecDefs.lua's
+-- OBJECT_SAVE_KEYS note). It stays off exactly as it always has.
+do
+	local bench = newBench()
+	embody(bench)
+	-- Switched off the ordinary way first, then the field itself taken away:
+	-- a fixture standing in for a save from before it was ever written, and
+	-- not merely a fresh one that has never been touched.
+	bench.object:turnOff(true)
+	bench.object.switchOn = nil
+	bench.object:reindex()
+	eq("no field at all, same as a save from before it existed",
+		bench.object.switchOn, nil)
+	bench.object.hasPower = function() return true end
+	bench.minute()
+	eq("a save with no field stays off, exactly as before", bench.object.on, false)
+end
+
+-- Picked up and put down again: the wire is unplugged, whatever the switch
+-- was left at, so there is nothing for a returning grid to restart.
+do
+	local bench = newBench()
+	embody(bench)
+	bench.object:turnOn()
+	eq("switch on to begin with", bench.object.switchOn, true)
+
+	local iso = {}
+	iso.modData = {}
+	iso.getSpriteName = function() return CeroSec.SPRITES_OFF["S"] end
+	iso.hasModData = function() return true end
+	iso.getModData = function() return iso.modData end
+	iso.transmitModData = function() end
+	bench.object:resetForPlacement(iso)
+	eq("carried off, unplugged: the switch goes off with it",
+		bench.object.switchOn, false)
+	eq("and it is dark", bench.object.on, false)
+
+	bench.object.hasPower = function() return true end
+	bench.minute()
+	eq("power back does not restart a machine that was carried",
+		bench.object.on, false)
+end
+
+-- The wire flickers: up for one minute, gone again before anybody could have
+-- looked, up again a minute later. Two returns, two boots, neither more.
+do
+	local bench = newBench()
+	embody(bench)
+	bench.login("root")
+	local state = bench.object:osState()
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/root",
+		"@reboot echo up", false, 100)
+	bench.object:turnOff()
+
+	bench.sounds = {}
+	bench.object.playSound = function(_, name) bench.sounds[#bench.sounds + 1] = name end
+	local function bootCount()
+		local n = 0
+		for i = 1, #bench.sounds do
+			if bench.sounds[i] == "CeroSecBootStart" then n = n + 1 end
+		end
+		return n
+	end
+
+	bench.object.hasPower = function() return true end
+	bench.minute()
+	eq("it came up", bench.object.on, true)
+	eq("booted once", bootCount(), 1)
+
+	bench.object.hasPower = function() return false end
+	bench.minute()
+	eq("and dark again", bench.object.on, false)
+	eq("the switch is still on: this was an outage, not a hand",
+		bench.object.switchOn, true)
+
+	bench.object.hasPower = function() return true end
+	bench.minute()
+	eq("it came up again", bench.object.on, true)
+	eq("two returns, two boots, not more", bootCount(), 2)
+
+	bench.tick(4)
+	local mail = bench.fileText("/var/mail/root")
+	check("@reboot ran on both returns", mail ~= nil)
+end
+
+_G.__gameTime.hour, _G.__gameTime.minutes, _G.__gameTime.day =
+	__switchClockHour, __switchClockMin, __switchClockDay
 
 -- Switched on by hand while it was dark, and switched off again. The order that
 -- was given was a reboot, but a hand at the case has overtaken it: the machine
