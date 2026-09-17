@@ -309,9 +309,10 @@ module CeroSec
        WorldStaticModel names a VANILLA model in every case, the way the manual
        items name Book and BookClosedGround: this mod ships no mesh for these
        and a made-up name is an item that drops on the floor as nothing at all.
-       MotionSensor for the contact (it is a sensor in a box), ElectronicsScrap
-       for the relay (a board), ScrapMetal for the strike and the operator (a
-       lump of metal is what either looks like lying on a road).
+       All four use ElectronicsScrap (a board): a survivor cannot tell a relay
+       from a contact from a strike by its box on the ground either, so one
+       model reads truer than a lump of scrap metal for the two that used to
+       carry it.
 
        The weights are set against the vanilla items they sit between rather
        than against a feeling: Base.ElectronicsScrap is 0.1,
@@ -329,7 +330,7 @@ module CeroSec
         ItemType = base:normal,
         Weight = 0.2,
         Icon = CeroSecMagneticContact,
-        WorldStaticModel = MotionSensor,
+        WorldStaticModel = ElectronicsScrap,
     }
 
     item Relay
@@ -349,7 +350,7 @@ module CeroSec
         ItemType = base:normal,
         Weight = 1.0,
         Icon = CeroSecElectricStrike,
-        WorldStaticModel = ScrapMetal,
+        WorldStaticModel = ElectronicsScrap,
     }
 
     item DoorOperator
@@ -359,7 +360,7 @@ module CeroSec
         ItemType = base:normal,
         Weight = 2.0,
         Icon = CeroSecDoorOperator,
-        WorldStaticModel = ScrapMetal,
+        WorldStaticModel = ElectronicsScrap,
     }
 
     /* THE FOUR THE MOTOR RUNG ADDED, and the same keys as the first four for
@@ -397,7 +398,7 @@ module CeroSec
         Weight = 1.0,
         Icon = CeroSecCurtainMotor,
         Tooltip = Tooltip_item_CeroSecCurtainMotor,
-        WorldStaticModel = ScrapMetal,
+        WorldStaticModel = ElectronicsScrap,
     }
 
     item WindowOperator
@@ -408,7 +409,7 @@ module CeroSec
         Weight = 1.5,
         Icon = CeroSecWindowOperator,
         Tooltip = Tooltip_item_CeroSecWindowOperator,
-        WorldStaticModel = ScrapMetal,
+        WorldStaticModel = ElectronicsScrap,
     }
 
     item ApplianceSwitch
@@ -430,7 +431,7 @@ module CeroSec
         Weight = 1.0,
         Icon = CeroSecGeneratorSwitch,
         Tooltip = Tooltip_item_CeroSecGeneratorSwitch,
-        WorldStaticModel = ScrapMetal,
+        WorldStaticModel = ElectronicsScrap,
     }
 
     /* The tuner control: the box that switches a television or a radio set on and

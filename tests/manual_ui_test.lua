@@ -2837,27 +2837,27 @@ do
 	-- item that lies on the floor as nothing at all.
 	local MODULES = {
 		{ item = "MagneticContact", icon = "CeroSecMagneticContact",
-			name = "Magnetic Contact", model = "MotionSensor" },
+			name = "Magnetic Contact", model = "ElectronicsScrap" },
 		{ item = "Relay", icon = "CeroSecRelay",
 			name = "Relay Module", model = "ElectronicsScrap" },
 		{ item = "ElectricStrike", icon = "CeroSecElectricStrike",
-			name = "Electric Strike", model = "ScrapMetal" },
+			name = "Electric Strike", model = "ElectronicsScrap" },
 		{ item = "DoorOperator", icon = "CeroSecDoorOperator",
-			name = "Door Operator", model = "ScrapMetal" },
+			name = "Door Operator", model = "ElectronicsScrap" },
 		-- And the motor rung's four. Same shape, same keys; what they add is a
 		-- Tooltip each, because what an "Appliance Switch" fits is not something
 		-- its name tells anybody.
 		{ item = "CurtainMotor", icon = "CeroSecCurtainMotor",
-			name = "Curtain Motor", model = "ScrapMetal",
+			name = "Curtain Motor", model = "ElectronicsScrap",
 			tip = "Tooltip_item_CeroSecCurtainMotor" },
 		{ item = "WindowOperator", icon = "CeroSecWindowOperator",
-			name = "Window Operator", model = "ScrapMetal",
+			name = "Window Operator", model = "ElectronicsScrap",
 			tip = "Tooltip_item_CeroSecWindowOperator" },
 		{ item = "ApplianceSwitch", icon = "CeroSecApplianceSwitch",
 			name = "Appliance Switch", model = "ElectronicsScrap",
 			tip = "Tooltip_item_CeroSecApplianceSwitch" },
 		{ item = "GeneratorSwitch", icon = "CeroSecGeneratorSwitch",
-			name = "Generator Switch", model = "ScrapMetal",
+			name = "Generator Switch", model = "ElectronicsScrap",
 			tip = "Tooltip_item_CeroSecGeneratorSwitch" },
 		-- And the tuner rung's one, on the end of the end: the appliance switch's
 		-- weight and the appliance switch's world model, because a board on the
