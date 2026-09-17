@@ -1589,15 +1589,20 @@ local DEV_OPPOSITE = {
 	rx      = { on = "off", off = "on" },
 }
 
--- The table, whole or filtered by kind. A device the machine remembers the
--- number of and cannot reach is not on it, exactly as `ls /dev` has it.
-local function devTable(state, session, kind)
+-- The SET, whole or filtered by kind, in the order it is printed in. A device
+-- the machine remembers the number of and cannot reach is not in it, exactly as
+-- `ls /dev` has it. nil plus a reason about /dev where the directory itself is
+-- the refusal; the caller signs that one, because it is the command's.
+--
+-- One function and not two, because `dev <kind>` and `dev <kind> <value>` have to
+-- be the same set in the same order: a broadcast that worked a device the listing
+-- above it did not show -- or worked them in another order -- would be a listing
+-- nobody could read the broadcast against.
+local function devSet(state, session, kind)
 	local dir, reason = CeroSecOS.getNode(state, session, CeroSecOS.DEV_PATH)
-	if dir == nil then return fail("dev", CeroSecOS.DEV_PATH, reason) end
-	if dir.type ~= "dir" then return fail("dev", CeroSecOS.DEV_PATH, "not a directory") end
-	if not CeroSecOS.can(state, session, dir, "r") then
-		return fail("dev", CeroSecOS.DEV_PATH, "permission denied")
-	end
+	if dir == nil then return nil, reason end
+	if dir.type ~= "dir" then return nil, "not a directory" end
+	if not CeroSecOS.can(state, session, dir, "r") then return nil, "permission denied" end
 
 	local names = CeroSecOS.childNames(dir)
 	local found = {}
@@ -1613,16 +1618,98 @@ local function devTable(state, session, kind)
 		end
 	end
 	table.sort(found, devBefore)
+	return found
+end
+
+local function devTable(state, session, kind)
+	local found, reason = devSet(state, session, kind)
+	if found == nil then return fail("dev", CeroSecOS.DEV_PATH, reason) end
 
 	local out = {}
 	for i = 1, #found do out[i] = devRow(found[i]) end
 	return true, out
 end
 
+-- ONE DEVICE, ONE WORD: the whole of what `dev <id> <value>` does to the device
+-- it names -- the write gate, the world action, the refusals in the device's own
+-- name -- so that a kind's whole set goes down exactly this road and a broadcast
+-- is never a second road to a light switch. Answers the one line the command
+-- prints about it, or false and the refusal to print instead.
+local function devOne(state, session, node, value, env)
+	if value == "toggle" then
+		-- Read first, for the permission and for every refusal a read makes: a
+		-- device nobody may read is not a device anybody may toggle.
+		local text, refusal = CeroSecOS.devRead(state, session, node)
+		if text == nil then return false, refusal end
+		-- And then the opposite of the STATE and not of what the read printed.
+		-- They are the same string on every kind but one: a generator reads `on
+		-- fuel 62 condition 80 connected`, and an opposite table keyed by that
+		-- sentence would be a table with no entry for anything.
+		local opposites = DEV_OPPOSITE[node.kind]
+		value = nil
+		if opposites ~= nil then value = opposites[node.state] end
+		if value == nil then return false, node.id .. ": cannot toggle" end
+	end
+
+	local done, refusal = CeroSecOS.devWrite(state, session, node, value, env)
+	if done == nil then return false, refusal end
+	-- The state the world was re-read for, off the node devWrite put it on --
+	-- not read again through devRead, because a machine that took the order and
+	-- then refused to say what happened would be worse than one that never took
+	-- it. The whole line, so that `dev gen0 on` answers the same sentence
+	-- `cat /dev/gen0` would.
+	return true, node.id .. ": " .. CeroSecOS.devText(node)
+end
+
+-- A WHOLE KIND, one word, one answer line per device, in the listing's order.
+-- Every device goes through devOne, so each one is gated, worked and refused
+-- exactly as the same word typed at its own id would have been -- and the answer
+-- to `dev window close` is the answers to three `dev windowN close` lines, in
+-- the order `dev window` printed them.
+--
+-- The status is a command's and not a device's: any refusal and the line failed,
+-- which is `cat a nosuch b`'s rule and every other command's on this machine that
+-- does one thing per operand. A failed command's output stays on the GLASS, so
+-- `dev window close > log` writes nothing when one window was boarded; a script
+-- that wants the answers device by device wants the loop the manual's page shows.
+--
+-- A kind the building has none of is no lines and a status of nought, which is
+-- what the loop over an empty listing does too. There is nothing to refuse: the
+-- kind is real (the caller checked it against the vocabulary) and every device of
+-- it was worked.
+--
+-- What it COST the machine, past the one command the shell charged: a broadcast
+-- does the work of as many commands as there are devices in the set, and a budget
+-- that could not see thirty world writes behind one word would not be a budget
+-- (the `cost` field of the shell's table, and CeroSecOSVM's debt).
+local function devBroadcast(state, session, kind, value, env, sh)
+	local found, reason = devSet(state, session, kind)
+	if found == nil then return fail("dev", CeroSecOS.DEV_PATH, reason) end
+
+	local out, ok = {}, true
+	for i = 1, #found do
+		local done, line = devOne(state, session, found[i], value, env)
+		if not done then ok = false end
+		out[#out + 1] = line
+	end
+	if type(sh) == "table" and #found > 1 then
+		sh.cost = (#found - 1) * CeroSecOS.STEP_COST_COMMAND
+	end
+	return ok, out
+end
+
 -- Four words and not three, for one shape: a dial is a name and a NUMBER, so
 -- `dev tv0 channel 203` is what `dev light0 off` is for everything else. Nothing
 -- else here takes four, and a fifth is the usage line as it always was.
-commands.dev = function(state, session, args, env)
+--
+-- And the word in the second slot is a KIND or an id, which is the fork the usage
+-- line has always drawn (`dev [kind|id [value|toggle]|find <id>]`): the value
+-- belongs to the slot and not to the id, so `dev window close` shuts every window
+-- the machine can reach and `dev window0 close` shuts the one. There is no kind
+-- that means "everything", on purpose -- `off` means a different thing to a light
+-- than to a generator, and `dev light off` then `dev stove off` is two lines,
+-- which is how an administrator in 1993 would have written it.
+commands.dev = function(state, session, args, env, stdin, sh)
 	if #args > 4 then return usage("dev") end
 	if #args == 1 then return devTable(state, session, nil) end
 
@@ -1639,10 +1726,34 @@ commands.dev = function(state, session, args, env)
 		if how == nil then return false, { refusal } end
 		return true, { target.id .. ": " .. how }
 	end
-	if #args == 2 and not looksLikeId(word) then
+	-- A KIND, with or without a word after it. The fork is the word itself and not
+	-- how many words came after it: an id is a kind with a number on the end and a
+	-- kind never has one, so `dev window` and `dev window close` are the same word
+	-- in the same slot and are read the same way. A word that is neither -- no
+	-- number on the end and nothing the core has a vocabulary for -- is an unknown
+	-- kind whatever follows it, which is where `dev light0/x on` moved to: it was
+	-- never an id, and the answer to it is now the answer `dev light0/x` alone has
+	-- always given.
+	if not looksLikeId(word) then
 		-- A kind is one the core has words for, and no other.
 		if CeroSecOS.DEV_VALUES[word] == nil then return fail("dev", word, "unknown kind") end
-		return devTable(state, session, word)
+		if #args == 2 then return devTable(state, session, word) end
+		-- `dev <kind> find` is not a thing. find points at ONE device -- that is the
+		-- whole of what it is for, telling one of thirty-five lights from the others
+		-- -- and thirty-five lights blinking at once points at nothing. So the third
+		-- word here is a value and "find" is not one of any kind's, and the answer is
+		-- the grammar rather than "invalid value": `dev find <id>` is the line that
+		-- was meant, and the usage line is where it is written.
+		if args[3] == "find" then return usage("dev") end
+		local value = args[3]
+		-- The dial, on every set of the kind at once. Judged against the KIND, which
+		-- is the only thing a broadcast has to judge it against and the same table
+		-- CeroSecOS.devArg reads for one device (DEV_ARGS is keyed by kind).
+		if #args == 4 then
+			value = args[3] .. " " .. args[4]
+			if CeroSecOS.devArg(word, value) == nil then return usage("dev") end
+		end
+		return devBroadcast(state, session, word, value, env, sh)
 	end
 
 	local node = devNodeOf(state, session, word)
@@ -1670,29 +1781,9 @@ commands.dev = function(state, session, args, env)
 		value = args[3] .. " " .. args[4]
 		if CeroSecOS.devArg(node.kind, value) == nil then return usage("dev") end
 	end
-	if value == "toggle" then
-		-- Read first, for the permission and for every refusal a read makes: a
-		-- device nobody may read is not a device anybody may toggle.
-		local text, refusal = CeroSecOS.devRead(state, session, node)
-		if text == nil then return false, { refusal } end
-		-- And then the opposite of the STATE and not of what the read printed.
-		-- They are the same string on every kind but one: a generator reads `on
-		-- fuel 62 condition 80 connected`, and an opposite table keyed by that
-		-- sentence would be a table with no entry for anything.
-		local opposites = DEV_OPPOSITE[node.kind]
-		value = nil
-		if opposites ~= nil then value = opposites[node.state] end
-		if value == nil then return false, { node.id .. ": cannot toggle" } end
-	end
 
-	local done, refusal = CeroSecOS.devWrite(state, session, node, value, env)
-	if done == nil then return false, { refusal } end
-	-- The state the world was re-read for, off the node devWrite put it on --
-	-- not read again through devRead, because a machine that took the order and
-	-- then refused to say what happened would be worse than one that never took
-	-- it. The whole line, so that `dev gen0 on` answers the same sentence
-	-- `cat /dev/gen0` would.
-	return true, { node.id .. ": " .. CeroSecOS.devText(node) }
+	local done, line = devOne(state, session, node, value, env)
+	return done, { line }
 end
 
 commands.rm = function(state, session, args, env)

@@ -52,6 +52,22 @@ node keep the filesystem's grammar (`rm: /dev/light0: is a device`,
 `mkdir` and `touch` under `/dev` answer `/dev: read-only`). The listing is
 alphabetical, like every other listing on this machine.
 
+**A whole kind at once.** `dev <kind> <value|toggle>` — `dev window close`, and
+the dial too (`dev tv channel 203`) — is the shell's own loop over one kind, and
+it is a loop and not a second road to a device: the set is exactly what
+`dev <kind>` lists, in the same order (`devSet` in `CeroSecOSShell.lua` answers
+the sorted nodes and both the table and the broadcast read it), and every device
+goes through the same `devOne` that `dev <id> <value>` goes through — the mode,
+`CeroSecOS.DEV_VALUES`, `devices.write` and the refusal in the device's own name.
+So a broadcast is never a way round a `660`, `toggle` is each device's own
+`DEV_OPPOSITE` entry looked up on its own state, and what is printed is one
+`<id>: <state>` line per device. Any refusal fails the command (`cat a nosuch b`'s
+rule, so the lines stay on the glass and out of a redirect); an empty set is no
+lines and a status of nought. The extra devices are charged to the step budget at
+`STEP_COST_COMMAND` each, since the work is the work of as many commands as there
+are devices and the budget has to see it. There is **no** kind across kinds: a
+value means a different thing per kind, and `DEV_VALUES` is what a kind is.
+
 **Discovery** is `SCeroSecDevices.find(x, y, z)`, a walk of the world and not a
 book kept up to date, because the answer is only true for the moment it is asked
 — and it is not walked twice inside `CeroSecDevices.CACHE_MS` (see *The `/dev`
@@ -87,7 +103,7 @@ them (offsets 0—141). So a door in a room's north or west wall stands on the r
 own square and the walk above finds it, while a door in the room's **south or east**
 wall stands on the neighbouring square — the pavement, in no room at all, and a
 square the walk of the building's rooms never visited. Every south and east door,
-window and sheet of every building was invisible to `/dev` until 0.4.1, while the
+window and sheet of every building was invisible to `/dev` until 0.5.0, while the
 north and west ones were listed: a module fitted to a front door that never became
 a device.
 

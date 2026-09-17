@@ -132,7 +132,7 @@ with what to look at on the glass.
 Said out loud, release by release, because the compatibility contract only allows
 a new sandbox option to change a world if the release notes say so plainly.
 
-### 0.4.1
+### 0.5.0
 
 **Every machine gains `/usr/local/bin` when it loads.** The three directories
 (`/usr`, `/usr/local`, `/usr/local/bin`, root:root 755) are made on a machine

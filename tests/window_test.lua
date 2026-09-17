@@ -3719,6 +3719,29 @@ do
 	check("and said so", bench.painted("light0: on"))
 
 	--
+	-- A WHOLE KIND IN ONE WORD, through the real discovery and into the real
+	-- objects: `dev light off` is every light switch this machine can reach, and
+	-- what is proved here is the wire -- two Java objects moved and two broadcasts
+	-- sent by ONE typed line, which is the thing a bench on the engine's side of
+	-- the line cannot see (os_test's 21t holds the order, the status and the
+	-- refusals).
+	--
+	eq("both lights are burning", kit.light0.activated and kit.light1.activated, true)
+	local was0, was1 = kit.light0.syncs, kit.light1.syncs
+	bench.enter("dev light off")
+	bench.frame()
+	eq("the office switch moved", kit.light0.activated, false)
+	eq("and the hallway's did too", kit.light1.activated, false)
+	eq("the office light was broadcast", kit.light0.syncs, was0 + 1)
+	eq("and so was the hallway's", kit.light1.syncs, was1 + 1)
+	check("and each answered for itself", bench.painted("light0: off"))
+	check("the second as well", bench.painted("light1: off"))
+	-- Put the office light back, so the lines below start where they always did.
+	bench.enter("dev light0 on")
+	bench.frame()
+	eq("the office light is on again", kit.light0.activated, true)
+
+	--
 	-- Doors: the thing that opens, beside the key that holds it
 	--
 	-- door0 and lock0 are ONE object. The front door was unlocked a few lines

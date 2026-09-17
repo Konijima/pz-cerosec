@@ -679,17 +679,31 @@ for vi = 1, #volumes do
 		-- forbidding the next honest page rather than catching a chapter that has
 		-- swallowed a book. The 1000-character page and the volume's own 50..95 are
 		-- what keep a chapter a chapter, and neither of those moved.
-		-- NINETEEN for the cable, chapter 6 of the same volume for the seventh time
-		-- and for the reason the other six were earned -- two pages this time, because
-		-- a cable is two things a reader has to be told apart: what it costs and how
-		-- it is run, and what the menu refuses. Neither belongs anywhere but beside
-		-- the page that says how a box goes on, and one page holding both would be a
-		-- page over the ceiling. Seventeen was exactly where the chapter already
-		-- stood, which is a bound forbidding the next honest page rather than catching
-		-- a chapter that has swallowed a book. The 1000-character page and the
-		-- volume's own bound are what keep a chapter a chapter, and neither moved.
-		check(cwhere .. " (" .. ch.title .. ") has 3..19 pages (" .. n .. ")",
-			n >= 3 and n <= 19)
+		-- EIGHTEEN for the word that works a whole kind, chapter 6 of the same volume
+		-- for the sixth time and for the reason the other five were earned. The value
+		-- belongs to the SLOT and not to the id, so `dev window close` is every window
+		-- in the building -- which is the one thing a reader cannot be told anywhere
+		-- but beside the page that says how one device is worked, and it comes with
+		-- the two facts that go with it: there is no kind meaning everything, and a
+		-- line that half failed keeps its answers off your file. That page was at
+		-- exactly 1000 characters against a ceiling of 1000, so the choice was a page
+		-- cut in half or a rule told in half. Seventeen was exactly where the chapter
+		-- already stood, which is a bound forbidding the next honest page rather than
+		-- catching a chapter that has swallowed a book. The 1000-character page and
+		-- the volume's own 50..95 are what keep a chapter a chapter, and neither of
+		-- those moved.
+		-- TWENTY for the cable, chapter 6 of the same volume for the seventh time and
+		-- for the reason the other six were earned -- two pages this time, because a
+		-- cable is two things a reader must be told apart: what it costs and how it is
+		-- run, and what the menu refuses when it will not run one. Neither belongs
+		-- anywhere but beside the page that says how a box goes on, and one page
+		-- holding both would be a page over the ceiling. Eighteen was exactly where
+		-- the chapter stood once the word that works a whole kind had its own page,
+		-- which is a bound forbidding the next honest page rather than catching a
+		-- chapter that has swallowed a book. The 1000-character page and the volume's
+		-- own bound are what keep a chapter a chapter, and neither of those moved.
+		check(cwhere .. " (" .. ch.title .. ") has 3..20 pages (" .. n .. ")",
+			n >= 3 and n <= 20)
 		vpages = vpages + n
 
 		for pi = 1, n do
@@ -749,14 +763,19 @@ for vi = 1, #volumes do
 	-- appliances, the generator's own line, and where a small motor comes from --
 	-- plus two of the appendix for their refusals. Eighty-five was where Volume 2
 	-- stood before them and ninety-two is where it stands now.
-	-- NINETY-SEVEN since the cable, and it moved for the sixth time for the reason
-	-- it moved the first five: the two new pages are chapter 6's, and ninety-five was
-	-- exactly where Volume 2 then stood. A bound resting on the current number
-	-- forbids the next honest page instead of catching a volume that has lost half of
-	-- itself, which is what it is for. The LOWER bound is that half, and it has not
-	-- moved once.
-	check(where .. " has 50..97 pages (" .. vpages .. ")",
-		vpages >= 50 and vpages <= 97)
+	-- A HUNDRED since the word that works a whole kind, and it moved for the sixth
+	-- time for the reason it moved the first five: the page is one page of chapter 6,
+	-- and ninety-five was exactly where Volume 2 then stood -- a bound resting on the
+	-- current number forbids the next honest page instead of catching a volume that
+	-- has lost half of itself, which is what it is for. A hundred-page
+	-- administrator's guide is still a 1993 paperback, and the LOWER bound is the
+	-- half that catches a volume losing chapters: it has not moved once.
+	-- The cable's two pages went UNDER that hundred and it did not move for them:
+	-- Volume 2 stands at ninety-eight. This is the first raise that was not needed,
+	-- and not raising it is the point -- a bound that follows every addition by
+	-- definition never catches one.
+	check(where .. " has 50..100 pages (" .. vpages .. ")",
+		vpages >= 50 and vpages <= 100)
 	vol.wholeText = table.concat(vwhole, "\n")
 end
 

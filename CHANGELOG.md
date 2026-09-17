@@ -8,14 +8,18 @@ date.
 
 ## Unreleased
 
-## 0.4.1 - 2026-09-16
+## 0.5.0 - 2026-09-16
 
-The fixes of the first day of 0.4.0. Nothing here needs a new save: every machine
-you have switched on keeps its accounts, its files and its modules, and the
-computers in your world gain `/usr/local/bin` the moment they load. The one thing
-you will notice on a save you already have is that a program you left running
-with `&` is still running when you come back to it -- there is nothing else for
-you to do.
+The fixes of the first day of 0.4.0, and what was built while they were being
+made: every exterior door and window of a building on the machine at last, sound
+on every fixture it moves, a program left running with `&` that is still running
+when you come back, and one word that works a whole kind of device at once. Enough
+of the second sort for a release of its own rather than a repair. Nothing here
+needs a new save: every machine you have switched on keeps its accounts, its files
+and its modules, and the computers in your world gain `/usr/local/bin` the moment
+they load. The one thing you will notice on a save you already have is that a
+program you left running with `&` is still running when you come back to it --
+there is nothing else for you to do.
 
 - **A module comes off when its fixture is picked up, taken apart or broken: it is
   on the floor, or in your bag.** Before this, a television carried to the next
@@ -94,6 +98,16 @@ you to do.
   `ls -l` the room column paid for it, so a long pair of rooms reads
   `kitchen-hal~` there. Nothing else moved, and both tables still end inside the
   screen's 60 columns.
+- **`dev window close` shuts every window at once; the same for any kind and any
+  word, one answer line per device.** The word in front of the value can be a kind
+  instead of one device's name, so `dev light off` is the whole building's lights,
+  `dev curtain toggle` turns each sheet the way it is not, and
+  `dev tv channel 203` tunes every set. You get one line per device, in the order
+  `dev window` lists them, and each is exactly what that device would have said on
+  its own -- a boarded window still answers `window1: barricaded`, and a line with
+  a refusal in it counts as failed, so a script can test it. There is no word for
+  *everything*: `off` means one thing to a light and another to a generator, so two
+  kinds is still two lines. `man dev` and the administrator's manual have the page.
 
 ## 0.4.0 - 2026-09-16
 
