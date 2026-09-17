@@ -8,6 +8,20 @@ date.
 
 ## Unreleased
 
+- CeroSec and the Workshop mod *Computer Mod* can be subscribed together now.
+  Both put a machine on the same eight desktop computers, and their menu turned
+  the screen off again on the first right-click after you had switched a machine
+  on, with your session still running behind a dark screen. A desktop now belongs
+  to the mod that booted it, until it is switched off: switch one on with CeroSec
+  and it stays a CeroSec machine, boot it with theirs and it stays theirs, and
+  the two menus are both offered on a computer nobody has started. The limit,
+  said plainly: while a computer is running under one of the two mods, the other
+  mod's entries are not on its menu, so their CD games and their 486 parts want a
+  machine you have not booted with CeroSec. Choosing between the two systems on
+  one machine, at boot, is meant for a later release. When two computers share
+  one tile, only CeroSec's menu shows on that tile. Nothing changes in a game
+  without that mod.
+
 - A street lamppost you have cabled can be switched now. It read `on` and then
   answered `no power` to every order, with the grid up and the lamp burning:
   the game refuses to let a hand flip a light that stands outside on no floor
