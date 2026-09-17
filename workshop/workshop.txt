@@ -80,7 +80,7 @@ description=CeroSec puts a small 1993 Unix on Knox County's desktop computers. S
 description=
 description=The disk belongs to the computer, not to you: walk away and come back to the same session. No dependencies, Build 42, safe on a save you are playing.
 description=
-description=[b]Everything is documented in the wiki[/b]: command examples there are replayed against the mod's own engine, not typed from memory.
+description=[b]Everything is documented in the wiki[/b], the real place to learn CeroSec: its command examples are replayed against the mod's own engine, not typed from memory.
 description=[list]
 description=[*]Players: [url=https://github.com/Konijima/pz-cerosec/wiki/Your-First-Computer]Your First Computer[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Your-First-Session]Your First Session[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Recipes-Index]Recipes[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Troubleshooting]Troubleshooting[/url].
 description=[*]Modders and admins: [url=https://github.com/Konijima/pz-cerosec/wiki/Architecture]Architecture[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Contributing]Contributing[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Sandbox-Options]Sandbox Options[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Multiplayer-and-Servers]Multiplayer and Servers[/url].
@@ -109,15 +109,15 @@ description=[*][b]Curtains at dawn and dusk[/b], or drawn across the building in
 description=[*][b]The generator watched[/b], with a letter to root when the tank gets low, once, not sixty times an hour.
 description=[*][b]An alarm that names the window[/b] somebody opened, on every screen in the building, and flashes the lights.
 description=[/list]
-description=Four of the six are above, on a floppy, [b]CeroSec HOME 1.0[/b]; the other two run the TV and wake the house. A module goes on the fixture first: door, window or curtain from inside, open; the rest fitted where it sits. The four that move want a Small Motor, Knox County never sold one -- a screwdriver to a hair dryer gets one.
+description=These are four of the six programs on a printed floppy, [b]CeroSec HOME 1.0[/b]; the other two run the TV and wake the house. A module goes on the fixture first: a door, a window or a curtain from inside and standing open, the rest where it stands. The four that move something want a Small Motor, and Knox County never sold one, so you take a screwdriver to a hair dryer.
 description=
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h312-getting-started.png[/img]
 description=
 description=[list]
 description=[*]Right-click a desktop computer, [b]Turn on computer[/b] (it needs power), then [b]Use computer[/b].
-description=[*]At [b]login:[/b] most machines are somebody's: the password is on paper in a drawer or a dead man's pocket, no recovery. An unowned machine takes [b]admin[/b], empty password.
+description=[*]At [b]login:[/b] most machines are somebody's: the password is on a paper in a drawer or a dead man's pocket, and there is no password recovery. A machine nobody owned takes [b]admin[/b] and an empty password.
 description=[*][b]help[/b] lists the commands, [b]dev[/b] the fixtures, empty until a module is on one.
-description=[*]Walk away without [b]exit[/b] and the session is there later; [b]exit[/b] logs you out.
+description=[*]Walk away without typing [b]exit[/b] and the session is still there when you come back; [b]exit[/b] logs you out.
 description=[/list]
 # SHOT 03+04 -- workshop/shots/03-computer-menu.png + 04-dev-and-a-door.png
 # description=[img]<url of 03-computer-menu.png>[/img] [img]<url of 04-dev-and-a-door.png>[/img]
@@ -129,7 +129,6 @@ description=
 description=[list]
 description=[*][b]Somebody's machine, not a bare one.[/b] A computer nobody has switched on yet comes up as its owner's: hostname, accounts, files, log.
 description=[*][b]Eleven kinds of premises[/b], from a house and a shop to a bank, a clinic, a radio station, a military post and CeroSec's own bench.
-description=[*][b]The password is written down, because everybody wrote it down.[/b] A sticky note in a desk, or in a dead employee's pocket.
 description=[*][b]Eleven world floppies, and the phone book.[/b] Seventeen in a hundred are not blank, and vanilla's Phonebook is the county directory.
 description=[/list]
 # SHOT 07+08 -- workshop/shots/07-somebody-elses-machine.png + 08-floppy-disk.png
@@ -159,7 +158,6 @@ description=[b]Can I add it to a save I am already playing?[/b] Yes: its data st
 description=[b]Will it slow the game down?[/b] No: a script is stepped, never run to the end, and a dark machine costs nothing.
 description=[b]Does it conflict with other mods?[/b] Nothing known: it replaces no vanilla Lua or script.
 description=[b]Build 41?[/b] No, and none planned: Build 42 only, 42.20 and up.
-description=More, and fixes for common snags, are in the wiki's Troubleshooting and FAQ pages above.
 description=
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h312-credits.png[/img]
 description=
