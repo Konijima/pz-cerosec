@@ -14831,6 +14831,33 @@ do
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
 	_G.SafeHouse = nil
 
+	-- AND THE ENVELOPE GATE IS ON THE WIRE TOO (Mathieu's rule, 2026-09-17): a
+	-- packet is not a right-click, and Commands.linkmodule and unlinkmodule
+	-- call CeroSecModules.linkRefusal/unlinkRefusal exactly as the menu does
+	-- (CeroSecModules.envelopeRefusal), so a MODIFIED CLIENT that skips the
+	-- menu meets the same "closed" a stranger unscrewing the door's own
+	-- operator would. Standing in a room (isAdjacent asks only distance and
+	-- floor, never isInARoom, so this does not disturb it).
+	local insideRoom = { getZ = function() return 0 end,
+		isInARoom = function() return true end }
+	bench.player.getCurrentSquare = function() return insideRoom end
+	local gate = fit(world.wall(walk, fakeDoor(false, true, nil, true), "N"),
+		"operator")
+	reel(30)
+	send("linkmodule", walk, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("a shut door refuses the cable on the wire, not just the menu",
+		cables(gate), 0)
+	eq("and no wire was spent on the refusal", wires(), 30)
+	gate.open = true
+	send("linkmodule", walk, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("opened, the same packet buys the cable", cables(gate), 1)
+	gate.open = false
+	send("unlinkmodule", walk, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("shut again, the same packet cannot cut it either", cables(gate), 1)
+	gate.open = true
+	send("unlinkmodule", walk, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("opened, cutting it goes through", cables(gate), 0)
+
 	_G.__world, _G.SandboxVars, _G.Perks = hadWorld, hadSandbox, hadPerks
 	CeroSecDevices.invalidate()
 end
@@ -23561,7 +23588,14 @@ do
 		return claim
 	end }
 	local stranger = { getUsername = function() return "hacker" end }
-	local owner = { getUsername = function() return "king" end }
+	-- The owner needs a square to stand in too now that linkRefusal asks the
+	-- same envelope fitting or removing the door's own module would
+	-- (CeroSecModules.envelopeRefusal): a room to stand in, and the door open,
+	-- so the ONLY thing this block still isolates is the safehouse gate.
+	local insideRoom = { isInARoom = function() return true end }
+	local owner = { getUsername = function() return "king" end,
+		getCurrentSquare = function() return insideRoom end }
+	frontDoor.open = true
 
 	_G.__world = world
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true,

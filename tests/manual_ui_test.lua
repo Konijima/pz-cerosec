@@ -5174,11 +5174,35 @@ do
 	-- line of that and this one greys none of it.
 	eq("a cable to an outdoor fixture from the pavement is not greyed",
 		rowFor(post, "ksp-front-01").notAvailable, nil)
+
+	-- A DOOR is not a lamppost: wiring or unwiring it now asks the same
+	-- envelope fitting or removing its own module would (Mathieu's rule,
+	-- 2026-09-17). Standing outside a room refuses before the door's own
+	-- state is even read.
 	local shut = fixture("IsoDoor", square(10, 10, 0))
 	shut.modData.cerosec = { contact = true }
 	shut.open = false
-	eq("and a shut door takes a cable too",
-		rowFor(shut, "ksp-front-01").notAvailable, nil)
+	local shutRow = rowFor(shut, "ksp-front-01")
+	eq("a shut door refuses a cable from outside a room", shutRow.notAvailable,
+		true)
+	eq("standing outside is refused first", reason(shutRow),
+		"Tooltip_CeroSec_ModuleOutside(0)")
+
+	-- Inside a room, the same shut door still refuses -- now for the reason
+	-- fitting or removing its contact module would give, in the module menu's
+	-- own words.
+	stand.isInARoom = function() return true end
+	shutRow = rowFor(shut, "ksp-front-01")
+	eq("and a shut door refuses one from inside too", shutRow.notAvailable, true)
+	eq("with the module menu's own word for a shut door", reason(shutRow),
+		"Tooltip_CeroSec_ModuleClosed(0)")
+
+	-- Opened, the same door takes a cable again. Left standing inside a room
+	-- for the rest of this section, whose remaining doors care about the
+	-- SKILL and OPEN state and not about where the survivor stands.
+	shut.open = true
+	eq("an open door takes the cable", rowFor(shut, "ksp-front-01").notAvailable,
+		nil)
 
 	--
 	-- 3. WHAT IS GREYED, and the word it is greyed with

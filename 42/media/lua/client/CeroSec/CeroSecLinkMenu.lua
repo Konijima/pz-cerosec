@@ -164,6 +164,13 @@ end
 -- menu's is: the words are decided in the shared rule and a table here would be a
 -- second list to keep in step.
 function CeroSecLinkMenu.tooltipFor(why)
+	-- The three envelope reasons (CeroSecModules.envelopeRefusal) are the
+	-- module menu's own words, verbatim: fitting or unfitting a module on this
+	-- same fixture reads the same sentence, and a survivor should not learn
+	-- two different lines for one shut door.
+	if why == "outside" then return "Tooltip_CeroSec_ModuleOutside" end
+	if why == "closed" then return "Tooltip_CeroSec_ModuleClosed" end
+	if why == "drawn" then return "Tooltip_CeroSec_ModuleDrawn" end
 	return "Tooltip_CeroSec_Link" ..
 		string.upper(string.sub(why, 1, 1)) .. string.sub(why, 2)
 end
