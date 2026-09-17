@@ -164,7 +164,8 @@ function CeroSecCompatComputerMod.fill(player, context, worldobjects, test)
 	return relay(player, context, worldobjects, test)
 end
 
--- At OnGameStart, once. Their Add runs when their file loads, which is long
+-- At OnGameStart, once (the event vanilla itself hooks the hotbar onto,
+-- ISHotbar.lua:892). Their Add runs when their file loads, which is long
 -- before this, so the value is on the event by now; and nothing has written to
 -- their table, so the field still holds the value the event was given.
 local function arm()
