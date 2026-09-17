@@ -946,6 +946,58 @@ safehouse takes a box, and gives one back, only for its owner, its
 members or an admin. It is off unless somebody turned it on, and a
 single-player game has no safehouses.]],
 
+[[Running a cable to a computer.
+
+The building is free. Anything OUTSIDE it -- a lamppost on the street, a
+gate, a porch lamp round the far side -- is a cable, and you pay for the
+cable.
+
+Right-click the fixture, take Link to computer, and every machine a reel
+would reach is a line:
+
+  ksp-front-01, 12 tiles, 12 wire
+  ksp-back-02, 3 tiles, 7 wire
+
+One electric wire a tile, four more for every storey between the two, and
+thirty tiles is as far as a cable goes. Carry the wire, a screwdriver and
+the trade the boxes on that fixture asked for.
+
+Nothing asks where you stand, or that the door be open: a cable lands on
+the terminals of a box somebody has already fitted.
+
+Then the fixture is in that machine's /dev like anything else, and dev
+find -- further down this chapter -- says what the run cost:
+
+  root@ksp-04-11:~# dev find light1
+  light1: blinking, linked, 12 tiles of wire
+
+Unlink from ksp-front-01 gives the wire back. So does taking the fixture
+down.]],
+
+[[When the cable menu says no.
+
+A fixture with nothing screwed to it has no cable menu at all: a cable
+carries a BOX's device and a bare door has no device to carry. A machine
+further off than a reel goes is not on the list either -- past thirty
+tiles the answer is another computer for that end of the building, worked
+from this one down the coax or over the telephone.
+
+Everything else is a line, greyed, and the reason is under it in the
+menu's own words:
+
+  This computer is already on it.
+  This fixture already answers 4 computers.
+  This computer already has 32 cables.
+  Needs 14 electric wire.
+  This is somebody else's safehouse.
+
+The last only if your server turned SAFEHOUSE MEMBERS ONLY on.
+
+A cable is written against the SQUARE the machine stands on and never
+against its name, so /etc/hostname is yours to change and every cable
+holds. One fixture may answer two machines at once, and it is in both
+their /devs.]],
+
 [[Reading that table.
 
 The id is what you name the thing by. The kinds are curtain, door, gen,
@@ -2037,7 +2089,7 @@ The system files, and the modes they ship at: /etc/passwd is 600,
 holds 32 lines, and both it and the directory it sits in are root's.
 
 The building: 256 devices at most, at mode 660, and dev find shows one
-for 6 seconds.
+for 6 seconds. A cable runs 30 tiles.
 
 Work: 4 jobs to a machine, cron's included, and a job that spins 5
 minutes with nothing to wait for is taken away.

@@ -679,8 +679,17 @@ for vi = 1, #volumes do
 		-- forbidding the next honest page rather than catching a chapter that has
 		-- swallowed a book. The 1000-character page and the volume's own 50..95 are
 		-- what keep a chapter a chapter, and neither of those moved.
-		check(cwhere .. " (" .. ch.title .. ") has 3..17 pages (" .. n .. ")",
-			n >= 3 and n <= 17)
+		-- NINETEEN for the cable, chapter 6 of the same volume for the seventh time
+		-- and for the reason the other six were earned -- two pages this time, because
+		-- a cable is two things a reader has to be told apart: what it costs and how
+		-- it is run, and what the menu refuses. Neither belongs anywhere but beside
+		-- the page that says how a box goes on, and one page holding both would be a
+		-- page over the ceiling. Seventeen was exactly where the chapter already
+		-- stood, which is a bound forbidding the next honest page rather than catching
+		-- a chapter that has swallowed a book. The 1000-character page and the
+		-- volume's own bound are what keep a chapter a chapter, and neither moved.
+		check(cwhere .. " (" .. ch.title .. ") has 3..19 pages (" .. n .. ")",
+			n >= 3 and n <= 19)
 		vpages = vpages + n
 
 		for pi = 1, n do
@@ -740,8 +749,14 @@ for vi = 1, #volumes do
 	-- appliances, the generator's own line, and where a small motor comes from --
 	-- plus two of the appendix for their refusals. Eighty-five was where Volume 2
 	-- stood before them and ninety-two is where it stands now.
-	check(where .. " has 50..95 pages (" .. vpages .. ")",
-		vpages >= 50 and vpages <= 95)
+	-- NINETY-SEVEN since the cable, and it moved for the sixth time for the reason
+	-- it moved the first five: the two new pages are chapter 6's, and ninety-five was
+	-- exactly where Volume 2 then stood. A bound resting on the current number
+	-- forbids the next honest page instead of catching a volume that has lost half of
+	-- itself, which is what it is for. The LOWER bound is that half, and it has not
+	-- moved once.
+	check(where .. " has 50..97 pages (" .. vpages .. ")",
+		vpages >= 50 and vpages <= 97)
 	vol.wholeText = table.concat(vwhole, "\n")
 end
 
@@ -1178,6 +1193,54 @@ do
 	states("the devices", CeroSecOS.DEV_MAX .. " devices at most, at mode "
 		.. CeroSecOS.DEV_MODE .. ", and dev find shows one for "
 		.. CeroSecOS.DEV_FIND_SECONDS .. " seconds")
+	states("how far a cable runs",
+		"A cable runs " .. CeroSecModules.LINK_RANGE .. " tiles")
+	-- THE CABLE MENU'S OWN SENTENCES, which are the only refusals in this mod a
+	-- player meets on a MENU and not on the glass: the greyed line is a translated
+	-- string with a cap in it, so the page is held to the string as the strings file
+	-- writes it and to the cap as the code counts it (CeroSecLinkMenu.numberFor).
+	-- Anybody who rewords one of them, or moves one of the two caps, breaks this
+	-- page -- which is the only way a book stays true to a menu it cannot read.
+	do
+		local handle = assert(io.open(
+			"42/media/lua/shared/Translate/EN/Tooltip.json", "r"))
+		local strings = handle:read("*a")
+		handle:close()
+		local function line(key, number)
+			local text = string.match(strings, '"' .. key .. '"%s*:%s*"([^"]*)"')
+			check("EN Tooltip.json defines " .. key, text ~= nil)
+			return string.gsub(text, "%%1", tostring(number))
+		end
+		states("what a line says when the computer is on the list already",
+			line("Tooltip_CeroSec_LinkLinked", 0))
+		states("what it says when the fixture is full",
+			line("Tooltip_CeroSec_LinkLinks", CeroSecModules.LINKS_MAX))
+		states("what it says when the computer is full",
+			line("Tooltip_CeroSec_LinkFull", CeroSecOS.LINKS_PER_MACHINE))
+		states("what it says when he is short of wire",
+			line("Tooltip_CeroSec_LinkWire", 14))
+		states("and what it says about somebody else's safehouse",
+			line("Tooltip_CeroSec_LinkSafehouse", 0))
+		-- And the two entries themselves, out of the menu's own strings: a page that
+		-- tells a survivor to take an entry that is not called that any more is a page
+		-- sending him round a menu he cannot find his way on.
+		local handle2 = assert(io.open(
+			"42/media/lua/shared/Translate/EN/ContextMenu.json", "r"))
+		local menu = handle2:read("*a")
+		handle2:close()
+		local function entry(key)
+			local text = string.match(menu, '"' .. key .. '"%s*:%s*"([^"]*)"')
+			check("EN ContextMenu.json defines " .. key, text ~= nil)
+			return text
+		end
+		states("which entry runs a cable", entry("ContextMenu_CeroSec_Link"))
+		states("what one of its lines looks like",
+			string.gsub(string.gsub(string.gsub(
+				entry("ContextMenu_CeroSec_LinkTo"), "%%1", "ksp-front-01"),
+				"%%2", "12"), "%%3", "12"))
+		states("and which entry cuts one",
+			string.gsub(entry("ContextMenu_CeroSec_Unlink"), "%%1", "ksp-front-01"))
+	end
 	-- The three words a tuned set says beside its switch, read off the engine
 	-- rather than typed here: a word that moved has to break this page, because a
 	-- program a player writes is written against what the page told him.
