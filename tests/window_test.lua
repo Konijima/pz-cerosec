@@ -2330,6 +2330,56 @@ end
 local __switchClockHour, __switchClockMin, __switchClockDay =
 	_G.__gameTime.hour, _G.__gameTime.minutes, _G.__gameTime.day
 
+-- The minute hand falls inside a reboot's three dark seconds, and the power
+-- never went anywhere. The machine is off with its switch on, which is the
+-- restart list's own shape, but this one is not the sweep's to wake: the boot
+-- it is owed is resumeReboot's, and so are the windows of everybody who was at
+-- the glass when it went dark. A turnOn from the sweep got it up early, and
+-- resumeReboot then found it already on and returned at its first line --
+-- bootScreen and reopenFor never ran and the watchers lost their window for
+-- good.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+
+	bench.sounds = {}
+	bench.object.playSound = function(_, name) bench.sounds[#bench.sounds + 1] = name end
+	local function bootCount()
+		local n = 0
+		for i = 1, #bench.sounds do
+			if bench.sounds[i] == "CeroSecBootStart" then n = n + 1 end
+		end
+		return n
+	end
+
+	bench.enter("reboot")
+	bench.frame()
+	eq("it is dark", bench.object.on, false)
+	eq("the switch was never thrown", bench.object.switchOn, true)
+	check("and the reboot is pending", bench.object.rebooting ~= nil)
+	eq("the window it had shut", #bench.windows, 1)
+
+	-- The sweep, inside the dark. The wire never left, so the restart list's
+	-- one question answers yes and the old code booted it here. bench.minute
+	-- carries the scheduler four passes (400ms) after the sweep, which is well
+	-- inside CeroSec.REBOOT_DARK_MS: the dark is still on when it returns.
+	bench.minute()
+	eq("the sweep left it dark", bench.object.on, false)
+	eq("the tile with it", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	check("and the reboot still pending", bench.object.rebooting ~= nil)
+	eq("nothing booted", bootCount(), 0)
+
+	waitOutTheDark(bench)
+	eq("then the reboot itself brought it up", bench.object.on, true)
+	eq("the tile is lit", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+	eq("one boot, not two", bootCount(), 1)
+	eq("and the window came back", #bench.windows, 2)
+	local back = bench.windows[2]
+	eq("at the same machine", back.cx, 10)
+	eq("watching the BIOS type itself out", back.revealing, true)
+end
+
 -- The power went while the machine was down. A real AT machine's switch is
 -- still on through a reboot -- the case never told it otherwise -- so it does
 -- not need a hand at all: the next minute the wire is live again, the sweep
@@ -2341,6 +2391,14 @@ do
 	bench.login("root")
 	bench.enter("reboot")
 	bench.frame()
+
+	-- A minute inside the dark first, so the crossed case is the one measured:
+	-- the sweep has seen this machine with its reboot pending and stepped over
+	-- it. Stepped over and NOT taken out of the restart list, because the reboot
+	-- is about to fail for want of power -- a machine dropped from the index
+	-- here is a machine nothing ever asks the power question of again.
+	bench.minute()
+	check("the sweep left the reboot pending", bench.object.rebooting ~= nil)
 	bench.object.hasPower = function() return false end
 
 	waitOutTheDark(bench)

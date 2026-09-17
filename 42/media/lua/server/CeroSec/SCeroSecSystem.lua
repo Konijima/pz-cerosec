@@ -1106,7 +1106,11 @@ end
 -- turnOn and not a quieter path beside it: the sprite, the sound, the fresh
 -- console and @reboot are all its, and so is the power question -- a room that
 -- went dark in those three seconds leaves the machine off, exactly as an outage
--- leaves a real one off, and the survivor switches it on by hand later.
+-- leaves a real one off. Its AT switch was never thrown, so the minute sweep is
+-- what brings it up when the wire comes back (checkPower's restart list, which
+-- steps over a machine while `rebooting` is still set so that this call is the
+-- only one that boots it). The windows are not handed back on that road: they
+-- are this call's and it never ran.
 function SCeroSecSystem:resumeReboot(luaObject, waiting)
 	if not luaObject:turnOn() then return end
 	local console = luaObject:consoleState()
@@ -3356,7 +3360,24 @@ function SCeroSecSystem:checkPower()
 	local restart = self:restartList()
 	for i = 1, #restart do
 		local luaObject = restart[i]
-		if luaObject.on == true or luaObject.switchOn ~= true then
+		if luaObject.rebooting ~= nil then
+			-- A machine in the dark middle of a reboot is the scheduler's and not
+			-- this walk's. Its switch never moved (SCeroSecSystem:reboot turns it
+			-- off without throwing it), so it is in this index, but the hand that
+			-- owes it a boot is CeroSecJobs.checkReboot -> resumeReboot, and that
+			-- one also hands the windows back. A turnOn here instead is the
+			-- machine up early, and then resumeReboot finds it already on and
+			-- returns at its first line: no bootScreen, no reopenFor, and the
+			-- players who were at the glass lose their window for good.
+			--
+			-- LEFT IN THE INDEX and not dropped from it, because the reboot may
+			-- yet fail: resumeReboot's turnOn asks the power question, a room that
+			-- went dark in those three seconds answers no, and the machine stays
+			-- off with its switch on. `rebooting` is cleared BEFORE resumeReboot
+			-- runs (CeroSecJobs.checkReboot), so the next minute finds a plain
+			-- dark machine waiting on its wire, which is what it is. Neither way
+			-- leaves a machine nobody asks about.
+		elseif luaObject.on == true or luaObject.switchOn ~= true then
 			-- Switched on, or its switch turned off, since the index was
 			-- written. Healed here exactly as a stale `live` entry is above.
 			self:indexMachine(luaObject)
