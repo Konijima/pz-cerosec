@@ -1,31 +1,33 @@
 [b]0.5.0 - The building answers back[/b]
 Safe for existing saves. Nothing to redo.
 
-[b]Fixed[/b]
-[*] Doors, windows, curtains and lamps on the south or east wall of a building were invisible to /dev. Every wall is found now, porch lamps included. Your existing device numbers do not change: a newly found door takes the next free number.
-[*] A porch lamp takes a relay from the sidewalk. The "from inside" rule now applies only to doors, windows and curtains.
-[*] The debug window was missing for server admins. It is back, [b]CeroSec (dev)[/b] at the bottom of a computer's menu.
-[*] Every machine has /usr/local/bin, and it is on the PATH: [b]sudo cp /mnt/curtains.sh /usr/local/bin[/b] works as the HOME disk says, and [b]curtains.sh auto[/b] runs by name. Machines already in your save gain the directory on load.
-[*] The device table ran [b]curtain0[/b] into the room name. The columns line up again.
-[*] A dropped module always looks like the same small circuit board now, never scrap metal.
-[*] Right-clicking a wired fixture shows one CeroSec entry instead of two menus fighting for the spot, and hovering a line lights up the right thing.
-[*] CeroSec and the Workshop mod Computer Mod can be subscribed together: whichever one boots a desktop keeps it until it is switched off, so the two never fight over the same screen.
-[*] Standing outside a house no longer reaches anything inside it: a computer carried out drops the household's wire behind it, and a motion sensor against the outside wall no longer picks up the room past it. A cable still gets you in on purpose.
-[*] With [b]Safehouse members only[/b] on, a stranger can no longer cable a claimed house's front door or its windows.
-[*] A street lamppost you have wired can be switched again. It used to refuse every order with "no power" even with the grid up.
-[*] Tooltips on CeroSec's menu entries read properly again, instead of running two words together.
-[*] Cutting a cable works again once the computer at the far end has been moved or picked up, and a cable to an empty spot now reads "Unlink loose cable" instead of naming a machine that is not there.
-[*] Wiring or unwiring a door, window or curtain now needs the same access as fitting a module: open, drawn, or from inside. A closed front door can no longer be wired from the street.
-
 [b]New[/b]
-[*] A program you left running with [b]&[/b] is still running when you come back to your save. What cannot survive is what was waiting on you or on the wire: a question on the screen, a call in progress, a login from another machine.
-[*] You can hear the building work: a door the machine shuts, a window it opens, a curtain it draws makes the same sound as a hand would, for everybody in the room.
-[*] A module comes off with its fixture. Pick up a TV, sledge a door, take down a curtain, let zombies break the door in: the modules are on the floor, never lost, never duplicated.
-[*] One word in front of the value works a whole kind at once: [b]dev window close[/b] shuts every window, [b]dev light off[/b] turns off every light in the building. You get one answer line back per device, same as if you had typed each name.
-[*] Right-click a fixture that carries a module and take [b]Wire to computer[/b] to reach a lamppost, a gate or the shop across the street. One Electric Wire per tile, up to thirty tiles; a storey on the way costs four. Up to four computers can share one fixture, one computer can hold thirty-two cables, and disconnecting gives the wire back, so a porch lamp or a street lamp can answer a computer indoors.
-[*] A computer's power switch is mechanical now: leave it switched on and it comes back by itself the moment the power returns. Switch it off on purpose, or with [b]halt[/b] or [b]shutdown[/b], and it stays off.
+[*] Cables reach fixtures a computer cannot otherwise touch. Right-click a wired fixture and take [b]Link to computer[/b]: a lamppost, a gate, the shop across the street.
+[*] One Electric Wire per tile, up to thirty tiles. [b]Unlink[/b] gives the wire back, and moving the computer keeps its cables attached.
+[*] Wiring or unwiring a door, window or curtain needs the same access as fitting its module: open, drawn, or from inside.
+[*] One word now works a whole kind of device at once: [b]dev window close[/b] shuts every window, [b]dev light off[/b] kills every light.
+[*] A program left running with [b]&[/b] is still running when you reload your save.
+[*] The power switch is mechanical now: leave it on and the computer restarts itself when the power returns. [b]halt[/b] or [b]shutdown[/b] keeps it off.
+[*] You can hear the building work: doors, windows and curtains it moves make their sound for everyone in the room.
+[*] A module comes off with its fixture. Pick it up, sledge it, let a zombie break it in: the module ends up on the floor.
+[*] Works beside the Workshop mod Computer Mod: whichever mod switches a desktop on keeps it until it is switched off.
+
+[b]Fixed[/b]
+[*] Standing outside a house no longer reaches anything inside it: devices, network, radio and motion sensors all stop at the wall.
+[*] Doors, windows, curtains and lamps on the south or east wall were invisible to /dev. All are found now; your device numbers do not change.
+[*] A porch lamp can take a relay from the sidewalk. The inside-only rule now applies to doors, windows and curtains, not to lamps.
+[*] Every machine has [b]/usr/local/bin[/b] on its PATH, so [b]curtains.sh auto[/b] runs by name the way the HOME disk's README says.
+[*] The device table columns line up again: [b]curtain0[/b] no longer runs into the room name beside it.
+[*] Dropped modules all look like the same small circuit board, never scrap metal.
+[*] The debug window is back for server admins: [b]CeroSec (dev)[/b] at the bottom of a computer's menu.
+[*] A long line piped, redirected or captured with [b]$( )[/b] is no longer cut at 60 characters. The screen itself is unchanged.
+[*] Tooltips on CeroSec's menu entries no longer run two words together at the line break.
+
+[b]Servers[/b]
+[*] With [b]Safehouse members only[/b] on, a stranger can no longer cable a claimed house's doors or windows.
 
 [b]Interface[/b]
-[*] Every CeroSec entry at the top of a menu now carries a small green terminal icon, so you can tell it apart from vanilla's at a glance.
+[*] One CeroSec entry per fixture in the right-click menu, with a small green terminal icon. Hovering a line highlights the right object.
+[*] A greyed-out menu line says why, in red.
 
 Full notes: github.com/Konijima/pz-cerosec/blob/main/CHANGELOG.md
