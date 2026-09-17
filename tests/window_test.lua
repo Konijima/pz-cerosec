@@ -14439,6 +14439,42 @@ do
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
 	_G.SafeHouse = nil
 
+	-- WHAT HE KNOWS AND WHAT HE IS HOLDING. The menu greys the line for both and the
+	-- server asks both again, inside the job the two commands share -- so they are
+	-- asked of the CUT as well: a survivor who could not have fitted the relay does
+	-- not get to re-route somebody else's cable off its computer either.
+	local hadLevel = level
+	level = 0
+	reel(13)
+	send("linkmodule", corner, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("Electricity 0 runs no cable to a relay", cables(second), 0)
+	eq("and pays for none", wires(), 13)
+	send("unlinkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("and cuts none either", cables(post), 1)
+	eq("so nothing came back", wires(), 13)
+	level = hadLevel
+
+	-- And the tool, with the trade back: a cable is screwed onto a terminal block.
+	inv:Remove(inv:getFirstTypeRecurse(CeroSecModules.TOOL))
+	send("linkmodule", corner, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("and no cable goes in without a screwdriver", cables(second), 0)
+	eq("with every reel still in his bag", wires(), 13)
+	send("unlinkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("nor does one come off without one", cables(post), 1)
+	inv:add("Base.Screwdriver")
+
+	-- THE CONTROL, which is what makes the four above about the man and not about
+	-- the packet: the same two packets, from a survivor who has the trade and the
+	-- tool, run the cable and cut it again.
+	send("linkmodule", corner, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("with the trade and the tool the corner lamp takes it", cables(second), 1)
+	eq("and it cost him the thirteen", wires(), 0)
+	send("unlinkmodule", corner, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("and the same hands take it off again", cables(second), 0)
+	eq("with the thirteen back in his bag", wires(), 13)
+	eq("so the machine is back to the one cable it had",
+		#CeroSecOS.linkSquares(state), 1)
+
 	-- FOUR CABLES IS WHAT A FIXTURE ANSWERS, which is the point of the cap and not
 	-- an arbitrary number: one lamp on four machines is four sections of a building
 	-- sharing a light, and the fifth is a fixture nobody can keep track of.
