@@ -3883,7 +3883,7 @@ le **même mot**. Le tableau complet est dans
      taper `dev` : la porte est **dans la liste**, avec « exterior », son décalage
      (`0 1S` pour une porte une case au sud du bureau) et son mur (`N`). Poser
      ensuite un contact sur une porte du mur **nord** : les deux sont là. Avant
-     0.4.1 seules les portes des murs nord et ouest apparaissaient : une porte de
+     0.5.0 seules les portes des murs nord et ouest apparaissaient : une porte de
      mur sud se tient sur la case **dehors**, et la machine n'y allait jamais. [ ]
 418. **La lampe de galerie aussi, et pas le lampadaire.** Avec le relais posé à
      l'étape 408 sur la lampe du mur extérieur : `dev` la montre comme un `light`

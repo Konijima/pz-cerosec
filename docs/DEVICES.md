@@ -102,7 +102,7 @@ them (offsets 0—141). So a door in a room's north or west wall stands on the r
 own square and the walk above finds it, while a door in the room's **south or east**
 wall stands on the neighbouring square — the pavement, in no room at all, and a
 square the walk of the building's rooms never visited. Every south and east door,
-window and sheet of every building was invisible to `/dev` until 0.4.1, while the
+window and sheet of every building was invisible to `/dev` until 0.5.0, while the
 north and west ones were listed: a module fitted to a front door that never became
 a device.
 
