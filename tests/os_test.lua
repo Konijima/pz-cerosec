@@ -14266,6 +14266,79 @@ do
 end
 
 --
+-- 3z. A line WIDER than the screen, and the four places it must not be folded in.
+--
+-- Sixty columns is the SCREEN's rule and nothing else's. A pipe, a $( ), a file
+-- and the far end of a tee are all read by a program and not by a person, and a
+-- program handed a line in two pieces reads two lines: `grep root /etc/passwd |
+-- cut -d: -f1` answered "root" and then "n", because the fold had already
+-- happened when cut was handed the line. The fold belongs to the last step
+-- before the glass (CeroSecOSVM's outLine), and this block holds the difference
+-- in both directions -- whole down every wire, folded on the screen.
+--
+-- The witness is MARKER, sitting astride the sixtieth column on purpose: a
+-- pattern that straddles the fold is found once when the line is whole and not
+-- at all when it is not, so `grep -c` alone tells the two apart.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local WIDE = "alpha:" .. string.rep("x", 52) .. "MARKER" .. string.rep("y", 20)
+	check("the line under test is wider than the screen", #WIDE > CeroSecOS.COLS)
+	eq("and it is the width this block was written for", #WIDE, 84)
+	put(state, admin, "/home/admin/wide", WIDE)
+
+	-- DOWN A PIPE. One line in, one line out, whole, whatever is on the right.
+	okAt(state, admin, "cat wide | wc -l", { "     1" })
+	okAt(state, admin, "cat wide | wc -c", { "    84" })
+	okAt(state, admin, "cat wide | cut -d: -f1", { "alpha" })
+	okAt(state, admin, "cat wide | grep -c MARKER", { "1" })
+	okAt(state, admin, "cat wide | head -1 | wc -l", { "     1" })
+	okAt(state, admin, "cat wide | sort | wc -l", { "     1" })
+	-- And through two stages, because the fold was applied at every one of them.
+	okAt(state, admin, "cat wide | cat | cut -d: -f1", { "alpha" })
+
+	-- INTO A FILE. The plain redirect was already whole -- runArgs writes the
+	-- lines it was handed and not the folded ones -- so this is the witness that
+	-- stayed green the whole time and says the write door is the right one.
+	okAt(state, admin, "cat wide > plain", {})
+	eq("a plain redirect holds the line whole",
+		contents(state, "/home/admin/plain"), WIDE)
+	-- A redirect on a pipeline STAGE goes through a different door (the reader's
+	-- own write, CeroSecOSVM's runSimple) and was folded there.
+	okAt(state, admin, "cat wide | cat > staged", {})
+	eq("and so does one on a stage", contents(state, "/home/admin/staged"), WIDE)
+	-- The T-piece writes the file and passes the line on; both halves are whole.
+	okAt(state, admin, "cat wide | tee kept | wc -c", { "    84" })
+	eq("and the tee's file is whole", contents(state, "/home/admin/kept"), WIDE)
+
+	-- INTO A WORD. A capture is substituted into the line being built, so a fold
+	-- in it is a second word nobody typed.
+	okAt(state, admin, "x=$(cat wide); echo -n \"$x\" | wc -c", { "    84" })
+	okAt(state, admin, "echo -n \"$(cat wide)\" | wc -c", { "    84" })
+
+	-- OUT OF A SCRIPT, which reaches the pipe through the job's own output.
+	put(state, admin, "/home/admin/show.sh", "cat /home/admin/wide")
+	okAt(state, admin, "sh show.sh | wc -l", { "     1" })
+	okAt(state, admin, "sh show.sh > fromsh", {})
+	eq("and a script's redirect is whole too",
+		contents(state, "/home/admin/fromsh"), WIDE)
+
+	-- ON THE GLASS, which is the one place it IS folded, and exactly as before:
+	-- sixty columns, then the rest, and the two put back together are the line.
+	local shown = okAt(state, admin, "cat wide", nil)
+	eq("the screen folds it in two", #shown, 2)
+	eq("the first line is the screen's width", #shown[1], CeroSecOS.COLS)
+	eq("and the two are the line", shown[1] .. shown[2], WIDE)
+	-- A refusal is a screen line and never travels, so it stays folded where it
+	-- is made: the name is echoed back and the whole of it fits the glass.
+	local long = string.rep("z", CeroSecOS.COLS + 10)
+	local refused = runAt(state, admin, "cat " .. long, ENV)
+	eq("a refusal about a long name is folded", #refused.lines, 2)
+	eq("and says what it could not read",
+		refused.lines[1] .. refused.lines[2], "cat: " .. long .. ": no such file")
+end
+
+--
 -- 4. What SYSTEM_VERSION 18 puts on an older machine, and what it leaves alone.
 --
 -- The top-up's rule is the whole of the compatibility contract for a file: it puts

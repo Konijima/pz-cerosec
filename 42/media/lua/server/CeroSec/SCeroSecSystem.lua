@@ -2099,7 +2099,11 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		elseif control == "clear" then
 			CeroSec.consoleClear(console)
 		else
-			CeroSec.consolePushAll(console, lines)
+			-- The glass, reached without a job in between, so the fold every other
+			-- line gets from CeroSecOSVM's outLine is asked for here: the chain
+			-- hands its lines back the way it made them (see continueLine) and this
+			-- is the last step before the screen.
+			CeroSec.consolePushAll(console, CeroSecOS.fit(lines))
 			if control == "job" then
 				self:startJob(luaObject, console, data)
 			else

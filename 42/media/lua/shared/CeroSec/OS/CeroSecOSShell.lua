@@ -6034,7 +6034,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 		for i = 2, #args do rest[#rest + 1] = args[i] end
 		local ok, lines, control, data = CeroSecOS.startScript(state, session, name, name,
 			rest, table.concat(args, " "), env, true)
-		return ok, CeroSecOS.fit(lines), control, data
+		return ok, lines, control, data
 	end
 
 	local fn = commands[name]
@@ -6064,7 +6064,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 			for i = 2, #args do rest[#rest + 1] = args[i] end
 			local ok, lines, control, data = CeroSecOS.startScript(state, session, found, found,
 				rest, table.concat(args, " "), env, true)
-			return ok, CeroSecOS.fit(lines), control, data
+			return ok, lines, control, data
 		end
 		if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
 	end
@@ -6110,7 +6110,16 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 		return wroteOk, wroteLines, control, data
 	end
 
-	return ok, CeroSecOS.fit(lines), control, data
+	-- The lines as the command MADE them, not as a screen would show them. Folding
+	-- at sixty columns here folded them for every destination at once, and only one
+	-- of them is a screen: `grep root /etc/passwd | cut -d: -f1` answered "root"
+	-- and then "n", because the sixty-fourth column of that line had become a
+	-- second line before cut ever saw it. The fold belongs to the last step, and
+	-- the last step already knows it -- CeroSecOSVM's outLine puts a line down a
+	-- pipe, into a $( ) and into the file `>` named whole, and folds only what is
+	-- going to the glass. A refusal above is folded because a refusal IS a screen
+	-- line: it never travels to any of the three.
+	return ok, lines, control, data
 end
 
 -- The other half of the entry point: the answer to a prompt exec asked for.
@@ -6191,5 +6200,9 @@ continueLine = function(state, session, cont, line, env, redirect, sh)
 		return wroteOk, wroteLines, control
 	end
 
-	return ok, CeroSecOS.fit(lines), control, data
+	-- Unfolded, for the reason runArgs hands its own back unfolded: the answer to
+	-- a question is still a command's output and still has a pipe, a capture or a
+	-- file in front of it -- `sudo cat /etc/passwd | cut -d: -f1` is the same line
+	-- with a password in the middle of it.
+	return ok, lines, control, data
 end
