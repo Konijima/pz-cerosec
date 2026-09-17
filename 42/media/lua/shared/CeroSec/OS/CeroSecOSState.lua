@@ -263,6 +263,13 @@ function CeroSecOS.validate(state)
 		checkNode(state.fs, "", 0, { nodes = 0, max = CeroSecOS.MAX_NODES })
 	if not fsOk then return false, fsReason end
 
+	-- The cables this machine has run, when it has run any: a list of squares, and
+	-- the shape of it is the engine's because the key is in the state (see
+	-- CeroSecOS.linksOk). Absent on every machine saved before the key existed and
+	-- on every machine nobody has run a cable from, which is what "no cables" is.
+	local linksOk, linksWhy = CeroSecOS.linksOk(state.links)
+	if not linksOk then return false, linksWhy end
+
 	-- The disk in the drive, when there is one.
 	if state.floppy ~= nil then
 		local dOk, dReason = CeroSecOS.validateDisk(state.floppy)

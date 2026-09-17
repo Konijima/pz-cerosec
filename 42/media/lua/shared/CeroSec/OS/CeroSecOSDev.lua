@@ -328,6 +328,75 @@ function CeroSecOS.isDev(node)
 	return type(node) == "table" and node.type == "dev"
 end
 
+--
+-- THE CABLES THIS MACHINE HAS RUN (state.links)
+--
+-- A machine reaches its own building for nothing. Anything else -- a lamppost on
+-- the street, a lamp on a wall the room walk does not reach, a fixture in the shop
+-- across the car park -- is reached by a cable somebody paid for, and this is the
+-- machine's end of it: the SQUARES to visit, written when the cable was run.
+--
+--   state.links = { { x = 1024, y = 1010, z = 0 }, ... }
+--
+-- The other end is on the fixture (CeroSecModules.LINK_KEY), which is where the
+-- cable's cost lives because that is the end that pays it back. Here there is
+-- nothing but a place, and there is a reason for the asymmetry: what this list is
+-- FOR is telling the discovery which squares to look at, and a walk of the county
+-- looking for fixtures that name this machine is the thing it exists to avoid.
+--
+-- The engine does not know what a cable is and does not have to. What it owns is
+-- the SHAPE of this key, because the key is in the state it validates: three whole
+-- numbers an entry, a bounded list, and no field it does not know is looked at. A
+-- forged list is a machine with no cables, never a machine with half of one.
+--
+-- ADDING IT MOVED NO VERSION NUMBER, which is the commonest change there is and
+-- the contract says so out loud (docs/CONTRIBUTING.md, "Nor is adding a key"): the
+-- key is absent on every machine saved before it, absent reads as "no cables",
+-- and an older build that met one would ignore it. The machine's book of jobs went
+-- in the same way, under the same rule.
+--
+-- 32, because it is a per-machine list of places and not a device book: /dev holds
+-- 256 and the building gives most of them, while a cable is a thing a survivor
+-- walked and paid for -- thirty-two of those is a reel of wire nobody has.
+CeroSecOS.LINKS_PER_MACHINE = 32
+
+-- Is state.links something this build wrote? ok, reason.
+--
+-- Asked by validate, so it answers the same way everything there does: the whole
+-- key is refused, never repaired and never half-read. Absent is fine -- it is every
+-- machine in every save before this build, and every machine nobody has run a
+-- cable from.
+function CeroSecOS.linksOk(links)
+	if links == nil then return true end
+	if type(links) ~= "table" then return false, "bad links" end
+	if #links > CeroSecOS.LINKS_PER_MACHINE then return false, "too many links" end
+	for i = 1, #links do
+		local entry = links[i]
+		if type(entry) ~= "table" then return false, "bad links" end
+		local x, y, z = entry.x, entry.y, entry.z
+		if type(x) ~= "number" or x ~= math.floor(x) then return false, "bad links" end
+		if type(y) ~= "number" or y ~= math.floor(y) then return false, "bad links" end
+		if type(z) ~= "number" or z ~= math.floor(z) then return false, "bad links" end
+	end
+	return true
+end
+
+-- What `dev find` answers about a device a cable was run to, and it is the one
+-- place that sentence is written.
+--
+-- `word` is what the world did -- "blinking" for a light, "highlighted" for
+-- anything a screen draws round -- and the rest is what a survivor cannot see by
+-- looking: that this one is not in the building at all, and what the run cost him.
+-- One line, because that is what `dev find` has: sixty columns and no wrap.
+--
+--   light1: highlighted, linked, 12 tiles of wire
+function CeroSecOS.linkedText(word, wire)
+	if type(word) ~= "string" or word == "" then word = "found" end
+	local n = tonumber(wire)
+	if n == nil or n < 1 then return word end
+	return word .. ", linked, " .. math.floor(n) .. " tiles of wire"
+end
+
 -- The one place env.devices is read, so a caller that passes junk is a machine
 -- with no devices and never a machine with broken ones.
 function CeroSecOS.devicesOf(env)
