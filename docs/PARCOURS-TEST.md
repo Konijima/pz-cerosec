@@ -4137,6 +4137,12 @@ seuls au tour de ronde suivant. La règle complète est dans
      <ordinateur>** est grisé, avec la même raison qu'un retrait de module
      donnerait sur cette porte fermée. Rouvrir la porte : le débranchement se
      fait normalement. [ ]
+430e. **Un câble déjà là ne s'offre pas deux fois.** Porte intérieure équipée,
+     ordinateur dans la **même maison** : clic droit sur la porte → **Relier à
+     un ordinateur** est visible, mais la ligne vers cet ordinateur est
+     **grisée**, avec la raison en rouge (l'ordinateur voit déjà cette porte
+     sans câble). La **même porte**, câble vers un ordinateur d'une **autre
+     maison** : la ligne est offerte normalement. [ ]
 431. **Un appareil dont le module est parti garde son câble.** Câbler le lampadaire,
      puis **retirer le relais** (clic droit → Retirer). Attendu : le câble est
      toujours là, l'entrée **Débrancher** aussi, et elle rend les fils. Sans ça, le

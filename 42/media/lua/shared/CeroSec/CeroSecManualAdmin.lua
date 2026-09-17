@@ -979,19 +979,20 @@ down, or unlinking a loose cable a moved machine left behind.]],
 A fixture with nothing screwed to it has no cable menu at all: a cable
 carries a BOX's device and a bare door has no device to carry. A machine
 further off than a reel goes is not on the list either -- past thirty
-tiles wants another computer for that end, reached down the coax or
-the telephone instead.
+tiles wants another computer for that end, reached by coax or
+telephone instead.
 
-Everything else is a line, greyed, and the reason is under it in the
-menu's own words:
+Everything else is greyed, the reason under it in the menu's own
+words:
 
   This computer is already on it.
   This fixture already answers 4 computers.
   This computer already has 32 cables.
   Needs 14 electric wire.
   This is somebody else's safehouse.
+  ksp-04-11 already sees this on its own /dev.
 
-The last only if your server turned SAFEHOUSE MEMBERS ONLY on.
+Last line only with SAFEHOUSE MEMBERS ONLY on.
 
 A door, window or curtain asks the same as a module: shut, drawn
 or outside greys the cable too, link or unlink.

@@ -111,6 +111,11 @@ there is nothing else for you to do.
   cable is run to where the machine stands, not to what it is called. **Nothing in
   your save changes for any of this**: a machine with no cables is a machine
   exactly as it was.
+- **The menu no longer offers a cable to a computer that already sees the
+  fixture for free.** A door, window or curtain the machine's own building
+  already lists in `/dev` is greyed on **Link to computer**, with the reason
+  in red -- a cable there would have bought you a second entry for the same
+  door, not a new one.
 - **The inside rule was refusing a relay on a porch lamp.** Fitting a module from
   the pavement is refused for the building's skin -- a door, a window, a curtain --
   and for nothing else: an outdoor lamp, a generator, an oven somebody dragged into
