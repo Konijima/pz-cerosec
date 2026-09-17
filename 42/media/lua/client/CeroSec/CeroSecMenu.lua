@@ -115,3 +115,35 @@ function CeroSecMenu.setIcon(option)
 	if type(option) ~= "table" or iconTexture == nil then return end
 	option.iconTexture = iconTexture
 end
+
+-- The tooltip a CeroSec entry wears, and the ONE place an entry of ours is marked
+-- unavailable: the description, then the reason it is refused on its own line and
+-- in red. Every greyed entry in the mod comes through here -- hardware, cable and
+-- computer alike -- so the refusal always reads the same way.
+--
+-- The separator is the game's markup, not HTML. ISRichTextPanel:processCommand
+-- knows LINE, BR, H1, RGB and a handful more, all upper case
+-- (ISUI/ISRichTextPanel.lua:16-27), so a lower-case "<br>" is no command at all.
+-- Worse, the parser tokenises on SPACES and re-cuts any token holding both '<'
+-- and '>' up to the '>' before reading it as a command (:456-481) -- the text
+-- that sat in front of the '<' is dropped, and the next chunk resumes at the same
+-- x,y. "wire back.<br>Needs" therefore lost the word "back." and glued the rest.
+-- " <LINE> <RGB:1,0,0> ", spaces included, is what vanilla writes for exactly
+-- this (ISWorldObjectContextMenu.lua:383, ContextMenuCode.lua:95); with no
+-- description in front of it, vanilla writes "<RGB:1,0,0> " (:377).
+function CeroSecMenu.tooltip(option, desc, reason)
+	if type(option) ~= "table" then return end
+	if not desc and not reason then return end
+	option.toolTip = ISWorldObjectContextMenu.addToolTip()
+	option.toolTip:setVisible(false)
+	local text = desc
+	if reason then
+		option.notAvailable = true
+		if text then
+			text = text .. " <LINE> <RGB:1,0,0> " .. reason
+		else
+			text = "<RGB:1,0,0> " .. reason
+		end
+	end
+	option.toolTip.description = text
+end

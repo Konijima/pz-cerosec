@@ -314,22 +314,15 @@ function CeroSecModuleMenu.describe(module)
 end
 
 -- The tooltip every entry gets: the description, and the reason under it when
--- there is one. A greyed entry is also marked notAvailable, which is what stops
--- the click.
+-- there is one. CeroSecMenu.tooltip is what greys it and what puts the reason on
+-- its own line, in red.
 --
 -- The skill line is the only reason with a number in it, and the number is the
 -- module's own rather than a word in the translation: nine modules, nine levels,
 -- one line of English.
 local function describe(option, key, module)
-	if type(option) ~= "table" then return end
-	option.toolTip = ISWorldObjectContextMenu.addToolTip()
-	option.toolTip:setVisible(false)
-	local text = CeroSecModuleMenu.describe(module)
-	if key then
-		option.notAvailable = true
-		text = text .. "<br>" .. getText(key, module.skill)
-	end
-	option.toolTip.description = text
+	CeroSecMenu.tooltip(option, CeroSecModuleMenu.describe(module),
+		key and getText(key, module.skill) or nil)
 end
 
 function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldobjects, test)

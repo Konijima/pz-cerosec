@@ -240,17 +240,10 @@ function CeroSecLinkMenu.onUnlink(worldobjects, object, playerObj, row)
 end
 
 -- The tooltip an entry gets: what the cable is, and the reason under it when
--- there is one. Greyed is also notAvailable, which is what stops the click.
+-- there is one. CeroSecMenu.tooltip is what greys it and what puts the reason on
+-- its own line, in red, the way vanilla writes a refusal.
 local function describe(option, key, desc, number)
-	if type(option) ~= "table" then return end
-	option.toolTip = ISWorldObjectContextMenu.addToolTip()
-	option.toolTip:setVisible(false)
-	local text = desc
-	if key then
-		option.notAvailable = true
-		text = text .. "<br>" .. getText(key, number)
-	end
-	option.toolTip.description = text
+	CeroSecMenu.tooltip(option, desc, key and getText(key, number) or nil)
 end
 
 function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobjects, test)
@@ -280,7 +273,16 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 	-- the door and not two unnamed ones.
 	local fixtureSub = CeroSecModuleMenu.fixtureParent(context, object)
 	local parent = fixtureSub:addOption(getText("ContextMenu_CeroSec_Link"))
-	local sub = ISContextMenu:getNew(context)
+	-- getNew's argument is the PARENT MENU, not the root: vanilla hangs a third
+	-- level off the second one the same way (ISWorldObjectContextMenu.lua:1216
+	-- getNew(lightSwitchSubmenu), ISInventoryPaneContextMenu.lua:1590
+	-- getNew(subMenuPatch)). It is the line that sets `parent`
+	-- (ISContextMenu.lua:1244), and `parent` is the chain closeAll walks up to put
+	-- every ancestor away after a click (:278-292). Handed the root instead, the
+	-- walk skipped this fixture's own menu, which stayed visible -- and a visible
+	-- menu with the mouse on a submenu option re-shows that submenu every frame
+	-- (:441-452), so the third level came straight back too.
+	local sub = ISContextMenu:getNew(fixtureSub)
 	fixtureSub:addSubMenu(parent, sub)
 
 	for i = 1, #rows do

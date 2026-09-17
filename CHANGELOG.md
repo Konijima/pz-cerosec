@@ -61,6 +61,10 @@ date.
   A `reboot` that loses the room's power in its three dark seconds is the first
   case: the machine comes up when the wire does, though nobody's window comes
   back with it.
+- The tooltips on CeroSec's own menu entries read properly again. They were
+  losing a word wherever a line was meant to break, and running the next
+  sentence straight into the one before it without a space. A greyed entry now
+  says why it is greyed on a line of its own, in red.
 
 ## 0.5.0 - 2026-09-16
 
