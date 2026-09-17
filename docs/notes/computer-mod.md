@@ -510,7 +510,7 @@ appelle, on n'écrit pas.
    vanille et retient un clic sur sprite vanille, que trois absences sur trois
    donnent zéro geste, que l'entrée `pzos` n'existe pas sans leur mod. Elle **ne
    prouve pas** l'ordre réel des gestionnaires, ni que le sprite cesse d'être
-   réécrit, ni qu'une fenêtre s'ouvre. Leçon du coffre applicable mot pour mot :
+   réécrit, ni qu'une fenêtre s'ouvre. Leçon applicable mot pour mot :
    *« Une doublure posée au-dessus de la porte ne voit pas la porte »*.
 7. **L'étape du parcours qui tranche** (`docs/PARCOURS-TEST.md`, en français, à
    ajouter dans le même changement) : les deux mods actifs, allumer une machine,
@@ -533,7 +533,7 @@ appelle, on n'écrit pas.
 | `client/CeroSec/CeroSecTerminal.lua` | la frappe à l'invite, Tab, la fermeture-passation | ~60 |
 | `server/CeroSec/SCeroSecObject.lua`, `SCeroSecSystem.lua` | `bootDefault` / `bootedInto` : écriture, synchronisation, décision | ~90 |
 | `client/CeroSec/CeroSecContextMenu.lua` | routage de « Use computer » sur `bootedInto` | ~25 |
-| Manuel Volume 1, `docs/PARCOURS-TEST.md`, `CHANGELOG.md` | dans le même changement, règle du CLAUDE.md | ~70 |
+| Manuel Volume 1, `docs/PARCOURS-TEST.md`, `CHANGELOG.md` | dans le même changement, règle du contrat du dépôt | ~70 |
 | `tests/` — banc à doublure | ce que le §6.6 prouve, et pas plus | ~150 |
 
 **~700 lignes sur 9 fichiers, dont les deux parties les plus porteuses du mod :
@@ -577,7 +577,7 @@ amorçage n'est pas livré.
 **Le double amorçage n'entre pas dans la 0.5.0. Il vise la 0.6.0.** Sept cents
 lignes dans la machine à états d'amorçage, la veille d'une sortie, sur une
 fonctionnalité dont la preuve exige une partie avec deux mods : c'est le profil
-exact d'une régression qui sort le jour de la sortie. Le penchant de Mathieu est
+exact d'une régression qui sort le jour de la sortie. Le penchant de l’équipe est
 le bon.
 
 Pour demain, deux options honnêtes, au choix :
@@ -625,7 +625,7 @@ sinon. Le double amorçage se conçoit et s'écrit après la sortie, au calme.
   (`ISPauseModListUI.lua:19`, `ServerSettingsScreen.lua:2295`). La forme exacte
   de l'objet rendu et l'existence de `:contains(id)` sont **à confirmer sur le
   vanille avant d'écrire la ligne**, conformément à la règle des sources de
-  vérité du CLAUDE.md : un appel jamais prouvé n'est pas une erreur de syntaxe,
+  vérité du contrat du dépôt : un appel jamais prouvé n'est pas une erreur de syntaxe,
   c'est un appel nil.
 - **Correction, et elle compte.** Le vanille n'utilise `getActivatedMods()` que
   par `:size()` et `:get(i-1)` (`ServerSettingsScreen.lua:2295-2297`,
@@ -639,5 +639,5 @@ sinon. Le double amorçage se conçoit et s'écrit après la sortie, au calme.
   end
   ```
 
-  C'est précisément le cas que le CLAUDE.md décrit : `:contains` passerait
+  C'est précisément le cas que le contrat du dépôt décrit : `:contains` passerait
   `luac5.1 -p` et serait un appel nil une fois par partie.
