@@ -8,98 +8,7 @@ date.
 
 ## Unreleased
 
-- Every hardware module (Magnetic Contact, Relay, Electric Strike, Door
-  Operator, Curtain Motor, Window Operator, Appliance Switch, Generator
-  Switch, Tuner Control) now looks the same small circuit board when
-  dropped on the ground, instead of some of them looking like scrap metal.
-- Right-clicking a fixture with CeroSec hardware on it now shows one entry,
-  "CeroSec: Door" (or Window, Stove, Microwave, and so on), instead of two
-  separate menus fighting for the same spot. Hovering it, or a row inside it,
-  highlights the fixture; opening "Link to computer" and hovering a line to a
-  named machine highlights that computer instead, never the fixture.
-- Every CeroSec entry at the top of a menu now carries a small green terminal
-  icon, so the mod's own lines ("Turn on/off/use computer", a fixture's
-  "CeroSec: Door", "CeroSec (dev)") are told apart from vanilla's at a glance.
-  Nothing inside a submenu grows one.
-- CeroSec and the Workshop mod *Computer Mod* can be subscribed together now.
-  Both put a machine on the same eight desktop computers, and their menu turned
-  the screen off again on the first right-click after you had switched a machine
-  on, with your session still running behind a dark screen. A desktop now belongs
-  to the mod that booted it, until it is switched off: switch one on with CeroSec
-  and it stays a CeroSec machine, boot it with theirs and it stays theirs, and
-  the two menus are both offered on a computer nobody has started. The limit,
-  said plainly: while a computer is running under one of the two mods, the other
-  mod's entries are not on its menu, so their CD games and their 486 parts want a
-  machine you have not booted with CeroSec. Choosing between the two systems on
-  one machine, at boot, is meant for a later release. When two computers share
-  one tile, only CeroSec's menu shows on that tile. Nothing changes in a game
-  without that mod.
-
-- A machine set down outside a house is no longer on that house's network
-  either. A computer you carry out of a building keeps the address it was given
-  there, because somebody may have written it in /etc/hosts, and it used to keep
-  the WIRE with it: parked on the pavement, arp showed it the machines still
-  inside, and rlogin, rcp and ping all worked. Drop a looted computer in the
-  street and you were on the household's Ethernet. To be on a building's cable a
-  machine now has to be standing in that building. Two computers carried out of
-  the same one and set down together, in a base you built or on the same verge,
-  are on a wire again within ten tiles of each other and on nobody else's, so a
-  camp made of looted machines still works. Nothing is renumbered: no address and
-  no netmask changes. The radio went the same way, a computer on a pavement is no
-  longer wired to the set on the other side of the wall.
-- A machine set down outside a house no longer sees that house. A computer
-  standing on the ground with no building around it reaches ten tiles, which is
-  what a base you built yourself is made of; those ten tiles were taking the
-  doors, the windows and the porch lamps of any map house that happened to be
-  inside them, for free and with nothing wired. Somebody could drop a computer
-  on your pavement and open your front door. From outside, a building's fixtures
-  now cost a cable, exactly as the manual always said. A machine INSIDE a
-  building still reaches the whole of it, and a base with no building still
-  reaches everything in its ten tiles.
-- With **Modules in safehouses** on, a stranger can no longer cable the front
-  door or the windows of a house somebody has claimed. A door is part of the
-  wall and stands on the tile OUTSIDE the room, which is a tile no safehouse
-  claim covers, so the refusal was never being asked about it. The porch lamp of
-  a claimed house is still open to anybody: it hangs on the outside wall and
-  there is nothing on it to say which house it belongs to.
-- A motion sensor set down outside, against a house wall, no longer sees
-  through that wall. A sensor with no room of its own already watched its
-  three tiles in every direction; it was also picking up a room next door for
-  free. It still watches its own three tiles outdoors, just never the tiles a
-  wall is standing between it and.
-- A street lamppost you have cabled can be switched now. It read `on` and then
-  answered `no power` to every order, with the grid up and the lamp burning:
-  the game refuses to let a hand flip a light that stands outside on no floor
-  of any building, and the machine was passing that refusal on as if the
-  current had gone. A relay on the post is what your hand is not. With the grid
-  down and no generator, the lamp still answers `no power`, because then it
-  really has none.
-- A computer's power switch is mechanical now, the way an old AT machine's was.
-  One left switched on when the power dies comes back on its own the moment the
-  wire is live again, no hand needed: BIOS, any `@reboot` job, all the way to a
-  bare `login:` prompt. One you turned off on purpose, at the machine or with
-  `halt` or `shutdown`, stays off no matter how many times the power returns.
-  A `reboot` that loses the room's power in its three dark seconds is the first
-  case: the machine comes up when the wire does, though nobody's window comes
-  back with it.
-- The tooltips on CeroSec's own menu entries read properly again. They were
-  losing a word wherever a line was meant to break, and running the next
-  sentence straight into the one before it without a space. A greyed entry now
-  says why it is greyed on a line of its own, in red.
-- A cable can be cut again after the computer at the other end of it has been
-  carried off its tile. A run is to the spot the machine stood on, not to the
-  machine, so putting a computer back on that spot reconnects it; before this,
-  "Unlink" on a cable going nowhere did nothing at all and the wire was lost.
-- That same cable, with no computer standing on the spot it runs to, now reads
-  "Unlink loose cable" and says how far off the machine used to be. It used to
-  print a made-up hostname for the empty tile, which read like the machine had
-  been renamed.
-- A door, window or curtain can only be cabled to a computer, or cut from one,
-  the way a module is fitted to it or taken off it: open, drawn or from the
-  right side. A closed front door can no longer be wired, or unwired, from the
-  street.
-
-## 0.5.0 - 2026-09-16
+## 0.5.0 - 2026-09-18
 
 The fixes of the first day of 0.4.0, and what was built while they were being
 made: every exterior door and window of a building on the machine at last, sound
@@ -234,6 +143,97 @@ there is nothing else for you to do.
   where it belongs, on the glass and nowhere else: what a pipe, a redirect, a
   `tee` and a command substitution carry is the line exactly as the command wrote
   it, however long. What you see on the screen has not changed.
+
+- Every hardware module (Magnetic Contact, Relay, Electric Strike, Door
+  Operator, Curtain Motor, Window Operator, Appliance Switch, Generator
+  Switch, Tuner Control) now looks the same small circuit board when
+  dropped on the ground, instead of some of them looking like scrap metal.
+- Right-clicking a fixture with CeroSec hardware on it now shows one entry,
+  "CeroSec: Door" (or Window, Stove, Microwave, and so on), instead of two
+  separate menus fighting for the same spot. Hovering it, or a row inside it,
+  highlights the fixture; opening "Link to computer" and hovering a line to a
+  named machine highlights that computer instead, never the fixture.
+- Every CeroSec entry at the top of a menu now carries a small green terminal
+  icon, so the mod's own lines ("Turn on/off/use computer", a fixture's
+  "CeroSec: Door", "CeroSec (dev)") are told apart from vanilla's at a glance.
+  Nothing inside a submenu grows one.
+- CeroSec and the Workshop mod *Computer Mod* can be subscribed together now.
+  Both put a machine on the same eight desktop computers, and their menu turned
+  the screen off again on the first right-click after you had switched a machine
+  on, with your session still running behind a dark screen. A desktop now belongs
+  to the mod that booted it, until it is switched off: switch one on with CeroSec
+  and it stays a CeroSec machine, boot it with theirs and it stays theirs, and
+  the two menus are both offered on a computer nobody has started. The limit,
+  said plainly: while a computer is running under one of the two mods, the other
+  mod's entries are not on its menu, so their CD games and their 486 parts want a
+  machine you have not booted with CeroSec. Choosing between the two systems on
+  one machine, at boot, is meant for a later release. When two computers share
+  one tile, only CeroSec's menu shows on that tile. Nothing changes in a game
+  without that mod.
+
+- A machine set down outside a house is no longer on that house's network
+  either. A computer you carry out of a building keeps the address it was given
+  there, because somebody may have written it in /etc/hosts, and it used to keep
+  the WIRE with it: parked on the pavement, arp showed it the machines still
+  inside, and rlogin, rcp and ping all worked. Drop a looted computer in the
+  street and you were on the household's Ethernet. To be on a building's cable a
+  machine now has to be standing in that building. Two computers carried out of
+  the same one and set down together, in a base you built or on the same verge,
+  are on a wire again within ten tiles of each other and on nobody else's, so a
+  camp made of looted machines still works. Nothing is renumbered: no address and
+  no netmask changes. The radio went the same way, a computer on a pavement is no
+  longer wired to the set on the other side of the wall.
+- A machine set down outside a house no longer sees that house. A computer
+  standing on the ground with no building around it reaches ten tiles, which is
+  what a base you built yourself is made of; those ten tiles were taking the
+  doors, the windows and the porch lamps of any map house that happened to be
+  inside them, for free and with nothing wired. Somebody could drop a computer
+  on your pavement and open your front door. From outside, a building's fixtures
+  now cost a cable, exactly as the manual always said. A machine INSIDE a
+  building still reaches the whole of it, and a base with no building still
+  reaches everything in its ten tiles.
+- With **Modules in safehouses** on, a stranger can no longer cable the front
+  door or the windows of a house somebody has claimed. A door is part of the
+  wall and stands on the tile OUTSIDE the room, which is a tile no safehouse
+  claim covers, so the refusal was never being asked about it. The porch lamp of
+  a claimed house is still open to anybody: it hangs on the outside wall and
+  there is nothing on it to say which house it belongs to.
+- A motion sensor set down outside, against a house wall, no longer sees
+  through that wall. A sensor with no room of its own already watched its
+  three tiles in every direction; it was also picking up a room next door for
+  free. It still watches its own three tiles outdoors, just never the tiles a
+  wall is standing between it and.
+- A street lamppost you have cabled can be switched now. It read `on` and then
+  answered `no power` to every order, with the grid up and the lamp burning:
+  the game refuses to let a hand flip a light that stands outside on no floor
+  of any building, and the machine was passing that refusal on as if the
+  current had gone. A relay on the post is what your hand is not. With the grid
+  down and no generator, the lamp still answers `no power`, because then it
+  really has none.
+- A computer's power switch is mechanical now, the way an old AT machine's was.
+  One left switched on when the power dies comes back on its own the moment the
+  wire is live again, no hand needed: BIOS, any `@reboot` job, all the way to a
+  bare `login:` prompt. One you turned off on purpose, at the machine or with
+  `halt` or `shutdown`, stays off no matter how many times the power returns.
+  A `reboot` that loses the room's power in its three dark seconds is the first
+  case: the machine comes up when the wire does, though nobody's window comes
+  back with it.
+- The tooltips on CeroSec's own menu entries read properly again. They were
+  losing a word wherever a line was meant to break, and running the next
+  sentence straight into the one before it without a space. A greyed entry now
+  says why it is greyed on a line of its own, in red.
+- A cable can be cut again after the computer at the other end of it has been
+  carried off its tile. A run is to the spot the machine stood on, not to the
+  machine, so putting a computer back on that spot reconnects it; before this,
+  "Unlink" on a cable going nowhere did nothing at all and the wire was lost.
+- That same cable, with no computer standing on the spot it runs to, now reads
+  "Unlink loose cable" and says how far off the machine used to be. It used to
+  print a made-up hostname for the empty tile, which read like the machine had
+  been renamed.
+- A door, window or curtain can only be cabled to a computer, or cut from one,
+  the way a module is fitted to it or taken off it: open, drawn or from the
+  right side. A closed front door can no longer be wired, or unwired, from the
+  street.
 
 ## 0.4.0 - 2026-09-16
 
