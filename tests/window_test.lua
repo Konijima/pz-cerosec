@@ -23669,4 +23669,81 @@ do
 	_G.__world = nil
 end
 
+--
+-- 61. Standing outside reaches nothing inside
+--
+-- The third barrel: a motion sensor with no room of its own used to keep
+-- its whole range square unconditionally (CeroSecSensors.fieldOf), so one
+-- dropped against a house wall watched the room behind it. Now, with no
+-- room of its own, each candidate tile is dropped if IT has a room of its
+-- own -- the same test scanOutdoorSquare makes before it will look at a
+-- square at all (SCeroSecDevices.lua).
+--
+do
+	local world = FakeWorld.new()
+	world.room("house", { { 12, 10, 0 } })
+	for x = 7, 13 do
+		for y = 7, 13 do
+			if x ~= 12 or y ~= 10 then world.square(x, y, 0, nil) end
+		end
+	end
+	world.drop(world.squares["10,10,0"], fakeSensor())
+	_G.__world = world
+	local bench = sensorBench()
+
+	bench.enter("dev sensor")
+	bench.frame()
+	check("a head against the wall still reads built",
+		bench.painted("sensor0  built"))
+
+	-- Two tiles away THROUGH the wall, well inside SENSOR_RANGE: not seen.
+	local chr = fakeBody("IsoPlayer")
+	world.stand(chr, world.squares["12,10,0"], 12.5, 10.5)
+	second(bench)
+	world.stand(chr, world.squares["12,10,0"], 12.9, 10.5)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("a body two tiles in through the wall is not seen",
+		not bench.painted("motion"))
+
+	-- The same two tiles, but out in the open: seen, same as the base bench.
+	second(bench, 6)
+	world.stand(chr, world.squares["10,12,0"], 10.5, 12.5)
+	second(bench)
+	world.stand(chr, world.squares["10,12,0"], 10.9, 12.5)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("but two tiles out in the open is", bench.painted("motion"))
+	_G.__world = nil
+end
+
+do
+	-- fieldOf directly: a sensor IN a room is still clipped by room
+	-- membership alone, untouched by the outdoor branch above.
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local field = CeroSecSensors.fieldOf(kit.world.squares["11,10,0"],
+		CeroSec.SENSOR_RANGE)
+	local seen = {}
+	for i = 1, #field do seen[field[i][1] .. ":" .. field[i][2]] = true end
+	check("a sensor in a room keeps only that room's tiles",
+		seen["11:10"] and not seen["14:10"])
+	_G.__world = nil
+end
+
+do
+	-- fieldOf on a player base: no IsoRoom anywhere in range, so nothing is
+	-- dropped and the field is the whole range square, unchanged.
+	local world = FakeWorld.new()
+	for x = 8, 16 do
+		for y = 8, 16 do world.square(x, y, 0, nil) end
+	end
+	_G.__world = world
+	local field = CeroSecSensors.fieldOf(world.squares["12,12,0"], 2)
+	eq("a head in a base keeps the whole range square", #field, 5 * 5)
+	_G.__world = nil
+end
+
 print("window_test: " .. count .. " checks passed")

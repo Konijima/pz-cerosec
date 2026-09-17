@@ -271,6 +271,7 @@ function CeroSecSensors.fieldOf(square, range)
 	local sx, sy, sz = square:getX(), square:getY(), square:getZ()
 
 	local inRoom = nil
+	local cell = nil
 	local room = square:getRoom()
 	if room ~= nil then
 		local squares = room:getSquares()
@@ -283,6 +284,14 @@ function CeroSecSensors.fieldOf(square, range)
 				end
 			end
 		end
+	else
+		-- No room of its own: still never through a wall. Each candidate
+		-- tile is checked for a room of ITS OWN (not isInARoom(), which is
+		-- true of a player-built base with no IsoRoom) and dropped if it
+		-- has one -- the same test scanOutdoorSquare makes in
+		-- SCeroSecDevices.lua before it will look at a square at all. A
+		-- tile the chunk hasn't got loaded is kept, same as before.
+		cell = getCell()
 	end
 
 	-- The bounding box is how the squares are ENUMERATED and never what decides
@@ -291,7 +300,14 @@ function CeroSecSensors.fieldOf(square, range)
 	for dx = -range, range do
 		for dy = -range, range do
 			local x, y = sx + dx, sy + dy
-			if inRoom == nil or inRoom[x .. ":" .. y .. ":" .. sz] then
+			local keep = true
+			if inRoom ~= nil then
+				keep = inRoom[x .. ":" .. y .. ":" .. sz] == true
+			elseif cell ~= nil then
+				local sq = cell:getGridSquare(x, y, sz)
+				if sq ~= nil and sq:getRoom() ~= nil then keep = false end
+			end
+			if keep then
 				if #field >= CeroSecSensors.FIELD_MAX then return field end
 				field[#field + 1] = { x, y, sz }
 			end
