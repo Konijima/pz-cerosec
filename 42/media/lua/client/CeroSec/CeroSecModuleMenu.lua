@@ -128,7 +128,16 @@ function CeroSecModuleMenu.genreName(object)
 	if CeroSecModules.isWindow(object) then return getText("ContextMenu_CeroSec_GenreWindow") end
 	if CeroSecModules.isLightSwitch(object) then return getText("ContextMenu_CeroSec_GenreLightSwitch") end
 	if CeroSecModules.isCurtain(object) then return getText("ContextMenu_CeroSec_GenreCurtain") end
-	if CeroSecModules.isStove(object) then return getText("ContextMenu_CeroSec_GenreStove") end
+	-- A microwave is an IsoStove too (isStove reads the container, not the
+	-- sprite, see CeroSecModules.isStove above), and its OWN public method
+	-- says which -- `public boolean isMicrowave()`, javap on IsoStove -- so
+	-- a survivor who never renamed it reads "Microwave" and not "Stove".
+	if CeroSecModules.isStove(object) then
+		if type(object.isMicrowave) == "function" and object:isMicrowave() then
+			return getText("ContextMenu_CeroSec_GenreMicrowave")
+		end
+		return getText("ContextMenu_CeroSec_GenreStove")
+	end
 	if CeroSecModules.isWasher(object) then return getText("ContextMenu_CeroSec_GenreWasher") end
 	if CeroSecModules.isGenerator(object) then return getText("ContextMenu_CeroSec_GenreGenerator") end
 	if CeroSecModules.isTuneable(object) then return getText("ContextMenu_CeroSec_GenreSet") end

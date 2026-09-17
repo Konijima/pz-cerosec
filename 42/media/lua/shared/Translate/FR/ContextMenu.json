@@ -25,6 +25,7 @@
     "ContextMenu_CeroSec_GenreLightSwitch": "Interrupteur",
     "ContextMenu_CeroSec_GenreCurtain": "Rideau",
     "ContextMenu_CeroSec_GenreStove": "Cuisinière",
+    "ContextMenu_CeroSec_GenreMicrowave": "Micro-ondes",
     "ContextMenu_CeroSec_GenreWasher": "Laveuse",
     "ContextMenu_CeroSec_GenreGenerator": "Génératrice",
     "ContextMenu_CeroSec_GenreSet": "Poste radio/TV"

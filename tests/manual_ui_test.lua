@@ -4397,6 +4397,18 @@ do
 		"ContextMenu_CeroSec_GenreWindow")
 	check("the two genres disagree",
 		CeroSecModuleMenu.genreName(door) ~= CeroSecModuleMenu.genreName(window))
+	-- A microwave is an IsoStove too (isStove reads the container, not the
+	-- sprite), and its own isMicrowave() -- confirmed public on the jar
+	-- with javap -- is what tells the two apart when nobody renamed it.
+	eq("a plain oven genre-names itself Stove",
+		CeroSecModuleMenu.genreName(stove), "ContextMenu_CeroSec_GenreStove")
+	stove.isMicrowave = function() return true end
+	eq("and a microwave, distinctly",
+		CeroSecModuleMenu.genreName(stove), "ContextMenu_CeroSec_GenreMicrowave")
+	stove.isMicrowave = function() return false end
+	eq("false answers Stove like no method at all",
+		CeroSecModuleMenu.genreName(stove), "ContextMenu_CeroSec_GenreStove")
+	stove.isMicrowave = nil
 	-- The sprite's own name wins when there is one -- RED first: a fake with
 	-- no getSprite at all answers the genre, then a sprite with CustomName on
 	-- it answers that instead.
@@ -4428,6 +4440,33 @@ do
 			if shared.options[i].cerosecFixture ~= nil then parents = parents + 1 end
 		end
 		eq("and the context carries exactly one parent per object", parents, 2)
+	end
+
+	-- Two of the SAME genre under one click -- two doors, not a door and a
+	-- window -- because cerosecSub is looked up by option.cerosecFixture ==
+	-- object and never by name or genre: a lookup keyed the wrong way would
+	-- pass this with two different kinds and still land a second door's
+	-- entries in the first door's parent.
+	do
+		local doorA = fixture("IsoDoor", inside)
+		local doorB = fixture("IsoDoor", inside)
+		local shared = withVanilla(ContextMenu.new())
+		local subA = CeroSecModuleMenu.fixtureParent(shared, doorA)
+		local subB = CeroSecModuleMenu.fixtureParent(shared, doorB)
+		check("two doors under one click get two different submenus", subA ~= subB)
+		check("asking about the first again still returns its own",
+			CeroSecModuleMenu.fixtureParent(shared, doorA) == subA)
+		-- And each parent's hover lights only its own door.
+		local parentA, parentB
+		for i = 1, #shared.options do
+			if shared.options[i].cerosecFixture == doorA then parentA = shared.options[i] end
+			if shared.options[i].cerosecFixture == doorB then parentB = shared.options[i] end
+		end
+		local menu = { player = 0 }
+		parentA.onHighlight(parentA, menu, true, unpack(parentA.onHighlightParams))
+		check("hovering the first door's parent lights only the first",
+			doorA.lit == true and doorB.lit == nil)
+		parentA.onHighlight(parentA, menu, false, unpack(parentA.onHighlightParams))
 	end
 
 	-- The survol itself: RED first (nothing lit before the hover), then lit,
@@ -5234,6 +5273,7 @@ do
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreLightSwitch", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreCurtain", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreStove", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreMicrowave", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreWasher", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreGenerator", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreSet", 0 },

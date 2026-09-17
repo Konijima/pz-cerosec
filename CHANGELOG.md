@@ -8,6 +8,11 @@ date.
 
 ## Unreleased
 
+- Right-clicking a fixture with CeroSec hardware on it now shows one entry,
+  "CeroSec: Door" (or Window, Stove, Microwave, and so on), instead of two
+  separate menus fighting for the same spot. Hovering it, or a row inside it,
+  highlights the fixture; opening "Link to computer" and hovering a line to a
+  named machine highlights that computer instead, never the fixture.
 - A street lamppost you have cabled can be switched now. It read `on` and then
   answered `no power` to every order, with the grid up and the lamp burning:
   the game refuses to let a hand flip a light that stands outside on no floor
