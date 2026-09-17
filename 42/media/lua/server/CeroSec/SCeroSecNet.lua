@@ -1231,8 +1231,14 @@ end
 local OUTDOORS = "out"
 
 local function standOf(luaObject)
+	-- Asked of anything the server holds, including a machine that answers about
+	-- its disk and nothing else -- a job's own carrier in the hostile benches, and
+	-- a registration mid-teardown. No square to ask is the nil case above: the
+	-- record stands. (Volunteered rather than assumed, because a call that is not
+	-- there is not a syntax error and this one is reached from a job pass.)
+	if luaObject.getSquare == nil then return nil end
 	local square = luaObject:getSquare()
-	if square == nil then return nil end
+	if square == nil or square.getBuilding == nil then return nil end
 	local b1, b2 = CeroSecNet.premisesOfSquare(square)
 	return { key = b1 ~= nil and (b1 .. "." .. b2) or OUTDOORS,
 		x = square:getX(), y = square:getY(), z = square:getZ() }
