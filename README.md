@@ -16,7 +16,7 @@ off a sensor.
 And the county had computers in it already. A machine nobody has switched on yet
 comes up as somebody's: his accounts, his files, a week of his log, and his
 password written down on a paper in the building, because everybody wrote it
-down. Ten kinds of premises, six labelled floppies, and vanilla's own Phonebook
+down. Eleven kinds of premises, eleven labelled floppies, and vanilla's own Phonebook
 turned into the Knox County directory.
 
 Project Zomboid **Build 42** (42.20.0+). Written from scratch, vanilla Lua only,
