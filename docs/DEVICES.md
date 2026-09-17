@@ -233,8 +233,10 @@ for fixtures that name this machine is exactly the thing it exists to avoid.
 Either side alone would be that walk, in one direction or the other.
 
 The fixture's list rides with the module keys and needs nothing of its own: the
-same `modData` table, written by the server, `transmitModData()` after it
-(`docs/notes/modules-proofs.md`). It is read through `installedOn`'s gate, so a
+same `modData` table, written by the server, `transmitModData()` after it. That a
+list of tables under a numeric key saves and travels like anything else is proven
+offset by offset in [notes/modules-proofs.md](notes/modules-proofs.md),
+section 11. It is read through `installedOn`'s gate, so a
 fixture whose modules this build will not read has no cables either — the same
 answer to the same question — and an entry that is not the shape this build
 writes is not READ, which is a cable that was never run

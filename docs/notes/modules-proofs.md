@@ -615,3 +615,90 @@ planks (offsets 120-133), the doorknob (157-169), the hinges (186-199) and the
 sheet (213-226). Vanilla's server Lua uses the same call the same way
 (`ISBuildingObject.lua:58`, `SCampfireGlobalObject.lua:143`,
 `STrapGlobalObject.lua:603`).
+
+## 11. The cable: a list of tables inside the module table
+
+A module is a boolean under a string key, and section 1 is the whole of what makes
+one persist. A **cable** is not: `CeroSecModules.LINK_KEY` holds a *list* of
+tables, `{ x = , y = , z = , wire = }` a machine, sitting inside the same
+`cerosec` table on the same fixture. So it wants one thing more proven — that a
+table inside a table, reached by a **numeric** key, is written and read back like
+anything else.
+
+It is, and by recursion. `KahluaTableImpl.save(ByteBuffer)` writes a count and then
+a type byte and a value for every key and every value in turn:
+
+```
+save(ByteBuffer)
+   0..37   // first pass: count the pairs canSave() accepts
+  45: invokevirtual #213   // ByteBuffer.putInt(I)      <- that count
+  66: invokestatic  #219   // getKeyByte(Object):B
+  77: invokestatic  #223   // getValueByte(Object):B
+  84: iload 4 / iconst_m1 / if_icmpeq 51    <- key type -1: the pair is skipped
+  90: iload 5 / iconst_m1 / if_icmpne 97    <- value type -1: skipped too
+ 107: invokevirtual #226   // save(ByteBuffer, B, Object)   <- the key
+ 120: invokevirtual #226   // save(ByteBuffer, B, Object)   <- the value
+```
+
+and the one-value `save` is where the recursion is, at type byte **2**:
+
+```
+save(ByteBuffer, byte, Object)
+   2: ByteBuffer.put(B)                              <- the type byte first
+   6: iload_2 ifne 21   / 15: GameWindow.WriteString  <- 0: String
+  22: iconst_1          / 34: ByteBuffer.putDouble    <- 1: Double
+  42: iconst_3          / 62: ByteBuffer.put(B)       <- 3: Boolean
+  70: iconst_2          / 79: invokevirtual #247      // KahluaTableImpl.save(ByteBuffer)
+  85: new RuntimeException                            <- anything else throws
+```
+
+`getKeyByte` answers `0` for a String, `1` for a Double and `-1` for everything
+else; `getValueByte` answers those three plus `2` for a `KahluaTableImpl`. **A Lua
+list index is a Double**, so `links[1]` is a savable key, and the table it points at
+is type 2 and saves itself — to any depth, which is the depth this key needs: the
+`cerosec` table, the `link` list, one entry.
+
+The read side matches, and it is where the only version gate in this is:
+
+```
+load(ByteBuffer, int)
+   1: ByteBuffer.getInt()      <- the pair count
+   6: wipe()                   <- and the table starts empty
+  10: bipush 25 / if_icmplt 73 <- save version 25 and up
+  24..61  get() the key's type byte, load it, get() the value's, load it, rawset
+  82..109 older saves: every key is read as a String
+```
+
+Save version 25 is prehistoric — `IsoWorld.WorldVersion` is **249** in B42.20.4 —
+so the numeric keys of a list survive every save this mod will ever meet. Nothing
+was needed for it and nothing was added: a list of tables is what the engine
+already writes.
+
+**And it goes down the wire by the same code.** `ObjectModDataPacket.write` is
+`KahluaTable.save(ByteBuffer)` on the object's whole modData, behind a boolean that
+says whether there was one:
+
+```
+write(ByteBufferWriter)
+  19: KahluaTable.isEmpty()Z
+  32: ByteBufferWriter.putBoolean(Z)
+  52: KahluaTable.save(Ljava/nio/ByteBuffer;)V
+
+parse(ByteBufferReader, IConnection)
+  10: ByteBufferReader.getBoolean()Z
+  75: KahluaTable.load(Ljava/nio/ByteBuffer;I)V
+ 128: IsoObject.hasModData()Z
+ 139: KahluaTable.wipe()V          <- the false branch
+```
+
+Two things follow, and both are rules this feature leans on. A cable written on the
+server reaches every client with **no call of ours beyond `transmitModData()`**
+(section 2), which is how the right-click menu on another player's screen knows the
+fixture is already linked. And the empty case is **transmitted as absence**: the
+boolean is false, the receiver *wipes*. That is why taking the last cable off takes
+the key away and, if nothing else is left, the table with it — the other side does
+not keep a stale list, and `IsoObject.save` skips an empty table anyway (section 1).
+
+The machine's end of the cable is not here at all. It is a key in the OS state
+(`os.links`), which is this mod's own persistence and has its own contract
+([ARCHITECTURE.md](../ARCHITECTURE.md), [DEVICES.md](../DEVICES.md#the-cable-when-the-fixture-is-in-no-building)).
