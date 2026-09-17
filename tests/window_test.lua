@@ -17274,7 +17274,8 @@ do
 
 		local worstState = CeroSecOS.newState("worst")
 		-- Everything a fresh machine ships with, swept away: nothing but directories,
-		-- with /etc/passwd put back because the gate asks for it by name.
+		-- with /etc/passwd put back because the gate asks for it by name, and a
+		-- full thirty-two-entry link list, because that too is legal weight.
 		worstState.fs = CeroSecOS.newDir("root", 755)
 		local etc = CeroSecOS.newDir("root", 755)
 		worstState.fs.children.etc = etc
@@ -17288,6 +17289,11 @@ do
 		eq("and its floppy is at its own", dmade + 1, CeroSecOS.FLOPPY_NODES)
 		worstState.floppy = floppy
 		worstState.fdtype = CeroSec.FLOPPY_TYPES[1]
+		local links = {}
+		for i = 1, CeroSecOS.LINKS_PER_MACHINE do
+			links[i] = { x = i, y = i, z = 0 }
+		end
+		worstState.links = links
 
 		-- LEGAL, and that is the whole point: a belt may only be sized against a
 		-- state the gate would take.
