@@ -1,8 +1,9 @@
 # CeroSec — Devices
 
 How `/dev` gets built every command from what a computer can actually reach:
-discovery, the lock rule, sync calls proven against the shipped jar, motion
-sensors, and the floppy drive's own second filesystem.
+discovery, the lock rule, the cable to a fixture outside the building, sync calls
+proven against the shipped jar, motion sensors, and the floppy drive's own second
+filesystem.
 
 See also: [PLAYERS.md](PLAYERS.md) for the `dev` command and the device tables a
 player sees, [PROTOCOL.md](PROTOCOL.md) for how `dev find` highlights one on a
@@ -90,23 +91,72 @@ window and sheet of every building was invisible to `/dev` until 0.4.1, while th
 north and west ones were listed: a module fitted to a front door that never became
 a device.
 
-So each room square's **south and east neighbours** are looked at too, and what is
-taken off one is:
+So each room square's **four neighbours** are looked at too, and they are not
+looked at for the same things:
 
-- a **door, window or curtain** whose own `getOppositeSquare()` is that room square
-  — the engine's answer to which boundary the object is on, which is why a curtain's
-  four types need no reading of `north`;
-- a **light switch or lamp** whose sprite carries the `attached` property pointing
-  at that room square. A light is not the wall, it hangs on one, and the property is
-  what says which: vanilla reads `attachedN`, `attachedS`, `attachedW`, `attachedE`
-  in that order to work out where a survivor must stand to pull the chain
-  (`ISWorldObjectContextMenu.lua:1348-1352`, `onToggleLight`). The *Round Outdoor
-  Lamp* is `MoveType = WallObject` with `attachedN` (`newtiledefinitions.tiles.txt`,
-  tileset `lighting_outdoor_01`, tile 24), so a porch lamp stands on the pavement
-  and hangs on the house's wall — and a **lamppost** has no `attached` property at
-  all and carries `streetlight` instead (tile 0 of the same tileset). That is how a
-  lamp on the building is told from the county's street lighting, and it is the
-  engine's own distinction rather than a guess about a sprite name.
+- the **south and east** neighbours carry a wall, so both are read for every wall
+  fixture: a **door, window or curtain** whose own `getOppositeSquare()` is that
+  room square — the engine's answer to which boundary the object is on, which is
+  why a curtain's four types need no reading of `north` — and a **light** that
+  hangs on that wall;
+- the **north and west** neighbours carry no wall of this room (the wall between
+  them stands on the room's own square and `scanSquare` has it already), so they
+  are read for **hung fixtures only**. A door on one of those squares is the
+  NEIGHBOUR's wall, and taking it would be a machine listing the house next
+  door's front door.
+
+**A light is the one fixture that needs both readings, and the porch-lamp report
+is why.** A light does not stand on a wall, it hangs on one, and it hangs on the
+OUTSIDE: a lamp on the house's south wall is on the pavement south of the room,
+and a lamp on the house's **north** wall is on the pavement **north** of it — a
+square nothing in this mod visited before 0.5.0. So the far-edge rule of 0.4.1
+fixed the doors and half the lamps, and every north-wall and west-wall porch lamp
+in the county stayed invisible to `/dev` with a relay screwed to it.
+
+The reading itself is two, for the same reason:
+
+- **`attached`**, which is vanilla's own: it reads `attachedN`, `attachedS`,
+  `attachedW`, `attachedE` in that order to work out where a survivor must stand
+  to pull the chain (`ISWorldObjectContextMenu.lua:1348-1352`, `onToggleLight`).
+- **`Facing`, turned round**, because the tile definitions do not agree with the
+  first. Of the twenty `CustomName = Outdoor Lamp` tiles in `lighting_outdoor_01`,
+  twelve carry the `attached` flag opposite their `Facing` — a lamp facing south
+  hangs on the wall to its north — and **eight are crossed**: every Round and
+  every Antique lamp drawn facing north carries `attachedW` (tiles 28, 30) and
+  every one drawn facing west carries `attachedN` (29, 31), and the Oval pair the
+  same way (44, 45). A lamp faces AWAY from what it is screwed to, so the second
+  reading is the first turned round: the wall is on the opposite side of `Facing`.
+
+The two sets coincide, which is why nobody ever saw those lamps: the crossed
+patterns are exactly the north and west faces, and those are exactly the two
+neighbours no walk visited.
+
+The second reading is asked **only of a sprite the engine itself calls a wall
+object**, which is what keeps the two lights that are not on the building out:
+
+| property | the twenty lamps | a lamppost | a flood light |
+| --- | --- | --- | --- |
+| `MoveType = WallObject` | yes | no | no |
+| `Facing` | yes | no | yes |
+| `streetlight` | no | yes | no |
+
+A **lamppost** carries neither and is refused by both readings, as it was before —
+it is the county's street lighting and not the building's, and a cable is how a
+machine reaches one (below). A **flood light** carries `Facing` and no `MoveType`
+— a movable light on a tripod, `LightRadius = 24`, `IsMoveAble`, tiles 48—51 — so
+the `MoveType` half refuses it: a floodlight leaning against a wall is not screwed
+to it, and the day somebody carries it away the building has not lost a fixture.
+
+`props:has(name)` is the `String` overload and it really answers: `PropertyContainer`
+has five `has` overloads, Kahlua's `MultiLuaJavaInvoker` picks the one whose argument
+types match (`matchesArgumentTypes`, offsets 42—49), and `has(String)` puts the name
+through `TilePropertyAliasMap.getIDFromPropertyName` — which registers every name the
+tile definitions use, and `ATTACHED_N`'s own name is the literal `attachedN`
+(`javap -c zombie.core.properties.IsoPropertyType`, offset 1281). An unknown name
+answers `-1` and `containsKey((short) -1)`, which is false. `propertyEquals` is
+`get(name)` into `StringUtils.equalsIgnoreCase` (offsets 0—9) and `get` answers
+`null` for a property the sprite has not got, so the `has` before it is what makes
+the null impossible rather than a thing to hope about.
 
 Nothing else is taken off a neighbour: a generator on the sidewalk is not the
 building's, and neither is a sensor dropped there (the far-edge walk does not read
@@ -148,6 +198,168 @@ printed.
 
 And it answers **nothing at all** for a fixture nobody has wired, which is the
 hardware-module gate below.
+
+## The cable, when the fixture is in no building
+
+The two walks above are free: a survivor pays for them by having put the machine
+in the house. What they cannot reach is everything else — the lamppost on the
+street, the gate at the end of the drive, the shop across the car park — and the
+answer to all of it is the one an electrician would give. **He runs a cable**,
+and the fixture is in that machine's `/dev` like anything in the building.
+
+**A cable ties a fixture to a MACHINE, and a machine is a place.** What is stored
+and what travels is the square the computer stands on, never its hostname: a
+hostname is a line in `/etc/hostname` that a player changes in the morning, and a
+machine renamed in the morning is the same machine in the afternoon and keeps
+every cable ever run to it. The menu SHOWS the hostname, because that is what a
+survivor calls his machines by, and reads it out of the state the server already
+mirrors into the computer's own `IsoObject` — no new sync key for it
+(`CeroSecLinkMenu.hostOf`; a machine whose mirror has not arrived is named the
+way a machine with no `/etc/hostname` is named anyway, `ksp-` and its square).
+
+**It is written on both ends**, and the asymmetry between them is the whole
+design:
+
+| | where | what | cap |
+| --- | --- | --- | --- |
+| the fixture | its own modData, under `CeroSecModules.LINK_KEY` inside the module table | `{ x, y, z, wire }` a machine | `LINKS_MAX` = 4 |
+| the machine | its OS state, `os.links` | `{ x, y, z }` a fixture | `CeroSecOS.LINKS_PER_MACHINE` = 32 |
+
+The cost lives on the FIXTURE because that is the end that pays it back: the day
+the fixture leaves the world, what is owed has to be readable from the thing that
+is leaving. The machine's end is a list of PLACES because what it is for is
+telling the discovery which squares to visit — and a walk of Knox County looking
+for fixtures that name this machine is exactly the thing it exists to avoid.
+Either side alone would be that walk, in one direction or the other.
+
+The fixture's list rides with the module keys and needs nothing of its own: the
+same `modData` table, written by the server, `transmitModData()` after it
+(`docs/notes/modules-proofs.md`). It is read through `installedOn`'s gate, so a
+fixture whose modules this build will not read has no cables either — the same
+answer to the same question — and an entry that is not the shape this build
+writes is not READ, which is a cable that was never run
+(`CeroSecModules.linksOn`). An empty list takes itself off the table rather than
+sitting there empty, because `IsoObject.save` skips a modData table that is
+empty altogether and a table holding one empty list is not empty.
+
+The machine's list is a state key and **moved no `STATE_VERSION`**: absent is
+what every machine saved before this build looks like, absent reads as "no
+cables", and an older build that met the key would ignore it (the contract says
+so out loud — `docs/CONTRIBUTING.md`, "Nor is adding a key"). What `validate`
+owns is its SHAPE, `CeroSecOS.linksOk`: a bounded list, three whole numbers an
+entry, nothing else looked at. A forged list is a machine with no cables, never
+a machine with half of one.
+
+### What a run costs
+
+```
+wire = ceilSqrt(dx*dx + dy*dy) + |dz| * LINK_FLOOR_TILES      at least 1
+```
+
+Euclidean on `x` and `y` — a cable is run across a floor, not around the corners
+of it — rounded UP to whole tiles, plus `LINK_FLOOR_TILES` = 4 a storey, because
+a cable does not go through a slab where it likes: it goes up the inside of a
+wall, through the joists and along the ceiling of the room below, which is some
+four tiles for one storey. Never less than one: a machine on the fixture's own
+square is still a cable. The rounding is `ceilSqrt`, the smallest `n` whose
+square covers the sum, **worked out without `math.sqrt`** — a whole number
+worked out by integer arithmetic is the same whole number on Kahlua as on
+`lua5.1`, where a float landing a millionth under 12 would be eleven cables on
+one VM and twelve on the other (`docs/CONTRIBUTING.md`, Kahlua purity).
+
+`CeroSecModules.LINK_RANGE` = 30 is measured against that PRICE and not against
+the flat distance, so the storeys are inside the range too: a machine 28 tiles
+away and one floor up is 32 tiles of cable and is out of reach. The menu shows
+both numbers because they are different questions — "12 tiles" is what a
+survivor paces out, "12 wire" is what he pays — and one floor up they disagree:
+
+```
+ksp-front-01, 12 tiles, 12 wire
+ksp-back-02, 3 tiles, 7 wire
+```
+
+Past the range the answer is another computer for that part of the building,
+worked from the first one down the coax or over the telephone. That is a machine
+he has to find and put on a desk, and it is the reason there is a limit at all.
+
+### What is refused, and where
+
+Both ends of the gesture are the same list of words, `CeroSecModules.linkRefusal`
+for running one and `unlinkRefusal` for cutting it. The client greys a line with
+the reason; the server asks every one of them again inside the command and
+believes nothing that arrived (`Commands.linkmodule`, `SCeroSecSystem:linkJob`):
+
+| word | run | cut |
+| --- | --- | --- |
+| `fixture` | nothing is wired here at all | no cable from that machine |
+| `safehouse` | somebody else's, with the option on | somebody else's |
+| `linked` | this machine is already on the list | — |
+| `links` | the fixture is full (`LINKS_MAX`) | — |
+| `far` | past `LINK_RANGE` | — |
+
+A bare fixture is refused a cable and is NOT refused the cut: a module that came
+off a fixture somebody had cabled leaves the cable run and the reel owed, and
+refusing the unlink would be a survivor who can only get his wire back by taking
+the door down. Nothing else the building asks is asked here — **not where he is
+standing, not that the door be open, not that he be inside**. Those are rules
+about reaching a thing with your hands, and a cable is the answer to not being
+able to. What he is CARRYING is not in the table for `fittingRefusal`'s own
+reason: it is a fact about him, and each side says it in its own words — the menu
+greys with the count ("needs 14 electric wire"), the server refuses.
+
+The trade is the fixture's own: the Electricity level of the HIGHEST module on
+it (`CeroSecModules.linkSkill`), so anybody who could fit the hardware can cable
+it and nobody who could not fit it can re-route somebody else's. The reel is
+vanilla's `Base.ElectricWire`, counted the way vanilla counts an item it is about
+to consume and taken out of the bags inside the bag. The timed action is the
+DISTANCE and not the box: `LINK_TIME` a tile, capped at `LINK_TIME_MAX`, less
+vanilla's three ticks a level (`ISCeroSecLinkAction`).
+
+### How the two ends stay in step
+
+Nothing keeps them in step but the walk, and nothing else has to. `find` takes
+the machine's list, visits exactly those squares, and hands back **what the list
+should be after the walk** (`CeroSecDevices.find` answers `found, kept`; the
+caller writes `kept` into the state). Three rules, and they are the whole of it:
+
+- A square that is loaded and carries no cable to this machine is **dropped**.
+  The fixture was unlinked from the other side, or replaced, or picked up. The
+  square is asked, not believed, which is what makes this self-healing in both
+  directions.
+- A square that is **not loaded is kept exactly as it is**. A cable in a street
+  nobody is standing in is still a cable, and a machine that forgot one because
+  the chunk was away would be a machine that charged for a cable and then took it
+  away. That is also why `find` answering `nil` for the second value — the walk
+  could not ask the world at all — must never read as an empty list.
+- A fixture whose MODULE came off keeps its cable and stays on the list: the wire
+  is still run, and what it reaches is a fixture with no device on it.
+
+**A fixture that is both in the building and on a cable is one device, not two.**
+The building walk gets there first and the entries are already numbered; what the
+cable adds to them is the `wire`, which is the one thing only the cable knows.
+The same fixture may be in two machines' `/dev`s at once — four of them, in fact —
+and each of those machines numbers it in its own `os.devmap` like any other
+device.
+
+That `wire` is what `dev find` says, and it is the only place the sentence is
+written (`CeroSecOS.linkedText`):
+
+```
+root@ksp-04-11:~# dev find light1
+light1: blinking, linked, 12 tiles of wire
+```
+
+### The refund
+
+Cutting a cable gives the wire back, one item a tile: a reel is not an item in
+this game — `Base.ElectricWire` is one wire — so twelve tiles is twelve of them.
+And the fixture leaving the world pays back the cable the way it pays back the
+boxes, on the square it stood on (`SCeroSecFixtures.dropLinks`, beside
+`dropModules`). **One end is all that hook writes**: the machine at the other end
+keeps a square on its list, finds nothing there on its next walk, and drops it —
+which is the moment that entry was always going to go. Reaching for every machine
+named in the list to correct it there would be the walk the pair of lists exists
+to avoid, done from inside an engine hook that is not allowed to touch the world.
 
 ## The hardware modules
 
@@ -918,8 +1130,10 @@ which is ten passes).
 **Measured**, in engine calls rather than in milliseconds, because the walk is
 Java on the far side of a Kahlua call and a timing says more about the box than
 about the code (`hostile_test.lua` section 27): a sixty-room mall, a hundred
-passes at the scheduler's own cadence. **7,109,900 calls and 100 walks without the
-cache; 845,990 and 10 with it.**
+passes at the scheduler's own cadence. **8,447,900 calls and 100 walks without the
+cache; 979,790 and 10 with it.** (Both numbers grew with the two neighbours the
+porch-lamp report added: four squares are read round every room square now instead
+of two, and the ratio the cache buys did not move.)
 
 ## The nil argument
 

@@ -100,7 +100,7 @@ Start with [docs/PLAYERS.md](docs/PLAYERS.md) if you are playing, and with
 | [CLAUDE.md](CLAUDE.md) | The same rules as operating instructions, for contributors working with Claude Code. |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The engine, the server, the client, the system files, the BIOS, persistence, the manual reader. |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | The client/server wire: messages, the screen shape, control markers, completion, device highlighting, remote sessions. |
-| [docs/DEVICES.md](docs/DEVICES.md) | How `/dev` is built, the sync calls proven against the jar, motion sensors, the floppy's own filesystem. |
+| [docs/DEVICES.md](docs/DEVICES.md) | How `/dev` is built, the cable to a fixture outside the building, the sync calls proven against the jar, motion sensors, the floppy's own filesystem. |
 | [docs/NETWORK.md](docs/NETWORK.md) | Coax, the telephone and the radio: their identities, their rules and rates, and the sessions they carry. |
 | [docs/SCRIPTING.md](docs/SCRIPTING.md) | The shell language, pipes, cron, job control, and the step machine and scheduler underneath. |
 | [docs/CONTENT.md](docs/CONTENT.md) | What is already on the machines, the disks and the papers: the per-save secret, the catalogues, where a password is found. |
