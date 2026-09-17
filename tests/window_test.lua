@@ -23558,4 +23558,115 @@ do
 	CeroSecDevices.invalidate()
 end
 
+--
+-- 59. The coax does not reach out of the building either
+--
+-- THE REPORT, in the owner's words: a computer on the pavement a few tiles from a
+-- house, eth0 on 10.110.227.1, and `arp -a` on it showing 10.110.227.2 -- the
+-- machine INSIDE. A stranger sets his machine down in the street and is on the
+-- household's Ethernet.
+--
+-- The hole is not a radius: the wire never had one. It is the RECORD. A machine
+-- carried out of every building keeps the two bytes it was numbered with, which
+-- is deliberate and stays that way -- the address is a thing a survivor wrote in
+-- /etc/hosts -- and the link layer read those two bytes and nothing else, so a
+-- machine looted out of a house was still on its coax from the street, from the
+-- next county, from anywhere at all.
+--
+-- What is asserted is the ABSENCE of the house from the street machine's wire,
+-- against a PRESENCE on the same wire both before the move and after it, in both
+-- of the two places the rule is carried: the door every command asks
+-- (CeroSecNet.reachable) and the peer list arp -a, ruptime and rwho print.
+--
+do
+	local net = newNet()
+	local street, home = net.here, net.gate
+	local out, inside = net.addr(street), net.addr(home)
+
+	local function peers(object)
+		local env = CeroSecNet.envFor(net.system, object, object:osState())
+		local list, at = env.peers(), {}
+		for i = 1, #list do at[list[i].addr] = true end
+		return at
+	end
+	local function reaches(from, addr)
+		return CeroSecNet.reachable(net.system, from, addr) ~= nil
+	end
+
+	-- 1. Both in the house, which is where they were numbered.
+	check("the two machines of one house are on one wire", reaches(street, inside))
+	check("and each is on the other's wire", peers(home)[out])
+
+	-- 2. One of them picked up and set down on the pavement. The square it stands
+	-- on now is in no building, which is what a pavement is (getBuilding is
+	-- getRoom and then IsoRoom.getBuilding, null without a room).
+	street.getSquare = function() return net.square(10, 10, 0, nil) end
+	CeroSecNet.identify(net.system, street, street:osState())
+	eq("the machine keeps the address it was given", net.addr(street), out)
+	eq("and the house machine keeps its own", net.addr(home), inside)
+	check("but the street machine cannot reach into the house",
+		not reaches(street, inside))
+	check("nor the house machine out to the street", not reaches(home, out))
+	check("and arp on the street sees nothing of the house", peers(street)[inside] == nil)
+	check("nor arp in the house anything of the street", peers(home)[out] == nil)
+	-- THE PRESENCE the two absences are measured against: the street machine is
+	-- still on a wire, its own, and still answers on the loopback.
+	check("the street machine is still on its own wire", peers(street)[out])
+	check("and still reaches itself", reaches(street, CeroSecOS.LOOPBACK_ADDR))
+
+	-- 3. THE WITNESS, and the reason the fix is the /dev walk's room test and not
+	-- a wider one: a base somebody built has no room and no building, so two
+	-- machines looted out of one house and set down side by side in it are two
+	-- machines outdoors with one pair of bytes -- and they keep their wire, by the
+	-- radius that walk already uses. (A machine that was NEVER in a building has
+	-- no address to be on a wire with: "a machine in no building has no address",
+	-- above.)
+	home.getSquare = function() return net.square(12, 10, 0, nil) end
+	check("two machines in the camp two tiles apart are on one wire",
+		reaches(street, inside))
+	check("and see each other", peers(street)[inside])
+	-- And the radius is a radius: the same two at opposite ends of the street are
+	-- not one household.
+	home.getSquare = function() return net.square(10 + CeroSecDevices.RADIUS + 1,
+		10, 0, nil) end
+	check("but not eleven tiles apart", not reaches(street, inside))
+	check("nor on each other's arp", peers(street)[inside] == nil)
+end
+
+--
+-- 60. Nor does the radio cable reach through a wall
+--
+-- The same rule, one link over, and found by deriving the list rather than by a
+-- second report: the TNC walk has the same shape as the /dev walk and the wire
+-- -- a machine in a room the map drew looks at its ROOM, and a machine in no room
+-- falls back to a radius (CeroSecRadio.tncAt). The fallback had no room test in
+-- it, so a computer on a pavement was wired to the set on the other side of the
+-- wall: REACH is one tile, and one tile is what a wall is.
+--
+-- The room branch is untouched and is benched above ("a set six tiles away but in
+-- the same room is the TNC"); this is the outdoor one.
+--
+do
+	local net = newRadioNet()
+	-- The pavement the machine stands on, with nothing on it.
+	net.ground(net.here)
+	-- And the household's set, one tile away and inside a room the map drew.
+	local house = net.world.room("house", { { 11, 10, 0 } })
+	net.world.put(net.world.square(11, 10, 0, house), fakeRadio({}))
+	net.login("admin")
+	say(net, "dev radio")
+	net.tick(3)
+	check("the set through the wall is not the street machine's TNC",
+		not net.glass("radio0"))
+	-- THE PRESENCE, and the reason this is not a bench that found nothing at all:
+	-- a set on the pavement itself, one tile the other way, is the TNC it always
+	-- was -- which is the base the radius exists for.
+	net.aerial(net.here, nil, 0, 1)
+	say(net, "dev radio")
+	net.tick(3)
+	check("but the one on the kerb beside it is", net.glass("radio0"))
+	local _ = house
+	_G.__world = nil
+end
+
 print("window_test: " .. count .. " checks passed")

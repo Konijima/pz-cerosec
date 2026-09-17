@@ -321,10 +321,25 @@ function CeroSecRadio.tncAt(x, y, z)
 			end
 		end
 	else
+		-- OUTDOORS, and the radius is the answer for a place the map knows no room
+		-- in -- a base somebody built -- which is all it is. A square that HAS a
+		-- room is skipped whole, exactly as the /dev walk skips one
+		-- (SCeroSecDevices.scanOutdoorSquare), because a machine set down on a
+		-- pavement was picking up the household's set on the other side of the
+		-- wall: one tile away, through it.
+		--
+		-- getRoom() and not isInARoom(), which is the test that keeps the base
+		-- working: isInARoom() is
+		-- `getRoom() != null || getIsoWorldRegion().isPlayerRoom()` (javap -c
+		-- zombie.iso.IsoGridSquare.isInARoom, offsets 0-31), so four walls a
+		-- player raised would read as a room and take his own radio away from him.
 		local r = CeroSecRadio.REACH
 		for dx = -r, r do
 			for dy = -r, r do
-				onSquare(cell:getGridSquare(x + dx, y + dy, z), found)
+				local near = cell:getGridSquare(x + dx, y + dy, z)
+				if near ~= nil and near:getRoom() == nil then
+					onSquare(near, found)
+				end
 			end
 		end
 	end
