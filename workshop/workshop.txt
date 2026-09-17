@@ -43,6 +43,22 @@
 #     .workshopItemDescription img { max-width: 630px; }
 # (public/css/skin_1/workshop.css). Wider is not shown wider, it is scaled
 # down, and a scaled-down bitmap face comes back with grey edges.
+#
+# THE MOBILE STRETCH, AND WHY IT IS NOT A BBCODE PROBLEM
+#
+# Confirmed 2026-09-17 by reading Steam's own served HTML and CSS on a mobile
+# user agent: [img] renders as a bare <img>, no class, no width attribute (BBCode
+# has none to give it), and the only rule that ever touches it is the 630px cap
+# above. That rule is a ceiling, not a fill: on a phone narrower than 630 CSS
+# px, nothing shrinks the image further, so it overflows .workshopItemDescription
+# and stretches the whole page sideways. Ruled out by the same read: no [table]
+# is used here (a table would explain it, but there is none), and the [code]
+# block's lines wrap (`div.bb_code { white-space: pre-wrap; }`), so they are not
+# the cause either. There is no percentage-width or responsive fix available in
+# Steam BBCode, so the only lever is the image's own pixel width. Mobile-safe
+# copies (480 px wide, same aspect ratio, not replacing these files) are kept at
+# workshop/banner-mobile.png and workshop/img/*-mobile.png; see docs/RELEASE.md
+# for whether to host and switch to them.
 # ---------------------------------------------------------------------------
 version=1
 id=3801094056
@@ -51,9 +67,16 @@ description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/mai
 description=
 description=[b]The desktop computers of Knox County still work. This one runs Unix, and runs the building.[/b]
 description=
-description=CeroSec puts a small 1993 Unix on the vanilla desktop computers of Knox County. Switch one on, sit down at it, and a green 60x20 terminal opens on a BIOS line and a login prompt. Behind it: files, permissions, accounts, a shell with pipes and cron, three ways off the machine, and the building itself under [b]/dev[/b] -- doors, lights, curtains, windows, the oven, the generator, the television -- worked by hand, on a schedule or off a sensor.
+description=CeroSec puts a small 1993 Unix on the vanilla desktop computers of Knox County. Switch one on and a green 60x20 terminal opens on a BIOS line and a login prompt: files, permissions, accounts, a shell with pipes and cron, three ways off the machine, and the building itself under [b]/dev[/b], worked by hand, on a schedule or off a sensor.
 description=
 description=The disk belongs to the computer, not to you: walk away and come back to the same session. No dependencies, Build 42, safe on a save you are playing.
+description=
+description=[b]Everything is documented in the wiki[/b], the real place to learn CeroSec: every command and example on it is replayed against the running game, not typed by hand.
+description=[list]
+description=[*]Players, start here: [url=https://github.com/Konijima/pz-cerosec/wiki/Your-First-Computer]Your First Computer[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Your-First-Session]Your First Session[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Recipes-Index]Recipes[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Troubleshooting]Troubleshooting[/url].
+description=[*]Modders and server admins: [url=https://github.com/Konijima/pz-cerosec/wiki/Architecture]Architecture[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Contributing]Contributing[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Sandbox-Options]Sandbox Options[/url], [url=https://github.com/Konijima/pz-cerosec/wiki/Multiplayer-and-Servers]Multiplayer and Servers[/url].
+description=[/list]
+description=[url=https://github.com/Konijima/pz-cerosec/wiki]The wiki home.[/url]
 # SHOT 01 -- workshop/shots/01-boot-login.png, the hero shot
 # description=[img]<url of 01-boot-login.png>[/img]
 description=
@@ -61,9 +84,9 @@ description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/mai
 description=
 description=[list]
 description=[*][b]A real terminal.[/b] Sixty columns by twenty, a BIOS, a login prompt and a shell; two survivors at one computer type on one glass.
-description=[*][b]Files, permissions, accounts.[/b] Owner, group and other, octal and symbolic modes, links, [b]sudo[/b] over a real [b]/etc/sudoers[/b].
-description=[*][b]The prompt is the script language.[/b] [b]sh[/b]'s grammar with pipes, redirects and background jobs, plus [b]cron[/b] and a screen editor.
-description=[*][b]The building, under /dev.[/b] A character device for every door, lock, window, light, curtain, oven, washer, generator and set it can reach, once one of nine screw-on modules is on the fixture: [b]dev curtain0 open[/b].
+description=[*][b]Files, permissions, accounts.[/b] Owner, group and other, octal and symbolic modes, [b]sudo[/b] over a real [b]/etc/sudoers[/b].
+description=[*][b]A real shell.[/b] [b]sh[/b]'s grammar, pipes, redirects, background jobs, [b]cron[/b] and a screen editor: eighty-seven commands in all.
+description=[*][b]The building, under /dev.[/b] A character device for every door, lock, window, curtain and appliance it can reach, once one of nine screw-on modules is on the fixture: [b]dev curtain0 open[/b].
 description=[*][b]Floppy disks.[/b] A 3.5 inch disk with its own filesystem: [b]newfs[/b], [b]mount[/b], write on the label, carry it across town.
 description=[*][b]A manual you have to find.[/b] Three volumes printed in 1993, and your survivor works on while you read.
 description=[/list]
@@ -73,32 +96,20 @@ description=
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-automation.png[/img]
 description=
 description=A fixture with a module on it is a file, and anything that can write a file can work it: a word at the prompt, a script, a crontab line.
-description=
 description=[list]
 description=[*][b]A door that shuts itself[/b], five seconds after somebody walked through.
 description=[*][b]Curtains at dawn and dusk[/b], or drawn across the building in one word.
-description=[*][b]The television on for Life and Living[/b], tuned for the programme and off at the end.
-description=[*][b]The generator watched[/b], with a letter to root when the tank gets low -- once, not sixty times an hour.
+description=[*][b]The generator watched[/b], with a letter to root when the tank gets low, once, not sixty times an hour.
 description=[*][b]An alarm that names the window[/b] somebody opened, on every screen in the building, and flashes the lights.
-description=[*][b]A morning[/b]: the radio and every light on at half past six.
 description=[/list]
-description=
-description=The six are programs on a printed floppy, [b]CeroSec HOME 1.0[/b], found in the same drawers as the other disks. Copy them over, put them in a crontab:
-description=[code]
-description=$ echo close > /dev/door0
-description=$ crontab -e
-description=0 7 * * * sh /usr/local/bin/curtains.sh auto
-description=0 20 * * * sh /usr/local/bin/curtains.sh auto
-description=[/code]
-description=
-description=[b]What it costs.[/b] A module goes on the fixture first, from inside, door open, and the four that move something want a Small Motor -- Knox County never sold one, so you take a screwdriver to a hair dryer. A window operator also throws the catch on its way past: in an alarmed house, a window opening at six in the morning rings it.
+description=The six are programs on a printed floppy, [b]CeroSec HOME 1.0[/b]. A module goes on the fixture first, from inside, door open; the four that move something want a Small Motor, Knox County never sold one, so you take a screwdriver to a hair dryer.
 description=
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-getting-started.png[/img]
 description=
 description=[list]
-description=[*]Right-click a desktop computer, [b]Turn on computer[/b] (it needs power), then again for [b]Use computer[/b]: your survivor sits down.
-description=[*]At [b]login:[/b] a machine nobody set up takes [b]admin[/b] and an empty password. On somebody's machine the accounts are his, and the password is on a paper in a drawer or a dead man's pocket.
-description=[*][b]help[/b] lists the commands, [b]dev[/b] the fixtures -- empty until a module is on one: right-click the door, [b]CeroSec hardware[/b].
+description=[*]Right-click a desktop computer, [b]Turn on computer[/b] (it needs power), then [b]Use computer[/b]: your survivor sits down.
+description=[*]At [b]login:[/b] a fresh machine takes [b]admin[/b] and an empty password. On somebody's machine the accounts are his, and the password is on a paper in a drawer or a dead man's pocket; there is no password recovery.
+description=[*][b]help[/b] lists the commands, [b]dev[/b] the fixtures, empty until a module is on one.
 description=[*]Type [b]exit[/b] and walk away. The screen keeps running, exactly as you left it.
 description=[/list]
 # SHOT 03 -- workshop/shots/03-computer-menu.png
@@ -114,10 +125,9 @@ description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/mai
 description=
 description=[list]
 description=[*][b]Somebody's machine, not a bare one.[/b] A computer nobody has switched on yet comes up as its owner's: hostname, accounts, files, log.
-description=[*][b]Ten kinds of premises[/b], from a house and a shop to a bank, a clinic, a radio station, a military post and CeroSec's own bench.
-description=[*][b]Their crontab lines still run.[/b] A shop's lights go off at nine, a vault pulls to at six.
+description=[*][b]Eleven kinds of premises[/b], from a house and a shop to a bank, a clinic, a radio station, a military post and CeroSec's own bench.
 description=[*][b]The password is written down, because everybody wrote it down.[/b] A sticky note in a desk, or in a dead employee's pocket.
-description=[*][b]Disks, and the phone book.[/b] Seventeen floppies in a hundred are not blank, and vanilla's Phonebook is the county directory.
+description=[*][b]Eleven world floppies, and the phone book.[/b] Seventeen in a hundred are not blank, and vanilla's Phonebook is the county directory.
 description=[/list]
 # SHOT 07 -- workshop/shots/07-somebody-elses-machine.png
 # description=[img]<url of 07-somebody-elses-machine.png>[/img]
@@ -127,9 +137,9 @@ description=
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-network.png[/img]
 description=
 description=[list]
-description=[*][b]Coax, for the premises.[/b] Every computer of a premises shares a segment and an address it did not choose: [b]arp[/b], [b]ruptime[/b], [b]rlogin[/b], [b]rsh[/b], [b]rcp[/b].
+description=[*][b]Coax, for the premises.[/b] Every computer of a premises shares a segment: [b]arp[/b], [b]rlogin[/b], [b]rsh[/b].
 description=[*][b]The telephone, for the county.[/b] One line per premises, one call at a time, a seven-digit number the firmware announces at power-on.
-description=[*][b]Packet radio, for after the power.[/b] A two-way radio becomes the machine's TNC and a callsign makes it a station: the only link that outlives the grid.
+description=[*][b]Packet radio.[/b] A two-way radio becomes the machine's TNC, the only link that outlives the grid.
 description=[/list]
 # SHOT 09 -- workshop/shots/09-the-building-network.png
 # description=[img]<url of 09-the-building-network.png>[/img]
@@ -138,33 +148,25 @@ description=[/list]
 description=
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-multiplayer.png[/img]
 description=
-description=Every disk lives on the server and every command runs there. A client asks; it never decides, and is never told a password.
-description=
-description=[b]The budgets are why it is safe on a public server.[/b] A script is stepped, never run to the end, so a [b]while true[/b] costs that machine its own share and nothing else, and [b]nothing a player types reaches Lua[/b].
+description=Every disk lives on the server; a client asks, it never decides, and is never told a password. A script is stepped, never run to the end, so a [b]while true[/b] costs its own share and nothing else, and nothing a player types reaches Lua.
 description=
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-faithful.png[/img]
 description=
-description=Where a real [b]/bin/sh[/b], [b]cron[/b], [b]rlogin[/b] or Hayes modem would answer a certain way, this machine answers the same, refusals included.
-description=
-description=Six things have no 1993 model and are kept anyway; the in-game Volume 1 names them.
+description=Where a real [b]/bin/sh[/b], [b]cron[/b] or Hayes modem would answer a certain way, this machine answers the same, refusals included. Six things have no 1993 model and are kept anyway, and the in-game Volume 1 names them.
 description=
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-faq.png[/img]
 description=
 description=[b]Can I add it to a save I am already playing?[/b] Yes, and removing it leaves the computers as they were.
-description=
 description=[b]Will it slow the game down?[/b] No: a script is stepped, never run to the end, and a dark machine costs nothing.
-description=
 description=[b]Does it conflict with other mods?[/b] Nothing known: it overrides no vanilla file.
-description=
 description=[b]Build 41?[/b] No, and there will not be one: Build 42 only, 42.20 and up.
+description=More, and the fixes for common snags, are in the wiki's Troubleshooting and FAQ pages above.
 description=
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-credits.png[/img]
 description=
-description=[b]Made by Konijima.[/b] English and French in the box; another welcome.
+description=[b]Made by Konijima.[/b] English and French in the box. AI tools were in the toolbox. All rights reserved: do not reupload it.
 description=
-description=Code, art, sounds and text by Konijima for this mod, with AI tools in the toolbox. All rights reserved: do not reupload it.
-description=
-description=Version 0.5.0. Source: [b]github.com/Konijima/pz-cerosec[/b], which opens at release. Bugs in the comments.
+description=Version 0.5.0. Source: [b]github.com/Konijima/pz-cerosec[/b], opening at release. Bugs in the comments.
 description=
 description=If it earned it, a rating and a favourite put it in front of the next person.
 tags=Build 42;Interface;Items;Literature;Multiplayer;Realistic
