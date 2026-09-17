@@ -2,8 +2,8 @@
 Safe for existing saves. Nothing to redo.
 
 [b]New[/b]
-[*] Cables reach fixtures a computer cannot otherwise touch. Right-click a wired fixture and take [b]Link to computer[/b]: a lamppost, a gate, the shop across the street.
-[*] One Electric Wire per tile, up to thirty tiles. [b]Unlink[/b] gives the wire back, and moving the computer keeps its cables attached.
+[*] Cables reach fixtures a computer cannot otherwise touch. Right-click a fixture that has a module and take [b]Link to computer[/b]: a lamppost, a gate, the shop across the street.
+[*] One Electric Wire per tile, up to thirty tiles, and unlinking gives the wire back. Move the computer and the cable stays on the fixture: [b]Unlink loose cable[/b] takes it off.
 [*] Wiring or unwiring a door, window or curtain needs the same access as fitting its module: open, drawn, or from inside.
 [*] One word now works a whole kind of device at once: [b]dev window close[/b] shuts every window, [b]dev light off[/b] kills every light.
 [*] A program left running with [b]&[/b] is still running when you reload your save.
@@ -19,12 +19,12 @@ Safe for existing saves. Nothing to redo.
 [*] Every machine has [b]/usr/local/bin[/b] on its PATH, so [b]curtains.sh auto[/b] runs by name the way the HOME disk's README says.
 [*] The device table columns line up again: [b]curtain0[/b] no longer runs into the room name beside it.
 [*] Dropped modules all look like the same small circuit board, never scrap metal.
-[*] The debug window is back for server admins: [b]CeroSec (dev)[/b] at the bottom of a computer's menu.
 [*] A long line piped, redirected or captured with [b]$( )[/b] is no longer cut at 60 characters. The screen itself is unchanged.
 [*] Tooltips on CeroSec's menu entries no longer run two words together at the line break.
 
 [b]Servers[/b]
 [*] With [b]Safehouse members only[/b] on, a stranger can no longer cable a claimed house's doors or windows.
+[*] The debug window is back for server admins: [b]CeroSec (dev)[/b] at the bottom of a computer's menu.
 
 [b]Interface[/b]
 [*] One CeroSec entry per fixture in the right-click menu, with a small green terminal icon. Hovering a line highlights the right object.
