@@ -3004,6 +3004,52 @@ function FakeWorld.new()
 		return world.put(square, object)
 	end
 
+	-- A HUNG FIXTURE WITH THE TILE DEFINITIONS' OWN PROPERTIES ON IT, which is what
+	-- an outdoor lamp really carries and what world.hung above deliberately is not:
+	-- `MoveType = WallObject`, a `Facing` letter, and ONE `attached` flag which for
+	-- eight of the county's twenty outdoor lamps points at a wall the lamp does not
+	-- hang on. So `facing` and `attached` are given separately and may disagree:
+	-- world.lamp(sq, o, "N", "W") is the Round Outdoor Lamp drawn facing north with
+	-- `attachedW` (lighting_outdoor_01 tiles 28 and 30), and world.lamp(sq, o, "N",
+	-- "S") is one of the twelve whose flag is honest.
+	--
+	-- `propertyEquals` is the third call a sprite answers and the one world.hung has
+	-- no need of: it is get(name) into StringUtils.equalsIgnoreCase (javap -c
+	-- zombie.core.properties.PropertyContainer, offsets 0-9), so it is written here
+	-- the way the engine writes it -- case-blind, and false for a property the
+	-- sprite has not got rather than an error.
+	local function spriteOn(object, values, flags)
+		local props = {
+			has = function(_, name)
+				return values[name] ~= nil or flags[name] == true
+			end,
+			get = function(_, name) return values[name] end,
+			propertyEquals = function(_, name, value)
+				if values[name] == nil then return false end
+				return string.lower(values[name]) == string.lower(value)
+			end,
+		}
+		local sprite = { getProperties = function() return props end }
+		object.getSprite = function() return sprite end
+		return object
+	end
+
+	world.lamp = function(square, object, facing, attached)
+		local values = { MoveType = "WallObject" }
+		if facing ~= nil then values.Facing = facing end
+		local flags = {}
+		if attached ~= nil then flags["attached" .. attached] = true end
+		return world.put(square, spriteOn(object, values, flags))
+	end
+
+	-- A FLOOD LIGHT, which is the sprite that makes the `MoveType` gate necessary:
+	-- the four of them carry `Facing` like the twenty lamps and no `MoveType` at
+	-- all, so a rule that read `Facing` alone would put a light on the far side of a
+	-- street into somebody's /dev.
+	world.flood = function(square, object, facing)
+		return world.put(square, spriteOn(object, { Facing = facing }, {}))
+	end
+
 	world.wall = function(square, object, facing)
 		if facing == nil then
 			if object.north then facing = "N" else facing = "W" end
@@ -4105,6 +4151,10 @@ do
 	world.square(10, 9, 0, nil)
 	world.square(9, 10, 0, nil)
 	world.square(10, 11, 0, nil)
+	-- The pavement NORTH of the office, which is the side of a building the walk
+	-- never looked at: see the two lamps below.
+	world.square(11, 9, 0, nil)
+	local northWalk = world.square(12, 9, 0, nil)
 	local windowWall = world.square(12, 11, 0, nil)
 	local eastWall = world.square(13, 10, 0, nil)
 
@@ -4179,6 +4229,44 @@ do
 	-- is one square deep.)
 	local post = fit(world.hung(eastWall, fakeLight(true, true), nil), "relay")
 
+	-- AND THE OTHER HALF OF THE PORCH LAMP REPORT, which is the lamps on the sides
+	-- of the building the walk did not have: a lamp hangs on a wall and a wall has
+	-- four faces, but only two of them were ever visited -- the south and the east,
+	-- the two a door can stand on. A lamp on a house's NORTH wall stands on the
+	-- pavement north of the room, and nothing looked there.
+	--
+	-- The honest one first: drawn facing north, away from the wall, with `attachedS`
+	-- pointing back at it. Vanilla's own reading finds it the moment the square is
+	-- visited at all.
+	local northLamp = fit(world.lamp(northWalk, fakeLight(false, true), "N", "S"),
+		"relay")
+	-- And the one whose sprite LIES, which is the eight the report ran into: every
+	-- Round and every Antique lamp drawn facing north carries `attachedW` and every
+	-- one drawn facing west carries `attachedN` (lighting_outdoor_01 tiles 28-31,
+	-- and the Oval pair 44-45 the same way). This one hangs on the office's north
+	-- wall and says it is attached to the empty tile west of itself, so the flag is
+	-- no use and `Facing` -- which faces AWAY from the wall -- is the only thing
+	-- left. The two crossed patterns are exactly the north and west faces, which is
+	-- why they are the lamps nobody ever saw: the wrong flag on the wall nobody
+	-- walked.
+	local crossed = fit(world.lamp(world.squares["11,9,0"], fakeLight(false, true),
+		"N", "W"), "relay")
+	-- And the WEST face, which is the other side nobody walked: this one hangs on
+	-- the store's west wall, standing on the same pavement square as the porch lamp
+	-- and the south door. Its flag is honest -- facing west, away from the wall,
+	-- with `attachedE` pointing back at the store -- so what it is here for is the
+	-- SQUARE being visited at all. Two lights on one tile are told apart by the
+	-- ordinal in their key, which is handed out in the order the walk finds them:
+	-- the office's south face is walked before the store's west one.
+	local westLamp = fit(world.lamp(world.squares["10,11,0"],
+		fakeLight(false, true), "W", "E"), "relay")
+	-- A FLOOD LIGHT beside the honest lamp, wired like everything else and facing
+	-- the same way: `Facing = N` with the office behind it, and no `MoveType` at
+	-- all (lighting_outdoor_01's four flood lights). It is the reason the second
+	-- reading is asked only of a sprite the engine calls a wall object -- a flood
+	-- light on a pole is not on the house it points at.
+	local flood = fit(world.flood(northWalk, fakeLight(true, true), "N"), "relay")
+
 	-- The pavement's own machine, wired: a generator three tiles from the office
 	-- on the very square the east door stands on. It is not the building's and it
 	-- is not on an edge -- the class gate is what keeps it out, and with the
@@ -4237,6 +4325,13 @@ do
 	device("the switch inside the office", inside, "light0", "office", "on")
 	-- The porch lamp: on the building's skin, in no room, and a device.
 	device("the porch lamp on the south wall", porch, "light1", "exterior", "off")
+	-- The north wall's two, which are the new side of the walk. They are numbered
+	-- after the lamp on the south wall and not before it, because a number is handed
+	-- out by PLACE and not by the order the world was walked -- x first, and both of
+	-- these stand east of it.
+	device("the lamp on the store's west wall", westLamp, "light2", "exterior", "off")
+	device("the lamp whose sprite points west", crossed, "light3", "exterior", "off")
+	device("the lamp on the north wall", northLamp, "light4", "exterior", "off")
 
 	-- THE PAVEMENT IS NOT THE BUILDING'S. A generator on the square the east door
 	-- stands on is reached by the far-edge walk and refused for its class.
@@ -4249,12 +4344,17 @@ do
 	check("the lamppost on the street is not a device", at[post] == nil)
 	check("and the gate facing away from the building is not one either",
 		at[fence] == nil)
-	check("so there is no third light", not ids.light2)
+	-- AND A FLOOD LIGHT IS NOT A PORCH LAMP EITHER. Same class, same square as the
+	-- lamp that IS one, pointing the same way, and the only difference between the
+	-- two is the property the engine uses to say a sprite is part of a wall.
+	check("the flood light on the pavement is not a device", at[flood] == nil)
+	check("so there is no sixth light", not ids.light5)
 
-	-- AND NOTHING WAS FOUND TWICE. Thirteen devices for thirteen fixtures: an interior door
-	-- reached from the store's square and again from the office's far edge would be
-	-- an eleventh row with a number of its own.
-	eq("thirteen fixtures, thirteen devices and no more", #found, 13)
+	-- AND NOTHING WAS FOUND TWICE. Sixteen devices for sixteen fixtures: an interior
+	-- door reached from the store's square and again from the office's far edge
+	-- would be a seventeenth row with a number of its own, and so would a lamp the
+	-- two readings of a sprite both answered for.
+	eq("sixteen fixtures, sixteen devices and no more", #found, 16)
 
 	-- Through the glass, which is the wire this bug was reported on: the machine's
 	-- own table, with the room, the offset and the side the survivor reads.
@@ -11388,6 +11488,33 @@ local function newInventory()
 			if self.items[i].type == fullType then return self.items[i] end
 		end
 		return nil
+	end
+	-- HOW MANY, and SOME OF THEM: the two calls a price paid in items is asked
+	-- with. Both are real ItemContainer methods -- `int getCountTypeRecurse(String)`
+	-- and `ArrayList<InventoryItem> getSomeTypeRecurse(String, int)` (javap -p on
+	-- the installed jar), the pair vanilla itself spends materials with
+	-- (ISWorldObjectContextMenu.lua:2312) -- and the second one answers a JAVA
+	-- list, so it is size() and a get() that starts at ZERO. A fake that handed
+	-- back a Lua array would let a loop written for the engine's list read nothing
+	-- and spend nothing, which is a cable run that costs a survivor no wire.
+	function inv:getCountTypeRecurse(fullType)
+		local n = 0
+		for i = 1, #self.items do
+			if self.items[i].type == fullType then n = n + 1 end
+		end
+		return n
+	end
+	function inv:getSomeTypeRecurse(fullType, count)
+		local list = { held = {} }
+		for i = 1, #self.items do
+			if #list.held >= count then break end
+			if self.items[i].type == fullType then
+				list.held[#list.held + 1] = self.items[i]
+			end
+		end
+		list.size = function(self) return #self.held end
+		list.get = function(self, i) return self.held[i + 1] end
+		return list
 	end
 	return inv
 end
