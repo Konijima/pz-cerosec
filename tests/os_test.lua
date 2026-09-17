@@ -5011,7 +5011,6 @@ do
 	badAt(state, session, "dev lock9 lock", "lock9: no such device", env)
 	badAt(state, session, "dev light7", "dev: light7: no such device", env)
 	badAt(state, session, "dev light7 on", "dev: light7: no such device", env)
-	badAt(state, session, "dev light0/x on", "dev: light0/x: no such device", env)
 
 	-- A word with no number on the end of it is a kind, and there are three.
 	badAt(state, session, "dev toaster", "dev: toaster: unknown kind", env)
@@ -5019,6 +5018,16 @@ do
 	badAt(state, session, "dev /dev", "dev: /dev: unknown kind", env)
 	-- ...but with one, it is an id, and a miss there is a miss about a device.
 	badAt(state, session, "dev toaster3", "dev: toaster3: no such device", env)
+
+	-- And a word in that slot is read the same way whether a value follows it or
+	-- not, since the rung that made `dev <kind> <value>` work a whole kind: a word
+	-- with no number on the end is a kind, so a path typed where a name goes is an
+	-- unknown kind with a value after it exactly as it is without one. It used to
+	-- answer "no such device" with three words and "unknown kind" with two, which
+	-- was two answers to one mistake.
+	badAt(state, session, "dev light0/x", "dev: light0/x: unknown kind", env)
+	badAt(state, session, "dev light0/x on", "dev: light0/x: unknown kind", env)
+	badAt(state, session, "dev nothing close", "dev: nothing: unknown kind", env)
 
 	-- The usage line, and it is the one man prints (21 lines above use it).
 	local line = "dev: usage: dev [kind|id [value|toggle]|find <id>]"
@@ -5530,6 +5539,148 @@ do
 		CeroSecOS.countEntries(state.fs.children.root.children.mall),
 		CeroSecOS.MAX_DIR_ENTRIES)
 	badAt(state, session, "touch /root/mall/last", "touch: /root/mall/last: directory full", env)
+end
+
+-- 21t. `dev <kind> <value>`: one word, every device of that kind. The set is
+-- 21j's set in 21j's order and the road to each device is 21k's road, so what is
+-- proved here is the BROADCAST -- the order it works them in, the line it prints
+-- for each, the status when one of them refuses, and that nothing about a single
+-- device's gate was loosened to make it possible.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local OPENCLOSE = { open = "open", close = "closed" }
+	-- Handed over in the wrong order on purpose, and with a ten in it: the fake
+	-- world lists window10 first and a broadcast that worked them in the order the
+	-- world happened to hand over -- or in the order a name sorts in -- would put
+	-- window10 before window1 and go green on every other assertion here.
+	local devices = fakeDevices({
+		{ id = "window10", kind = "window", desc = "hall", side = "W", pos = "3E 1S",
+			state = "open", becomes = OPENCLOSE },
+		{ id = "window1", kind = "window", desc = "office", side = "N", pos = "1E 0",
+			state = "barricaded", refuse = "barricaded" },
+		{ id = "window0", kind = "window", desc = "office", side = "N", pos = "0 0",
+			state = "open", becomes = OPENCLOSE },
+		{ id = "light0", kind = "light", desc = "office", side = "", pos = "0 0",
+			state = "on", becomes = ONOFF },
+		{ id = "light1", kind = "light", desc = "hallway", side = "", pos = "3E 2N",
+			state = "off", becomes = ONOFF },
+		{ id = "curtain0", kind = "curtain", desc = "office", side = "N", pos = "1E 0",
+			state = "open", becomes = OPENCLOSE },
+		{ id = "curtain1", kind = "curtain", desc = "hall", side = "W", pos = "3E 1S",
+			state = "closed", becomes = OPENCLOSE },
+		{ id = "tv0", kind = "tv", desc = "office", side = "", pos = "2E 1N",
+			state = "off", becomes = { ["channel 203"] = "off", on = "on", off = "off" } },
+		{ id = "tv1", kind = "tv", desc = "hall", side = "", pos = "3E 1S",
+			state = "on", becomes = { ["channel 203"] = "on", on = "on", off = "off" } },
+		{ id = "window9", kind = "window", dead = true },
+	})
+	local env = devEnv(devices)
+
+	-- Three windows, one of them boarded. Two lines that say what the sash did and
+	-- one refusal in the WINDOW's own name, exactly the three lines the three
+	-- `dev windowN close` lines would have printed -- and a status that failed,
+	-- because a command that could not do one of the things it was asked is a
+	-- command that failed (`cat a nosuch b`'s rule).
+	local r = runAt(state, session, "dev window close", env)
+	eq("a kind with a refusal in it fails", r.ok, false)
+	eq("one line per device", #r.lines, 3)
+	eq("the first", r.lines[1], "window0: closed")
+	eq("the boarded one refuses in its own name", r.lines[2], "window1: barricaded")
+	eq("and the third", r.lines[3], "window10: closed")
+	-- By NUMBER and not by name, which is the table's order and not the world's.
+	eq("three orders went out", #devices.writes, 3)
+	eq("in the table's order", table.concat(devices.writes, " "),
+		"window0=close window1=close window10=close")
+
+	-- And it is the order `dev window` prints, read off the listing itself rather
+	-- than written down twice: the id at the head of each row, against the id at
+	-- the head of each answer.
+	local rows = okAt(state, session, "dev window", nil, env)
+	eq("the listing has the same three", #rows, 3)
+	for i = 1, #rows do
+		eq("row " .. i .. " and answer " .. i .. " are the same device",
+			string.match(rows[i], "^(%S+)"), string.match(r.lines[i], "^(%S+):"))
+	end
+
+	-- A kind where every device went: every line is an answer and the status is
+	-- nought, which is what a script tests.
+	okAt(state, session, "dev light off", { "light0: off", "light1: off" }, env)
+	okAt(state, session, "dev light", {
+		"light0   office                0 0            off",
+		"light1   hallway               3E 2N          off",
+	}, env)
+
+	-- toggle is each device's OWN opposite and never one direction for the set: an
+	-- open curtain shuts and a shut one opens, in the one command.
+	okAt(state, session, "dev curtain toggle", { "curtain0: closed", "curtain1: open" }, env)
+	eq("and each was told its own word", devices.writes[#devices.writes - 1] ..
+		" " .. devices.writes[#devices.writes], "curtain0=close curtain1=open")
+	okAt(state, session, "dev curtain toggle", { "curtain0: open", "curtain1: closed" }, env)
+
+	-- The dial, which is four words, on every set in the building.
+	local before = #devices.writes
+	okAt(state, session, "dev tv channel 203", { "tv0: off", "tv1: on" }, env)
+	eq("both sets were tuned", #devices.writes - before, 2)
+	eq("and to the same number", devices.writes[before + 1] .. " " ..
+		devices.writes[before + 2], "tv0=channel 203 tv1=channel 203")
+	-- A dial on a kind that has none is the grammar, exactly as it is for one
+	-- device: light has no named argument, so there is no line here for a light
+	-- switch to refuse.
+	local reached = #devices.writes
+	badAt(state, session, "dev light channel 203",
+		"dev: usage: dev [kind|id [value|toggle]|find <id>]", env)
+	badAt(state, session, "dev tv channel two",
+		"dev: usage: dev [kind|id [value|toggle]|find <id>]", env)
+	-- And `find` is not a value: it points at ONE device, and a kind of them
+	-- blinking at once points at nothing.
+	badAt(state, session, "dev window find",
+		"dev: usage: dev [kind|id [value|toggle]|find <id>]", env)
+	eq("and none of the three reached the world", #devices.writes, reached)
+
+	-- A word the kind has no meaning for is the DEVICE's refusal, once per device,
+	-- because the gate is the device's gate and not a check the broadcast makes
+	-- for itself.
+	local r2 = runAt(state, session, "dev curtain lock", env)
+	eq("refused", r2.ok, false)
+	eq("once per device", #r2.lines, 2)
+	eq("the first", r2.lines[1], "curtain0: invalid value")
+	eq("the second", r2.lines[2], "curtain1: invalid value")
+	eq("and nothing of it reached the world", #devices.writes, reached)
+
+	-- A device the machine remembers the number of and cannot reach is not in the
+	-- set, exactly as it is not in the listing: window9 is not a fourth line above
+	-- and naming it is still its own "no such device".
+	badAt(state, session, "dev window9 close", "window9: no such device", env)
+
+	-- A kind the building has none of is no lines and a status of nought: there is
+	-- nothing to refuse and nothing was left undone, which is what the loop over
+	-- an empty listing does too.
+	okAt(state, session, "dev gen off", {}, env)
+	okAt(state, session, "dev gen toggle", {}, env)
+
+	-- The mode is the device's, one device at a time. bob is in no group of the
+	-- machine's, so every line of the broadcast is his refusal and not one of
+	-- them reached the world -- a broadcast is not a way round 660.
+	okAt(state, session, "useradd bob", nil, env)
+	local bob = open(state, "bob")
+	local r3 = runAt(state, bob, "dev light off", env)
+	eq("refused, every one", r3.ok, false)
+	eq("once per device", #r3.lines, 2)
+	eq("the first", r3.lines[1], "light0: permission denied")
+	eq("the second", r3.lines[2], "light1: permission denied")
+	eq("and nothing of bob's reached the world", #devices.writes, reached)
+
+	-- A failed command's lines stay on the GLASS, which is the rule every command
+	-- on this machine already runs on and the reason the manual's page shows the
+	-- loop as the other road: a script that wants the answers in a file wants one
+	-- command per device.
+	okAt(state, session, "dev light on > /root/log", {}, env)
+	okAt(state, session, "cat /root/log", { "light0: on", "light1: on" }, env)
+	local r4 = runAt(state, session, "dev window close > /root/half", env)
+	eq("the boarded window failed the line", r4.ok, false)
+	eq("and said so on the screen", #r4.lines, 3)
+	badAt(state, session, "cat /root/half", "cat: /root/half: no such file", env)
 end
 
 --
