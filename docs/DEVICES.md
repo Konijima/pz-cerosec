@@ -121,6 +121,22 @@ looked at for the same things:
   NEIGHBOUR's wall, and taking it would be a machine listing the house next
   door's front door.
 
+**One thing that gate costs, written down because it is a real fixture and not a
+hypothesis.** A sheet hung on a north or west window **from the street** lands on
+the far side of that window — `IsoWindow.addSheet` moves to `(x, y - 1)` and
+stamps `curtainS` when the character stands north of it (offsets 32-57), and to
+`(x - 1, y)` with `curtainE` from the west (117-142) — and
+`IsoCurtain.getOppositeSquare` answers `y + 1` and `x + 1` for those two types
+(offsets 45-69, 115-139), which is the room. So it is this room's curtain, on a
+square the hung-only gate reads for lights alone, and `/dev` does not list it; the
+same sheet on a south or east window is listed, because it stays on the inside
+square. Nothing else can face back from there — a door and a window stand on their
+own square's north or west edge and face away — so closing it is one word in that
+gate and a second one in `fittableFarEdge`, which carries the same rule for the
+pre-fitting walk. It is not closed in 0.5.0: it was found while mutating the walk
+for this release, it changes what two walks answer, and a device that appears is a
+change a player should get with a bench of its own.
+
 **A light is the one fixture that needs both readings, and the porch-lamp report
 is why.** A light does not stand on a wall, it hangs on one, and it hangs on the
 OUTSIDE: a lamp on the house's south wall is on the pavement south of the room,
