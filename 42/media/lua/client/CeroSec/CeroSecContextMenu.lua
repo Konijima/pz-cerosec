@@ -315,6 +315,15 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 	local computer = CeroSecContextMenu.findComputer(worldobjects, player)
 	if not computer then return end
 
+	-- A desktop Computer Mod booted is theirs until it is switched off, and this
+	-- mod adds nothing to it: the sprite below would read "on" for a session
+	-- CeroSec never started (CeroSecCompatComputerMod.ownerOf says why the sprite
+	-- cannot tell the two apart on its own). Always false without that mod.
+	if CeroSecCompatComputerMod ~= nil and
+			CeroSecCompatComputerMod.ownerOf(computer) == "computermod" then
+		return
+	end
+
 	local height = CeroSecReach.height(computer)
 
 	-- The sprite is the truth for the menu label: it is what the player sees.
