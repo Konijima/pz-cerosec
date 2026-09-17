@@ -1262,12 +1262,26 @@ end
 --
 -- A chunk that is away is not a cable coming loose: a machine asleep across the
 -- county is still on the wire it was numbered on, and so is this one while its
--- own room is unloaded. The record is what there is, and the record stands.
+-- own room is unloaded. The record is what there is, and the record stands --
+-- except when `here` is OUTDOORS, because OUTDOORS is the one case with a
+-- distance in it. `other` is an SGlobalObject and keeps o.x, o.y, o.z set from
+-- the engine at construction (SGlobalObject.lua:75-77), so its chunk being away
+-- is not a reason to lose the number: the same radius is asked of that stored
+-- position. Missing coordinates never win a cable by ignorance -- refused, not
+-- assumed. A machine standing indoors keeps the older rule (true), because the
+-- dangerous direction, outdoors reaching in, is the one this closes.
 local function oneWire(mine, here, theirs, other)
 	if theirs.b1 ~= mine.b1 or theirs.b2 ~= mine.b2 then return false end
 	if here == nil then return true end
 	local there = standOf(other)
-	if there == nil then return true end
+	if there == nil then
+		if here.key ~= OUTDOORS then return true end
+		if other.x == nil or other.y == nil or other.z == nil then return false end
+		local r = CeroSecDevices.RADIUS
+		return here.z == other.z
+			and math.abs(here.x - other.x) <= r
+			and math.abs(here.y - other.y) <= r
+	end
 	if here.key ~= there.key then return false end
 	if here.key ~= OUTDOORS then return true end
 	local r = CeroSecDevices.RADIUS

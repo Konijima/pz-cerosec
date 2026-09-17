@@ -23631,6 +23631,39 @@ do
 		10, 0, nil) end
 	check("but not eleven tiles apart", not reaches(street, inside))
 	check("nor on each other's arp", peers(street)[inside] == nil)
+
+	-- 4. THE DEDICATED-SERVER CASE: both outdoors, far past the radius, and the
+	-- far one's chunk gone -- standOf reads a nil square for it, but the
+	-- SGlobalObject underneath keeps the x/y/z the engine gave it at the real
+	-- move (SGlobalObject.lua:75-77 again, this is what a move writes). The fake
+	-- moves a machine by its square alone, so x/y/z are set here to match, the
+	-- way the engine would. Loaded first, so the baseline is the radius alone.
+	home.getSquare = function() return net.square(10 + CeroSecDevices.RADIUS + 51,
+		10, 0, nil) end
+	home.x, home.y, home.z = 10 + CeroSecDevices.RADIUS + 51, 10, 0
+	check("fifty-one past the radius, both chunks loaded, still not one wire",
+		not reaches(street, inside))
+	-- THE STUB TOOK: an absence proves nothing about the rule it was meant to
+	-- provoke unless the absence itself is checked first.
+	home.getSquare = function() return nil end
+	check("the far machine's own chunk is really away", home:getSquare() == nil)
+	check("outdoors, past the radius and the chunk gone, still not one wire",
+		not reaches(street, inside))
+	check("and arp on the street still sees nothing of it", peers(street)[inside] == nil)
+
+	-- 5. THE WITNESS: the same chunk-away machine, asked from a machine standing
+	-- INSIDE a building at the two bytes the record already carries. The record
+	-- is what there is -- only the outdoor side of the rule measures a radius.
+	street.getSquare = function() return net.square(10, 10, 0, net.office) end
+	CeroSecNet.identify(net.system, street, street:osState())
+	eq("moved back indoors, the street machine keeps the address it had",
+		net.addr(street), out)
+	check("indoors, the chunk-away machine is still on the wire it was numbered on",
+		reaches(street, inside))
+
+	street.getSquare = function() return net.square(10, 10, 0, nil) end
+	home.getSquare = function() return net.square(12, 10, 0, nil) end
+	home.x, home.y, home.z = 12, 10, 0
 end
 
 --
