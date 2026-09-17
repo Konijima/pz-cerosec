@@ -13,7 +13,8 @@ date.
 The fixes of the first day of 0.4.0, and what was built while they were being
 made: every exterior door and window of a building on the machine at last, sound
 on every fixture it moves, a program left running with `&` that is still running
-when you come back, and one word that works a whole kind of device at once. Enough
+when you come back, one word that works a whole kind of device at once, and a
+cable you can run to anything the building does not reach. Enough
 of the second sort for a release of its own rather than a repair. Nothing here
 needs a new save: every machine you have switched on keeps its accounts, its files
 and its modules, and the computers in your world gain `/usr/local/bin` the moment
@@ -84,7 +85,32 @@ there is nothing else for you to do.
 - **An outdoor lamp on the wall of the building is a `light` like any other.** The
   porch lamp, the lamp over the back door, the neon sign on a shop front: fitted
   with a relay, they are on the machine and on a timer with the rest. A lamppost on
-  the street is not the building's and is not listed.
+  the street is not the building's and is not listed -- unless you run a cable to
+  it, which is the next line.
+- **Run a cable and the machine reaches a fixture that is not in its building at
+  all.** The lamppost on the street, the gate at the end of the drive, the shop
+  across the car park: fit the box as usual, then right-click the thing and take
+  **Link to computer**. Every machine near enough is a line with its name, how far
+  it is and what the run costs -- `ksp-front-01, 12 tiles, 12 wire` -- and it costs
+  exactly that, one electric wire a tile across the ground and four more for every
+  floor between the two, up to thirty tiles of cable. After that the fixture is in
+  that computer's `/dev` like anything in the house, and `dev find` tells you what
+  the run cost: `light1: blinking, linked, 12 tiles of wire`. The computer does not
+  have to be switched on, you do not have to be inside, and the door does not have
+  to be open -- a cable is the answer to not being able to reach the thing. You do
+  need the screwdriver, the wire in your bag and the same Electricity the box
+  itself wanted, and the walk takes as long as the cable is long.
+- **And cutting one gives the wire back.** *Unlink from ksp-front-01* is on the
+  same menu, one line per cable, and every tile comes back into your bag -- as it
+  does if the fixture itself is picked up or broken, when the wire drops on the
+  floor beside the boxes. One fixture answers up to four computers at once and is
+  in all four of their `/dev`s; one computer holds thirty-two cables. A line the
+  menu will not let you click says why: *Needs 14 electric wire*, *This fixture
+  already answers 4 computers*, *This computer already has 32 cables*. Renaming a
+  computer with `hostname` changes what the menu calls it and cuts nothing: the
+  cable is run to where the machine stands, not to what it is called. **Nothing in
+  your save changes for any of this**: a machine with no cables is a machine
+  exactly as it was.
 - **The inside rule was refusing a relay on a porch lamp.** Fitting a module from
   the pavement is refused for the building's skin -- a door, a window, a curtain --
   and for nothing else: an outdoor lamp, a generator, an oven somebody dragged into
