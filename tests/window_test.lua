@@ -13893,6 +13893,59 @@ do
 	world.remove(light)
 
 	--
+	-- AND THE CABLE COMES BACK TOO, which is the other thing a survivor paid for
+	--
+	-- A fixture carried off the map with a cable on it would be wire nobody can ever
+	-- cut: the fixture is the only end that knows what the run cost, and it is
+	-- leaving. So the reels go on the floor beside the modules, one an item and one a
+	-- TILE, for every machine the thing was cabled to -- and the refund is what each
+	-- cable SAYS it cost rather than the distance worked out again.
+	--
+	do
+		local street = world.square(20, 10, 0, nil)
+		local post = world.hung(street, fakeLight(false, true), nil)
+		fit(post, "relay")
+		check("a cable to the machine in the shop",
+			CeroSecModules.linkOn(post, 10, 10, 0, 12))
+		check("and one to the machine across the car park",
+			CeroSecModules.linkOn(post, 30, 10, 0, 9))
+		local function counted(square, fullType)
+			local n = 0
+			for i = 1, #square.items do
+				if square.items[i]:getItem():getFullType() == fullType then n = n + 1 end
+			end
+			return n
+		end
+		removed(post)
+		eq("the relay is lying where the post stood",
+			counted(street, "CeroSec.Relay"), 1)
+		eq("and both cables came back, to the tile",
+			counted(street, CeroSecModules.WIRE), 21)
+		check("and nothing of ours is left on the post", bare(post))
+		local lay = #street.items
+		removed(post)
+		eq("a second firing pays no cable twice", #street.items, lay)
+		world.remove(post)
+
+		-- A FLOOR THAT WILL TAKE NOTHING is the one place a cable and a module part
+		-- company, and it is a decision rather than an oversight: a module stays
+		-- screwed on because the fixture can be unscrewed again later, and a cable is
+		-- CUT anyway because the fixture is leaving the world and nobody will ever be
+		-- able to cut it after this.
+		world.floorRefuses = true
+		local lost = world.hung(world.square(19, 10, 0, nil), fakeLight(false, true), nil)
+		fit(lost, "relay")
+		check("a cable on it", CeroSecModules.linkOn(lost, 10, 10, 0, 12))
+		removed(lost)
+		eq("the relay stays on the plate",
+			CeroSecModules.installedOn(lost)["relay"], true)
+		eq("nothing landed", #world.squares["19,10,0"].items, 0)
+		eq("and the cable is cut all the same", #CeroSecModules.linksOn(lost), 0)
+		world.floorRefuses = false
+		world.remove(lost)
+	end
+
+	--
 	-- A FIXTURE WITH NOTHING ON IT, and every other object in the county: this
 	-- handler runs for every tuft of grass and every dropped hammer the world
 	-- takes away, so "nothing, and no error" is the case it is in nearly always.
@@ -14468,6 +14521,196 @@ do
 	_G.SafeHouse = nil
 
 	_G.__world, _G.SandboxVars, _G.Perks = hadWorld, hadSandbox, hadPerks
+	CeroSecDevices.invalidate()
+end
+
+--
+-- 43f. What the walk does with a cable, and what `find` says about one
+--
+-- The cable is written on both ends and this is the end that is READ: the machine
+-- keeps a list of squares (state.links) and the walk visits exactly those, on top
+-- of every room of its own building. So a lamppost in the street becomes a device
+-- on a computer that is nowhere near it, and it wears the one thing a device found
+-- in a building never has -- the wire it cost.
+--
+-- AND THE TWO ENDS KEEP EACH OTHER HONEST, which is the whole of why the list is
+-- allowed to be a copy of something: the walk asks the SQUARE whether the cable is
+-- still there. A fixture somebody unlinked, replaced or carried off drops out of the
+-- machine's list by itself, and an entry whose chunk is away is kept exactly as it
+-- is -- a cable in a street nobody is standing in is still a cable.
+--
+do
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	-- A shop of four tiles with the machine at one end of it, a switch on the wall
+	-- inside, and a door at the far end: everything a building walk finds by itself.
+	world.room("office", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0} })
+	local inside = fit(world.put(world.squares["10,10,0"], fakeLight(true, true)),
+		"relay")
+	local back = fit(world.wall(world.squares["13,10,0"], fakeDoor(false, false), "W"),
+		"operator")
+	-- And the street: a lamppost twelve tiles due east of the machine, which is in
+	-- no room of anything and carries no `attached` property to be on a wall by.
+	local street = world.square(22, 10, 0, nil)
+	local post = fit(world.hung(street, fakeLight(false, true), nil), "relay")
+	-- Somewhere for a SECOND machine to stand, eighteen tiles the other side of the
+	-- post: the same lamppost on two computers is the case rule six is about.
+	world.square(40, 10, 0, nil)
+
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+
+	-- Everything the machine can reach, as ids, off the walk itself: the glass shows
+	-- one screenful and the count is what a double-listed fixture would break.
+	local function ids()
+		CeroSecDevices.invalidate()
+		local found = CeroSecDevices.number(state,
+			CeroSecDevices.find(bench.object.x, bench.object.y, bench.object.z,
+				state.links))
+		local out = {}
+		for i = 1, #found do out[#out + 1] = found[i].id end
+		table.sort(out)
+		return table.concat(out, " ")
+	end
+	local function entryFor(id)
+		CeroSecDevices.invalidate()
+		local found = CeroSecDevices.number(state,
+			CeroSecDevices.find(bench.object.x, bench.object.y, bench.object.z,
+				state.links))
+		for i = 1, #found do
+			if found[i].id == id then return found[i] end
+		end
+		return nil
+	end
+	-- The blink `dev find` books on a light, run out: six seconds later the switch is
+	-- back where it was found, and the next bench inherits nothing.
+	local function blinkOut()
+		_G.__now = _G.__now + CeroSecOS.DEV_FIND_SECONDS * 1000
+		CeroSecDevices.tick()
+	end
+
+	-- THE BUILDING ALONE, which is where every machine starts.
+	eq("the walk finds the shop and nothing else", ids(), "door0 light0")
+	eq("and the machine has no cables", state.links, nil)
+
+	-- THE CABLE, as the command leaves it: the run on the fixture, the square on the
+	-- machine. What is proved here is the WALK, so the two ends are written the way
+	-- the command writes them and the command has its own section.
+	check("the cable goes on the lamppost", CeroSecModules.linkOn(post, 10, 10, 0, 12))
+	check("and the square on the machine", CeroSecOS.addLink(state, 22, 10, 0))
+	eq("now the lamppost is on the machine", ids(), "door0 light0 light1")
+	local lamp = entryFor("light1")
+	check("and it is the lamppost", lamp ~= nil and lamp.object == post)
+	eq("standing where it stands", lamp.x .. "," .. lamp.y, "22,10")
+	eq("twelve tiles of wire from here", lamp.wire, 12)
+	eq("and the switch in the shop knows nothing about any cable",
+		entryFor("light0").wire, nil)
+
+	-- THROUGH THE GLASS, which is what the report asked for: the survivor at the
+	-- keyboard asks which light this is, and the machine tells him it is the one on
+	-- the end of twelve tiles of wire -- so he knows to look out of the window
+	-- instead of up at the ceiling.
+	bench.enter("dev")
+	bench.frame()
+	check("the table lists it", bench.painted("light1   exterior"))
+	bench.enter("dev find light1")
+	bench.frame()
+	check("and find says how far away it is",
+		bench.painted("light1: blinking, linked, 12 tiles of wire"))
+	blinkOut()
+	-- The control, on the same machine in the same second: a light the walk found in
+	-- the building has no cable and says nothing about one.
+	bench.enter("dev find light0")
+	bench.frame()
+	check("a light in the building just blinks", bench.painted("light0: blinking"))
+	check("with no wire in the line",
+		not bench.painted("light0: blinking, linked"))
+	blinkOut()
+
+	-- THE CHUNK GOES AWAY. The street is not loaded any more -- nobody has been down
+	-- there for a while -- so the lamppost is not a device this minute. The ENTRY
+	-- stays: a machine that forgot a cable because the chunk was away would be a
+	-- machine that charged for one and then took it away.
+	bench.window.painted = {}
+	world.squares["22,10,0"] = nil
+	eq("the lamppost is not reachable", ids(), "door0 light0")
+	bench.enter("dev light1")
+	bench.frame()
+	check("and the number a script wrote down says so",
+		bench.painted("light1: no such device"))
+	-- Asked AFTER the machine has walked and written its list back, which is the
+	-- only order in which this means anything: the walk is what would have dropped
+	-- the entry, so a bench that asked before it walked would be asking nothing.
+	eq("but the machine still holds its square", #CeroSecOS.linkSquares(state), 1)
+
+	-- And back, with the number it had: the book of numbers hangs on the place
+	-- (os.devmap) and the place did not move.
+	world.squares["22,10,0"] = street
+	eq("the street comes back and so does the lamp", ids(), "door0 light0 light1")
+	eq("wearing the same wire", entryFor("light1").wire, 12)
+
+	-- SELF-HEALING THE OTHER WAY. Somebody cut the cable at the fixture -- or
+	-- replaced the lamp, or a later build wrote a table this one will not read --
+	-- and the square is right there to be asked. The machine's list drops it, and
+	-- the drop is written into the state by the walk that noticed
+	-- (SCeroSecDevices' writeKept).
+	check("the cable comes off the lamppost",
+		CeroSecModules.unlinkOn(post, 10, 10, 0) ~= nil)
+	bench.enter("dev")
+	bench.frame()
+	eq("the machine's list empties itself", state.links, nil)
+	eq("and the lamppost is nobody's device", ids(), "door0 light0")
+	-- An empty list is the KEY GONE and not a key holding nothing, because that is
+	-- what every machine written before this build reads like.
+	check("and the state still validates", CeroSecOS.validate(state))
+
+	-- A FIXTURE IN THE BUILDING AND ON A CABLE IS ONE DEVICE. The walk of the rooms
+	-- gets there first and the cable walk adds the one thing only it knows. A second
+	-- row with a number of its own would be the same door answering twice.
+	check("a cable to the door at the back", CeroSecModules.linkOn(back, 10, 10, 0, 3))
+	check("and the machine files its square", CeroSecOS.addLink(state, 13, 10, 0))
+	eq("the door is one device still", ids(), "door0 light0")
+	eq("and it is the same door0", entryFor("door0").object, back)
+	eq("wearing the wire the cable cost", entryFor("door0").wire, 3)
+	bench.window.painted = {}
+	bench.enter("dev find door0")
+	bench.frame()
+	check("which a survivor is told about too",
+		bench.painted("door0: highlighted, linked, 3 tiles of wire"))
+
+	-- AND ONE FIXTURE CAN BE ON TWO MACHINES, which is what four cables a fixture
+	-- is for: a big building takes a second computer for the far section and the
+	-- lamp between them answers both. The second machine is eighteen tiles the other
+	-- side of the post, in no building at all, and the post is out of its radius --
+	-- so the only thing that can put the lamp on its list is the cable.
+	check("the lamppost takes the first machine back",
+		CeroSecModules.linkOn(post, 10, 10, 0, 12))
+	check("and a second machine as well", CeroSecModules.linkOn(post, 40, 10, 0, 18))
+	CeroSecOS.addLink(state, 22, 10, 0)
+	CeroSecDevices.invalidate()
+	local far = CeroSecDevices.find(40, 10, 0, { { x = 22, y = 10, z = 0 } })
+	local onFar = nil
+	for i = 1, #far do
+		if far[i].object == post then onFar = far[i] end
+	end
+	check("the second machine reaches the lamppost", onFar ~= nil)
+	eq("at eighteen tiles of wire", onFar.wire, 18)
+	check("and the first one still has it", string.find(ids(), "light1", 1, true) ~= nil)
+	eq("at twelve, which is its own cable", entryFor("light1").wire, 12)
+
+	-- And with nothing to go on, the walk of a machine with no list at all is the
+	-- building's and nothing more: the second answer is what the list SHOULD be, and
+	-- a walk that could not ask the world must not hand back an empty one.
+	local none, kept = CeroSecDevices.find(10, 10, 0, nil)
+	check("a machine with no cables walks its building", #none > 0)
+	eq("and has nothing to write down", #kept, 0)
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
 	CeroSecDevices.invalidate()
 end
 
@@ -20579,6 +20822,13 @@ do
 	--
 	do
 		local console = machine.console
+		-- THE GLASS WITH NOBODY AT IT, and it is MADE so rather than hoped for: the
+		-- prefill picks a profile out of the catalogue and some of those are machines
+		-- somebody was left logged in at (SCeroSecObject:prefill, the declared
+		-- deviation), so which one this machine came up as is not this section's
+		-- business -- the refusal for a glass that is busy has its own assertion below.
+		-- Logged out by the server's own gesture, so what wtmp says about it is true.
+		if console.user ~= nil then net.system:logOut(machine, state, console) end
 		eq("nobody is logged in at the glass", console.user, nil)
 		local wtmpBefore = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
 		local before = wtmpBefore ~= nil and #(wtmpBefore.data or "") or 0
