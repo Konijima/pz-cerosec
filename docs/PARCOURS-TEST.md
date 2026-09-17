@@ -434,6 +434,11 @@ passé réellement, même quand ça correspond au texte attendu.
      émetteur-récepteur allumé dans la maison, sur la case juste de l'autre
      côté du mur. Attendu : `dev radio` ne monte AUCUN `radio0`. Déplacer le
      poste sur le trottoir, à une case de l'ordinateur : `radio0` apparaît. [ ]
+91g. **Le capteur de mouvement contre le mur.** Poser un `sensor0` dehors,
+     contre le mur d'une maison. Marcher À L'INTÉRIEUR le long de ce mur,
+     dans la pièce : `cat /dev/sensor0` reste `clear`, rien ne le déclenche.
+     Marcher DEHORS, devant lui, sur le trottoir : `cat /dev/sensor0` passe
+     à `motion`. [ ]
 92. Cadenasser la porte du joueur → `cat /dev/lockN` dit `padlock`.
      `echo unlock > /dev/lockN` → le cadenas tombe dans l'inventaire comme si
      on l'avait retiré à la main ; `echo lock > /dev/lockN` le remet. Une

@@ -139,6 +139,10 @@ house beside him, and all three now read the same test -- a square whose
 - **the TNC.** The one-tile fallback skips a neighbouring square that has a room,
   so a computer on a pavement is not wired to the household's set through the wall
   (`CeroSecRadio.tncAt`).
+- **the motion sensor.** A room-less sensor's box drops every candidate tile that
+  turns out to have a room of its own, so one set against a house wall reads the
+  pavement round it and never the room behind it (`CeroSecSensors.fieldOf`). It is
+  another rung on this same ladder, not a special case.
 
 `getRoom()` and not `isInARoom()`, in all three: the second answers true for a
 player-built base off `getIsoWorldRegion().isPlayerRoom()`, and a base is what

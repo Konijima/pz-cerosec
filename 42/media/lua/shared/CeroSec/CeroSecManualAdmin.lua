@@ -1114,7 +1114,8 @@ becomes a sensorN. Pick it up and the device is gone.
 
 It watches its own room out to THREE TILES, never through a wall, so a head
 in the hall tells you nothing about the kitchen. Where there is no room at
-all it watches three tiles every way and reads built.
+all it watches three tiles every way, and still never into a room. Reads
+built.
 
 Movement closes it for five seconds; then it opens. So a zombie that walks
 in and STOPS reads clear five seconds later. It is movement it sees and not

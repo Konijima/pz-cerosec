@@ -1257,9 +1257,12 @@ the world: the device *is* the item lying on the floor.
   dearest thing this file could do. The **room** stands in its place, the game's
   own partition of the inside of a building by its walls, so the field is
   `room:getSquares()` intersected with the range box, and a head with no room
-  under it gets the range alone. That is the honest statement and it is the one
-  the manual prints: *in a room, the part of that room within range; outside one,
-  the range.*
+  under it gets the range alone, minus any tile that turns out to be **in**
+  a room of its own: a sensor dropped outside, against a house wall, keeps
+  the wall as a wall, the same as one sitting inside. That is the honest
+  statement and it is the one the manual prints: *in a room, the part of
+  that room within range; outside one, the range, and still never into a
+  room.*
 - **What movement is, and this half is ours.** The game's trap is a proximity fuse
   that fires on a body standing still; a PIR is not. A sample is a **signature**,
   every body in the field, quantized to `CeroSecSensors.STEP` (10, tenths of a

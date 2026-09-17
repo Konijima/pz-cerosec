@@ -58,6 +58,11 @@ date.
   claim covers, so the refusal was never being asked about it. The porch lamp of
   a claimed house is still open to anybody: it hangs on the outside wall and
   there is nothing on it to say which house it belongs to.
+- A motion sensor set down outside, against a house wall, no longer sees
+  through that wall. A sensor with no room of its own already watched its
+  three tiles in every direction; it was also picking up a room next door for
+  free. It still watches its own three tiles outdoors, just never the tiles a
+  wall is standing between it and.
 - A street lamppost you have cabled can be switched now. It read `on` and then
   answered `no power` to every order, with the grid up and the lamp burning:
   the game refuses to let a hand flip a light that stands outside on no floor
