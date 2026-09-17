@@ -94,6 +94,16 @@ you to do.
   `ls -l` the room column paid for it, so a long pair of rooms reads
   `kitchen-hal~` there. Nothing else moved, and both tables still end inside the
   screen's 60 columns.
+- **`dev window close` shuts every window at once; the same for any kind and any
+  word, one answer line per device.** The word in front of the value can be a kind
+  instead of one device's name, so `dev light off` is the whole building's lights,
+  `dev curtain toggle` turns each sheet the way it is not, and
+  `dev tv channel 203` tunes every set. You get one line per device, in the order
+  `dev window` lists them, and each is exactly what that device would have said on
+  its own -- a boarded window still answers `window1: barricaded`, and a line with
+  a refusal in it counts as failed, so a script can test it. There is no word for
+  *everything*: `off` means one thing to a light and another to a generator, so two
+  kinds is still two lines. `man dev` and the administrator's manual have the page.
 
 ## 0.4.0 - 2026-09-16
 

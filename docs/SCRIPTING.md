@@ -255,6 +255,23 @@ and `shift` as builtins that work even on a machine whose `/bin` has been emptie
 
 Every one of those works at the prompt too, being the same shell.
 
+A loop over a whole kind of device has a command of its own:
+`dev window close` is every window the machine can reach, one answer line each in
+`dev window`'s order, and the line fails if any one of them refused (the
+[`dev` page](PLAYERS.md) has the grammar). The loop is still what a script wants
+when it needs the answers device by device, because a command that half failed
+keeps its output on the screen and out of a redirect, the way every other command
+on this machine does:
+
+    for d in $(ls /dev | grep ^window); do
+      echo close > /dev/$d
+    done
+
+`ls` prints one name a line when there is no screen behind it — inside a `$( )`
+there is not — which is what makes that catch and that grep work. Its own status
+is the LAST iteration's, so a refusal in the middle of the set is a loop that ends
+in nought; `dev window close` is the one that reports it.
+
 `read` stops the script and asks at the prompt; the next line typed is the answer.
 `sleep 5` waits five seconds of real time and costs the machine nothing while it
 does. While a script has the prompt there is nothing to type at, and Escape is

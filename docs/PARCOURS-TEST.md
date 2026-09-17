@@ -3932,6 +3932,16 @@ laisse déjà. Les neuf chemins et les deux qui ne doivent rien lâcher sont dan
      l'embrasure (il est créé par le serveur et diffusé), et sur les deux machines
      `dev` ne liste plus la porte. Le client ramasse le contact : il est dans son
      sac. [ ]
+424. **Une sorte au complet en un mot.** Dans un bâtiment avec au moins deux
+     fenêtres motorisées, dont une **barricadée** : `dev window` pour lire le
+     tableau, puis `dev window close`. Attendu : une ligne de réponse par
+     appareil, **dans l'ordre exact du tableau**, chacune ce que l'appareil aurait
+     répondu seul — les châssis se ferment dans le monde et la barricadée répond
+     `windowN: barricaded`. Puis `echo $?` → **autre chose que 0** parce qu'une a
+     refusé ; refaire sans la barricadée (`dev light off`, `dev curtain toggle` —
+     chaque rideau part dans SON sens) → `echo $?` → `0`. `dev nothing close` →
+     `dev: nothing: unknown kind`. Depuis un compte hors du groupe `sudo` : une
+     ligne `permission denied` par appareil et rien ne bouge dans le monde. [ ]
 
 ## Rapport
 

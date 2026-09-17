@@ -5677,6 +5677,23 @@ do
 	-- command per device.
 	okAt(state, session, "dev light on > /root/log", {}, env)
 	okAt(state, session, "cat /root/log", { "light0: on", "light1: on" }, env)
+	-- AND THE OTHER ROAD, which is the one the manual's page prints and the one to
+	-- write into a script: the same three devices, out of `ls /dev` itself, one
+	-- command each. Typed here so that a page showing a line nobody ever ran cannot
+	-- pass -- `ls` gives one name a line when there is no screen behind it, which is
+	-- what makes the catch and the grep work at all.
+	--
+	-- And what the loop does NOT give you, which is the reason the broadcast is
+	-- worth having: its status is the LAST iteration's, so the boarded window in
+	-- the middle of it refuses on the glass and the line still ends in nought.
+	local loop = #devices.writes
+	okAt(state, session, "for d in $(ls /dev | grep ^window); do echo open > /dev/$d; done",
+		{ "window1: barricaded" }, env)
+	eq("the loop reached the same three, in the same order",
+		devices.writes[loop + 1] .. " " .. devices.writes[loop + 2] .. " " ..
+		devices.writes[loop + 3], "window0=open window1=open window10=open")
+	eq("and no fourth", #devices.writes, loop + 3)
+
 	local r4 = runAt(state, session, "dev window close > /root/half", env)
 	eq("the boarded window failed the line", r4.ok, false)
 	eq("and said so on the screen", #r4.lines, 3)

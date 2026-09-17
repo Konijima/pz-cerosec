@@ -135,7 +135,7 @@ Commands:
 | `mount` | what is mounted, one line each: `/dev/hda on / type ufs (rw)` |
 | `mount <device> <dir>` | graft the disk onto a directory; from then on that directory **is** the disk, and what was under it is covered |
 | `umount <dir>` | take it off again — refused with `Device busy` while any session's working directory is inside it |
-| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`; `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
+| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, one worked, or a whole kind worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`, and `dev window close` for every window the machine can reach, one answer line each in the table's order, the line failing if any of them refused (no kind means *everything*: `off` means one thing to a light and another to a generator); `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
 | `which <name>` | where a bare name would be found on `PATH`, and nothing at all when it would not |
 | `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
 | `man <command>` | what a command does, and how it is spelled |

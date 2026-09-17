@@ -1000,6 +1000,29 @@ listing, ask it to show itself:
 A light blinks for six seconds and goes back exactly as it was found. A
 door has nothing to blink with, so it is outlined on your screen instead.]],
 
+[[A whole kind in one word. What stands in front of the value is a kind or
+an id, so the same line that shuts one window shuts all of them:
+
+  root@ksp-04-11:~# dev window close
+  window0: closed
+  window1: barricaded
+  window2: closed
+
+One answer per device, in the table's order, each exactly what that
+device would have said on its own -- window1 was boarded, so it refused,
+and the line failed although the other two shut. Any kind and any word:
+dev light off, dev curtain toggle, which turns each sheet the way it is
+not, dev tv channel 203 on every set in the building.
+
+There is no kind meaning everything, and there should not be: off means
+one thing to a light and another to a generator, so two kinds is two
+lines. The loop is the other road, and it is the one to put in a script
+-- a line that failed keeps its answers on the screen, out of your file:
+
+  for d in $(ls /dev | grep ^window); do
+    echo close > /dev/$d
+  done]],
+
 [[Doors and keys, honestly.
 
 door0 and lock0 in that first listing are one door twice over: the thing
