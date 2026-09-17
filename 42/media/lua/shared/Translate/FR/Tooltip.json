@@ -33,5 +33,14 @@
     "Tooltip_item_CeroSecGeneratorSwitch": "Se pose sur une génératrice. L'ordinateur la démarre et<br>l'arrête -- il ne tire pas sur la corde, donc en bon état.",
     "Tooltip_item_CeroSecTunerControl": "Se pose sur un téléviseur ou un poste de radio.<br>L'ordinateur l'allume, l'éteint et change de poste.",
     "Tooltip_item_CeroSecSmallMotor": "Un petit moteur électrique. Les quatre choses du comté de<br>Knox qui en ont un : un séchoir à cheveux, une tondeuse à<br>moutons, un lecteur CD et un ventilateur soufflant.",
-    "Tooltip_item_CeroSecWiringGuide": "Manuel de chantier CeroSec Systems. Schémas de câblage et<br>nomenclatures des quatre modules d'interface : contact<br>magnétique, relais, gâche électrique et opérateur de porte."
+    "Tooltip_item_CeroSecWiringGuide": "Manuel de chantier CeroSec Systems. Schémas de câblage et<br>nomenclatures des quatre modules d'interface : contact<br>magnétique, relais, gâche électrique et opérateur de porte.",
+    "Tooltip_CeroSec_LinkDesc": "Tire %1 cases de fil électrique jusqu'à %2. Cet ordinateur<br>voit alors cet appareil dans son /dev. Débrancher rend le fil.",
+    "Tooltip_CeroSec_UnlinkDesc": "Retire le câble qui va à %2 et rend les %1 fils<br>électriques.",
+    "Tooltip_CeroSec_LinkFixture": "Aucun module CeroSec n'est installé ici.",
+    "Tooltip_CeroSec_LinkSafehouse": "C'est la base de quelqu'un d'autre.",
+    "Tooltip_CeroSec_LinkLinked": "Cet ordinateur y est déjà relié.",
+    "Tooltip_CeroSec_LinkLinks": "Cet appareil répond déjà à %1 ordinateurs.",
+    "Tooltip_CeroSec_LinkFar": "Trop loin : un câble va jusqu'à %1 cases.",
+    "Tooltip_CeroSec_LinkFull": "Cet ordinateur a déjà %1 câbles.",
+    "Tooltip_CeroSec_LinkWire": "Il faut %1 fils électriques."
 }

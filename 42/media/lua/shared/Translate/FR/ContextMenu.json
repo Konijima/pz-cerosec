@@ -15,5 +15,8 @@
     "ContextMenu_CeroSec_Install": "Installer %1",
     "ContextMenu_CeroSec_Remove": "Retirer %1",
     "ContextMenu_CeroSec_Modules": "Matériel CeroSec",
-    "ContextMenu_CeroSec_LookUpNumbers": "Chercher un numéro"
+    "ContextMenu_CeroSec_LookUpNumbers": "Chercher un numéro",
+    "ContextMenu_CeroSec_Link": "Relier à un ordinateur",
+    "ContextMenu_CeroSec_LinkTo": "%1, %2 cases, %3 fils",
+    "ContextMenu_CeroSec_Unlink": "Débrancher de %1"
 }

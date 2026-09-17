@@ -33,5 +33,14 @@
     "Tooltip_item_CeroSecGeneratorSwitch": "Fits a generator. The computer starts it and stops it --<br>it will not pull a cord, so a healthy generator only.",
     "Tooltip_item_CeroSecTunerControl": "Fits a television or a radio set. The computer switches it<br>on and off and moves the dial.",
     "Tooltip_item_CeroSecSmallMotor": "A small electric motor. The four things in Knox County<br>that have one are a hair dryer, sheep shears, a CD player<br>and a blower fan.",
-    "Tooltip_item_CeroSecWiringGuide": "CeroSec Systems field handbook. Wiring diagrams and parts<br>lists for the four interface modules: magnetic contact, relay,<br>electric strike and door operator."
+    "Tooltip_item_CeroSecWiringGuide": "CeroSec Systems field handbook. Wiring diagrams and parts<br>lists for the four interface modules: magnetic contact, relay,<br>electric strike and door operator.",
+    "Tooltip_CeroSec_LinkDesc": "Runs %1 tiles of electric wire to %2. That computer<br>sees this fixture on its own /dev. Unlinking gives the wire back.",
+    "Tooltip_CeroSec_UnlinkDesc": "Takes the cable to %2 off this fixture and gives the<br>%1 electric wire back.",
+    "Tooltip_CeroSec_LinkFixture": "Nothing of ours is fitted here.",
+    "Tooltip_CeroSec_LinkSafehouse": "This is somebody else's safehouse.",
+    "Tooltip_CeroSec_LinkLinked": "This computer is already on it.",
+    "Tooltip_CeroSec_LinkLinks": "This fixture already answers %1 computers.",
+    "Tooltip_CeroSec_LinkFar": "Too far: a cable runs %1 tiles.",
+    "Tooltip_CeroSec_LinkFull": "This computer already has %1 cables.",
+    "Tooltip_CeroSec_LinkWire": "Needs %1 electric wire."
 }

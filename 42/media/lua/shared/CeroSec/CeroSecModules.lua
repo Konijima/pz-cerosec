@@ -258,6 +258,14 @@ local function ceilSqrt(square)
 	return n
 end
 
+-- How far apart two squares are on the floor, in whole tiles, and it is the number
+-- the menu SHOWS: "twelve tiles" is what a survivor paces out, while what he pays
+-- has the storeys in it as well (linkWire).
+function CeroSecModules.linkTiles(fx, fy, mx, my)
+	local dx, dy = fx - mx, fy - my
+	return ceilSqrt(dx * dx + dy * dy)
+end
+
 -- What a cable from a fixture to a machine costs, in whole tiles of
 -- Base.ElectricWire. Euclidean on x and y -- a cable is run across a floor and not
 -- around the corners of it -- plus LINK_FLOOR_TILES a floor, and never less than
@@ -267,10 +275,10 @@ end
 -- rounding is the same number as adding them before it, and this way nothing is
 -- ever a float.
 function CeroSecModules.linkWire(fx, fy, fz, mx, my, mz)
-	local dx, dy = fx - mx, fy - my
 	local dz = fz - mz
 	if dz < 0 then dz = -dz end
-	local wire = ceilSqrt(dx * dx + dy * dy) + dz * CeroSecModules.LINK_FLOOR_TILES
+	local wire = CeroSecModules.linkTiles(fx, fy, mx, my)
+		+ dz * CeroSecModules.LINK_FLOOR_TILES
 	if wire < 1 then return 1 end
 	return wire
 end
@@ -1195,6 +1203,17 @@ function CeroSecModules.fittingRefusal(object, id, playerObj)
 	return stateRefusal(object, id)
 end
 
+-- Is there any of our hardware on this fixture at all? The question a cable asks
+-- first and the menu asks before it draws anything, so it is one function: the ids
+-- are a closed list and "anything on it" must not become nine answers in two files.
+function CeroSecModules.anyFitted(object)
+	local fitted = CeroSecModules.installedOn(object)
+	for i = 1, #CeroSecModules.LIST do
+		if fitted[CeroSecModules.LIST[i].id] then return true end
+	end
+	return false
+end
+
 --
 -- RUNNING A CABLE, and the three questions it does NOT ask
 --
@@ -1238,12 +1257,7 @@ function CeroSecModules.linkRefusal(object, x, y, z, playerObj)
 	-- A cable to a bare fixture buys nothing: a link is what carries a MODULE's
 	-- device to a machine, and a fixture with no module on it has no device for
 	-- either of them to argue about.
-	local fitted = CeroSecModules.installedOn(object)
-	local any = false
-	for i = 1, #CeroSecModules.LIST do
-		if fitted[CeroSecModules.LIST[i].id] then any = true end
-	end
-	if not any then return "fixture" end
+	if not CeroSecModules.anyFitted(object) then return "fixture" end
 
 	-- Whose house, first and for fittingRefusal's own reason.
 	local house = houseRefusal(object, playerObj)
