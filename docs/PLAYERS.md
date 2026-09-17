@@ -371,8 +371,9 @@ The building the computer stands in is wired to it — literally, with a
 screwdriver. `/dev` holds one file per door, light switch and window it can reach
 **that somebody has fitted a hardware module to** (see below): its own building
 when its square has one, every room of it; ten tiles of its own floor when it has
-not, which is what a computer in a player-built base gets. `dev` is how you work
-them:
+not, which is what a computer in a player-built base gets. Anything further off —
+a lamppost, a gate at the end of the drive — is a cable away, and that is below
+too. `dev` is how you work them:
 
 ```
 dev
@@ -675,6 +676,70 @@ out — and it stays closed for five seconds after the last movement. So a zombi
 that wanders into the field and **stops** reads `clear` five seconds later, with
 the zombie still standing there. That is what a real one does, and it is why a
 script polls a sensor instead of reading it once.
+
+### Running a cable to a computer
+
+A module on a lamppost does nothing on its own. The computer reaches its own
+building and nothing else, so a light on the street, a gate at the end of the
+drive, a lamp on the far side of the car park — or a shop the other side of the
+wall — is hardware nobody is listening to. What you do about it is what an
+electrician would do: **run a cable**.
+
+Right-click the fixture, the same menu the box went on with, and take **Link to
+computer**. Every machine near enough is a line, nearest first, with its name,
+how far it is and what the run costs:
+
+```
+ksp-front-01, 12 tiles, 12 wire
+ksp-back-02, 3 tiles, 7 wire
+```
+
+One `Base.ElectricWire` a tile, straight across the ground — corners cost
+nothing, the crow's distance is what you pay — and **four tiles more for every
+floor between you and it**, which is why the machine on the landing above costs
+seven for three tiles. **Thirty tiles is as far as a cable goes**, floors
+included. Further than that and the answer is a second computer for that end of
+the building, worked from the first one down the coax or over the telephone.
+
+It does not have to be switched on. A cable goes to the back of the machine and
+not to a login, and a survivor who had to boot the thing first to wire his porch
+light would be wiring it in the dark. Nothing asks where you stand either, or
+that the door be open, or that you be inside: those are rules about reaching a
+thing with your hands, and this is the answer to not being able to. You need the
+screwdriver, the wire in your bag and the same level of Electricity the box
+itself wanted. The job takes as long as the walk — it is thirty tiles of reel you
+are paying out — and the greyed lines say why:
+
+| the line says | what to do about it |
+| --- | --- |
+| *Needs 14 electric wire.* | you are carrying fewer than the run costs |
+| *This computer is already on it.* | there is already a cable between those two |
+| *This fixture already answers 4 computers.* | four is all one fixture takes |
+| *This computer already has 32 cables.* | cut one of that machine's other cables |
+| *This is somebody else's safehouse.* | with **Safehouse members only** on |
+
+A machine further away than thirty tiles is not on the list at all, and neither
+is one whose part of the map nobody has loaded.
+
+Then it is in that machine's `/dev` like anything in the building — same kinds,
+same numbers, same words — and `dev find` tells you what the run cost:
+
+```
+dev find light1     -> light1: blinking, linked, 12 tiles of wire
+```
+
+**One fixture may answer up to four computers**, and it is in all four of their
+`/dev`s at once. A fixture that is already in a machine's building and has a
+cable to it as well is still one device with one number; the cable only adds the
+line above.
+
+**Cutting one gives the wire back.** *Unlink from ksp-front-01* is under the same
+menu, one line per cable already run, and every tile comes back into your bag. It
+asks nothing but the safehouse rule — not the range, not the wire, and not
+whether the box is still on the fixture, because a module that came off a fixture
+you had cabled leaves the cable run and the reel owed. And if the fixture itself
+leaves the world — you pick the light switch up, somebody takes the door down —
+the wire drops on the floor where it stood, beside the boxes.
 
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.
