@@ -14559,6 +14559,23 @@ do
 	eq("and no empty list is left on the fixture",
 		data ~= nil and data[CeroSecModules.LINK_KEY], nil)
 
+	-- AND WHAT COMES BACK IS WHAT THE FIXTURE SAYS, never the distance worked out
+	-- again. The two agree for every cable a survivor runs on this bench, so the
+	-- rule needs a cable where they disagree: an entry saved under some other
+	-- arithmetic than today's, which is what a fixture in an old save is. The shape
+	-- is legal -- any whole number of reels inside the range is -- the post is
+	-- twelve tiles off, the fixture says five, and five is what the cut pays.
+	check("a cable saved at five reels for a twelve tile run",
+		CeroSecModules.linkOn(post, MACHINE[1], MACHINE[2], MACHINE[3], 5))
+	CeroSecOS.addLink(state, 22, 10, 0)
+	reel(0)
+	send("unlinkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("pays back the five it says and not the twelve it would cost today",
+		wires(), 5)
+	eq("and the post is bare again", cables(post), 0)
+	eq("with the machine back to the corner lamp alone",
+		#CeroSecOS.linkSquares(state), 1)
+
 	-- AND THE SAFEHOUSE GATE IS BOTH WAYS, which is the sabotage it was asked for: a
 	-- stranger who cannot run a cable cannot cut somebody else's either, and the
 	-- refund is what he would be walking away with.
