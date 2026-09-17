@@ -18,7 +18,8 @@ date.
   said plainly: while a computer is running under one of the two mods, the other
   mod's entries are not on its menu, so their CD games and their 486 parts want a
   machine you have not booted with CeroSec. Choosing between the two systems on
-  one machine, at boot, is meant for a later release. Nothing changes in a game
+  one machine, at boot, is meant for a later release. When two computers share
+  one tile, only CeroSec's menu shows on that tile. Nothing changes in a game
   without that mod.
 
 - A street lamppost you have cabled can be switched now. It read `on` and then

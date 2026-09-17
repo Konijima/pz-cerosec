@@ -4086,7 +4086,7 @@ suivant et la session devenait inatteignable. Désormais un bureau appartient au
 qui l'a amorcé, jusqu'à l'extinction. **Cette section est la seule preuve qui vaut :
 le banc hors jeu ne juge qu'une doublure.** Les deux mods abonnés et actifs.
 
-438. **L'écran reste allumé — la contre-épreuve.** Avec les deux mods actifs, clic
+438. **L'écran reste allumé : la contre-épreuve.** Avec les deux mods actifs, clic
      droit sur un ordinateur **éteint** : les deux menus sont là, **Allumer
      l'ordinateur** (CeroSec) et **Computer** (l'autre). Choisir celui de CeroSec,
      attendre que l'écran s'allume, puis **recliquer droit sur la même machine**.
@@ -4099,7 +4099,7 @@ le banc hors jeu ne juge qu'une doublure.** Les deux mods abonnés et actifs.
      ni **Utiliser**, ni **Éteindre**, ni lecteur de disquette. Éteindre la machine
      par leur fenêtre, puis reclic droit : les deux menus sont revenus. [ ]
 440. **Le reste de leur mod vit encore.** Poser leur **portable** par terre (addon
-     `ComputerModLaptop`) et cliquer droit dessus : leur menu répond comme avant —
+     `ComputerModLaptop`) et cliquer droit dessus : leur menu répond comme avant,
      CeroSec ne voit jamais un portable. Idem sur un de leurs terminaux réseau. [ ]
 441. **Sans leur mod, rien n'a bougé.** Désabonner ou désactiver Computer Mod,
      recharger la sauvegarde : le parcours existant passe **inchangé**, aucune ligne
