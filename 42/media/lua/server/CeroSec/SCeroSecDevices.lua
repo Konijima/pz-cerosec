@@ -824,6 +824,19 @@ local function scanWorldItems(square, found, seen, x, y, z)
 	end
 end
 
+-- Where one OBJECT was put on the list, as a key of `seen`, so that a walk which
+-- reaches the same object twice adds it once.
+--
+-- It cannot collide with a device key, which is `kind:x:y:z:side:n`: no kind is
+-- called "at", and the kinds are a closed list in CeroSecOS.DEV_VALUES. What is
+-- filed under it is the LIST of entries that came off the object, because the
+-- second reader is the link walk and what it needs is not "was this done" but the
+-- entries themselves -- a fixture in the building AND on the end of a cable is one
+-- device that has a wire, not two devices.
+local function placeKey(x, y, z, index)
+	return "at:" .. x .. ":" .. y .. ":" .. z .. ":" .. index
+end
+
 -- One object, as the devices it is, onto the walk's own list. Its place is the
 -- square it STANDS on and not the square it was reached from: that is what the
 -- key hangs on and what `alive` re-asks the engine for.
@@ -857,6 +870,12 @@ local function addDevices(object, index, x, y, z, found, seen)
 		seen[entry.key] = true
 		found[#found + 1] = entry
 	end
+	-- And the object itself, under where it stands (placeKey), for the walk that
+	-- comes after this one: the link walk visits squares the building walk may
+	-- already have covered, and a fixture found twice would be two devices with two
+	-- numbers -- the ordinal in a key is handed out per square.
+	if #entries > 0 then seen[placeKey(x, y, z, index)] = entries end
+	return entries
 end
 
 -- Everything on one square, and the square's own place answered back: the
@@ -937,6 +956,15 @@ end
 -- of any kind and carries `streetlight` instead (tile 0 of the same tileset), and
 -- the flood lights have neither. So a lamp on the building is found and a lamp on
 -- a post two tiles away is not, and neither answer is a guess about a sprite name.
+--
+-- `props:has("attachedN")` is the STRING overload and it really answers: PropertyContainer
+-- has five `has` overloads, Kahlua's MultiLuaJavaInvoker picks the one whose
+-- argument types match (matchesArgumentTypes, offsets 42-49), and `has(String)`
+-- puts the name through TilePropertyAliasMap.getIDFromPropertyName -- which
+-- registers every name the tile definitions use under
+-- IsoPropertyType.lookupOrDefaultStr, and ATTACHED_N's own name is the literal
+-- "attachedN" (javap -c zombie.core.properties.IsoPropertyType, offset 1281). An
+-- unknown name answers -1 and `containsKey((short) -1)`, which is false.
 local function attachedFlag(x, y, z, square)
 	if square:getZ() ~= z then return nil end
 	local dx, dy = square:getX() - x, square:getY() - y
@@ -945,6 +973,60 @@ local function attachedFlag(x, y, z, square)
 	if dx == -1 and dy == 0 then return "attachedW" end
 	if dx == 1 and dy == 0 then return "attachedE" end
 	return nil
+end
+
+-- AND THE OTHER HALF OF THE SAME QUESTION, because eight of the county's twenty
+-- outdoor wall lamps do not answer the first one.
+--
+-- The `attached` property is what vanilla reads and it is read first, above. But
+-- the tile definitions are not consistent with it: of the twenty
+-- `CustomName = Outdoor Lamp` tiles in lighting_outdoor_01, twelve carry the
+-- attached flag OPPOSITE their `Facing` -- a lamp facing south hangs on the wall to
+-- its north -- and eight do not. Every Round and every Antique lamp drawn facing
+-- NORTH carries `attachedW` (tiles 28 and 30), and every one drawn facing WEST
+-- carries `attachedN` (29 and 31); the Oval pair is crossed the same way (44, 45).
+-- So a Round Outdoor Lamp on the north wall of a house hangs on a wall the property
+-- says is to its west, and the rule above looks for it on the wrong side.
+--
+-- `Facing` does not have that problem, and the reason is what a lamp IS: it faces
+-- away from the thing it is screwed to. So the second reading is the first one
+-- turned round -- the wall is on the OPPOSITE side of `Facing` -- and it is asked
+-- only of a sprite the engine itself calls a wall object:
+--
+--   MoveType = WallObject   every one of the twenty lamps, and no lamppost
+--   Facing = N|S|W|E        every one of the twenty, and the four flood lights
+--   streetlight             every lamppost, and none of the twenty
+--
+-- which is what keeps the two things that are NOT on the building out. A lamppost
+-- carries neither `Facing` nor `MoveType` and is refused by both readings, as it
+-- was before. A FLOOD LIGHT carries `Facing` and no `MoveType` -- it is a movable
+-- light on a tripod, `LightRadius = 24`, `IsMoveAble`, tiles 48-51 -- so it is
+-- refused by the MoveType half: a floodlight standing against a wall is not screwed
+-- to it, and the day somebody carries it away the building has not lost a fixture.
+--
+-- `props:get(name)` is the value and `null` for a property the sprite has not
+-- (PropertyContainer.get(String), offsets 0-32, through the same alias map
+-- `has` uses).
+-- Where the WALL is, per Facing: the square on the other side of the lamp from
+-- the way it points. A lamp facing south has its back to the square north of it.
+local FACING_BACK = { N = { 0, 1 }, S = { 0, -1 }, W = { 1, 0 }, E = { -1, 0 } }
+
+-- Is this hung fixture's BACK to `square`? props is the sprite's, already read by
+-- the caller.
+--
+-- `has` before `propertyEquals`, and not for tidiness: propertyEquals is
+-- get(name) into StringUtils.equalsIgnoreCase (offsets 0-9) and get answers null
+-- for a property the sprite has not got, so the guard is what makes the null
+-- impossible rather than a thing to hope about.
+local function backsOnto(x, y, z, square, props)
+	if not props:has("MoveType") then return false end
+	if not props:propertyEquals("MoveType", "WallObject") then return false end
+	local facing = props:get("Facing")
+	if type(facing) ~= "string" then return false end
+	local back = FACING_BACK[facing]
+	if back == nil then return false end
+	if square:getZ() ~= z then return false end
+	return square:getX() - x == back[1] and square:getY() - y == back[2]
 end
 
 -- Is this fixture on the boundary between the square it stands on (x, y, z) and
@@ -961,13 +1043,16 @@ end
 -- carries one of the four properties above instead.
 local function faces(object, x, y, z, square)
 	if CeroSecModules.isLightSwitch(object) then
-		local flag = attachedFlag(x, y, z, square)
-		if flag == nil then return false end
 		local sprite = object:getSprite()
 		local props = nil
 		if sprite ~= nil then props = sprite:getProperties() end
 		if props == nil then return false end
-		return props:has(flag) == true
+		-- Vanilla's own reading first, and then the one the tile definitions make
+		-- necessary (backsOnto): eight of the county's twenty outdoor lamps point
+		-- their `attached` property at a wall that is not the one they hang on.
+		local flag = attachedFlag(x, y, z, square)
+		if flag ~= nil and props:has(flag) == true then return true end
+		return backsOnto(x, y, z, square, props)
 	end
 	local opposite = object:getOppositeSquare()
 	if opposite == nil then return false end
@@ -976,7 +1061,8 @@ local function faces(object, x, y, z, square)
 		and opposite:getZ() == square:getZ()
 end
 
-local function scanFarEdge(square, neighbour, found, seen)
+-- `hungOnly` is the two neighbours added by the porch-lamp report: see scanFarEdges.
+local function scanFarEdge(square, neighbour, found, seen, hungOnly)
 	if neighbour == nil then return end
 	if neighbour:getRoom() ~= nil then return end
 	local objects = neighbour:getObjects()
@@ -984,18 +1070,45 @@ local function scanFarEdge(square, neighbour, found, seen)
 	local x, y, z = neighbour:getX(), neighbour:getY(), neighbour:getZ()
 	for i = 0, objects:size() - 1 do
 		local object = objects:get(i)
-		if isWallFixture(object) and faces(object, x, y, z, square) then
+		local mine
+		if hungOnly then
+			mine = CeroSecModules.isLightSwitch(object)
+		else
+			mine = isWallFixture(object)
+		end
+		if mine and faces(object, x, y, z, square) then
 			addDevices(object, i, x, y, z, found, seen)
 		end
 	end
 end
 
--- The two edges a room square owns and does not stand on: the square to the
--- SOUTH carries this one's south wall on its north edge, and the square to the
--- EAST carries its east wall on its west edge.
+-- The four squares a room square's walls can be reached from, and they are not
+-- symmetrical.
+--
+-- TWO OF THEM CARRY A WALL. A door, a window and a curtain ARE the wall and the
+-- wall is on its own square's north or west edge, so the wall between a room
+-- square and its SOUTH neighbour stands on that neighbour, and so does the wall
+-- between it and its EAST neighbour. The north and west walls stand on the room's
+-- own square and scanSquare has them already.
+--
+-- AND ALL FOUR CARRY A LAMP, which is what the porch-lamp report turned out to be
+-- about. A light does not stand on a wall, it HANGS on one, and it hangs on the
+-- outside: a lamp on the house's south wall is on the pavement south of the room
+-- (found by the first of the two above), and a lamp on the house's NORTH wall is on
+-- the pavement NORTH of it -- a square no walk of this mod ever visited. Every
+-- north-wall and west-wall porch lamp in the county was therefore invisible to
+-- /dev, with a relay on it and everything else on the building listed: exactly the
+-- report, and the far-edge rule of 0.4.1 fixed the doors and only half the lamps.
+--
+-- So the north and the west neighbour are walked for HUNG fixtures only. It is a
+-- narrower gate than the other two on purpose and not to save the walk: a door on
+-- one of those squares is that NEIGHBOUR's wall and not this room's, and taking it
+-- would be a machine listing the house next door's front door.
 local function scanFarEdges(cell, square, x, y, z, found, seen)
-	scanFarEdge(square, cell:getGridSquare(x, y + 1, z), found, seen)
-	scanFarEdge(square, cell:getGridSquare(x + 1, y, z), found, seen)
+	scanFarEdge(square, cell:getGridSquare(x, y + 1, z), found, seen, false)
+	scanFarEdge(square, cell:getGridSquare(x + 1, y, z), found, seen, false)
+	scanFarEdge(square, cell:getGridSquare(x, y - 1, z), found, seen, true)
+	scanFarEdge(square, cell:getGridSquare(x - 1, y, z), found, seen, true)
 end
 
 -- The machine's TNC, added to whatever the walk found. It is not discovered by
@@ -1071,7 +1184,7 @@ end
 -- it: every door, window, curtain and light switch is fittable, and the stove, the
 -- laundry, the generator and the sets are on nobody's wall -- a fridge a survivor
 -- dragged onto the pavement is not part of the premises.
-local function fittableFarEdge(square, neighbour, out)
+local function fittableFarEdge(square, neighbour, out, hungOnly)
 	if neighbour == nil then return end
 	if neighbour:getRoom() ~= nil then return end
 	local objects = neighbour:getObjects()
@@ -1079,7 +1192,13 @@ local function fittableFarEdge(square, neighbour, out)
 	local x, y, z = neighbour:getX(), neighbour:getY(), neighbour:getZ()
 	for i = 0, objects:size() - 1 do
 		local object = objects:get(i)
-		if isWallFixture(object) and faces(object, x, y, z, square) then
+		local mine
+		if hungOnly then
+			mine = CeroSecModules.isLightSwitch(object)
+		else
+			mine = isWallFixture(object)
+		end
+		if mine and faces(object, x, y, z, square) then
 			out[#out + 1] = { object = object, square = square }
 		end
 	end
@@ -1130,8 +1249,13 @@ function CeroSecDevices.fixturesInRooms(rooms, done, max)
 						end
 						if cell ~= nil then
 							local sx, sy, sz = sq:getX(), sq:getY(), sq:getZ()
-							fittableFarEdge(sq, cell:getGridSquare(sx, sy + 1, sz), out)
-							fittableFarEdge(sq, cell:getGridSquare(sx + 1, sy, sz), out)
+							fittableFarEdge(sq, cell:getGridSquare(sx, sy + 1, sz), out, false)
+							fittableFarEdge(sq, cell:getGridSquare(sx + 1, sy, sz), out, false)
+							-- And the two that carry a LAMP and no wall of this room: a
+							-- premises' own porch light was wired in 1991 exactly as its
+							-- front door was (scanFarEdges).
+							fittableFarEdge(sq, cell:getGridSquare(sx, sy - 1, sz), out, true)
+							fittableFarEdge(sq, cell:getGridSquare(sx - 1, sy, sz), out, true)
 						end
 					end
 				end
@@ -1144,10 +1268,86 @@ function CeroSecDevices.fixturesInRooms(rooms, done, max)
 	return out, walked
 end
 
+--
+-- THE OTHER WAY A FIXTURE IS ON A MACHINE: somebody ran a cable to it
+--
+-- The building is free and it is also the whole of what the two walks above can
+-- reach. A lamppost on the street, a gate at the end of the drive, a lamp on a wall
+-- the room walk does not touch, a fixture in the shop across the car park: none of
+-- those is in any room of the machine's building, and a survivor who wants one on
+-- /dev does what an electrician would do -- he runs a cable
+-- (CeroSecModules.LINK_KEY, and Commands.linkmodule).
+--
+-- WHY THE MACHINE KEEPS A LIST. The cable is written on the fixture, because that
+-- is where the modules live and where the refund is owed. But `find` cannot start
+-- from the fixture: asking "which fixture in Knox County names this machine" is a
+-- walk of the county, once a second, for ever. So the link is written on BOTH sides
+-- and the machine's side is a list of SQUARES (state.links): the walk visits
+-- exactly those, which is at most CeroSecOS.LINKS_PER_MACHINE of them.
+--
+-- WHAT KEEPS THE TWO IN STEP is this walk, and nothing else has to. An entry whose
+-- square is loaded and carries no cable to this machine is DROPPED -- the fixture
+-- was unlinked from the other side, or replaced, or a later build wrote a modData
+-- table this one will not read -- and the answer goes back to the caller to be
+-- written into the state. An entry whose square is NOT loaded is kept exactly as it
+-- is: a cable in a street nobody is standing in is still a cable, and a machine
+-- that forgot one because the chunk was away would be a machine that charged for a
+-- cable and then took it away.
+--
+-- A FIXTURE THAT IS BOTH IN THE BUILDING AND ON A CABLE is one device and not two.
+-- The building walk got there first, so the entries are already on the list under
+-- their own numbers; what this adds to them is the `wire`, which is the one thing
+-- only the cable knows (see placeKey).
+local function scanLinked(cell, links, found, seen, mx, my, mz)
+	local kept = {}
+	if type(links) ~= "table" then return kept end
+	for i = 1, #links do
+		local at = links[i]
+		if type(at) == "table" and type(at.x) == "number" and type(at.y) == "number"
+				and type(at.z) == "number" and #kept < CeroSecOS.LINKS_PER_MACHINE then
+			local square = cell:getGridSquare(at.x, at.y, at.z)
+			if square == nil then
+				kept[#kept + 1] = { x = at.x, y = at.y, z = at.z }
+			else
+				local objects = square:getObjects()
+				local cabled = false
+				if objects ~= nil then
+					for k = 0, objects:size() - 1 do
+						local object = objects:get(k)
+						-- The fixture's own end of the cable, which is what makes this
+						-- self-healing in both directions: the square is asked, not
+						-- believed.
+						local wire = CeroSecModules.wireOf(object, mx, my, mz)
+						if wire ~= nil then
+							cabled = true
+							local already = seen[placeKey(at.x, at.y, at.z, k)]
+							if already == nil then
+								already = addDevices(object, k, at.x, at.y, at.z, found, seen)
+							end
+							for e = 1, #already do already[e].wire = wire end
+						end
+					end
+				end
+				-- Nothing on that square names this machine any more: the cable is gone
+				-- and so is the entry. A fixture whose MODULE came off keeps its cable
+				-- and stays on the list -- the wire is still run, and what it reaches is
+				-- a fixture with no device on it.
+				if cabled then kept[#kept + 1] = { x = at.x, y = at.y, z = at.z } end
+			end
+		end
+	end
+	return kept
+end
+
 -- Every device the machine at x, y, z can reach right now, unnumbered. THE
 -- WALK ITSELF, with no cache in front of it: the minute sweep and the cache's
 -- own miss are what call it now (CeroSecDevices.findCached).
-function CeroSecDevices.find(x, y, z)
+--
+-- `links` is the machine's own list of cable ends (state.links) and the second
+-- answer is what that list should be AFTER this walk -- nil when the walk could not
+-- ask the world at all, which is not the same as an empty list and must not read as
+-- one (scanLinked).
+function CeroSecDevices.find(x, y, z, links)
 	local found, seen = {}, {}
 	if getCell == nil then return found end
 	local cell = getCell()
@@ -1175,7 +1375,10 @@ function CeroSecDevices.find(x, y, z)
 			local sx, sy, sz = scanSquare(sq, found, seen)
 			if sx ~= nil then scanFarEdges(cell, sq, sx, sy, sz, found, seen) end
 		end)
-		return withTnc(found, seen, x, y, z)
+		-- And the squares somebody ran a cable to, which are in no room of this
+		-- building and are on the machine all the same (scanLinked).
+		local kept = scanLinked(cell, links, found, seen, x, y, z)
+		return withTnc(found, seen, x, y, z), kept
 	end
 
 	-- No building: a square of ten tiles around the machine, on its own floor.
@@ -1186,7 +1389,8 @@ function CeroSecDevices.find(x, y, z)
 			scanSquare(cell:getGridSquare(x + dx, y + dy, z), found, seen)
 		end
 	end
-	return withTnc(found, seen, x, y, z)
+	local kept = scanLinked(cell, links, found, seen, x, y, z)
+	return withTnc(found, seen, x, y, z), kept
 end
 
 --
@@ -1297,8 +1501,13 @@ end
 -- `now` is the real clock (getTimestampMs). Without one there is no cache at
 -- all and every call is a walk: a caller with no clock cannot be told how old an
 -- answer is, and an answer of unknown age is one to throw away.
-function CeroSecDevices.findCached(x, y, z, now)
-	if type(now) ~= "number" then return CeroSecDevices.find(x, y, z) end
+--
+-- `links` and the second answer are the machine's cable list and what it should be
+-- (CeroSecDevices.find). The held answer carries the one the walk gave, because
+-- every hand that writes a cable calls invalidate(): a hit cannot be looking at a
+-- list the walk has not seen.
+function CeroSecDevices.findCached(x, y, z, now, links)
+	if type(now) ~= "number" then return CeroSecDevices.find(x, y, z, links) end
 
 	local held = CeroSecDevices.cache[cacheKey(x, y, z)]
 	-- `now < held.at` is a clock that went backwards, which is a miss: the one
@@ -1325,13 +1534,13 @@ function CeroSecDevices.findCached(x, y, z, now)
 			end
 			out[i] = entry
 		end
-		return out
+		return out, held.kept
 	end
 
-	local found = CeroSecDevices.find(x, y, z)
-	CeroSecDevices.cache[cacheKey(x, y, z)] = { at = now, found = found }
+	local found, kept = CeroSecDevices.find(x, y, z, links)
+	CeroSecDevices.cache[cacheKey(x, y, z)] = { at = now, found = found, kept = kept }
 	prune(now)
-	return found
+	return found, kept
 end
 
 --
@@ -1428,6 +1637,41 @@ end
 -- What the engine is handed
 --
 
+-- The cable list a walk came back with, put on the machine -- and only when the
+-- walk changed it.
+--
+-- The list lives beside the book of numbers in the machine's own state and is
+-- written the same way (CeroSecDevices.number): the state table IS the saved one, so
+-- an assignment here is the save. Which is exactly why an unchanged list is left
+-- alone: a walk that rewrites a table every pass makes the machine's state new every
+-- pass, and everything downstream that asks "did this change" would answer yes for
+-- ever.
+--
+-- A nil answer is a walk that could not ask the world -- no cell, or the machine's
+-- own square away -- and it is NOT an empty list: a cable is not lost because the
+-- chunk was (scanLinked).
+local function writeKept(state, kept)
+	if state == nil or type(kept) ~= "table" then return false end
+	local links = state.links
+	if links == nil and #kept == 0 then return false end
+	if type(links) == "table" and #links == #kept then
+		local same = true
+		for i = 1, #kept do
+			local was, is = links[i], kept[i]
+			if type(was) ~= "table" or was.x ~= is.x or was.y ~= is.y or was.z ~= is.z then
+				same = false
+				break
+			end
+		end
+		if same then return false end
+	end
+	-- An empty list is the key gone, not a key holding nothing: a machine with no
+	-- cables reads in a save exactly like every machine written before this build
+	-- (CeroSecOS.linksOk).
+	if #kept == 0 then state.links = nil else state.links = kept end
+	return true
+end
+
 -- One machine's devices, discovered now. Everything below closes over this one
 -- table, so list() and write() cannot disagree about what is there.
 local function build(luaObject, state)
@@ -1435,7 +1679,9 @@ local function build(luaObject, state)
 	-- discovery needs it: this is where /dev is answered out of the last walk
 	-- when there was one this second (CeroSecDevices.findCached).
 	local now = getTimestampMs()
-	local found = CeroSecDevices.findCached(luaObject.x, luaObject.y, luaObject.z, now)
+	local found, kept = CeroSecDevices.findCached(luaObject.x, luaObject.y, luaObject.z,
+		now, state ~= nil and state.links or nil)
+	writeKept(state, kept)
 
 	-- A sensor's state is not read off the object: there is nothing on a dropped
 	-- item to read. It is what the sampling book says the contact is doing right
@@ -2313,7 +2559,10 @@ function CeroSecDevices.envFor(luaObject, state, system, playerObj, token)
 			if entry.kind == "light" then
 				local ok, reason = blink(entry, seconds)
 				if not ok then return false, reason end
-				return true, nil, "blinking"
+				-- And how it is on this machine, for the one device kind that can be
+				-- half a street away: a survivor who is told a light is blinking wants
+				-- to know whether to look out of the window (CeroSecOS.linkedText).
+				return true, nil, CeroSecOS.linkedText("blinking", entry.wire)
 			end
 
 			if system == nil or playerObj == nil then return false, "no such device" end
@@ -2333,7 +2582,7 @@ function CeroSecDevices.envFor(luaObject, state, system, playerObj, token)
 				class = class, sprite = sprite, item = item,
 				seconds = seconds,
 			})
-			return true, nil, "highlighted"
+			return true, nil, CeroSecOS.linkedText("highlighted", entry.wire)
 		end,
 
 		-- A chmod on a device node. The node itself is thrown away at the end of
@@ -2368,6 +2617,8 @@ end)
 function CeroSecDevices.refresh(luaObject, state)
 	if state == nil then return end
 	CeroSecDevices.forget(luaObject.x, luaObject.y, luaObject.z)
-	CeroSecDevices.number(state, CeroSecDevices.findCached(
-		luaObject.x, luaObject.y, luaObject.z, getTimestampMs()))
+	local found, kept = CeroSecDevices.findCached(
+		luaObject.x, luaObject.y, luaObject.z, getTimestampMs(), state.links)
+	writeKept(state, kept)
+	CeroSecDevices.number(state, found)
 end
