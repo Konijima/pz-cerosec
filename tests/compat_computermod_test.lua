@@ -153,6 +153,10 @@ CeroSecMenu = {}
 function CeroSecMenu.addTop(context, name)
 	return context:addOption(name)
 end
+-- Not this bench's concern (see manual_ui_test.lua for the icon itself); a
+-- no-op stub so CeroSecContextMenu's call to it does not fail here for want
+-- of it.
+function CeroSecMenu.setIcon(option) end
 
 CeroSecReach = {}
 function CeroSecReach.height() return "low" end

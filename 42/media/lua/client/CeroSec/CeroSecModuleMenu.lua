@@ -6,12 +6,20 @@ require "CeroSec/ISCeroSecModuleAction"
 --
 -- The right-click menu on a door, a window or a light switch
 --
--- One submenu, "CeroSec hardware", with a line per module that could go on the
--- thing under the cursor: Install it, or Remove the one that is there. It is a
--- listener of its own on Events.OnFillWorldObjectContextMenu and not a branch of
--- the computer's menu (CeroSecContextMenu), because it is about a DIFFERENT
--- object: the computer's menu returns at once when there is no computer under
--- the cursor, and a door is never a computer.
+-- One submenu, named after the thing under the cursor -- "CeroSec: Door",
+-- "CeroSec: Window" -- with a line per module that could go on it: Install it,
+-- or Remove the one that is there. Named and not "CeroSec hardware", because a
+-- survivor with two fixtures on the same tile (a door and its curtain motor)
+-- could otherwise not tell which one a greyed line was even talking about; the
+-- hover highlight on the parent (CeroSecModuleMenu.highlightOn, below) is what
+-- removes the last of the doubt. The parent itself is shared with the cable
+-- menu (CeroSecLinkMenu.fixtureParent below), so a fixture with a cable on it
+-- reads as one entry and not two.
+--
+-- It is a listener of its own on Events.OnFillWorldObjectContextMenu and not a
+-- branch of the computer's menu (CeroSecContextMenu), because it is about a
+-- DIFFERENT object: the computer's menu returns at once when there is no
+-- computer under the cursor, and a door is never a computer.
 --
 -- Vanilla fires that event for exactly this -- "use the event (as you would
 -- 'OnTick' etc) to add items to context menu without mod conflicts",
@@ -92,6 +100,127 @@ function CeroSecModuleMenu.walkTo(playerObj, object)
 		return luautils.walkAdjWindowOrDoor(playerObj, square, object)
 	end
 	return luautils.walkAdj(playerObj, square)
+end
+
+-- What the object under the cursor is called, vanilla's own way first: a
+-- moveable's sprite carries CustomName/GroupName tile properties and
+-- ISWorldObjectContextMenu's own getMoveableDisplayName reads them
+-- (client/ISUI/ISWorldObjectContextMenu.lua:89-101) -- private there, so the
+-- same three calls are made here. A door, a window or a switch almost never
+-- carries the property; a labelled desk or a built frame does, and when one
+-- does that is the name a survivor already knows it by.
+function CeroSecModuleMenu.spriteName(object)
+	if object == nil or type(object.getSprite) ~= "function" then return nil end
+	local sprite = object:getSprite()
+	if sprite == nil then return nil end
+	local props = sprite:getProperties()
+	if props == nil or not props:has("CustomName") then return nil end
+	local name = props:get("CustomName")
+	if props:has("GroupName") then name = props:get("GroupName") .. " " .. name end
+	return Translator.getMoveableDisplayName(name)
+end
+
+-- The fallback CeroSec already had a word for, in the same order isFittable
+-- (CeroSecModules) asks the questions: a fixture is exactly one of these eight
+-- kinds or it never reached this menu at all.
+function CeroSecModuleMenu.genreName(object)
+	if CeroSecModules.isDoor(object) then return getText("ContextMenu_CeroSec_GenreDoor") end
+	if CeroSecModules.isWindow(object) then return getText("ContextMenu_CeroSec_GenreWindow") end
+	if CeroSecModules.isLightSwitch(object) then return getText("ContextMenu_CeroSec_GenreLightSwitch") end
+	if CeroSecModules.isCurtain(object) then return getText("ContextMenu_CeroSec_GenreCurtain") end
+	-- A microwave is an IsoStove too (isStove reads the container, not the
+	-- sprite, see CeroSecModules.isStove above), and its OWN public method
+	-- says which -- `public boolean isMicrowave()`, javap on IsoStove -- so
+	-- a survivor who never renamed it reads "Microwave" and not "Stove".
+	if CeroSecModules.isStove(object) then
+		if type(object.isMicrowave) == "function" and object:isMicrowave() then
+			return getText("ContextMenu_CeroSec_GenreMicrowave")
+		end
+		return getText("ContextMenu_CeroSec_GenreStove")
+	end
+	if CeroSecModules.isWasher(object) then return getText("ContextMenu_CeroSec_GenreWasher") end
+	if CeroSecModules.isGenerator(object) then return getText("ContextMenu_CeroSec_GenreGenerator") end
+	if CeroSecModules.isTuneable(object) then return getText("ContextMenu_CeroSec_GenreSet") end
+	return nil
+end
+
+function CeroSecModuleMenu.nameOf(object)
+	return CeroSecModuleMenu.spriteName(object) or CeroSecModuleMenu.genreName(object)
+		or getText("ContextMenu_CeroSec_Modules")
+end
+
+-- Vanilla's own four calls for lighting an object up under a hovered menu entry
+-- (ISUI/ISWorldObjectContextMenu.lua:281-286, onHighlightWorldItem), with the
+-- OBJECT colour and not the ground-item one: a door or a computer is neither.
+-- This mod already leans on the same colour and the same four calls for the
+-- debug window's "dev find" outline (CeroSecTerminal:startHighlight/
+-- stopHighlight, client/CeroSec/CeroSecTerminal.lua:413-439), which is the
+-- second proof this is the right call for an IsoObject standing in the world
+-- and not a dropped item.
+-- Turning it back off is the SAME four calls with isHighlighted false, and
+-- nothing here has to run them: ISContextMenu calls onHighlight(false) itself
+-- whenever the highlighted option changes, and on hide, close and deactivate
+-- (ISUI/ISContextMenu.lua:226-233, and the checkHighlightedOption(nil) call
+-- sites at :45,118,134,156,165,188) -- so hovering away, Escape, a click
+-- elsewhere, picking the entry and the object going out of the world between
+-- clicks are all covered before this file has to think about any of them.
+local function onHighlightFixture(_option, _menu, _isHighlighted, _object)
+	if _object == nil then return end
+	if _isHighlighted then
+		local color = getCore():getObjectHighlitedColor()
+		_object:setHighlightColor(_menu.player, color)
+		_object:setOutlineHighlightCol(_menu.player, color)
+	end
+	_object:setHighlighted(_menu.player, _isHighlighted, false)
+	_object:setOutlineHighlight(_menu.player, _isHighlighted)
+end
+
+-- Hangs the hook above off one option: hover it, that object lights up.
+function CeroSecModuleMenu.highlightOn(option, object)
+	if type(option) ~= "table" or object == nil then return end
+	option.onHighlightParams = { object }
+	option.onHighlight = onHighlightFixture
+end
+
+-- The one parent both this file and CeroSecLinkMenu hang their entries off:
+-- "CeroSec: <name>", shared because they are two menus about the SAME object.
+-- Found again rather than remembered: nothing is stashed on `context` between
+-- the two listeners, because the menu is POOLED and outlives this right-click
+-- (see CeroSecMenu.lua's own note on why it marks options instead of counting
+-- them). context.options itself is safe to read, though -- ISContextMenu:clear()
+-- empties exactly that list -- so a fixture's own option, marked the same way
+-- CeroSecMenu marks its own, is looked up there instead. The submenu itself
+-- rides along on the SAME option as `cerosecSub`, a plain field of ours and
+-- not the engine's `option.subOption` -- that one only resolves through
+-- getPlayerContextMenu(self.player):getSubInstance(num)
+-- (ISUI/ISContextMenu.lua:1226-1228), which is the LIVE player menu and not
+-- necessarily this fill pass; the object built two lines below already IS the
+-- submenu, so there is nothing to ask the engine to look back up.
+--
+-- Order between the two files is not a race: CeroSecLinkMenu requires this file
+-- at its head, and a `require` runs the required file to its end -- Events.Add
+-- included -- before the requiring file runs any of its own top level code, so
+-- this file's listener is always registered, and always fires, first. The
+-- module rows land in the parent before "Link to computer" ever does.
+function CeroSecModuleMenu.fixtureParent(context, object)
+	local options = context ~= nil and context.options or nil
+	if type(options) == "table" then
+		for i = 1, #options do
+			local existing = options[i]
+			if type(existing) == "table" and existing.cerosecFixture == object then
+				return existing.cerosecSub
+			end
+		end
+	end
+	local option = CeroSecMenu.addTop(context,
+		getText("ContextMenu_CeroSec_Fixture", CeroSecModuleMenu.nameOf(object)))
+	CeroSecMenu.setIcon(option)
+	option.cerosecFixture = object
+	CeroSecModuleMenu.highlightOn(option, object)
+	local sub = ISContextMenu:getNew(context)
+	context:addSubMenu(option, sub)
+	option.cerosecSub = sub
+	return sub
 end
 
 function CeroSecModuleMenu.onInstall(worldobjects, object, playerObj, module)
@@ -241,15 +370,11 @@ function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldob
 	end
 	if #rows == 0 then return end
 
-	-- getNew, addSubMenu, then fill it: the order every vanilla submenu is built
-	-- in (ISWorldObjectContextMenu.lua:1167-1169). The parent goes at the TOP of the
-	-- menu, which is where every entry of this mod goes and which is how vanilla's
-	-- own top submenus are built too (ISHutchMenu.lua:20-22) -- see CeroSecMenu.
-	-- A light switch's own Turn on is the game's and stays where the game puts it;
-	-- what a survivor came to the switch with a screwdriver for is this.
-	local parent = CeroSecMenu.addTop(context, getText("ContextMenu_CeroSec_Modules"))
-	local sub = ISContextMenu:getNew(context)
-	context:addSubMenu(parent, sub)
+	-- The parent named after the object, at the TOP of the menu (CeroSecMenu),
+	-- shared with the cable menu below it: CeroSecModuleMenu.fixtureParent.
+	-- A light switch's own Turn on is the game's and stays where the game puts
+	-- it; what a survivor came to the switch with a screwdriver for is this.
+	local sub = CeroSecModuleMenu.fixtureParent(context, object)
 
 	for i = 1, #rows do
 		local row = rows[i]
@@ -275,6 +400,9 @@ function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldob
 				CeroSecModuleMenu.refusal(object, playerObj, row.module, false),
 				row.module)
 		end
+		-- The same object as the parent's: hovering one line of the submenu
+		-- highlights the fixture just as hovering the parent does.
+		CeroSecModuleMenu.highlightOn(option, object)
 	end
 end
 
