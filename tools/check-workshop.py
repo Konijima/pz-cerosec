@@ -56,6 +56,18 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 ITEM = REPO / "workshop" / "workshop.txt"
 PREVIEW = REPO / "workshop" / "preview.png"
+IMG_DIR = REPO / "workshop" / "img"
+
+# Every image the description actually embeds is authored at 312, not 630:
+# measured on a real phone on 2026-09-17, 312 is the width that lets a pair
+# sit side by side on desktop and stack without stretching on the narrowest
+# column seen (352 px). The h-*.png (630) are the retired set the live
+# 0.4.0 page still serves and are not part of this rule; h312-*.png and
+# banner312-*.png are. A file one pixel over 312 is exactly the failure
+# workshop.txt's own docstring describes: it fits the eye today and stretches
+# the page the day it is actually embedded.
+DESCRIPTION_IMAGE_WIDTH = 312
+DESCRIPTION_IMAGE_GLOBS = ("img/h312-*.png", "banner312-*.png")
 
 # The game's own tag list. The suite already cannot run without the game
 # installed (tests/kahlua-run.sh wants projectzomboid.jar and its jre64), so a
@@ -204,6 +216,25 @@ def check(path):
         if size > PREVIEW_MAX_BYTES:
             bad("preview.png is %d bytes and the ceiling is %d "
                 "(PreviewFileSize)" % (size, PREVIEW_MAX_BYTES))
+
+    # 5. Every description image is 312 wide, the width the mobile-stretch
+    # fix depends on; see DESCRIPTION_IMAGE_WIDTH above.
+    checked = 0
+    for pattern in DESCRIPTION_IMAGE_GLOBS:
+        for img in sorted((REPO / "workshop").glob(pattern)):
+            dims = png_size(img)
+            checked += 1
+            if dims is None:
+                bad("%s is not a PNG the decoder will read"
+                    % img.relative_to(REPO))
+            elif dims[0] != DESCRIPTION_IMAGE_WIDTH:
+                bad("%s is %d px wide and every description image has to be "
+                    "%d (the mobile-stretch fix in workshop.txt's header "
+                    "comment only holds at this width)"
+                    % (img.relative_to(REPO), dims[0],
+                       DESCRIPTION_IMAGE_WIDTH))
+    print("description images: %d checked at %d px"
+          % (checked, DESCRIPTION_IMAGE_WIDTH))
 
     if fails:
         print("check-workshop: FAILED")

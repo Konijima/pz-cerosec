@@ -28,8 +28,8 @@
 #     workshop/img/), https://raw.githubusercontent.com/Konijima/pz-cerosec-media/
 #     main/..., which answers with access-control-allow-origin: * and therefore
 #     survives the crossorigin="anonymous" Steam puts on a third-party image.
-#     The mod's own repository stays private until release; whoever changes an
-#     image here pushes the same file to pz-cerosec-media (docs/RELEASE.md).
+#     The mod's own repository (Konijima/pz-cerosec) is public; whoever changes
+#     an image here pushes the same file to pz-cerosec-media too (docs/RELEASE.md).
 #
 #   * the ten screenshots are uploaded to the ITEM, because that is where a
 #     Workshop screenshot belongs -- it shows in the item's own gallery as well
@@ -38,27 +38,33 @@
 #     Turning a slot on is one edit: drop the "#", keep the "description=", and
 #     put the image address between the tags.
 #
-# Every image is authored at 630 px wide, which is not a taste: Steam's own
-# stylesheet caps a description image at
+# Every image in the description is authored at 312 px wide, measured on a
+# real phone on 2026-09-17 (see below and docs/notes/workshop-study.md), not
+# at the 630 px Steam's stylesheet allows:
 #     .workshopItemDescription img { max-width: 630px; }
-# (public/css/skin_1/workshop.css). Wider is not shown wider, it is scaled
-# down, and a scaled-down bitmap face comes back with grey edges.
+# (public/css/skin_1/workshop.css). 630 is a ceiling, not a target -- a
+# section header is still just one <img>, alone on its line, but two 312 px
+# <img>s sit side by side on the same line (an <img> is inline), which is how
+# the banner and the paired screenshots below fill a desktop column of 655
+# without ever being wider than a phone's.
 #
-# THE MOBILE STRETCH, AND WHY IT IS NOT A BBCODE PROBLEM
+# THE MOBILE STRETCH, AND WHY 312 FIXES IT WHERE 630 COULD NOT
 #
 # Confirmed 2026-09-17 by reading Steam's own served HTML and CSS on a mobile
-# user agent: [img] renders as a bare <img>, no class, no width attribute (BBCode
-# has none to give it), and the only rule that ever touches it is the 630px cap
-# above. That rule is a ceiling, not a fill: on a phone narrower than 630 CSS
-# px, nothing shrinks the image further, so it overflows .workshopItemDescription
-# and stretches the whole page sideways. Ruled out by the same read: no [table]
-# is used here (a table would explain it, but there is none), and the [code]
-# block's lines wrap (`div.bb_code { white-space: pre-wrap; }`), so they are not
-# the cause either. There is no percentage-width or responsive fix available in
-# Steam BBCode, so the only lever is the image's own pixel width. Mobile-safe
-# copies (480 px wide, same aspect ratio, not replacing these files) are kept at
-# workshop/banner-mobile.png and workshop/img/*-mobile.png; see docs/RELEASE.md
-# for whether to host and switch to them.
+# user agent: [img] renders as a bare <img>, no class, no width attribute
+# (BBCode has none to give it), and the only rule that ever touches it is the
+# 630px cap above. That rule is a ceiling, not a fill: on a phone narrower
+# than 630 CSS px, nothing shrinks the image further, so a 630 px image
+# overflows .workshopItemDescription and stretches the whole page sideways.
+# Ruled out by the same read: no [table] is used here (a table would explain
+# it, but there is none), and the [code] block's lines wrap
+# (`div.bb_code { white-space: pre-wrap; }`), so they are not the cause
+# either. There is no percentage-width or responsive fix available in Steam
+# BBCode, so the only lever is the image's own pixel width -- and the
+# narrowest phone column measured is 352 px, so authoring at 312 clears it
+# with room, on a single column (headers, banner panels) or a pair (banner,
+# screenshots) alike. tools/check-workshop.py holds every description image
+# to exactly 312.
 # ---------------------------------------------------------------------------
 version=1
 id=3801094056
