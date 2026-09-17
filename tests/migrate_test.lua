@@ -374,6 +374,28 @@ for i = 1, #fixtures do
 	eq(at .. "and the relay still fits the light switch",
 		CeroSecModules.installedOn(switch).relay, true)
 
+	-- AND NO CABLE IS INVENTED FOR A FIXTURE THAT NEVER HAD ONE. `link` is a key this
+	-- build added to the very table the modules live in, so an older fixture reaches
+	-- the reader through the same migration the modules do -- the number on the table
+	-- moves and the boxes on it do not. Absent has to read as "nobody ran a cable to
+	-- this" and never as an empty list a reader has to interpret: a fixture out of a
+	-- 0.4.x save has no `link` key and must still have none after it has been read.
+	eq(at .. "the front door out of an older save carries no cable",
+		#CeroSecModules.linksOn(door), 0)
+	eq(at .. "and none was written onto it by the reading",
+		doorData[CeroSecModules.DATA_KEY][CeroSecModules.LINK_KEY], nil)
+	eq(at .. "the light switch carries none either",
+		#CeroSecModules.linksOn(switch), 0)
+	-- The number DID move, which is the other half of the contract: a shape a reader
+	-- can be held to is one the reader stamps.
+	eq(at .. "and the table is at this build's shape",
+		doorData[CeroSecModules.DATA_KEY][CeroSecModules.VERSION_KEY],
+		CeroSecModules.VERSION)
+	eq(at .. "with the strike still on it after the walk",
+		CeroSecModules.installedOn(door).strike, true)
+	eq(at .. "and the contact beside it",
+		CeroSecModules.installedOn(door).contact, true)
+
 	local rx, ry = CeroSecPhonebook.regionOn(fixture.phonebook)
 	eq(at .. "the phone book keeps its edition (x)", rx, 7)
 	eq(at .. "and (y)", ry, 9)

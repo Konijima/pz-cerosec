@@ -1350,6 +1350,54 @@ do
 	badChildName.fs.children["bad name"] = CeroSecOS.newDir("root", 755)
 	eq("an invalid child name is refused", CeroSecOS.validate(badChildName), false)
 
+	-- THE MACHINE'S OWN END OF A CABLE (state.links), which is a list of squares and
+	-- nothing else: the fixture keeps what the run cost, because the fixture is where
+	-- the refund is owed. The gate is here rather than in the walk for the reason
+	-- every other key's is -- a shape nobody can be held to must not reach the code
+	-- that reads it -- and a machine with no cables has NO KEY, which is what every
+	-- machine written before this build reads like.
+	local noLinks = fresh()
+	eq("a machine with no cables validates", CeroSecOS.validate(noLinks), true)
+
+	local goodLinks = fresh()
+	goodLinks.links = { { x = 22, y = 10, z = 0 }, { x = -3, y = 100, z = 1 } }
+	eq("a list of squares validates", CeroSecOS.validate(goodLinks), true)
+
+	local notATable = fresh()
+	notATable.links = "22,10,0"
+	local ltOk, ltWhy = CeroSecOS.validate(notATable)
+	eq("a links that is not a table is refused", ltOk, false)
+	eq("and says which key", ltWhy, "bad links")
+
+	local badEntry = fresh()
+	badEntry.links = { { x = 22, y = 10, z = 0 }, 22 }
+	eq("an entry that is not a square is refused",
+		CeroSecOS.validate(badEntry), false)
+
+	local noZ = fresh()
+	noZ.links = { { x = 22, y = 10 } }
+	eq("a square with no floor on it is refused", CeroSecOS.validate(noZ), false)
+
+	-- A TILE AND A HALF is not a tile: a square is whole numbers, and arithmetic on a
+	-- fraction is a cable end that can never be matched to the one on the fixture.
+	local halfTile = fresh()
+	halfTile.links = { { x = 22.5, y = 10, z = 0 } }
+	eq("half a tile is refused", CeroSecOS.validate(halfTile), false)
+
+	-- And the cap, which is what stops the walk growing without bound: the list is
+	-- visited square by square, once a second, for ever.
+	local atCap = fresh()
+	atCap.links = {}
+	for i = 1, CeroSecOS.LINKS_PER_MACHINE do
+		atCap.links[i] = { x = i, y = 10, z = 0 }
+	end
+	eq("as many cables as a machine may have validates",
+		CeroSecOS.validate(atCap), true)
+	atCap.links[CeroSecOS.LINKS_PER_MACHINE + 1] = { x = 99, y = 10, z = 0 }
+	local capOk, capWhy = CeroSecOS.validate(atCap)
+	eq("one more is refused", capOk, false)
+	eq("and says what it is", capWhy, "too many links")
+
 
 	-- migrate. Nothing to keep becomes a fresh machine at the current version.
 	local migrated = CeroSecOS.migrate(nil)
