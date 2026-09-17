@@ -931,6 +931,14 @@ en observant le jeu réel, pas par un banc de test.
      donner trois nombres (lignes, mots, octets) sans nom de fichier derrière,
      la seconde le seul mot `sort`. Confirmer surtout que rien de l'étage de
      gauche n'apparaît à l'écran : ce qui traverse le tube n'est pas affiché. [ ]
+166b. **Une ligne plus large que l'écran ne se coupe que sur la vitre.**
+     `grep root /etc/passwd | cut -d: -f1` → une seule ligne, `root`, et rien
+     d'autre (avant, la ligne du fichier des comptes arrivait à `cut` déjà
+     pliée à soixante colonnes et une deuxième ligne `n` suivait).
+     `grep root /etc/passwd | wc -l` → `     1`. Puis `cat /etc/passwd > copie`
+     et `wc -l copie` → le nombre de comptes, pas le double. Enfin
+     `cat /etc/passwd` tout seul : là, la ligne DOIT se plier à soixante
+     colonnes, c'est l'écran qui le veut. [ ]
 167. Écrire un fichier avec `edit fruits` contenant `poire`, `pomme`, `poire`,
      `figue` (une par ligne), puis taper `cat fruits | sort | uniq -c`. Attendu,
      dans cet ordre : `      1 figue`, `      1 pomme`, `      2 poire`. Le
