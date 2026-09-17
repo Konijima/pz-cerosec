@@ -4578,4 +4578,563 @@ do
 	_G.SandboxVars = nil
 end
 
+--
+-- The cable menu on a fixture: which computers it offers, and why a line is grey
+--
+-- The other half of the menu above, held to the same rule: the server decides
+-- every one of these questions in the shared one (CeroSecModules.linkRefusal and
+-- unlinkRefusal) and the line has to be greyed with THAT word, built into the key
+-- rather than looked up in a second list (CeroSecLinkMenu.tooltipFor).
+--
+-- What is different here is that the lines carry NUMBERS a survivor acts on --
+-- which computer, how far it is, what the run costs, how much wire he is short --
+-- so this block's getText keeps its arguments and every assertion below reads the
+-- line a player really gets: "ksp-front-01, 12 tiles, 12 wire".
+--
+-- AND THE HOSTNAME IS READ FOR REAL, which is why the OS core is loaded here
+-- rather than stood in for: the name on the line comes out of the state the server
+-- mirrored into that machine's own modData, through the very function the server
+-- reads /etc/hostname with (CeroSecOS.hostname). A fake hostOf would be a bench
+-- for the bench's own idea of a name, and "the menu shows the hostname, the cable
+-- is written against the SQUARE" is the one rule about this menu worth proving
+-- twice -- so a machine is renamed below, with a cable already run to it.
+--
+
+do
+	local OSDIR = LUA .. "shared/CeroSec/OS/"
+	local OSFILES = { "CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron",
+		"CeroSecOSDev", "CeroSecOSDisk", "CeroSecOSFS", "CeroSecOSNet",
+		"CeroSecOSPath", "CeroSecOSRadio", "CeroSecOSScript", "CeroSecOSShell",
+		"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers", "CeroSecOSVM" }
+	for i = 1, #OSFILES do
+		local path = OSDIR .. OSFILES[i] .. ".lua"
+		local chunk, err = loadfile(path)
+		if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+		chunk()
+	end
+
+	-- getText, with its arguments kept: the mod's own strings put the hostname and
+	-- the two numbers into the line with %1 %2 %3, and a bench that read the key
+	-- alone could not tell "12 tiles, 12 wire" from "60 tiles, 4 wire".
+	local realGetText = _G.getText
+	_G.getText = function(key, ...)
+		local n = select("#", ...)
+		if n == 0 then return key end
+		local args = {}
+		for i = 1, n do args[i] = tostring((select(i, ...))) end
+		return key .. "(" .. table.concat(args, ",") .. ")"
+	end
+
+	local walks = true
+	_G.Perks = { Electricity = "Electricity" }
+	_G.luautils = { walkAdj = function() return walks end,
+		walkAdjWindowOrDoor = function() return walks end }
+	local queued = {}
+	_G.ISTimedActionQueue = { add = function(action) queued[#queued + 1] = action end }
+	-- The action, recorded rather than run: what it was handed is the whole of what
+	-- the click decides, and the walk is the real one above it.
+	_G.ISCeroSecLinkAction = { new = function(_, character, object, mx, my, mz,
+			link, wire)
+		return { character = character, object = object, mx = mx, my = my, mz = mz,
+			link = link, wire = wire }
+	end }
+	_G.SafeHouse = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+
+	local function square(x, y, z)
+		return {
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return z end,
+			isInARoom = function() return false end,
+			getObjects = function() return { size = function() return 0 end } end,
+		}
+	end
+
+	-- A fixture, with the getters the rules ask of one. modData is real, because
+	-- everything about a cable is written in it.
+	local function fixture(class, sq)
+		local o = { __class = class, modData = {}, transmits = 0 }
+		o.getSquare = function() return sq end
+		o.hasModData = function() return true end
+		o.getModData = function() return o.modData end
+		o.transmitModData = function() o.transmits = o.transmits + 1 end
+		o.IsOpen = function() return o.open == true end
+		o.isActivated = function() return false end
+		o.Activated = function() return false end
+		o.isExterior = function() return true end
+		o.isDoor = function() return true end
+		o.HasCurtains = function() return nil end
+		o.isCurtainOpen = function() return false end
+		o.getDeviceData = function() return nil end
+		return o
+	end
+
+	-- A machine on the client's own list of them: where it stands, and the
+	-- IsoObject the server mirrors its whole state into, which is where the
+	-- hostname comes from (SCeroSecObject:toModData, published by publishOS). A
+	-- machine given no hostname here is a machine whose mirror has not arrived.
+	local function machine(x, y, z, hostname)
+		local luaObject = { x = x, y = y, z = z }
+		if hostname ~= nil then
+			local state = CeroSecOS.newState(hostname)
+			local iso = { modData = { movableData = {
+				[CeroSec.MOVABLE_DATA_KEY] = { os = state } } } }
+			iso.hasModData = function() return true end
+			iso.getModData = function() return iso.modData end
+			luaObject.state = state
+			luaObject.getIsoObject = function() return iso end
+		end
+		return luaObject
+	end
+
+	local objects = {}
+	_G.CCeroSecSystem = { instance = {
+		getLuaObjectCount = function() return #objects end,
+		getLuaObjectByIndex = function(_, i) return objects[i] end,
+		getLuaObjectAt = function(_, x, y, z)
+			for i = 1, #objects do
+				local it = objects[i]
+				if it.x == x and it.y == y and it.z == z then return it end
+			end
+			return nil
+		end,
+	} }
+
+	local stand = square(10, 11, 0)
+	local level = 5
+	local reels = 40
+	local tools = true
+	local player = {
+		getVehicle = function() return nil end,
+		getCurrentSquare = function() return stand end,
+		getUsername = function() return "carter" end,
+		getPerkLevel = function() return level end,
+		isRecipeKnown = function() return true end,
+		getInventory = function()
+			return {
+				getFirstTypeRecurse = function(_, fullType)
+					if tools and fullType == CeroSecModules.TOOL then
+						return { type = fullType }
+					end
+					return nil
+				end,
+				-- Vanilla's count of an item it is about to consume, which is what
+				-- the reel is asked for (CeroSecModules.wireCount).
+				getCountTypeRecurse = function(_, fullType)
+					if fullType == CeroSecModules.WIRE then return reels end
+					return 0
+				end,
+			}
+		end,
+	}
+	_G.getSpecificPlayer = function() return player end
+
+	local chunk = assert(loadfile(LUA .. "client/CeroSec/CeroSecLinkMenu.lua"))
+	chunk()
+
+	-- The whole menu a right-click on a fixture builds, and the cable submenu
+	-- hung off our own entry in it -- found by the OPTION it hangs off, because a
+	-- submenu filled and never attached is a menu that leads nowhere and its rows
+	-- would read perfectly right to a bench that only counted them.
+	local function menuOn(object)
+		local context = withVanilla(ContextMenu.new())
+		CeroSecLinkMenu.OnFillWorldObjectContextMenu(0, context, { object }, false)
+		return context
+	end
+	local function subOn(object)
+		local context = menuOn(object)
+		for i = 1, #context.subs do
+			local parent = context.subs[i].option
+			if type(parent) == "table"
+					and parent.label == "ContextMenu_CeroSec_Link" then
+				return context.subs[i].menu, context
+			end
+		end
+		return nil, context
+	end
+	-- The rows, in the order the glass shows them.
+	local function rowsOn(object)
+		local sub = subOn(object)
+		if sub == nil then return "" end
+		return table.concat(sub.labels, " | ")
+	end
+	-- One row, by the computer it names: the run to it, or the cut of it.
+	local function rowFor(object, host, cut)
+		local sub = subOn(object)
+		if sub == nil then return nil end
+		local want = cut and ("ContextMenu_CeroSec_Unlink(" .. host .. ")")
+			or ("ContextMenu_CeroSec_LinkTo(" .. host .. ",")
+		for i = 1, #sub.labels do
+			if cut and sub.labels[i] == want then return sub.options[i] end
+			if not cut and string.sub(sub.labels[i], 1, #want) == want then
+				return sub.options[i]
+			end
+		end
+		return nil
+	end
+	local function desc(option)
+		return string.match(option.toolTip.description, "^([^<]*)")
+	end
+	local function reason(option)
+		return string.match(option.toolTip.description, "<br>([^<]*)$")
+	end
+	-- The click, dispatched the way the engine dispatches one: the target and then
+	-- the tail addOption was given (ISContextMenu.lua:873-887).
+	local function click(option)
+		queued = {}
+		option.callback(option.target, option.args[1], option.args[2],
+			option.args[3])
+	end
+
+	-- A lamppost on the pavement with a relay in it, four computers about, and
+	-- one of them out of reach.
+	local post = fixture("IsoLightSwitch", square(10, 10, 0))
+	local front = machine(22, 10, 0, "ksp-front-01")     -- 12 tiles, 12 wire
+	local loft = machine(13, 10, 1, "ksp-loft-03")       -- 3 tiles, 7 wire
+	local naked = machine(16, 14, 0, nil)                -- 8 tiles, mirror not here
+	local county = machine(10, 60, 0, "ksp-far-09")      -- 50 tiles, never a line
+
+	--
+	-- 0. WHAT IS THERE AT ALL, which is the first thing this menu decides
+	--
+	-- A bare fixture is no submenu: a cable carries a MODULE's device to a machine,
+	-- and a survivor with nothing screwed to his lamppost has not got to this
+	-- feature yet -- the module menu above is already telling him so.
+	objects = { county, front, loft, naked }
+	eq("a bare fixture offers no cable at all", rowsOn(post), "")
+	for i = 1, #menuOn(post).labels do
+		check("and nothing of ours on the menu over it",
+			menuOn(post).labels[i] ~= "ContextMenu_CeroSec_Link")
+	end
+
+	-- With the relay in it, the computers in range, nearest first -- and the one
+	-- fifty tiles away is not a line, because it is the one thing about a cable a
+	-- survivor cannot do anything about from where he is standing.
+	post.modData.cerosec = { relay = true }
+	eq("the fixture now offers every computer a cable would reach, nearest first",
+		rowsOn(post),
+		"ContextMenu_CeroSec_LinkTo(ksp-loft-03,3,7) | "
+		.. "ContextMenu_CeroSec_LinkTo(" .. CeroSec.hostnameFor(16, 14) .. ",8,8) | "
+		.. "ContextMenu_CeroSec_LinkTo(ksp-front-01,12,12)")
+	check("and our entry is at the top of the menu",
+		menuOn(post).labels[1] == "ContextMenu_CeroSec_Link")
+	-- The floor is in the PRICE and not in the walk: the loft is three tiles away
+	-- and costs seven, which is the one line on this menu where the two numbers
+	-- differ and the reason both of them are shown.
+	eq("a storey costs four tiles of cable and none of the walk",
+		CeroSecModules.linkWire(10, 10, 0, 13, 10, 1)
+		- CeroSecModules.linkTiles(10, 10, 13, 10), CeroSecModules.LINK_FLOOR_TILES)
+
+	-- The far edge of the reel, both sides of it. Thirty is what a cable runs and
+	-- thirty is a line.
+	local edge = machine(40, 10, 0, "ksp-edge-30")
+	objects = { edge }
+	eq("a computer exactly a reel away is a line", rowsOn(post),
+		"ContextMenu_CeroSec_LinkTo(ksp-edge-30,30,30)")
+	objects = { machine(41, 10, 0, "ksp-past-31") }
+	eq("one tile further is no line at all", rowsOn(post), "")
+
+	-- Two computers the same price off keep their order between right-clicks: a
+	-- walk of the registry in the other direction must not swap them, which is
+	-- what a menu built off a hash table does to a survivor mid-click. The name
+	-- breaks that tie and the square breaks it after the name, so the pair below
+	-- is laid out with the two DISAGREEING -- zulu is the nearer square and alpha
+	-- is the earlier name -- which is the only arrangement where "by name" is a
+	-- thing the menu can be seen doing.
+	local alpha = machine(22, 10, 0, "ksp-alpha-01")
+	local zulu = machine(10, 22, 0, "ksp-zulu-09")
+	objects = { zulu, alpha }
+	local tied = rowsOn(post)
+	eq("two computers twelve tiles off are named in their name's own order", tied,
+		"ContextMenu_CeroSec_LinkTo(ksp-alpha-01,12,12) | "
+		.. "ContextMenu_CeroSec_LinkTo(ksp-zulu-09,12,12)")
+	objects = { alpha, zulu }
+	eq("and the other way round the menu is the same menu", rowsOn(post), tied)
+	-- And two that a survivor never renamed wear ONE name, which is a tie the name
+	-- cannot break: the square breaks it, nearest corner first.
+	objects = { machine(18, 10, 0, "ksp-dup-01"), machine(10, 18, 0, "ksp-dup-01") }
+	eq("two computers with the same name are ordered by their square", rowsOn(post),
+		"ContextMenu_CeroSec_LinkTo(ksp-dup-01,8,8) | "
+		.. "ContextMenu_CeroSec_LinkTo(ksp-dup-01,8,8)")
+	eq("which is the nearer corner first", subOn(post).options[1].args[3].x, 10)
+
+	--
+	-- 1. A LIVE LINE, and what it says the cable does
+	--
+	objects = { front, loft }
+	local row = rowFor(post, "ksp-front-01")
+	check("the run to the front desk is a line", row ~= nil)
+	eq("it is not greyed", row.notAvailable, nil)
+	eq("it says what the cable does, with the price and the computer in it",
+		desc(row), "Tooltip_CeroSec_LinkDesc(12,ksp-front-01)")
+	eq("and has nothing under it", reason(row), nil)
+
+	-- The click: the walk first, then the action, carrying the MACHINE's square
+	-- and the price the line showed. Never the hostname -- that is a thing he
+	-- types and a cable is a thing he laid.
+	click(row)
+	eq("the click queues one job", #queued, 1)
+	eq("on this fixture", queued[1].object, post)
+	eq("naming the computer's square and not its name", queued[1].mx .. ","
+		.. queued[1].my .. "," .. queued[1].mz, "22,10,0")
+	eq("running a cable", queued[1].link, true)
+	eq("of what the line said it would cost", queued[1].wire, 12)
+	eq("and it is the player's own job", queued[1].character, player)
+	-- And a walk he cannot make queues nothing: the fixture is across a fence.
+	walks = false
+	click(row)
+	eq("a fixture he cannot walk to queues no job", #queued, 0)
+	walks = true
+
+	--
+	-- 2. THE RULES A CABLE DOES NOT ASK, which is the whole reason it exists
+	--
+	-- He is on the pavement, outdoors, at a lamppost: the module menu greys every
+	-- line of that and this one greys none of it.
+	eq("a cable to an outdoor fixture from the pavement is not greyed",
+		rowFor(post, "ksp-front-01").notAvailable, nil)
+	local shut = fixture("IsoDoor", square(10, 10, 0))
+	shut.modData.cerosec = { contact = true }
+	shut.open = false
+	eq("and a shut door takes a cable too",
+		rowFor(shut, "ksp-front-01").notAvailable, nil)
+
+	--
+	-- 3. WHAT IS GREYED, and the word it is greyed with
+	--
+	-- The reel, last and with the number in it: the one refusal on this menu a
+	-- survivor meets every time he tries something ambitious.
+	reels = 11
+	row = rowFor(post, "ksp-front-01")
+	eq("eleven reels for a twelve tile run is greyed", row.notAvailable, true)
+	eq("with what to go and find", reason(row), "Tooltip_CeroSec_LinkWire(12)")
+	eq("and still says what the cable does", desc(row),
+		"Tooltip_CeroSec_LinkDesc(12,ksp-front-01)")
+	eq("while the seven tile run is live", rowFor(post, "ksp-loft-03").notAvailable,
+		nil)
+	reels = 12
+	eq("twelve reels is enough for twelve tiles",
+		rowFor(post, "ksp-front-01").notAvailable, nil)
+	reels = 40
+
+	-- The tool and the trade, which are facts about him and not about the cable.
+	tools = false
+	eq("no screwdriver greys the line",
+		reason(rowFor(post, "ksp-front-01")), "Tooltip_CeroSec_NeedScrewdriver(0)")
+	tools = true
+	-- The trade is the HIGHEST of the modules on the fixture: a door with an
+	-- operator on it is Electricity 3 whatever else is screwed beside it.
+	local worked = fixture("IsoDoor", square(10, 10, 0))
+	worked.modData.cerosec = { contact = true, operator = true }
+	worked.open = true
+	level = 2
+	row = rowFor(worked, "ksp-front-01")
+	eq("a cable to an operator at Electricity 2 is greyed", row.notAvailable, true)
+	eq("with the trade and the level it wants", reason(row),
+		"Tooltip_CeroSec_NeedSkill(3)")
+	eq("which is the level the hardware on it asks for",
+		CeroSecModules.linkSkill(worked), 3)
+	level = 5
+
+	-- Somebody else's safehouse, which is the one refusal a cable asks that the
+	-- fitting asks too -- and the worse of the two, because re-routing a door to
+	-- a stranger's machine is worse than unscrewing the box off it.
+	local house = { playerAllowed = function() return false end }
+	_G.SafeHouse = { getSafeHouse = function() return house end }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, SafehouseModules = true } }
+	row = rowFor(post, "ksp-front-01")
+	eq("a stranger's safehouse greys the run", row.notAvailable, true)
+	eq("with the word that says whose it is", reason(row),
+		"Tooltip_CeroSec_LinkSafehouse(0)")
+	eq("which is the word the server refuses on", reason(row),
+		CeroSecLinkMenu.tooltipFor(
+			CeroSecModules.linkRefusal(post, 22, 10, 0, player)) .. "(0)")
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	eq("with the option off it is the safehouse of nobody",
+		rowFor(post, "ksp-front-01").notAvailable, nil)
+	_G.SafeHouse = nil
+
+	-- The fixture full: four computers is a terminal block with four pairs on it,
+	-- and the fifth line says so with the cap in it.
+	local full = fixture("IsoLightSwitch", square(10, 10, 0))
+	full.modData.cerosec = { relay = true }
+	for i = 1, CeroSecModules.LINKS_MAX do
+		check("a cable to a computer nobody has been near is still a cable",
+			CeroSecModules.linkOn(full, 10, 11 + i, 0, 2))
+	end
+	row = rowFor(full, "ksp-front-01")
+	eq("a fixture with four cables greys a fifth", row.notAvailable, true)
+	eq("with the cap in the line", reason(row),
+		"Tooltip_CeroSec_LinkLinks(" .. CeroSecModules.LINKS_MAX .. ")")
+
+	-- The MACHINE full, which is the one refusal the fixture's own modData cannot
+	-- see: thirty-two squares on its list and no room for this one.
+	local packed = machine(22, 10, 0, "ksp-packed-32")
+	packed.state.links = {}
+	for i = 1, CeroSecOS.LINKS_PER_MACHINE do
+		packed.state.links[i] = { x = 100 + i, y = 200, z = 0 }
+	end
+	check("and thirty-two squares is a list the machine really holds",
+		CeroSecOS.linksOk(packed.state.links))
+	objects = { packed }
+	row = rowFor(post, "ksp-packed-32")
+	eq("a computer with a full list greys the run", row.notAvailable, true)
+	eq("with its own cap in the line", reason(row),
+		"Tooltip_CeroSec_LinkFull(" .. CeroSecOS.LINKS_PER_MACHINE .. ")")
+	-- Unless the square on it is THIS fixture's: that is the cable the machine
+	-- already carries, and running it again is what puts the fixture's own end
+	-- back (the self-healing walk). A full list is never a reason to refuse it.
+	packed.state.links[1] = { x = 10, y = 10, z = 0 }
+	eq("a full list that already names this square is not full",
+		rowFor(post, "ksp-packed-32").notAvailable, nil)
+
+	--
+	-- 4. THE CABLES ALREADY RUN, under the computers
+	--
+	objects = { front, loft }
+	-- Written at five when the price is twelve, on purpose: what comes back is
+	-- what was PAID and never the price worked out again, which is the whole of
+	-- why the reel is written into the fixture's own list.
+	check("a cable is written on the fixture", CeroSecModules.linkOn(post, 22, 10, 0, 5))
+	eq("the computer it goes to is now on its own line, under the two runs",
+		rowsOn(post),
+		"ContextMenu_CeroSec_LinkTo(ksp-loft-03,3,7) | "
+		.. "ContextMenu_CeroSec_LinkTo(ksp-front-01,12,12) | "
+		.. "ContextMenu_CeroSec_Unlink(ksp-front-01)")
+	row = rowFor(post, "ksp-front-01")
+	eq("and the run to it is greyed", row.notAvailable, true)
+	eq("because that computer is already on the list", reason(row),
+		"Tooltip_CeroSec_LinkLinked(0)")
+
+	local cut = rowFor(post, "ksp-front-01", true)
+	check("the cut is a line of its own", cut ~= nil)
+	eq("not greyed", cut.notAvailable, nil)
+	eq("and it gives back the wire that was paid and not the price",
+		desc(cut), "Tooltip_CeroSec_UnlinkDesc(5,ksp-front-01)")
+	click(cut)
+	eq("the click queues one job", #queued, 1)
+	eq("cutting, not running", queued[1].link, false)
+	eq("at the computer's square", queued[1].mx, 22)
+	eq("for the wire on the fixture's own list", queued[1].wire, 5)
+	-- And a cut asks nothing about the reel: he is being given wire, not spending
+	-- it. Carrying none is the case, because that is the survivor who wants it.
+	reels = 0
+	eq("a survivor with no wire at all may still cut one",
+		rowFor(post, "ksp-front-01", true).notAvailable, nil)
+	reels = 40
+	-- Whose house is asked of a cut too, for the same reason read the other way.
+	_G.SafeHouse = { getSafeHouse = function() return house end }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, SafehouseModules = true } }
+	cut = rowFor(post, "ksp-front-01", true)
+	eq("a stranger may not cut your cable either", cut.notAvailable, true)
+	eq("with the same word", reason(cut), "Tooltip_CeroSec_LinkSafehouse(0)")
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	_G.SafeHouse = nil
+
+	-- A cable to a computer whose chunk is away is still here to be cut: the
+	-- FIXTURE carries it, so the line is there and the computer is named the way
+	-- one with no mirror is named -- which is a survivor who can get his wire
+	-- back out of a machine somebody drove off with.
+	objects = { loft }
+	cut = rowFor(post, CeroSec.hostnameFor(22, 10), true)
+	check("a cable to a computer that is not loaded is still a line", cut ~= nil)
+	eq("named after its square", cut.label,
+		"ContextMenu_CeroSec_Unlink(" .. CeroSec.hostnameFor(22, 10) .. ")")
+	eq("with the wire it cost", desc(cut),
+		"Tooltip_CeroSec_UnlinkDesc(5," .. CeroSec.hostnameFor(22, 10) .. ")")
+	eq("and there is no run offered to it either", rowFor(post, "ksp-front-01"), nil)
+
+	-- A fixture with a cable and no computer in reach still opens the submenu:
+	-- the cut is the reason the menu exists at all for him.
+	objects = {}
+	eq("a fixture with nothing in reach still offers the cut", rowsOn(post),
+		"ContextMenu_CeroSec_Unlink(" .. CeroSec.hostnameFor(22, 10) .. ")")
+
+	--
+	-- 5. A COMPUTER RENAMED KEEPS ITS CABLE, which is the naming rule itself
+	--
+	-- One line in /etc/hostname, the way root would: the menu follows it, both
+	-- lines of it, and what is written on the fixture has not moved -- because
+	-- what is written there is where the machine STANDS.
+	objects = { front }
+	local renamed = CeroSecOS.setData(front.state, CeroSecOS.rootSession(),
+		CeroSecOS.HOSTNAME_PATH, "ksp-renamed\n")
+	check("root renames the machine in one line", renamed ~= nil)
+	eq("both lines follow the new name", rowsOn(post),
+		"ContextMenu_CeroSec_LinkTo(ksp-renamed,12,12) | "
+		.. "ContextMenu_CeroSec_Unlink(ksp-renamed)")
+	local links = CeroSecModules.linksOn(post)
+	eq("the fixture still carries one cable", #links, 1)
+	eq("to the same square", links[1].x .. "," .. links[1].y .. "," .. links[1].z,
+		"22,10,0")
+	eq("for the same wire", links[1].wire, 5)
+	eq("and the name on the line is the file's, read as the machine reads it",
+		CeroSecOS.hostname(front.state), "ksp-renamed")
+
+	--
+	-- 6. THE GATE the whole menu wears
+	--
+	-- With the hardware option off every machine reaches every door in its
+	-- building already and nothing is ever fitted, so a cable is a gesture with no
+	-- effect and there is no line to click.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	eq("with the hardware option off there is no cable menu", rowsOn(post), "")
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	check("and with it on there is", rowsOn(post) ~= "")
+
+	--
+	-- 7. THE KEY IS BUILT FROM THE WORD, and every key is a string that exists
+	--
+	eq("the key is derived from the refusal", CeroSecLinkMenu.tooltipFor("safehouse"),
+		"Tooltip_CeroSec_LinkSafehouse")
+	eq("and from a one-letter one", CeroSecLinkMenu.tooltipFor("x"),
+		"Tooltip_CeroSec_LinkX")
+	-- The numbers in the sentences are the CAPS and not words in a translation, so
+	-- the day one of them moves the line moves with it.
+	eq("the far line carries the range", CeroSecLinkMenu.numberFor("far"),
+		CeroSecModules.LINK_RANGE)
+	eq("the full line carries the fixture's cap", CeroSecLinkMenu.numberFor("links"),
+		CeroSecModules.LINKS_MAX)
+	eq("and a word with no number in its line asks for none",
+		CeroSecLinkMenu.numberFor("safehouse"), 0)
+
+	_G.getText = realGetText
+
+	-- Every key this menu can print, in both languages -- and with as many
+	-- placeholders as the code hands it arguments, because a line that is missing
+	-- its %1 is a survivor told he needs electric wire without being told how
+	-- much, and one that has a %1 nothing fills prints the digit 0.
+	local NUMBERED = {
+		{ "ContextMenu.json", "ContextMenu_CeroSec_Link", 0 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_LinkTo", 3 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_Unlink", 1 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkDesc", 2 },
+		{ "Tooltip.json", "Tooltip_CeroSec_UnlinkDesc", 2 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkFixture", 0 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkSafehouse", 0 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkLinked", 0 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkLinks", 1 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkFar", 1 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkFull", 1 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkWire", 1 },
+	}
+	for _, lang in ipairs({ "EN", "FR" }) do
+		for _, entry in ipairs(NUMBERED) do
+			local handle = assert(io.open(
+				"42/media/lua/shared/Translate/" .. lang .. "/" .. entry[1], "r"))
+			local strings = handle:read("*a")
+			handle:close()
+			local line = string.match(strings, '"' .. entry[2] .. '"%s*:%s*"([^"]*)"')
+			check(lang .. "/" .. entry[1] .. " defines " .. entry[2], line ~= nil)
+			local marks = 0
+			for _ in string.gmatch(line, "%%%d") do marks = marks + 1 end
+			eq(lang .. " " .. entry[2] .. " takes its arguments", marks, entry[3])
+		end
+	end
+
+	_G.SandboxVars = nil
+	_G.SafeHouse = nil
+end
+
 print("manual_ui_test: " .. count .. " checks passed")
