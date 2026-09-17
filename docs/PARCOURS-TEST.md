@@ -3803,6 +3803,21 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      `genwatch.said`. Le relancer : **rien de plus**. Remplir le réservoir, le
      relancer : le drapeau disparaît et la prochaine panne sèche redonne une
      lettre. [ ]
+402a. **L'interrupteur AT.** Une machine allumée, sur une génératrice branchée :
+     - couper la génératrice (ou la laisser tomber à sec) : la machine s'éteint
+       dans la minute de jeu qui suit la panne ;
+     - avant de la rallumer, poser une ligne `@reboot echo debout` par
+       `crontab -e` ;
+     - remettre la génératrice en marche : dans la minute de jeu qui suit, sans
+       qu'on touche à rien, l'écran repasse par la séquence de démarrage jusqu'à
+       `login:`, aucune session ouverte, et `mail` une fois connecté montre le
+       courrier de la ligne `@reboot`. [ ]
+402b. **Ce qui reste éteint.** Refaire l'essai précédent en éteignant la machine
+     proprement avant la coupure (menu **Turn off computer**, ou `halt` ou
+     `shutdown` au prompt) : la génératrice revenue, l'écran reste noir, rien ne
+     démarre seul. Ramasser puis reposer une machine restée allumée pendant une
+     coupure : elle aussi reste éteinte au retour du courant, comme si on venait
+     de la débrancher et de la rebrancher. [ ]
 403. **Ce qu'ils disent quand il n'y a rien.** Sur une machine **sans rien de
      vissé** : `sh /mnt/curtains.sh open` → `curtains.sh: no curtain in /dev`,
      `sh /mnt/tvguide.sh` → `tvguide.sh: no tv0 in /dev`, `sh /mnt/genwatch.sh` →
