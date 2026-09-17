@@ -4094,6 +4094,18 @@ seuls au tour de ronde suivant. La règle complète est dans
      « Débrancher de ksp-8e5-7qs » ou un autre nom fabriqué pour la case vide.
      L'infobulle donne la distance et le fil à récupérer. Cliquer débranche et rend
      les fils, comme n'importe quel autre débranchement. [ ]
+430c. **La porte fermée refuse le lien depuis la rue.** Ordinateur posé dehors,
+     porte d'entrée du bâtiment **fermée** : clic droit sur la porte → **Relier
+     à un ordinateur** est visible, mais la ligne vers cet ordinateur est
+     **rouge** et l'infobulle donne la raison en rouge (« Ça se fait de
+     l'intérieur. » debout dehors, ou « Ouvrez-la d'abord. » debout dedans).
+     Porte **ouverte** : le lien se pose normalement, exactement comme poser un
+     module dessus. [ ]
+430d. **Débrancher une porte fermée refuse comme le retrait du module.** La
+     même porte déjà câblée, refermée : clic droit → **Débrancher de
+     <ordinateur>** est grisé, avec la même raison qu'un retrait de module
+     donnerait sur cette porte fermée. Rouvrir la porte : le débranchement se
+     fait normalement. [ ]
 431. **Un appareil dont le module est parti garde son câble.** Câbler le lampadaire,
      puis **retirer le relais** (clic droit → Retirer). Attendu : le câble est
      toujours là, l'entrée **Débrancher** aussi, et elle rend les fils. Sans ça, le

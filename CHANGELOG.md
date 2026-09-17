@@ -73,6 +73,10 @@ date.
   "Unlink loose cable" and says how far off the machine used to be. It used to
   print a made-up hostname for the empty tile, which read like the machine had
   been renamed.
+- A door, window or curtain can only be cabled to a computer, or cut from one,
+  the way a module is fitted to it or taken off it: open, drawn or from the
+  right side. A closed front door can no longer be wired, or unwired, from the
+  street.
 
 ## 0.5.0 - 2026-09-16
 

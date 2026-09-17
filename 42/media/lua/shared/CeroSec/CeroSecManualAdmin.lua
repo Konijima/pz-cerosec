@@ -979,8 +979,8 @@ down, or unlinking a loose cable a moved machine left behind.]],
 A fixture with nothing screwed to it has no cable menu at all: a cable
 carries a BOX's device and a bare door has no device to carry. A machine
 further off than a reel goes is not on the list either -- past thirty
-tiles the answer is another computer for that end of the building, worked
-from this one down the coax or over the telephone.
+tiles wants another computer for that end, reached down the coax or
+the telephone instead.
 
 Everything else is a line, greyed, and the reason is under it in the
 menu's own words:
@@ -993,10 +993,12 @@ menu's own words:
 
 The last only if your server turned SAFEHOUSE MEMBERS ONLY on.
 
-A cable is written against the SQUARE the machine stands on and never
-against its name, so /etc/hostname is yours to change and every cable
-holds. One fixture may answer two machines at once, and it is in both
-their /devs.]],
+A door, window or curtain asks the same as a module: shut, drawn
+or outside greys the cable too, link or unlink.
+
+A cable is written against the SQUARE the machine stands on, never its
+name, so /etc/hostname is yours to change and every cable holds. One
+fixture may answer two machines at once, in both their /devs.]],
 
 [[Reading that table.
 

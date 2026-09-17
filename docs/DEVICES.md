@@ -341,16 +341,26 @@ believes nothing that arrived (`Commands.linkmodule`, `SCeroSecSystem:linkJob`):
 | `linked` | this machine is already on the list | - |
 | `links` | the fixture is full (`LINKS_MAX`) | - |
 | `far` | past `LINK_RANGE` | - |
+| `outside` | a door, window or curtain, and he is not inside | same |
+| `closed` | a door or window, and it is shut | same |
+| `drawn` | a curtain, and it is drawn | same |
 
 A bare fixture is refused a cable and is NOT refused the cut: a module that came
 off a fixture somebody had cabled leaves the cable run and the reel owed, and
 refusing the unlink would be a survivor who can only get his wire back by taking
-the door down. Nothing else the building asks is asked here, **not where he is
-standing, not that the door be open, not that he be inside**. Those are rules
-about reaching a thing with your hands, and a cable is the answer to not being
-able to. What he is CARRYING is not in the table for `fittingRefusal`'s own
-reason: it is a fact about him, and each side says it in its own words, the menu
-greys with the count ("needs 14 electric wire"), the server refuses.
+the door down. A door, window or curtain asks the ENVELOPE a module's own
+fitting or removal asks (`envelopeRefusal`, the same `needsInside` and
+`stateRefusal`): shut, drawn or outside greys both ends of the cable exactly as
+it greys the module menu. A stranger who could not walk in and unscrew a strike
+off a shut door may not wire it, or unwire it, from the street either. A
+fixture with no such state (a lamppost, a switch, a genset) is asked none of
+this, the way it is asked none of it to fit a module: **not where he is
+standing, not that he be inside**, past the envelope check above. Those
+remaining rules are about reaching a thing with your hands, and a cable is the
+answer to not being able to. What he is CARRYING is not in the table for
+`fittingRefusal`'s own reason: it is a fact about him, and each side says it in
+its own words, the menu greys with the count ("needs 14 electric wire"), the
+server refuses.
 
 The trade is the fixture's own: the Electricity level of the HIGHEST module on
 it (`CeroSecModules.linkSkill`), so anybody who could fit the hardware can cable
