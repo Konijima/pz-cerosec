@@ -50,6 +50,9 @@ end
 function SCeroSecObject:initNew()
 	self.v = CeroSec.STATE_VERSION
 	self.on = false
+	-- The AT switch at the back of the case. A machine nobody has ever
+	-- switched on has never had a reason to be left on through an outage.
+	self.switchOn = false
 	self.facing = "S"
 	-- self.disk is false and not nil, and stays a boolean for ever after: the
 	-- sync is a MERGE and a nil never crosses it (see syncDisk). It is DERIVED
@@ -112,6 +115,10 @@ function SCeroSecObject:stateFromIsoObject(isoObject)
 	self.v = CeroSec.STATE_VERSION
 	self.facing = CeroSec.facingOf(spriteName) or "S"
 	self.on = CeroSec.isOnSprite(spriteName)
+	-- No GlobalObject means no saved switch either. The sprite is the only
+	-- word we have, and a machine the sprite shows running has to have had its
+	-- switch on to be running at all.
+	self.switchOn = self.on
 	-- The sprite says it was left running, so the sweep has to know about it: this
 	-- is a machine the save file had no GlobalObject for.
 	self:reindex()
@@ -162,6 +169,10 @@ end
 function SCeroSecObject:resetForPlacement(isoObject)
 	self.v = CeroSec.STATE_VERSION
 	self.on = false
+	-- Carried here with the wire unplugged, whatever the switch was left at:
+	-- the outage a picked-up machine "suffers" is not one the wire will ever
+	-- come back from on its own, so there is nothing to restart it later.
+	self.switchOn = false
 	self:reindex()
 	self.facing = CeroSec.facingOf(isoObject:getSpriteName()) or "S"
 	-- Through the setter even where the item brought nothing and the machine keeps
@@ -925,6 +936,10 @@ function SCeroSecObject:turnOn()
 	if self.on then return false end
 	if not self:hasPower() then return false end
 	self.on = true
+	-- The switch is on the moment the machine is: this is the only place it
+	-- is set to true, so a save from before it existed only gets one once
+	-- something here actually gets switched on again.
+	self.switchOn = true
 	self:reindex()
 	-- A fresh screen, with the BIOS still to be typed on it. It was just made
 	-- here, so there is nothing to repair and nothing to check.
@@ -962,7 +977,14 @@ function SCeroSecObject:turnOn()
 	return true
 end
 
-function SCeroSecObject:turnOff()
+-- switchOff, when true, is a hand actually reaching for the switch: `halt`,
+-- `shutdown`, the menu's "Turn off computer" and the debug window's off button
+-- all pass it, and it is what leaves self.switchOn false behind them so an
+-- outage later finds nothing to restart. Left out (checkPower, below, and
+-- SCeroSecSystem:reboot's own call) it is a wire going, not a switch, and
+-- self.switchOn is untouched -- which is the whole of what tells the two apart
+-- come the next minute the power sweep looks at this machine.
+function SCeroSecObject:turnOff(switchOff)
 	if not self.on then return false end
 	-- The sessions first, before the console is thrown away: it is what remembers
 	-- where the outbound one went, and the inbound ones have a glass each to tell.
@@ -981,6 +1003,9 @@ function SCeroSecObject:turnOff()
 	-- machine comes up.
 	if state ~= nil then CeroSecOS.unmountAll(state) end
 	self.on = false
+	-- A hand at the switch leaves it off; an outage does not touch it, which
+	-- is what lets the power sweep tell the two apart afterwards.
+	if switchOff then self.switchOn = false end
 	self:reindex()
 	-- Everything that was running is gone with the power, which is what a
 	-- switch at the back of the case does. reboot goes through here too, so a
@@ -1008,7 +1033,9 @@ function SCeroSecObject:turnOff()
 end
 
 function SCeroSecObject:toggle()
-	if self.on then return self:turnOff() end
+	-- The menu's own hand at the switch: a player asking for this machine to
+	-- go off is a player who means it to stay off.
+	if self.on then return self:turnOff(true) end
 	return self:turnOn()
 end
 

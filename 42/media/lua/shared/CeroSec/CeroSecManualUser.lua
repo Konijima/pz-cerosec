@@ -87,7 +87,14 @@ which is how you spot a live office from across the street. It is a
 monitor's glow, not a lamp: you cannot read a newspaper by it.
 
 Turning it on and off is a choice at the machine itself, the same way you
-would reach round and flip its switch.]],
+would reach round and flip its switch.
+
+That switch is mechanical, not a memory chip: if the power goes while it is
+still thrown, the machine dies dark like any other, but the switch is still
+on. The moment the building's wire is live again, the machine starts itself
+back up on its own, with nobody standing there to ask it to. Turn it off
+properly first -- at the machine, or with `halt` or `shutdown` at the
+prompt -- and it stays off no matter how many times the power comes back.]],
 
 [[Getting to it.
 

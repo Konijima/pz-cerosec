@@ -220,8 +220,19 @@ CeroSec.STATE_VERSION = 1
 -- saved before this change, and absent reads as the old behaviour: no premises
 -- decided, no machine waiting to be asked.
 --
+-- `switchOn` is the AT power switch at the back of the case, which is a
+-- separate thing from `on` (whether it is actually running): an outage found
+-- with the switch on leaves it on, and the machine comes back up on its own
+-- the minute the wire is live again, with nobody at the keyboard -- the way an
+-- AT supply worked before "restore on AC power loss" was a BIOS option
+-- (1995 and later). Absent on every machine saved before this change, and
+-- absent reads as the old behaviour: no restart, because turnOn is the only
+-- place it is set and a machine nobody has switched on since has never run
+-- through it. Never in OBJECT_SYNC_KEYS: it decides nothing the client draws,
+-- the sprite already says whether the machine is lit.
+--
 CeroSec.SYSTEM_SAVE_KEYS = { "seed", "notes", "desks", "auto" }
-CeroSec.OBJECT_SAVE_KEYS = { "v", "on", "facing", "os", "console", "born" }
+CeroSec.OBJECT_SAVE_KEYS = { "v", "on", "facing", "os", "console", "born", "switchOn" }
 CeroSec.OBJECT_SYNC_KEYS = { "v", "on", "facing", "disk" }
 
 --

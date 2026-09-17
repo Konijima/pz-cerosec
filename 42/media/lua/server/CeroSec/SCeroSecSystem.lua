@@ -1161,7 +1161,9 @@ end
 -- new boot.
 function SCeroSecSystem:applyPower(luaObject, control)
 	if control == "shutdown" then
-		luaObject:turnOff()
+		-- `halt`/`shutdown`/`poweroff` are all a hand reaching for the switch,
+		-- so it goes off with it: an outage later has nothing to restart.
+		luaObject:turnOff(true)
 		return true
 	end
 	if control == "reboot" then
@@ -2794,7 +2796,9 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 		local why = CeroSecDebug.turnOffRefusal(luaObject)
 		if why ~= nil then
 			refuseAct(self, playerObj, token, x, y, z, "cannot turn off: " .. why)
-		elseif not luaObject:turnOff() then
+		-- A developer's button and not an outage: same hand at the switch as
+		-- the menu's own off, so it leaves the switch off behind it too.
+		elseif not luaObject:turnOff(true) then
 			refuseAct(self, playerObj, token, x, y, z,
 				"turnOff refused and did not say why")
 		end
@@ -3159,18 +3163,24 @@ end
 -- once for a machine that is off (SCeroSecObject:checkPower), a dark machine has
 -- no windows, no /dev to refresh and no crontab to run.
 --
--- So two indexes, both on the system and neither of them saved -- setModDataKeys
+-- So three indexes, all on the system and none of them saved -- setModDataKeys
 -- names the four keys that are (initSystem above), so anything else here is
 -- session state:
 --
---   onMachines   every machine that is ON. The power check, the watchers, /dev and
---                cron's minute are all about those and only those.
---   newMachines  every machine whose square was made in this save and has not been
---                settled yet (`born`). These may be OFF and still have to be
---                visited: the automation's question is what switches one on.
+--   onMachines      every machine that is ON. The power check, the watchers, /dev
+--                   and cron's minute are all about those and only those.
+--   newMachines     every machine whose square was made in this save and has not
+--                   been settled yet (`born`). These may be OFF and still have to
+--                   be visited: the automation's question is what switches one on.
+--   restartMachines every machine that is OFF with its switch left ON: the AT
+--                   supply's own habit (see CeroSecDefs.lua's OBJECT_SAVE_KEYS
+--                   note) is that it starts running again the moment the wire is
+--                   live, with nobody at the keyboard. These are OFF and still
+--                   have to be visited too, for exactly the reason newMachines
+--                   are: nothing else asks the power question of a dark machine.
 --
--- WHERE THEY ARE WRITTEN, and it is every place the two fields are, through one
--- function that reads the machine rather than being told what changed
+-- WHERE THEY ARE WRITTEN, and it is every place the three fields are, through
+-- one function that reads the machine rather than being told what changed
 -- (SCeroSecObject:reindex): turnOn, turnOff, the sprite a chunk with no
 -- GlobalObject is adopted from, a computer put down out of somebody's hands, and
 -- the two bits the automation writes. A machine ARRIVING comes through
@@ -3179,12 +3189,13 @@ end
 -- table, so a county left running is in the index before the first minute -- and
 -- one LEAVING through aboutToRemoveFromSystem, which removeLuaObject calls.
 --
--- AND THEY HEAL. An entry that is neither `on` nor `born` when the sweep reaches
--- it is dropped there and then, so a transition nobody reported costs one visit
--- and never a machine that is swept for ever. The other direction cannot be
--- healed cheaply and is not guessed at: a machine whose `on` was written behind
--- these calls' back is a machine the sweep does not know about, which is why the
--- index is written by the field's own writers and by nothing else.
+-- AND THEY HEAL. An entry that is neither `on` nor `born` nor waiting on its
+-- switch when the sweep reaches it is dropped there and then, so a transition
+-- nobody reported costs one visit and never a machine that is swept for ever.
+-- The other direction cannot be healed cheaply and is not guessed at: a machine
+-- whose `on` was written behind these calls' back is a machine the sweep does
+-- not know about, which is why the index is written by the fields' own writers
+-- and by nothing else.
 --
 
 local function machineKey(luaObject)
@@ -3195,18 +3206,22 @@ function SCeroSecSystem:indexMachine(luaObject)
 	if luaObject == nil then return end
 	if type(self.onMachines) ~= "table" then self.onMachines = {} end
 	if type(self.newMachines) ~= "table" then self.newMachines = {} end
+	if type(self.restartMachines) ~= "table" then self.restartMachines = {} end
 	local key = machineKey(luaObject)
 	self.onMachines[key] = luaObject.on == true and luaObject or nil
 	self.newMachines[key] = luaObject.born == true and luaObject or nil
+	self.restartMachines[key] =
+		(luaObject.on ~= true and luaObject.switchOn == true) and luaObject or nil
 end
 
--- Out of both, for a machine that has left the system: picked up, smashed, or its
--- square destroyed.
+-- Out of all three, for a machine that has left the system: picked up, smashed,
+-- or its square destroyed.
 function SCeroSecSystem:forgetMachine(luaObject)
 	if luaObject == nil then return end
 	local key = machineKey(luaObject)
 	if type(self.onMachines) == "table" then self.onMachines[key] = nil end
 	if type(self.newMachines) == "table" then self.newMachines[key] = nil end
+	if type(self.restartMachines) == "table" then self.restartMachines[key] = nil end
 end
 
 -- One index as an array, taken BEFORE the walk that uses it: a machine switched on
@@ -3224,6 +3239,12 @@ function SCeroSecSystem:onMachineList()
 	return machineList(self.onMachines)
 end
 
+-- The machines that are off with their switch left on, for the power sweep's
+-- own question about them: has the wire come back?
+function SCeroSecSystem:restartList()
+	return machineList(self.restartMachines)
+end
+
 -- Tell every window open on this machine that it is over, then forget them.
 function SCeroSecSystem:evictWatchers(luaObject, reason)
 	if not luaObject.watchers then return end
@@ -3239,17 +3260,19 @@ end
 -- Computers on a square that lost power shut themselves off, and a window whose
 -- player has wandered off, died or left is not a window any more. Nothing of
 -- the screen is lost by either: the console belongs to the machine, and only a
--- machine going dark clears it.
+-- machine going dark clears it. And a computer whose switch was left on when
+-- the power went comes back up on its own the minute the wire does, exactly as
+-- an AT machine of 1993 would (CeroSecDefs.lua's OBJECT_SAVE_KEYS note).
 --
--- The two lists are the sweep's indexes and not every computer in the county (the
--- head of this section): a dark machine has no power question, no window and no
--- /dev, so it is not visited at all. Everything here that needs the WORLD is asked
--- only of a machine the world still has: the address, the power and the book of
--- device numbers all go through a square. A machine whose chunk is away keeps the
--- state it had and is asked again the moment the chunk comes back
--- (SCeroSecObject:stateToIsoObject). What the machine's own DISK answers is not in
--- here at all and goes on regardless -- cron's pass below, and the jobs the
--- scheduler steps.
+-- The three lists are the sweep's indexes and not every computer in the county
+-- (the head of this section): a dark machine with its switch off has no power
+-- question, no window and no /dev, so it is not visited at all. Everything here
+-- that needs the WORLD is asked only of a machine the world still has: the
+-- address, the power and the book of device numbers all go through a square. A
+-- machine whose chunk is away keeps the state it had and is asked again the
+-- moment the chunk comes back (SCeroSecObject:stateToIsoObject). What the
+-- machine's own DISK answers is not in here at all and goes on regardless --
+-- cron's pass below, and the jobs the scheduler steps.
 function SCeroSecSystem:checkPower()
 	-- The machines that are on, taken before anything below settles one: a machine
 	-- the automation switches on this minute has had everything done for it by
@@ -3321,6 +3344,26 @@ function SCeroSecSystem:checkPower()
 					CeroSecDevices.refresh(luaObject, luaObject:osState())
 				end
 			end
+		end
+	end
+
+	-- THE OTHER DIRECTION: a machine that is off with its switch on, asking
+	-- the one question a dark machine ever has to (see the section head).
+	-- Taken as its own snapshot for the reason `live` is: a machine this walk
+	-- turns on writes the index inside turnOn (SCeroSecObject:reindex), and a
+	-- table walked with `pairs` while it is being written to is a table
+	-- Kahlua makes no promise about.
+	local restart = self:restartList()
+	for i = 1, #restart do
+		local luaObject = restart[i]
+		if luaObject.on == true or luaObject.switchOn ~= true then
+			-- Switched on, or its switch turned off, since the index was
+			-- written. Healed here exactly as a stale `live` entry is above.
+			self:indexMachine(luaObject)
+		elseif luaObject:isLoaded() and luaObject:hasPower() then
+			-- Same road a hand at the switch takes (turnOn: the console, the
+			-- BIOS lines, @reboot), and no player required for any of it.
+			luaObject:turnOn()
 		end
 	end
 end
