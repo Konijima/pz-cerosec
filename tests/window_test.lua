@@ -14746,6 +14746,39 @@ do
 	check("the relay is still on the post",
 		CeroSecModules.installedOn(post).relay == true)
 
+	-- AND A COMPUTER CARRIED OFF ITS TILE LEAVES THE CABLE ON THE FLOOR, which is
+	-- the one end a survivor must still be able to cut. A run is keyed on the
+	-- SQUARE the machine stood on (CeroSecModules.LINK_KEY), so a machine picked up
+	-- and put down a tile over is not a cable that went with it -- the cable is
+	-- still on the post and still owed. linkJob wanted a machine on that square for
+	-- BOTH packets and returned nothing without one, so the cut was refused in
+	-- silence and the reel was owed to a survivor who could never be handed it.
+	--
+	-- The machine is taken off the tile by the one question the server asks about
+	-- it, because that is the whole of what "no computer there any more" is on this
+	-- side: getLuaObjectAt answers nothing for that square.
+	reel(30)
+	send("linkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("the post is cabled again", cables(post), 1)
+	local carriedOff = bench.system.getLuaObjectAt
+	bench.system.getLuaObjectAt = function(system, lx, ly, lz)
+		if lx == MACHINE[1] and ly == MACHINE[2] and lz == MACHINE[3] then
+			return nil
+		end
+		return carriedOff(system, lx, ly, lz)
+	end
+	check("the tile answers no machine any more",
+		bench.system:getLuaObjectAt(MACHINE[1], MACHINE[2], MACHINE[3]) == nil)
+	reel(0)
+	send("unlinkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	bench.system.getLuaObjectAt = carriedOff
+	check("and the machine is back on it for the rest of the block",
+		bench.system:getLuaObjectAt(MACHINE[1], MACHINE[2], MACHINE[3]) ~= nil)
+	eq("cutting a loose cable takes it off the post", cables(post), 0)
+	eq("and hands back every reel it cost", wires(), 12)
+	check("and the post keeps no line to that square",
+		CeroSecModules.wireOf(post, MACHINE[1], MACHINE[2], MACHINE[3]) == nil)
+
 	-- AND A CABLE THAT IS NOT THERE PAYS NOBODY. `unlinkmodule` on the same post
 	-- again is the double-click, and the answer is no wire out of nothing.
 	send("unlinkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])

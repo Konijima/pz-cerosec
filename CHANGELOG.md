@@ -65,6 +65,10 @@ date.
   losing a word wherever a line was meant to break, and running the next
   sentence straight into the one before it without a space. A greyed entry now
   says why it is greyed on a line of its own, in red.
+- A cable can be cut again after the computer at the other end of it has been
+  carried off its tile. A run is to the spot the machine stood on, not to the
+  machine, so putting a computer back on that spot reconnects it; before this,
+  "Unlink" on a cable going nowhere did nothing at all and the wire was lost.
 
 ## 0.5.0 - 2026-09-16
 
