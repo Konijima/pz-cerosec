@@ -1993,7 +1993,14 @@ local function throwLight(object, want)
 	local square = object:getSquare()
 	if square ~= nil and square:getRoom() == nil and not object:getCanBeModified() then
 		object:setCanBeModified(true)
-		object:setActive(want)
+		-- pcall: canBeModified is what save() writes (proof above), and a raise
+		-- out of setActive with the flag left up would save a street lamppost as
+		-- player-built forever. Rabaissé in every case, error included; the
+		-- message itself is dropped -- act()'s isActivated() read right after
+		-- this call already turns "nothing happened" into "no power", the one
+		-- word this file uses for an engine call that did not do what it was
+		-- told.
+		pcall(object.setActive, object, want)
 		object:setCanBeModified(false)
 		return
 	end

@@ -23138,4 +23138,48 @@ do
 	CeroSecDevices.invalidate()
 end
 
+-- A LAMPPOST WHOSE ENGINE RAISES, so the flag it was lifted through
+-- (canBeModified, save()'s own word for "player-built") is not left up for a
+-- save to find and write forever, and the command that hit the raise answers a
+-- refusal instead of taking the whole session down with it. Same fixture as
+-- the block above, with setActive replaced by a doubling that throws instead
+-- of the real one that goes quiet.
+do
+	local hadWorld = _G.__world
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0} })
+	local post = fit(world.hung(world.square(11, 9, 0, nil), fakeLight(true, true),
+		nil), "relay")
+	if not CeroSecModules.linkOn(post, 10, 10, 0, 2) then
+		error("cannot cable the lamppost")
+	end
+	_G.__world = world
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	bench.login("admin")
+	if not CeroSecOS.addLink(bench.object:osState(), 11, 9, 0) then
+		error("cannot cable the machine")
+	end
+	CeroSecDevices.invalidate()
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+
+	-- The doubling: setActive raises instead of answering, the way an engine
+	-- call hitting a case nothing here modelled would.
+	post.setActive = function() error("no such case", 0) end
+
+	bench.enter("clear")
+	bench.enter("echo off > /dev/light0")
+	bench.frame()
+	check("a refusal comes back, not a crash of the whole session",
+		bench.painted("light0: no power"))
+	eq("and the engine flag the throw was lifted through is back down",
+		post.modifiable, false)
+
+	_G.__world = hadWorld
+	CeroSecDevices.invalidate()
+end
+
 print("window_test: " .. count .. " checks passed")
