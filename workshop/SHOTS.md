@@ -1,9 +1,16 @@
 # CeroSec -- the ten screenshots
 
 What the Workshop page needs, in the order the description uses them. The
-maintainer takes them; `workshop/workshop.txt` already carries a commented slot for each,
-named with the filename below, and the slot becomes a `description=[img]...[/img]`
-line once the shot is uploaded and has a URL ([RELEASE.md](../docs/RELEASE.md)).
+maintainer takes them; `workshop/workshop.txt` already carries a commented slot for
+each PAIR (01+02, 03+04, 05+06, 07+08, 09+10), named with the two filenames
+below, and the slot becomes one `description=[img]...[/img] [img]...[/img]`
+line, both at 312 px wide, once the pair is uploaded and has URLs
+([RELEASE.md](../docs/RELEASE.md)).
+
+Prepare every shot at **312 px wide** before uploading (resize the 1920x1080
+capture down to it): that is the width `tools/check-workshop.py` and the rest
+of the description's images hold to, and it is what lets two of them sit side
+by side on one line instead of one alone stretching past a phone's column.
 
 Write them to `workshop/shots/NN-name.png`. That directory is not in git: the
 files are big, they go to Steam and not into the mod, and the page references
@@ -16,7 +23,7 @@ like ten pictures of one thing.
 
 | | |
 | --- | --- |
-| resolution | **1920x1080**, borderless window. Steam scales a description image to 630 wide, so 1080p downsamples to it evenly. |
+| resolution | **1920x1080**, borderless window, for the item's own gallery. For the description's `[img]`, export (or have Steam serve) each pair at **312 px wide** -- the width every other image in the description holds to, and what lets two sit side by side on one line instead of one alone overflowing a phone's column ([workshop.txt](workshop.txt)'s own header comment has the measurement behind it). |
 | UI scale | **1.0** for the world shots (3, 4, 5), **1.5** for the terminal and reader shots (1, 2, 6, 7, 8, 9, 10). The terminal is 60x20 characters and at 1.0 on a 1080p screen it is a stamp in the middle of the frame. |
 | zoom | **one notch in from the default** for the world shots, so a door and the survivor at it are both in frame. Terminal shots: whatever, the window covers it. |
 | time of day | **between 20:00 and 04:00** for every shot with a screen in it. The phosphor is the whole look and it does not read against daylight. Shot 5 is the exception: **dusk**, so the door and the module in hand are legible. |

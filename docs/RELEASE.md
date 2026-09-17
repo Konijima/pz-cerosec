@@ -34,7 +34,7 @@ the files and the state shape are all unaffected.
 | --- | --- | --- |
 | 1 | Drop the two originals in place: `workshop/art/poster.png` (4:3) and `workshop/art/banner.png` (16:5) | by hand |
 | 1a | **Choose the square poster.** Look at the three candidates side by side, at 512 and at 200, then set `POSTER_CANDIDATE` in `tools/make-workshop-images.py` to `A`, `B` or `C`, see "The square poster" below | `tools/out/poster-candidates.png` |
-| 2 | Cut the four published images, and draw the nine section headers | `python3 tools/make-workshop-images.py && python3 tools/make-workshop-headers.py` |
+| 2 | Cut the four published images, draw the nine section headers (630 and 312), and compose the two 312 banner panels | `python3 tools/make-workshop-images.py && python3 tools/make-workshop-headers.py && python3 tools/make-workshop-banner312.py` |
 | 2a | **Take the ten screenshots and the two GIFs** | [../workshop/SHOTS.md](../workshop/SHOTS.md) |
 | 3 | Turn the two development flags off: `CeroSec.DEV_MANUAL_MENU = false` and `CeroSec.DEV_DEBUG_MENU = false` (the debug window is then offered only in the game's own debug mode -- [DEBUG.md](DEBUG.md)) | `sed -i 's/^CeroSec.DEV_MANUAL_MENU = true$/CeroSec.DEV_MANUAL_MENU = false/; s/^CeroSec.DEV_DEBUG_MENU = true$/CeroSec.DEV_DEBUG_MENU = false/' 42/media/lua/shared/CeroSec/CeroSecDefs.lua` |
 | 4 | Check no other one crept in | `grep -rn 'DEV_MANUAL_MENU\|DEV_DEBUG\|DEV_TEST' 42/media/lua` |
@@ -55,7 +55,7 @@ the files and the state shape are all unaffected.
 | 13 | Turn the ten `# SHOT` slots in `workshop/workshop.txt` into `[img]` lines, and commit | see below |
 | 14 | Remove the upload copy so the game loads the repo again | `sh tools/workshop-sync.sh clean` |
 | 15 | Tag the commit | `git tag -a v<version> -m 'CeroSec <version>' && git push --tags` |
-| 16 | **Make the GitHub repository public** so the `github.com/Konijima/pz-cerosec` link on the page opens. The page images no longer depend on it: the banner and the eight headers are served from the public `Konijima/pz-cerosec-media` (push any changed image there too: `workshop/banner.png` and `workshop/img/*`) | GitHub, repository settings |
+| 16 | **Make the GitHub repository public** so the `github.com/Konijima/pz-cerosec` link on the page opens. The page images no longer depend on it: the banner panels and the nine headers are served from the public `Konijima/pz-cerosec-media` (push any changed image there too: `workshop/banner312-a.png`, `workshop/banner312-b.png` and `workshop/img/h312-*.png`) | GitHub, repository settings |
 | 17 | Open the item's own page in a browser and check the ten media-repo images actually rendered | Steam item page |
 | 17a | Credit line confirmed by the author on 2026-09-14: everything in `common/media/` was made for this mod by the author, with AI tools; nothing third-party | done |
 | 18 | Flip the Workshop item to public | Steam item page, **Change visibility** |
@@ -275,11 +275,12 @@ and has no idea what is inside the uploaded item, so every image in the descript
 has to be hosted somewhere Steam will fetch it from. There are two hosts and the
 split is on purpose.
 
-**The banner and the nine section headers come out of the GitHub repository.**
-`https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/banner.png`
-and `.../workshop/img/h-*.png`. Those URLs are **already written into
-`workshop/workshop.txt`** and no line of it has to be edited at upload time. Three
-things make that safe, and all three were checked rather than assumed:
+**The banner panels and the nine section headers come out of the GitHub
+repository.** `https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/
+banner312-a.png` (and `-b.png`) and `.../workshop/img/h312-*.png`. Those URLs
+are **already written into `workshop/workshop.txt`** and no line of it has to
+be edited at upload time. Three things make that safe, and all three were
+checked rather than assumed:
 
 - raw.githubusercontent.com answers `access-control-allow-origin: *` and
   `cross-origin-resource-policy: cross-origin`, so it survives the
@@ -394,17 +395,21 @@ shipped jar or off vanilla Lua.
 | `workshop/preview.png` | 512x512 PNG, under 1024000 bytes | `SteamWorkshopItem.validatePreviewImage` refuses anything else: over the byte ceiling is `PreviewFileSize`, non-square or a width that is neither 256 nor 512 is `PreviewDimensions`, unreadable is `PreviewFormat` |
 | `42/poster.png` | 512x512 | the mod panel draws poster 0 with `drawTextureScaled(tex, ..., 200, 200)`, which does not keep the aspect ratio (`ModInfoPanelDesc.lua:12` and `:14`) |
 | `42/icon.png` | 64x64 | drawn at `BUTTON_HGT` (`ModListBox.lua:8`, `:201`) and at 28x28 (`ModOrderListBox.lua:235`) |
-| `workshop/banner.png` | 630 px wide | Steam's own stylesheet: `.workshopItemDescription img { max-width: 630px }` in `public/css/skin_1/workshop.css` on community.akamai.steamstatic.com. The game never reads this file |
-| `workshop/img/h-*.png` | 630x80 | the same rule. Nine section headers, drawn by `tools/make-workshop-headers.py` |
+| `workshop/banner.png`, `workshop/img/h-*.png` | 630 px wide | retired 2026-09-17, kept only because the live 0.4.0 page still serves them. Steam's own stylesheet: `.workshopItemDescription img { max-width: 630px }` in `public/css/skin_1/workshop.css`. The game never reads either file |
+| `workshop/banner312-a.png`, `-b.png`, `workshop/img/h312-*.png` | 312 px wide | the width actually used in the description now, measured on a real phone on 2026-09-17. `tools/check-workshop.py` holds every one of these to exactly 312. See docs/notes/workshop-study.md |
 
-**The 630 corrects a 1000 that was in this table and in the script until
-2026-09-13, and was never true.** Steam does not show an `[img]` at 1000 px: it
-scales it down to 630, and a bitmap face scaled by 0.63 comes back with grey
-edges instead of square ones. The number is in the stylesheet quoted above. While
-that was being checked, the description column turned out to be about the same
-width: `#leftContents` is `width: 650px` and `.workshopItemDescription` has
-`padding-right: 8px`, so a 630 image is very nearly full bleed, which is why the
-headers are drawn at exactly that and not at "something wide".
+**Why 312 and not 630.** 630 was itself a correction of a 1000 that was in
+this table until 2026-09-13: Steam does not show an `[img]` at 1000 px, it
+scales it to 630, and a bitmap face scaled by 0.63 comes back with grey edges
+instead of square ones. But 630 turned out to have the same failure mode one
+size down: on a phone, nothing in Steam's CSS ever shrinks an `<img>` below
+its own pixel width, so a 630 px image on a 352 px column overflows the page
+sideways (workshop.txt's own header comment has the full read of the CSS). An
+`<img>` is inline, so two images narrow enough to both fit the narrowest
+phone column measured -- 312 -- sit side by side on desktop and stack cleanly
+on mobile instead. `#leftContents` is `width: 650px` and
+`.workshopItemDescription` has `padding-right: 8px`, so a desktop column is
+about 655: a pair of 312s (624) fits it with room, which one 630 barely did.
 
 The preview image's name and place are not a convention either: the submit screen
 looks for `<workshop folder>/preview.png` and nothing else
