@@ -82,6 +82,17 @@ cache*, below):
   the same z. A `nil` square is an unloaded chunk and is skipped. No far edge
   here: that walk visits every square of its block, room or not, so a base's south
   wall is already standing on a square it goes to.
+  **And it takes nothing that belongs to a building** (`scanOutdoorSquare`): a
+  square whose `getRoom()` is not `nil` is skipped whole, and a wall fixture on a
+  square with no room, such as a front door or a porch lamp, is skipped when
+  `faces` puts it on the boundary of a square that has one. The radius is the
+  fallback for a place the map knows no room in, not a second reach into the
+  house next door: a machine set on the pavement five tiles from a house used
+  to list its doors and
+  lamps for free. `getRoom()` and not `isInARoom()`, which answers true for a
+  player-built base off `getIsoWorldRegion().isPlayerRoom()` and would take the
+  radius away from the machine it exists for. Anything of a building, from
+  outside, needs a cable.
 
 Before either: the machine's **own** square. No square there is a chunk the streamer
 has not brought in, and a machine that is not in the world reaches nothing, `find`

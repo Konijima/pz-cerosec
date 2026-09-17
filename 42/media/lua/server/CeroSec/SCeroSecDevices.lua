@@ -34,6 +34,12 @@ require "CeroSec/SCeroSecRadio"
 -- is what a computer standing in a player-built base gets: a base has no
 -- building and no rooms.
 --
+-- THE RADIUS TAKES NOTHING THAT BELONGS TO A BUILDING. It is the fallback for a
+-- place the map knows no room in, not a second reach into the house next door:
+-- a machine set down on the pavement five tiles from a house used to list that
+-- house's doors and lamps for free, which is a stranger's computer opening a
+-- door he never wired (scanOutdoorSquare).
+--
 -- Nothing outside the loaded world exists. The game only keeps the chunks
 -- around the players (13x13 of 8 tiles) and there is no unload event, so a
 -- device is not "gone", it is simply not found this pass -- and a machine in a
@@ -1339,6 +1345,73 @@ local function scanLinked(cell, links, found, seen, mx, my, mz)
 	return kept
 end
 
+--
+-- The radius walk, which is not the building walk
+--
+
+-- The four neighbours of a square, in the order scanFarEdges reads them.
+local AROUND = { { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 } }
+
+-- Is this wall fixture on the boundary of a square the map gives a ROOM to?
+--
+-- The question the radius walk has to ask and the building walk never had to. A
+-- door, a window and a curtain ARE the wall and stand on one of the two squares
+-- they divide -- their own getOppositeSquare says which (scanFarEdges above) --
+-- so a house's front door stands on the PAVEMENT and the pavement is in no room
+-- at all. A lamp hangs on the wall from the outside and stands there too. Room
+-- test on the square, therefore, is not enough: the fixture is the house's while
+-- the square under it is nobody's.
+--
+-- Asked through `faces`, which is the same reading the building walk uses from
+-- the room's end -- the engine's opposite square for the three that are the wall
+-- and the `attached`/`Facing` pair for a hung light -- so the two ends agree on
+-- which wall a thing is on. A lamppost or a dropped generator faces nothing and
+-- is kept.
+local function facesARoom(cell, object, x, y, z)
+	for i = 1, #AROUND do
+		local at = AROUND[i]
+		local neighbour = cell:getGridSquare(x + at[1], y + at[2], z)
+		if neighbour ~= nil and neighbour:getRoom() ~= nil
+				and faces(object, x, y, z, neighbour) then
+			return true
+		end
+	end
+	return false
+end
+
+-- One square of the ten-tile fallback, and what it is NOT allowed to take.
+--
+-- The report this is from: a computer set down outside a house, five squares
+-- away, wired to nothing, listing every device of that house. The radius is the
+-- answer for a place with no building -- a player base -- and a building
+-- belongs to its own machine or to a cable, never to whoever stands near it.
+--
+-- `getRoom() ~= nil` is the ownership test and it is the wider of the two the
+-- engine has: getBuilding() is getRoom() and then IsoRoom.getBuilding (javap -c
+-- zombie.iso.IsoGridSquare.getBuilding, offsets 0-15), so a square with a
+-- building is always a square with a room while a mapped room whose building the
+-- metagrid never set is caught here too.
+--
+-- AND NOT isInARoom(), which is the trap: that one is
+-- `getRoom() != null || getIsoWorldRegion().isPlayerRoom()` (offsets 0-31), and
+-- a player-built base answers true on the second half. Reading it here would
+-- take a base's own radius away from it -- the very machine the radius exists
+-- for -- while closing nothing the room test does not close already.
+local function scanOutdoorSquare(cell, square, found, seen)
+	if square == nil then return end
+	if square:getRoom() ~= nil then return end
+	local x, y, z = square:getX(), square:getY(), square:getZ()
+	scanWorldItems(square, found, seen, x, y, z)
+	local objects = square:getObjects()
+	if objects == nil then return end
+	for i = 0, objects:size() - 1 do
+		local object = objects:get(i)
+		if not (isWallFixture(object) and facesARoom(cell, object, x, y, z)) then
+			addDevices(object, i, x, y, z, found, seen)
+		end
+	end
+end
+
 -- Every device the machine at x, y, z can reach right now, unnumbered. THE
 -- WALK ITSELF, with no cache in front of it: the minute sweep and the cache's
 -- own miss are what call it now (CeroSecDevices.findCached).
@@ -1382,11 +1455,14 @@ function CeroSecDevices.find(x, y, z, links)
 	end
 
 	-- No building: a square of ten tiles around the machine, on its own floor.
-	-- A square the game has not loaded is simply nil and is skipped.
+	-- A square the game has not loaded is simply nil and is skipped, and
+	-- anything that belongs to a building is left to that building's machine
+	-- and to the cable (scanOutdoorSquare).
 	local r = CeroSecDevices.RADIUS
 	for dx = -r, r do
 		for dy = -r, r do
-			scanSquare(cell:getGridSquare(x + dx, y + dy, z), found, seen)
+			scanOutdoorSquare(cell, cell:getGridSquare(x + dx, y + dy, z),
+				found, seen)
 		end
 	end
 	local kept = scanLinked(cell, links, found, seen, x, y, z)

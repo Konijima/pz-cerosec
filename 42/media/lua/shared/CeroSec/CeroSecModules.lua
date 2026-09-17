@@ -1107,11 +1107,27 @@ end
 --
 -- It is the one refusal a survivor cannot get round by doing something at the
 -- fixture, which is why it is asked first everywhere it is asked at all.
+-- AND IT ASKS THE SQUARE THE FIXTURE BELONGS TO, not only the one it stands on.
+-- findSafeHouse is `x >= X && x < X2 && y >= Y && y < Y2` on the square handed in
+-- (javap -c zombie.iso.areas.SafeHouse.findSafeHouse, offsets 28-69) and a claim
+-- covers the building's own tiles. But a door, a window and a curtain ARE the wall
+-- and stand on ONE of the two squares they divide, which for a SOUTH or EAST
+-- exterior wall is the pavement -- outside every box. Asked of that square alone,
+-- the front door of a claimed safehouse came back as nobody's, and a stranger in
+-- the street could run a cable to it and work it from his own machine.
 local function houseRefusal(object, playerObj)
 	if not CeroSecModules.safehouseGated() or SafeHouse == nil then return nil end
 	local square = object:getSquare()
 	if square == nil then return nil end
 	local house = SafeHouse.getSafeHouse(square)
+	if house == nil and (CeroSecModules.isDoor(object)
+			or CeroSecModules.isWindow(object) or CeroSecModules.isCurtain(object)) then
+		-- The other side of the wall, from the engine (getOppositeSquare exists on
+		-- IsoDoor, IsoWindow, IsoThumpable and IsoCurtain, and on nothing else this
+		-- reads), and nil when its chunk is away.
+		local opposite = object:getOppositeSquare()
+		if opposite ~= nil then house = SafeHouse.getSafeHouse(opposite) end
+	end
 	if house ~= nil and not house:playerAllowed(playerObj) then return "safehouse" end
 	return nil
 end
