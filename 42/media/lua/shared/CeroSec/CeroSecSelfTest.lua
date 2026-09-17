@@ -367,6 +367,18 @@ function CeroSecSelfTest.probe(say)
 	say("tar not an archive", CeroSecOS.tarMembers("hello\n") == nil)
 	say("tar cut short", CeroSecOS.tarMembers(
 		CeroSecOS.TAR_MAGIC .. "\nf 644 a b 0 20 x\nshort\n") == nil)
+
+	-- pcall, proved here because it was never called anywhere the mod ships
+	-- before SCeroSecDevices.lua's throwLight leaned on it to keep a street
+	-- lamppost's canBeModified flag from sticking up after an engine exception
+	-- (docs/TESTING.md's kahlua-run.sh only shows KahluaThread.pcall calling
+	-- INTO a chunk, not a script calling pcall itself). Level 0 on error() so
+	-- neither VM prepends a chunk name and a line number that would never
+	-- match between a `lua5.1 file.lua` run and KahluaRun --eval.
+	local okYes, retYes = pcall(function() return "fine" end)
+	say("pcall ok", tostring(okYes) .. " " .. tostring(retYes))
+	local okNo, errNo = pcall(function() error("boom", 0) end)
+	say("pcall caught", tostring(okNo) .. " " .. tostring(errNo))
 end
 
 -- The archive of a fixed member list, as text. A function of nothing, like every

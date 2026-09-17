@@ -180,6 +180,8 @@ CeroSecSelfTest.VECTORS = {
 	{ name = "tar round trip", want = "d:755:admin:users:7:work:0: f:600:admin:users:8:work/two.txt:12:first|second f:644:root:root:0:empty:0: l:777:admin:users:9:short:12:work/two.txt" },
 	{ name = "tar not an archive", want = "true" },
 	{ name = "tar cut short", want = "true" },
+	{ name = "pcall ok", want = "true fine" },
+	{ name = "pcall caught", want = "false boom" },
 	{ name = "sync has disk", want = "true" },
 	{ name = "sync has on", want = "true" },
 	{ name = "sync has facing", want = "true" },
