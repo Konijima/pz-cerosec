@@ -560,7 +560,13 @@ local function washerClass(object)
 	return "IsoCombinationWasherDryer"
 end
 
-function CeroSecDevices.classify(object)
+-- `allowGen` is the cable rule, decided in game and not up for discussion: a
+-- generator's /dev module is reached ONLY over its own "Link to computer" cable,
+-- the same way a lamppost is, never by standing near it -- the power a generator
+-- feeds the house is a different wire entirely from the control cable to its
+-- switch. Every proximity walk (scanSquare, scanFarEdge, scanOutdoorSquare) calls
+-- this false; only the cable walk (scanLinked) calls it true.
+function CeroSecDevices.classify(object, allowGen)
 	if object == nil then return nil end
 
 	if instanceof(object, "IsoLightSwitch") then
@@ -635,6 +641,11 @@ function CeroSecDevices.classify(object)
 	end
 
 	if instanceof(object, "IsoGenerator") then
+		-- Cable-only, decided in game: a generator standing near a machine, in
+		-- its building or on the radius fallback, is not this machine's -- only
+		-- a "Link to computer" run to its GeneratorSwitch module makes it one
+		-- (allowGen, above).
+		if not allowGen then return nil end
 		local fitted = fittedOn(object)
 		if not has(fitted, "genset") then return nil end
 		return { {
@@ -854,10 +865,12 @@ end
 -- One object, as the devices it is, onto the walk's own list. Its place is the
 -- square it STANDS on and not the square it was reached from: that is what the
 -- key hangs on and what `alive` re-asks the engine for.
-local function addDevices(object, index, x, y, z, found, seen)
+-- `allowGen` is passed straight to classify (above): every caller here is a
+-- proximity walk and leaves it nil except scanLinked, the cable walk.
+local function addDevices(object, index, x, y, z, found, seen, allowGen)
 	-- A list, because one object can be two devices: an exterior door is
 	-- what opens AND what locks.
-	local entries = CeroSecDevices.classify(object) or {}
+	local entries = CeroSecDevices.classify(object, allowGen) or {}
 	for k = 1, #entries do
 		local entry = entries[k]
 		entry.x, entry.y, entry.z = x, y, z
@@ -1336,7 +1349,10 @@ local function scanLinked(cell, links, found, seen, mx, my, mz)
 							cabled = true
 							local already = seen[placeKey(at.x, at.y, at.z, k)]
 							if already == nil then
-								already = addDevices(object, k, at.x, at.y, at.z, found, seen)
+								-- true: this IS the cable, the one thing that lets a
+								-- generator through classify (allowGen, above).
+								already = addDevices(object, k, at.x, at.y, at.z,
+									found, seen, true)
 							end
 							for e = 1, #already do already[e].wire = wire end
 						end

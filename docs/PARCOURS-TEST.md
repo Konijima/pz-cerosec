@@ -3675,8 +3675,15 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      `dev washerN toggle` l'arrête. En multijoueur, vérifier sur le **second
      client** que la machine tourne bien de son côté : c'est la seule qui a
      besoin d'un envoi de notre part. [ ]
+376a. **La génératrice, dehors, ne se voit plus par proximité (0.5.0).** Une
+     génératrice à 4 tuiles d'un ordinateur, dehors, sans pièce autour :
+     absente de `/dev` même à un pas de la porte. Poser un **inverseur de
+     groupe** dessus, puis tirer un câble (« Link to computer ») jusqu'à la
+     machine : `dev` → `genN` apparaît aussitôt. La débrancher : elle
+     redisparaît, mais le numéro reste le sien au recâblage. [ ]
 377. **La génératrice.** Poser un **inverseur de groupe** sur une génératrice
-     branchée, avec de l'essence. `cat /dev/genN` → une ligne entière :
+     branchée et **câblée** à la machine (étape 376a), avec de l'essence.
+     `cat /dev/genN` → une ligne entière :
      `off fuel 62 condition 80 connected` (les nombres sont ceux de la
      génératrice). `dev` → la colonne d'état ne montre QUE `off` : la phrase ne
      tient pas dans un tableau de 60 colonnes. `echo on > /dev/genN` →
@@ -3691,9 +3698,12 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      VOTRE écran, six secondes. Refaire avec `curtain0`, `washer0` et `gen0`. Le
      rideau d'une porte (étape 370) doit entourer **la porte**. [ ]
 380. **Le monde sans l'option.** Mettre **Matériel requis** sur désactivé et
-     recharger. Attendu : chaque rideau, four, laveuse et génératrice du bâtiment
-     est sous `/dev` sans qu'on ait rien vissé, c'est plus qu'avant ce palier, et
-     c'est ce que dit la note de version. [ ]
+     recharger. Attendu : chaque rideau, four et laveuse du bâtiment est sous
+     `/dev` sans qu'on ait rien vissé, c'est plus qu'avant ce palier, et c'est
+     ce que dit la note de version. **La génératrice fait exception (0.5.0,
+     correction) : même sans l'option, elle reste absente tant qu'aucun câble
+     ne la relie à la machine** -- le câble, pas la visserie, est ce qui la
+     fait entrer. [ ]
 381. **Cent tours de boucle ne relisent pas le bâtiment cent fois.** Dans un
      bâtiment avec beaucoup de pièces (un centre commercial), écrire
      `while true; do cat /dev/door0 > /dev/null; sleep 5; done &` et laisser

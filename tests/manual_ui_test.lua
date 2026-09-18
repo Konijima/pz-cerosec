@@ -5336,6 +5336,16 @@ do
 	eq("with the reach word and the machine's own name", reason(row),
 		"Tooltip_CeroSec_LinkReach(ksp-reach-01)")
 
+	-- (a2) a GENERATOR in that very building, on that very square: cable-only
+	-- now (SCeroSecDevices.classify's allowGen), so reach is never claimed for
+	-- one, building or not -- the cable stays offered instead of greying the
+	-- survivor's only way to it.
+	local reachGenerator = fixture("IsoGenerator", reachDeviceSq)
+	reachGenerator.modData.cerosec = { genset = true }
+	row = rowFor(reachGenerator, "ksp-reach-01")
+	eq("(a2) same building, same square: still not reach for a generator",
+		row.notAvailable, nil)
+
 	-- (b) the same machine, but the fixture is in a DIFFERENT building: the
 	-- walk would never have found it there, so no reach. First the sanity a
 	-- banc of Diagnostic knows to want: the two squares must really disagree,
@@ -5410,9 +5420,10 @@ do
 	-- 2c. REACH, THE RADIUS -- a cable for what CeroSecDevices.find's
 	-- no-building branch already lists for free (SCeroSecDevices.lua:1457-1470)
 	--
-	-- The report this proves: a computer standing outside, wired to nothing,
-	-- already seeing a generator a few tiles off on its own /dev, still offered
-	-- a cable for it (outdoorReachRefusal, CeroSecModules.lua).
+	-- A generator is cable-only now (allowGen, above) and reachRefusal refuses
+	-- it before either branch runs, so (g)-(j) below no longer prove the radius
+	-- geometry for it -- they prove the guard wins regardless of distance. (k),
+	-- with a door, is what still exercises the radius itself.
 	local outMachineSq = square(50, 50, 0)
 	outMachineSq.getRoom = function() return nil end
 	cells["50,50,0"] = outMachineSq
@@ -5427,13 +5438,11 @@ do
 	check("(g) sanity: five tiles is the distance believed",
 		math.abs(genSq:getX() - outMachineSq:getX()) == 5)
 	row = rowFor(generator, "ksp-radius-01")
-	eq("(g) a generator 5 tiles off, on a roomless tile: reach",
-		row.notAvailable, true)
-	eq("(g) greyed with the reach word", reason(row),
-		"Tooltip_CeroSec_LinkReach(ksp-radius-01)")
+	eq("(g) a generator 5 tiles off, on a roomless tile: not reach, cable-only",
+		row.notAvailable, nil)
 
-	-- (h) the same generator, past CeroSecModules.OUTDOOR_RADIUS: the cable
-	-- would buy something real.
+	-- (h) the same generator, past CeroSecModules.OUTDOOR_RADIUS: still not
+	-- reach, and still for the guard and not the distance.
 	local farSq = square(61, 50, 0)
 	farSq.getRoom = function() return nil end
 	local farGenerator = fixture("IsoGenerator", farSq)

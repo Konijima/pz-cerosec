@@ -250,6 +250,24 @@ street, the gate at the end of the drive, the shop across the car park, and the
 answer to all of it is the one an electrician would give. **He runs a cable**,
 and the fixture is in that machine's `/dev` like anything in the building.
 
+**A generator is cable-only, decided in game (0.5.0), even where it stands in
+the building or well inside the outdoor radius.** Before 0.5.0 it was fitted
+where it stood, like a porch lamp, and read off the neighbouring walk for free;
+the report was a machine seeing a generator through a wall it never wired and
+a wire it never paid for. Neither walk lists an `IsoGenerator` any more
+(`CeroSecDevices.classify`'s `allowGen`, `SCeroSecDevices.lua`), building or
+radius, and `reachRefusal`'s mirror never claims "reach" for one either
+(`CeroSecModules.lua`) -- the cable stays offered instead of greying a
+survivor's only way to it. The current a generator FEEDS the house is a
+different wire than this one: this is the control cable to its own
+`GeneratorSwitch` module, "Link to computer", run exactly like a lamppost's.
+**A save that already had `gen0` on a machine loses it from `/dev` the moment
+this build loads, until the generator is cabled** -- the number itself is not
+lost ("the numbers a save already has do not move for it", above): `os.devmap`
+keeps the record under its `kind:x:y:z:side:n` key whether or not the walk
+returns it this time, and a cabled generator recomputes to the same key, so
+`gen0` comes back as `gen0` the moment the cable is run, never a fresh number.
+
 **A cable ties a fixture to a MACHINE, and a machine is a place.** What is stored
 and what travels is the square the computer stands on, never its hostname: a
 hostname is a line in `/etc/hostname` that a player changes in the morning, and a

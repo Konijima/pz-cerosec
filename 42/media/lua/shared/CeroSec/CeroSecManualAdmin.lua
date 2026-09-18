@@ -746,13 +746,14 @@ building's. 256 at most.
   curtain0 office                1E 0        N  closed
   door0    exterior              0 5S        W  locked
   door1    kitchen-hallway       2W 1N       N  closed
-  gen0     exterior              6E 3S          off
   light0   office                0 0            on
   lock0    exterior              0 5S        W  locked
   stove0   kitchen               2W 2N          off
   tv0      office                2E 1N          on
   win0     office                1E 0        N  locked
-  window0  office                1E 0        N  closed]],
+  window0  office                1E 0        N  closed
+
+A generator needs a cable too (next chapter).]],
 
 [[The nine modules, and what each one buys.
 

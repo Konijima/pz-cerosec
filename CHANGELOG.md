@@ -256,6 +256,14 @@ there is nothing else for you to do.
   entry is open for another reason. A cable left running with no module on
   the fixture any more still opens the entry, so "Unlink loose cable" is
   never out of reach.
+- **Generators are no longer found by proximity: fit a Generator Switch and
+  run a cable.** A generator used to show up on a computer's `/dev` just for
+  standing in the building or within its outdoor radius, the same as a light
+  switch or a door -- which meant a computer could start or stop a generator
+  it had no wire to at all. Now it takes a **Link to computer**, exactly like
+  a lamppost. **If a save already had a generator on `/dev`, it drops off the
+  list until you cable it** -- your `crontab` lines and scripts for it are
+  untouched and pick up again the moment the cable is run.
 
 ## 0.4.0 - 2026-09-16
 

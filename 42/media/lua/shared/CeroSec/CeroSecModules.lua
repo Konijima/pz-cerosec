@@ -1373,6 +1373,12 @@ local function outdoorReachRefusal(object, mx, my, mz)
 end
 
 local function reachRefusal(object, mx, my, mz)
+	-- Cable-only, decided in game: neither walk below ever lists a generator by
+	-- proximity any more (SCeroSecDevices.classify's allowGen,
+	-- SCeroSecDevices.lua:~637), building or radius, so "reach" would grey a
+	-- cable this machine can never actually save -- the fixture stays offered,
+	-- for the one wire that reaches it.
+	if CeroSecModules.isGenerator(object) then return nil end
 	if getCell == nil then return nil end
 	local cell = getCell()
 	if cell == nil then return nil end

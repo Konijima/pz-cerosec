@@ -4498,8 +4498,9 @@ do
 	-- hardware gate on and a genset on it, nothing else would.
 	local streetGen = fit(world.put(eastWall, fakeGenerator(false, 62, 80, true)),
 		"genset")
-	-- And one INSIDE, so that "the street's is not listed" is an absence measured
-	-- against a presence and not against a kind the machine never had.
+	-- And one INSIDE the office itself, uncabled: cable-only now (allowGen,
+	-- SCeroSecDevices.lua), so a generator standing in the machine's own room
+	-- is no more its device than the one on the pavement is.
 	local officeGen = fit(world.put(world.squares["11,10,0"],
 		fakeGenerator(false, 62, 80, true)), "genset")
 
@@ -4544,9 +4545,6 @@ do
 	device("the sheet hung from inside", sheet, "curtain0", "office", "closed")
 	device("the map's own sheet on the wall square", mapSheet, "curtain1",
 		"exterior", "closed")
-	-- The state is the WORD; the fuel and the condition ride beside it in `detail`,
-	-- because a table has a column for a word (CeroSecOS.devText).
-	device("the office generator", officeGen, "gen0", "office", "off")
 	device("the switch inside the office", inside, "light0", "office", "on")
 	-- The porch lamp: on the building's skin, in no room, and a device.
 	device("the porch lamp on the south wall", porch, "light1", "exterior", "off")
@@ -4561,9 +4559,12 @@ do
 	-- THE PAVEMENT IS NOT THE BUILDING'S. A generator on the square the east door
 	-- stands on is reached by the far-edge walk and refused for its class.
 	check("the generator on the pavement is not a device", at[streetGen] == nil)
+	-- AND NEITHER IS THE ONE IN THE OFFICE. Cable-only now, so the fixture that
+	-- used to be gen0 is absent too, and there is no gen device of any number.
+	check("the office generator is not a device either", at[officeGen] == nil)
 	local ids = {}
 	for i = 1, #found do ids[found[i].id] = true end
-	check("so there is no second generator at all", not ids.gen1)
+	check("so there is no generator at all", not ids.gen0)
 	-- AND A LAMPPOST IS NOT A PORCH LAMP. Same class, same wiring, same square as
 	-- the east door -- and no wall of this building under it.
 	check("the lamppost on the street is not a device", at[post] == nil)
@@ -4575,11 +4576,12 @@ do
 	check("the flood light on the pavement is not a device", at[flood] == nil)
 	check("so there is no sixth light", not ids.light5)
 
-	-- AND NOTHING WAS FOUND TWICE. Sixteen devices for sixteen fixtures: an interior
-	-- door reached from the store's square and again from the office's far edge
-	-- would be a seventeenth row with a number of its own, and so would a lamp the
-	-- two readings of a sprite both answered for.
-	eq("sixteen fixtures, sixteen devices and no more", #found, 16)
+	-- AND NOTHING WAS FOUND TWICE. Fifteen devices for fifteen fixtures (the
+	-- uncabled office generator no longer one of them): an interior door reached
+	-- from the store's square and again from the office's far edge would be a
+	-- sixteenth row with a number of its own, and so would a lamp the two
+	-- readings of a sprite both answered for.
+	eq("fifteen fixtures, fifteen devices and no more", #found, 15)
 
 	-- Through the glass, which is the wire this bug was reported on: the machine's
 	-- own table, with the room, the offset and the side the survivor reads.
@@ -4941,6 +4943,25 @@ do
 	bench.frame()
 	check("a switch exactly at the radius is a device",
 		bench.painted("crw-rw----  root  sudo  light0   exterior         off"))
+
+	-- CABLE-ONLY, DECIDED IN GAME: a generator four tiles off, on a roomless
+	-- tile well inside the radius, is not a device by standing there any more
+	-- (allowGen, SCeroSecDevices.lua's classify) -- the same rule as a base's
+	-- own machine, which this bench already stands on.
+	local gen = fit(world.put(world.square(14, 10, 0, nil),
+		fakeGenerator(false, 62, 80, true)), "genset")
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("a generator in the radius is not a device", not bench.painted("gen0"))
+
+	-- Cabled, it is: the same "Link to computer" a lamppost takes.
+	CeroSecModules.linkOn(gen, 10, 10, 0, 4)
+	CeroSecOS.addLink(bench.object:osState(), 14, 10, 0)
+	CeroSecDevices.invalidate()
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("cabled, the generator is gen0",
+		bench.painted("crw-rw----  root  sudo  gen0     exterior         off"))
 	_G.__world = nil
 end
 
@@ -15124,8 +15145,13 @@ do
 	local sheeted = world.put(world.squares["13,11,0"],
 		fakeDoor(false, true, world.squares["14,11,0"]))
 	sheeted.hasCurtain = true
+	-- Cable-only, decided in game (SCeroSecDevices.classify's allowGen): a
+	-- generator is nobody's device by standing in the hall any more, so this
+	-- end-to-end bench wires it exactly as a survivor would, a "Link to
+	-- computer" run to the desk.
 	local gen = world.put(world.squares["14,11,0"],
 		fakeGenerator(false, 62, 80, true))
+	CeroSecModules.linkOn(gen, 10, 10, 0, 5)
 
 	_G.__world = world
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
@@ -15139,6 +15165,10 @@ do
 	bench.enter("su root")
 	bench.enter("")
 	bench.frame()
+	-- The machine's own half of the cable, without which scanLinked never asks
+	-- the hall square again for it. `typed`, below, invalidates the cache
+	-- before its first "dev" so this takes effect on the very first listing.
+	CeroSecOS.addLink(bench.object:osState(), 14, 11, 0)
 
 	-- Every order goes through the glass and not through envFor, because the wire
 	-- from a typed line to a Java call is what this rung built. The cache is
