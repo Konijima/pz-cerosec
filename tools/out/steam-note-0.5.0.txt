@@ -1,5 +1,5 @@
 [b]0.5.0 - The building answers back[/b]
-Safe for existing saves. A generator you already controlled needs a cable now.
+Safe for existing saves, with one exception: a generator you already controlled needs a cable once.
 
 [b]New[/b]
 [*] Cables reach fixtures a computer cannot otherwise touch. Right-click a fixture that has a module and take [b]Link to computer[/b]: a lamppost, a gate, the shop across the street.
