@@ -219,8 +219,9 @@ words under it. Real Unix ships `/bin/pwd`, `/bin/su`, `/bin/kill` and `/bin/ech
 and so does this machine.
 
 A name beginning with `.` is hidden from `ls` and `ls -l`; `ls -a` shows them with
-`.` and `..`, `ls -A` shows them without. Nothing else treats a dotted name as
-special, there is no globbing here for one to hide from.
+`.` and `..`, `ls -A` shows them without. The star, `?` and `[...]` in a pattern
+hide from it the same way: `echo *` never shows `.hidden`, only `echo .*` does,
+same as sh.
 
 **Links.** `ln -s target name` makes a symbolic link: a node holding the path as it
 was typed. Everything that acts on a *file* follows it, `cat`, `cp`, `chmod`, a
