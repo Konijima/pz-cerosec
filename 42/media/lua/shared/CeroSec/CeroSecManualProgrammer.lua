@@ -956,6 +956,9 @@ printed becomes a word in the line you are writing.
 Nothing was saved and no file was made. date ran, its output was caught,
 and the catch was handed to the assignment.
 
+A pair of backquotes, `` `date +%Y-%m-%d` ``, catches the same way: the
+older Bourne shell spelling of the same idea.
+
 Every newline in the catch is folded into a space, so a command that
 printed three lines becomes one word-list of three:
 
@@ -974,15 +977,15 @@ out.]],
 
 [[Two rules about catching, and one refusal.
 
-One level, and no further. A $( ) inside a $( ) is refused where it is
-typed, before anything runs:
+One level, and no further, the same for backquotes. A $( ) inside a $( )
+is refused where it is typed, before anything runs:
 
   admin@ksp-04-11:~$ x=$(echo $(date))
   sh: syntax error: bad substitution
 
-There is no script worth writing on this desk that needs two, and the
-machine would rather say so than let a short line ask for an unbounded
-amount of work.
+There is no script worth writing on this desk that needs two, in
+either spelling or a mix, and the machine would rather say so than let
+a short line ask for an unbounded amount of work.
 
 And a catch is a WORD, so it meets the word's own ceiling of a thousand
 and twenty-four bytes:

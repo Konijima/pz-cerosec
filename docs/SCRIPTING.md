@@ -232,9 +232,10 @@ alternatives, the shell's own globs (`*`, `?`, `[…]`) in the patterns and `*)`
 default; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
 `=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep
 and `` `command` `` -- the ORIGINAL sh(1) form, before ksh and POSIX.2 (1992)
-added `$( )` -- nesting where `$( )` cannot, by escaping the inner pair:
-``echo \`echo hi\` `` runs the inner command first, and both spellings parse
-into the same substitution so what follows treats them alike; and
+added `$( )`, one level deep the same way, escaped or not:
+``echo \`echo hi\` `` is `bad substitution` just like `$(echo $(echo hi))`,
+and both spellings parse into the same substitution so what follows treats
+them alike; and
 `$((1 + 2 * 3))` on whole numbers, with `$1`, `$#`, `$?`, `$$` and `${NAME}`
 read inside the double brackets as POSIX.2 reads them, the expansion first and the
 sum afterwards, so `$((5 % $1))` is a sum on the first argument. **The two kinds

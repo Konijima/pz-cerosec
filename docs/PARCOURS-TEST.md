@@ -3382,8 +3382,9 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `a b`. `` echo "`echo a b`" `` (un seul mot, pas de découpage) affiché
      entre crochets avec `for w in "`echo a b`"; do echo [$w]; done` répond
      `[a b]`. `` echo '`echo a b`' `` (guillemets simples) répond
-     `` `echo a b` `` au lieu de l'exécuter. Et l'imbrication par échappement :
-     `` echo `echo \`echo hi\` ` `` répond `hi`. [ ]
+     `` `echo a b` `` au lieu de l'exécuter. Et un seul niveau, comme
+     pour `$( )` : `` echo `echo \`echo hi\` ` ``, `` echo `echo $(echo hi)` `` et
+     `` echo $(echo `echo hi`) `` répondent tous `sh: syntax error: bad substitution`. [ ]
 
 ## AI. Les outils de l'admin et du testeur (fenêtre de débogage, 2e rangée)
 
