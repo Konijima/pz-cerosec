@@ -15611,6 +15611,12 @@ do
 	-- The mockup's computer stands here.
 	local X, Y, Z = 10, 10, 0
 
+	-- Cable-only now (SCeroSecDevices.classify's allowGen): the generator
+	-- reaches this machine by the same "Link to computer" run any survivor
+	-- would make, not by standing in the building the mockup put it in.
+	CeroSecModules.linkOn(kit.gen, X, Y, Z, 4)
+	local LINKS = { { x = 12, y = 10, z = 0 } }
+
 	local function visits()
 		return kit.world.visits.squares + kit.world.visits.objects
 	end
@@ -15631,7 +15637,7 @@ do
 	--
 	_G.__now = 100000
 	kit.world.forgetVisits()
-	local cold = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	local cold = CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	local walked = visits()
 	check("a cold /dev walks the building (" .. walked .. " engine calls)", walked > 0)
 	check("and finds the mockup's devices (" .. #cold .. ")", #cold > 0)
@@ -15642,7 +15648,7 @@ do
 		-- A hundred passes spread over the second, which is ten times what the
 		-- scheduler really makes (CeroSec.JOB_PASS_MS is 100ms).
 		_G.__now = 100000 + math.floor((i - 1) * 1000 / 100)
-		last = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+		last = CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	end
 	eq("a hundred passes inside the second cost NO engine call", visits(), 0)
 	eq("and every one of them answered the same devices", #last, #cold)
@@ -15658,14 +15664,14 @@ do
 	kit.front.lockedByKey = false
 	kit.world.forgetVisits()
 	_G.__now = 100000 + 999
-	local after = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	local after = CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	eq("reading it again still costs no engine call", visits(), 0)
 	eq("and the door reads what it IS, not what it was",
 		stateOn(after, kit.front, "door"), "closed")
 	-- The same on the other kind that has a state worth getting wrong.
 	eq("and the office switch reads on", stateOn(after, kit.light0, "light"), "on")
 	kit.light0.activated = false
-	after = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	after = CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	eq("a switch thrown by a hand reads off on the next pass",
 		stateOn(after, kit.light0, "light"), "off")
 	eq("and that cost no engine call either", visits(), 0)
@@ -15685,7 +15691,7 @@ do
 		detailOn(after, kit.gen), "fuel 62 condition 80 connected")
 	kit.gen.fuel = 41
 	kit.gen.connected = false
-	after = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	after = CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	eq("and it is read again on a pass that walked nothing",
 		detailOn(after, kit.gen), "fuel 41 condition 80")
 	eq("really nothing", visits(), 0)
@@ -15695,7 +15701,7 @@ do
 	--
 	kit.world.forgetVisits()
 	_G.__now = 100000 + CeroSecDevices.CACHE_MS
-	CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	check("one millisecond past the lifetime it walks again (" .. visits() .. ")",
 		visits() > 0)
 
@@ -15710,11 +15716,11 @@ do
 	-- such device" and nothing moves.
 	--
 	_G.__now = 200000
-	local held = #CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	local held = #CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	check("the mockup has devices to knock down (" .. held .. ")", held > 1)
 	kit.world.remove(kit.light1)
 	kit.world.forgetVisits()
-	local fewer = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	local fewer = CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	eq("the listing is a second behind the sledgehammer", #fewer, held)
 	eq("and finding that out cost no engine call", visits(), 0)
 	-- The device being worked is not.
@@ -15739,7 +15745,7 @@ do
 	-- And past the lifetime it really does come off the listing.
 	_G.__now = 200000 + CeroSecDevices.CACHE_MS
 	eq("and the next walk takes it off the listing",
-		#CeroSecDevices.findCached(X, Y, Z, _G.__now), held - 1)
+		#CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS), held - 1)
 
 	--
 	-- 5. The minute sweep, which is the standing invalidation
@@ -15750,27 +15756,27 @@ do
 	-- a minute for nothing.
 	--
 	_G.__now = 300000
-	CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	kit.world.forgetVisits()
 	CeroSecDevices.refresh({ x = X, y = Y, z = Z }, {})
 	check("the minute sweep walks whatever the cache is holding (" .. visits() .. ")",
 		visits() > 0)
 	kit.world.forgetVisits()
-	CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	eq("and it left the book filled, so the pass after it walks nothing", visits(), 0)
 
 	--
 	-- 6. A machine on another desk, and a caller with no clock
 	--
 	kit.world.forgetVisits()
-	CeroSecDevices.findCached(X + 1, Y, Z, _G.__now)
+	CeroSecDevices.findCached(X + 1, Y, Z, _G.__now, LINKS)
 	check("a machine standing somewhere else walks for itself", visits() > 0)
 
 	-- An answer whose age nobody can tell is an answer to throw away, so a call
 	-- with no clock is a walk every single time.
-	CeroSecDevices.findCached(X, Y, Z, nil)
+	CeroSecDevices.findCached(X, Y, Z, nil, LINKS)
 	kit.world.forgetVisits()
-	CeroSecDevices.findCached(X, Y, Z, nil)
+	CeroSecDevices.findCached(X, Y, Z, nil, LINKS)
 	check("and a caller with no clock gets no cache at all", visits() > 0)
 
 	-- And a clock that went BACKWARDS is the same thing said a second way: an
@@ -15781,9 +15787,9 @@ do
 	-- between those two facts, and a guard nothing ever goes red on is a guard
 	-- nobody can tell from a comment.
 	_G.__now = 400000
-	CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	CeroSecDevices.findCached(X, Y, Z, _G.__now, LINKS)
 	kit.world.forgetVisits()
-	CeroSecDevices.findCached(X, Y, Z, _G.__now - 1)
+	CeroSecDevices.findCached(X, Y, Z, _G.__now - 1, LINKS)
 	check("a clock that went backwards is a miss and not a young answer",
 		visits() > 0)
 
@@ -16388,6 +16394,10 @@ do
 	local win0 = world.put(world.squares["12,11,0"], fakeWindow(true, true))
 	local gen0 = world.put(world.squares["12,11,0"],
 		fakeGenerator(true, 62, 80, true))
+	-- Cable-only now (SCeroSecDevices.classify's allowGen): genwatch.sh reads
+	-- gen0 off /dev the same way any daemon does, so it only sees it once the
+	-- fixture and the machine both carry their end of the run.
+	CeroSecModules.linkOn(gen0, 10, 10, 0, 3)
 	local tv0 = world.put(world.squares["11,11,0"],
 		fakeWaveSet("IsoTelevision", { channel = 203 }))
 	local rx0 = world.put(world.squares["10,10,0"],
@@ -16403,6 +16413,7 @@ do
 	bench.enter("su root")
 	bench.enter("")
 	bench.frame()
+	CeroSecOS.addLink(bench.object:osState(), 12, 11, 0)
 
 	-- The library's own text, never a copy typed here: the program this bench runs
 	-- has to be the program the floppy carries, or the bench proves a program
