@@ -1904,9 +1904,9 @@ Continued on the next page.]],
   floppy   blank/ready/mounted  (read only)  floppy drive
   radio    megahertz           (read only)   radio tuner
 
-door0 answers locked only when a lock is also fitted and thrown; with
-no lock, or the lock unthrown, it reads open or closed like any door,
-and lock is never a word door0 takes, since that word belongs to lock0.
+door0 answers locked when the door is a way out of the building and
+its lock is thrown, by a key or by lock0; an inside door never reads
+locked. lock is never a word door0 takes: that word belongs to lock0.
 
 win is the window's own contact, which senses the latch and never
 moves it: 440 whatever you chmod, the same reason a sensor is.]],
