@@ -1172,12 +1172,12 @@ touching any of the six, and the same list is over `CeroSecContent.SCRIPTS["auto
 
 - **This disk predates globbing.** When it was written, `for d in /dev/door*` was
   one word with a star in it, so the list of doors is `ls /dev | grep ^door` caught
-  in a `$( )` and split into fields — `ls` prints one name a line when what it
+  in a `$( )` and split into fields. `ls` prints one name a line when what it
   writes is not a screen, and a capture is one of the three doors where that is
   true. The ceiling on it is the word's, 1024 bytes, which is about a hundred and
   forty doors; a mall refuses with `word too large` rather than quietly walking
   half of it. The shell globs now (`echo /dev/door*` works), and this script was
-  not rewritten to use it — a working script is not touched for its own sake.
+  not rewritten to use it: a working script is not touched for its own sake.
 - **`date +%s` moves a minute at a time.** The machine's clock is the world's and
   `SCeroSecSystem:clockEnv` builds it out of `getHour()` and `getMinutes()` with the
   seconds at nought, so a stamp read twice inside one game minute is the same number.
