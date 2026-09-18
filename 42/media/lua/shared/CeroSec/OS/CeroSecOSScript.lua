@@ -174,20 +174,23 @@ end
 -- a line that is not one.
 --
 -- sh(1) "Command Substitution": backquotes are the ORIGINAL form, from the
--- Bourne shell -- $( ) is the later ksh and POSIX.2 (1992) spelling of the
+-- Bourne shell; $( ) is the later ksh and POSIX.2 (1992) spelling of the
 -- same thing, and this machine is 1993, so both are on it. A backquote pair
--- does not balance the way `(` and `)` count, so nesting is written by
--- escaping the inner pair: ``echo \`echo hi\` `` runs the inner command
--- first. Inside the backquotes a backslash is literal except before `$`,
--- `` ` `` or `\`, where it escapes that character (same page); escaping
--- strips the backslash before the text reaches the parser, which is what
--- turns `` \` `` into a literal opening backquote one level in and leaves
--- the outer pair's own closer the first UNESCAPED backquote found. Reuses
--- CeroSecOS.parseScript, the same as readCommandSub below, so the result is
--- the identical { t = "sub", prog = ... } node and every step after parsing
--- -- expansion, budget charging, field splitting, globbing -- has one path.
+-- does not balance the way `(` and `)` count, so its closer is the first
+-- UNESCAPED backquote found. Inside the pair a backslash is literal except
+-- before `$`, `` ` `` or `\`, where it escapes that character (same page),
+-- letting a literal backquote or dollar sign sit inside the span without
+-- ending it early.
+--
+-- One level, and no further: the same rule as readCommandSub below, and it
+-- holds however the nesting is spelled. `` `echo \`echo hi\` `` `` is
+-- refused just like `$(echo $(echo hi))`, escaped or not; the depth
+-- argument catches it, not a scan for the surface shape. Reuses
+-- CeroSecOS.parseScript, so the result is the identical
+-- { t = "sub", prog = ... } node, and every step after parsing, expansion,
+-- budget charging, field splitting, globbing, has one path.
 local function readBackquoteSub(text, i, depth)
-	if depth >= CeroSecOS.MAX_NEST then return nil, "syntax error: bad substitution" end
+	if depth > 0 then return nil, "syntax error: bad substitution" end
 	local n = #text
 	local j, buf = i + 1, ""
 	while j <= n do

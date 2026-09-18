@@ -16535,11 +16535,46 @@ do
 	okAt(state, admin, "echo '`echo a b`'", { "`echo a b`" })
 end
 
--- 52e. Nesting, written with escaped backquotes: the inner pair runs first.
+-- 52e. One level, and no further, holds for backquotes the same as for
+-- $( ): escaping the inner pair does not buy a second level.
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	okAt(state, admin, "echo `echo \\`echo hi\\` `", { "hi" })
+	badAt(state, admin, "echo `echo \\`echo hi\\` `",
+		"sh: syntax error: bad substitution")
+end
+
+-- 52e2. $( ) inside backquotes is refused too: the one level rule does not
+-- care which spelling is on the outside or the inside.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	badAt(state, admin, "echo `echo $(echo hi)`",
+		"sh: syntax error: bad substitution")
+end
+
+-- 52e3. Backquotes inside $( ): same refusal, the other way round.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	badAt(state, admin, "echo $(echo `echo hi`)",
+		"sh: syntax error: bad substitution")
+end
+
+-- 52e4. The escape rule inside one span is not a nesting rule, just the
+-- span's own quoting: sh(1) "Command Substitution" strips a backslash in
+-- front of `$`, `` ` `` or `\` before the text reaches the inner parser.
+-- `a\\b` is two literal backslashes ahead of the strip; the first pairs
+-- with the second (backslash is in the escape set), leaving one backslash
+-- ahead of `b` in the program text the inner parser sees ("echo a\b").
+-- That inner parser is an ordinary bare word, where a backslash preserves
+-- the next character and is itself removed (the same rule 52 (line 6320,
+-- "echo a\\ b" -> "a b") already proves), so the backslash before `b`
+-- disappears too and the answer is "ab", not a nesting of any kind.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "echo `echo a\\\\b`", { "ab" })
 end
 
 -- 52f. `x=`cat f`` -- the everyday shape, a variable set from a file.
