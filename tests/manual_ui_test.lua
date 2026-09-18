@@ -5586,15 +5586,22 @@ do
 	-- what was PAID and never the price worked out again, which is the whole of
 	-- why the reel is written into the fixture's own list.
 	check("a cable is written on the fixture", CeroSecModules.linkOn(post, 22, 10, 0, 5))
-	eq("the computer it goes to is now on its own line, under the two runs",
+	eq("and it is the cable this fixture now carries", CeroSecModules.wireOf(post, 22, 10, 0), 5)
+	-- The wire took, and the machine it went to is still within reach -- so an
+	-- absent row below is a row the fix removed, not a row that was never
+	-- offered in the first place (an absence green for having seen nothing).
+	local ms = CeroSecLinkMenu.machines(post)
+	local stillInReach = false
+	for i = 1, #ms do
+		if ms[i].x == 22 and ms[i].y == 10 and ms[i].z == 0 then stillInReach = true end
+	end
+	check("and the machine cabled to is still within reach", stillInReach)
+	eq("the computer it goes to drops its greyed run, the cut line stands alone",
 		rowsOn(post),
 		"ContextMenu_CeroSec_LinkTo(ksp-loft-03,3,7) | "
-		.. "ContextMenu_CeroSec_LinkTo(ksp-front-01,12,12) | "
 		.. "ContextMenu_CeroSec_Unlink(ksp-front-01)")
-	row = rowFor(post, "ksp-front-01")
-	eq("and the run to it is greyed", row.notAvailable, true)
-	eq("because that computer is already on the list", reason(row),
-		"Tooltip_CeroSec_LinkLinked(0)")
+	eq("no run is offered to a machine this fixture already cables",
+		rowFor(post, "ksp-front-01"), nil)
 
 	local cut = rowFor(post, "ksp-front-01", true)
 	check("the cut is a line of its own", cut ~= nil)
@@ -5665,16 +5672,16 @@ do
 	--
 	-- 5. A COMPUTER RENAMED KEEPS ITS CABLE, which is the naming rule itself
 	--
-	-- One line in /etc/hostname, the way root would: the menu follows it, both
-	-- lines of it, and what is written on the fixture has not moved -- because
-	-- what is written there is where the machine STANDS.
+	-- One line in /etc/hostname, the way root would: the menu follows it -- its
+	-- one remaining line, the cut, since the run to it is already cabled here
+	-- and offers no line of its own -- and what is written on the fixture has
+	-- not moved -- because what is written there is where the machine STANDS.
 	objects = { front }
 	local renamed = CeroSecOS.setData(front.state, CeroSecOS.rootSession(),
 		CeroSecOS.HOSTNAME_PATH, "ksp-renamed\n")
 	check("root renames the machine in one line", renamed ~= nil)
-	eq("both lines follow the new name", rowsOn(post),
-		"ContextMenu_CeroSec_LinkTo(ksp-renamed,12,12) | "
-		.. "ContextMenu_CeroSec_Unlink(ksp-renamed)")
+	eq("the cut line follows the new name", rowsOn(post),
+		"ContextMenu_CeroSec_Unlink(ksp-renamed)")
 	local links = CeroSecModules.linksOn(post)
 	eq("the fixture still carries one cable", #links, 1)
 	eq("to the same square", links[1].x .. "," .. links[1].y .. "," .. links[1].z,

@@ -52,10 +52,13 @@ require "CeroSec/ISCeroSecLinkAction"
 --
 -- What is GREYED and what is not there at all
 --
--- NOT THERE AT ALL: a machine further away than a cable goes, and a fixture with
+-- NOT THERE AT ALL: a machine further away than a cable goes, a fixture with
 -- no hardware on it -- which is the one refusal this menu hides, because a
 -- survivor with nothing screwed to the door is a survivor who has not got to
--- this feature yet and the module submenu above is already telling him so.
+-- this feature yet and the module submenu above is already telling him so --
+-- and a machine this fixture's cable is ALREADY on: that pairing has its own
+-- line already, "Unlink from <host>", below the "Link to computer" rows, and
+-- a second, greyed "linked" row above it would tell him the same fact twice.
 --
 -- EVERYTHING ELSE IS A LINE, greyed, with the reason under the description:
 -- somebody else's safehouse, the fixture full, the machine full, not enough
@@ -315,16 +318,22 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 
 	for i = 1, #rows do
 		local row = rows[i]
-		local option = sub:addOption(
-			getText("ContextMenu_CeroSec_LinkTo", row.host, row.tiles, row.wire),
-			worldobjects, CeroSecLinkMenu.onLink, object, playerObj, row)
-		local key, number = CeroSecLinkMenu.refusal(object, playerObj, row)
-		describe(option, key,
-			getText("Tooltip_CeroSec_LinkDesc", row.wire, row.host), number)
-		-- The COMPUTER lights up here, not the fixture: this line names a
-		-- machine and the survivor is choosing which one to wire. Nothing at
-		-- all when its chunk is away (row.iso is nil then).
-		if row.iso then CeroSecModuleMenu.highlightOn(option, row.iso) end
+		-- Already cabled to THIS fixture: skip the "link" row rather than grey
+		-- it "linked" -- the "Unlink from <host>" row below (built off the
+		-- same `links` list) already says so, and a row a survivor can never
+		-- act on is the one refusal this menu otherwise hides on purpose.
+		if CeroSecModules.linkIndexOf(links, row.x, row.y, row.z) == nil then
+			local option = sub:addOption(
+				getText("ContextMenu_CeroSec_LinkTo", row.host, row.tiles, row.wire),
+				worldobjects, CeroSecLinkMenu.onLink, object, playerObj, row)
+			local key, number = CeroSecLinkMenu.refusal(object, playerObj, row)
+			describe(option, key,
+				getText("Tooltip_CeroSec_LinkDesc", row.wire, row.host), number)
+			-- The COMPUTER lights up here, not the fixture: this line names a
+			-- machine and the survivor is choosing which one to wire. Nothing at
+			-- all when its chunk is away (row.iso is nil then).
+			if row.iso then CeroSecModuleMenu.highlightOn(option, row.iso) end
+		end
 	end
 
 	-- And the cables that are already run, under them. Off the FIXTURE, which is

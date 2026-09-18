@@ -356,7 +356,7 @@ believes nothing that arrived (`Commands.linkmodule`, `SCeroSecSystem:linkJob`):
 | --- | --- | --- |
 | `fixture` | nothing is wired here at all | no cable from that machine |
 | `safehouse` | somebody else's, with the option on | somebody else's |
-| `linked` | this machine is already on the list | - |
+| `linked` | this machine is already on the list, and its "run" row is not offered at all -- the "Unlink from" row below says so | - |
 | `links` | the fixture is full (`LINKS_MAX`) | - |
 | `far` | past `LINK_RANGE` | - |
 | `outside` | a door, window or curtain, and he is not inside | same |

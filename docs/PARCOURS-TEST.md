@@ -4113,7 +4113,6 @@ seuls au tour de ronde suivant. La règle complète est dans
      phrase sous la description :
      - moins de fils qu'il n'en faut → « Il faut 14 fils électriques. » (le nombre
        est celui de ce câble-là) ;
-     - un câble déjà tiré entre ces deux-là → « Cet ordinateur y est déjà relié. » ;
      - quatre câbles déjà sur l'appareil → « Cet appareil répond déjà à 4
        ordinateurs. » ;
      - trente-deux câbles déjà sur la machine → « Cet ordinateur a déjà 32
@@ -4124,8 +4123,11 @@ seuls au tour de ronde suivant. La règle complète est dans
      - refuge d'un autre, option activée → « C'est le refuge de quelqu'un
        d'autre. ».
      Un appareil **nu** (aucun module dessus) n'a pas d'entrée **Relier à un
-     ordinateur** du tout : c'est le seul refus que le menu cache, et le sous-menu
-     du matériel juste au-dessus dit déjà quoi faire. [ ]
+     ordinateur** du tout, et la machine dont le câble est **déjà** sur cet
+     appareil non plus : ce sont les deux refus que le menu cache plutôt que
+     grise — pour celle-là, sa ligne **Débrancher de …**, plus bas, dit déjà
+     qu'elle est reliée ; le sous-menu du matériel juste au-dessus dit déjà quoi
+     faire pour l'appareil nu. [ ]
 429. **Ce qu'un câble ne demande pas.** Debout **sur le trottoir**, la porte du
      bâtiment **fermée**, l'ordinateur **éteint** : la ligne est vivante et le câble
      se tire. Aucune des trois règles de la pose (dedans, ouvert, allumé) ne vaut ici,
