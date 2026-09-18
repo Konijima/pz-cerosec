@@ -285,7 +285,14 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 	local fitted = CeroSecModules.anyFitted(object)
 	local links = CeroSecModules.linksOn(object)
 	if not fitted and #links == 0 then return end
-	local rows = fitted and CeroSecLinkMenu.machines(object) or {}
+	-- The same door CeroSecModuleMenu's `doable` guards the parent with: a row
+	-- nobody could act on does not earn the entry. Here that means the level
+	-- for the FITTED module (CeroSecModules.linkSkill), the same number
+	-- `refusal` greys every row with below -- if it would grey all of them,
+	-- none are shown, same as a module carried but not worn skill enough.
+	local canLink = fitted
+			and playerObj:getPerkLevel(Perks.Electricity) >= CeroSecModules.linkSkill(object)
+	local rows = canLink and CeroSecLinkMenu.machines(object) or {}
 	if #rows == 0 and #links == 0 then return end
 
 	-- The fixture's own parent, shared with the module menu (CeroSecModuleMenu.

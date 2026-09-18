@@ -5498,17 +5498,23 @@ do
 		reason(rowFor(post, "ksp-front-01")), "Tooltip_CeroSec_NeedScrewdriver(0)")
 	tools = true
 	-- The trade is the HIGHEST of the modules on the fixture: a door with an
-	-- operator on it is Electricity 3 whatever else is screwed beside it.
+	-- operator on it is Electricity 3 whatever else is screwed beside it. Below
+	-- that level the WHOLE row is gated now, not just greyed: the same door
+	-- CeroSecModuleMenu's `doable` gates its own parent with
+	-- (CeroSecModuleMenu.lua:383-402), a fitted module nobody can act on yet
+	-- earns no entry, not even one that only shows him what he cannot do.
 	local worked = fixture("IsoDoor", square(10, 10, 0))
 	worked.modData.cerosec = { contact = true, operator = true }
 	worked.open = true
-	level = 2
-	row = rowFor(worked, "ksp-front-01")
-	eq("a cable to an operator at Electricity 2 is greyed", row.notAvailable, true)
-	eq("with the trade and the level it wants", reason(row),
-		"Tooltip_CeroSec_NeedSkill(3)")
 	eq("which is the level the hardware on it asks for",
 		CeroSecModules.linkSkill(worked), 3)
+	level = 1
+	eq("Electricity 1 against a level-3 operator opens no CeroSec: parent",
+		fixtureSubOn(worked), nil)
+	level = 3
+	row = rowFor(worked, "ksp-front-01")
+	check("Electricity 3 opens the parent and the row", row ~= nil)
+	eq("and it is not greyed for the trade he now has", row.notAvailable, nil)
 	level = 5
 
 	-- Somebody else's safehouse, which is the one refusal a cable asks that the

@@ -3501,7 +3501,7 @@ Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
      tournevis, aucun module jamais posé, clic droit sur une porte, une
      fenêtre, un interrupteur, une prise de courant, un four ou une génératrice
      (2026-09-17). Attendu : aucune entrée **CeroSec:** du tout, pas même
-     grisée — le clic droit ne montre que les options du jeu. Ramasser un
+     grisée, le clic droit ne montre que les options du jeu. Ramasser un
      seul module qui va sur cet objet, sans le niveau d'Électricité requis,
      reclic droit : toujours aucune entrée. Monter le niveau : l'entrée
      apparaît, avec la ligne de ce module disponible. [ ]
