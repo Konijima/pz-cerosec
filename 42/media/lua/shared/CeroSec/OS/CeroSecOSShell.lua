@@ -3570,6 +3570,22 @@ end
 -- caller), which is the one and only reason `cp -r /mnt/* x` on an empty /mnt
 -- still says "/mnt/*: no such file" -- a shell with nothing to glob to hands
 -- the program the star.
+
+-- What a glob's walk costs, past the flat command charge every field already
+-- gets: a pattern is CeroSecOS.globMatch run once per entry of every
+-- directory it opens, the same shape grep's BRE_STEPS_PER charges for a
+-- pattern run over every byte of a line. CeroSecOS.expandGlob hands back how
+-- many entries it visited and CeroSecOSVM's globFields turns that into debt,
+-- the way it already turns a PATH walk's extra directories into debt.
+--
+-- Three, measured against `while true; do echo f*; done` over a directory
+-- filled to CeroSecOS.MAX_DIR_ENTRIES (96): at 64 (grep's own rate) the
+-- charge was too small to be seen against STEP_COST_COMMAND and the loop
+-- ran the ceiling on real time instead of steps, 6-7 ms against a 4 ms
+-- budget (tests/hostile_test.lua's "echo * over a wide directory"). At
+-- three the same loop holds 0.76 ms.
+CeroSecOS.GLOB_ENTRIES_PER = 3
+
 local function joinPath(base, absolute, name)
 	if base == "" then
 		if absolute then return "/" .. name end
@@ -3624,6 +3640,7 @@ function CeroSecOS.expandGlob(state, session, text, mask)
 
 	local absolute = string.sub(text, 1, 1) == "/"
 	local bases = { "" }
+	local visited = 0
 	for ci = 1, #comps do
 		local comp = comps[ci]
 		local isLast = ci == #comps
@@ -3641,6 +3658,7 @@ function CeroSecOS.expandGlob(state, session, text, mask)
 				if node ~= nil and node.type == "dir"
 						and CeroSecOS.can(state, session, node, "r") then
 					local names = CeroSecOS.childNames(node)
+					visited = visited + #names
 					for ni = 1, #names do
 						local name = names[ni]
 						local dotOk = string.sub(comp.text, 1, 1) == "."
@@ -3680,7 +3698,7 @@ function CeroSecOS.expandGlob(state, session, text, mask)
 	end
 
 	table.sort(bases)
-	return bases
+	return bases, visited
 end
 
 -- The last component of a path as it was typed, for -name to judge. The path

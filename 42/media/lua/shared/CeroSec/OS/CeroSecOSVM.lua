@@ -2157,17 +2157,21 @@ end
 -- to be duplicated as: `for f in *.txt` globs the very same way a simple
 -- command's arguments do (CeroSecOS.expandGlob's header explains the mask),
 -- because a word list is a word list whether `for` reads it or a command does.
+-- Second return is the total directory entries the expansion visited, for
+-- the caller to charge (see CeroSecOS.GLOB_ENTRIES_PER).
 local function globFields(state, session, out, masks)
 	local expanded = {}
+	local visited = 0
 	for i = 1, #out do
-		local matches = CeroSecOS.expandGlob(state, session, out[i], masks[i])
+		local matches, entries = CeroSecOS.expandGlob(state, session, out[i], masks[i])
+		if type(entries) == "number" then visited = visited + entries end
 		if matches == nil or #matches == 0 then
 			expanded[#expanded + 1] = out[i]
 		else
 			for m = 1, #matches do expanded[#expanded + 1] = matches[m] end
 		end
 	end
-	return expanded
+	return expanded, visited
 end
 
 local function runSimple(state, job, f, env)
@@ -2243,7 +2247,22 @@ local function runSimple(state, job, f, env)
 	-- a real sh would hand to execve after its own passes over it -- and a
 	-- word with no unquoted "*", "?" or "[" in it, which is nearly every word
 	-- anybody types, costs this loop one no-op string scan and nothing more.
-	args = globFields(state, job.session, args, masks)
+	local globVisited
+	args, globVisited = globFields(state, job.session, args, masks)
+
+	-- What the glob walk itself cost, on top of the flat command charge every
+	-- field already gets: a pattern is run once per entry of every directory
+	-- it opened, the same shape a PATH walk's extra directories cost below
+	-- (walkCost) and a BRE pattern's bytes cost through sh.cost. Charged as
+	-- debt for the same reason those are: `while true; do echo /wide/*; done`
+	-- must slow down instead of costing this pass five hundred names for free.
+	if type(globVisited) == "number" and globVisited > 0 then
+		local globCost = math.floor(globVisited / CeroSecOS.GLOB_ENTRIES_PER)
+		if globCost > 0 then
+			job.debt = (job.debt or 0) + globCost
+			job.steps = job.steps + globCost
+		end
+	end
 
 	local name = args[1]
 
