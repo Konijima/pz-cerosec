@@ -76,6 +76,7 @@ local function scan(line, cursor)
 	local bare = true     -- every character of it so far was bare
 	local dq = false      -- inside the double quotes this word opened
 	local ok = true       -- it is a shape completion understands
+	local bq = false      -- inside a backquote span this word opened
 
 	local function endWord()
 		if not inWord then return end
@@ -149,6 +150,25 @@ local function scan(line, cursor)
 			words = {}
 			i = i + 2
 			start = i
+
+		-- A backquote is $( 's own open and, one span later, its own close
+		-- (readBackquoteSub in CeroSecOSScript.lua): the SAME character both
+		-- ways, so bq tracks which one this one is. Opening resets word
+		-- tracking exactly like $( just above; closing gets no special case,
+		-- same as the ")" that closes $( falls through to plain text below.
+		elseif c == "`" and not bq then
+			endWord()
+			words = {}
+			bq = true
+			i = i + 1
+			start = i
+
+		elseif c == "`" and bq then
+			bq = false
+			if not inWord then start = i end
+			inWord = true
+			text = text .. c
+			i = i + 1
 
 		elseif c == "'" then
 			-- A single-quoted run is text and only text.

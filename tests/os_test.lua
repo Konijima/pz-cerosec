@@ -8308,6 +8308,8 @@ do
 	completes(state, admin, "echo a | ls", "ls ", 10)
 	completes(state, admin, "echo a & ls", "ls ", 10)
 	completes(state, admin, "echo $(ls", "ls ", 8)
+	-- A backquote opens a command the same as $( does.
+	completes(state, admin, "echo `ls", "ls ", 7)
 	-- sudo runs a command, so the word after it is a command name.
 	completes(state, admin, "sudo ls", "ls ", 6)
 	completes(state, admin, "sudo sudo ls", "ls ", 11)
