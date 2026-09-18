@@ -7129,6 +7129,20 @@ zonedWorld = _G.getWorld
 local function newNet()
 	CeroSecJobs.machines = {}
 	local system = SCeroSecSystem:new()
+	-- THE SECRET IS PINNED, and not left to be made. ZombRand answers 0 for
+	-- everything in this file, so SCeroSecSystem:secret() would be made out of
+	-- _G.__now alone -- and _G.__now is ONE clock, walked forward by every block
+	-- in the file. Left unpinned, the logins and the passwords of every premises
+	-- in every block below are a function of how many milliseconds the blocks
+	-- ABOVE happened to burn, so adding a device or a step anywhere re-rolls the
+	-- county and a block that proves a paper opens a machine goes red for a
+	-- reason that has nothing to do with it. (It did: a re-rolled secret gave one
+	-- office two slots with the same generated login, and the later slot set its
+	-- own password on the account the earlier one had opened, so the paper in the
+	-- pocket named a password that no longer logged in. That collision is a bug
+	-- of its own; this line is only what stops the clock from deciding which
+	-- bench meets it.)
+	system.seed = SCeroSecSystem.BENCH_SECRET
 	local objects = {}
 
 	-- A building is its corner, its footprint, its area and its room count: the
@@ -23567,8 +23581,12 @@ do
 
 	-- 1. The machine in the street, wired to nothing.
 	local outside = reaches(20, 27, 0, nil)
-	check("the kerb's own generator is on the street machine's list",
-		outside[kerbGen] ~= nil)
+	-- A GENERATOR IS CABLE-ONLY (allowGen, SCeroSecDevices.classify), so the one
+	-- on the kerb is not this machine's device for standing a tile away from it.
+	-- Section 5 runs the cable that makes it one, which is the whole of what is
+	-- left of the old radius answer here.
+	check("the kerb's own generator is not on the street machine's list",
+		outside[kerbGen] == nil)
 	check("but not the switch in the house six tiles away",
 		outside[inside] == nil)
 	-- 2. The front door, whose OBJECT is on the pavement the machine stands on.
@@ -23610,10 +23628,20 @@ do
 	-- changes what a cable buys -- it is the only way in from the outside now.
 	check("a cable runs from the kerb to the porch lamp",
 		CeroSecModules.linkOn(porch, 20, 27, 0, 5))
-	local paid = reaches(20, 27, 0, { { x = 20, y = 22, z = 0 } })
+	-- And a tile of wire to the generator beside the machine, which is the only
+	-- way a genset is anybody's device now: the absence measured at the top of
+	-- this block is the rule, not a fixture the bench forgot to reach.
+	check("and a tile of wire to the generator on the kerb",
+		CeroSecModules.linkOn(kerbGen, 20, 27, 0, 1))
+	local paid = reaches(20, 27, 0, { { x = 20, y = 22, z = 0 },
+		{ x = 20, y = 26, z = 0 } })
 	check("the porch lamp is a device again", paid[porch] ~= nil)
 	if paid[porch] ~= nil then
 		eq("at the five tiles of wire it cost", paid[porch].wire, 5)
+	end
+	check("and the cabled generator is a device at last", paid[kerbGen] ~= nil)
+	if paid[kerbGen] ~= nil then
+		eq("at the one tile of wire it cost", paid[kerbGen].wire, 1)
 	end
 	-- The cable is on the LAMP and not on the square: the front door beside it
 	-- is on a cabled square and is still not a device (scanLinked asks each

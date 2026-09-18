@@ -1,5 +1,5 @@
 [b]0.5.0 - The building answers back[/b]
-Safe for existing saves. Nothing to redo.
+Safe for existing saves. A generator you already controlled needs a cable now.
 
 [b]New[/b]
 [*] Cables reach fixtures a computer cannot otherwise touch. Right-click a fixture that has a module and take [b]Link to computer[/b]: a lamppost, a gate, the shop across the street.
@@ -11,6 +11,7 @@ Safe for existing saves. Nothing to redo.
 [*] You can hear the building work: doors, windows and curtains it moves make their sound for everyone in the room.
 [*] A module comes off with its fixture. Pick it up, sledge it, let a zombie break it in: the module ends up on the floor.
 [*] Works beside the Workshop mod Computer Mod: whichever mod switches a desktop on keeps it until it is switched off.
+[*] A generator needs a cable now. Fit a Generator Switch and take [b]Link to computer[/b], the same as a lamppost: standing beside it is no longer enough.
 
 [b]Fixed[/b]
 [*] Standing outside a house no longer reaches anything inside it: devices, network, radio and motion sensors all stop at the wall.
