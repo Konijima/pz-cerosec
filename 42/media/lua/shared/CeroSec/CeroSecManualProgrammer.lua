@@ -1894,18 +1894,22 @@ Continued on the next page.]],
 
 [[The kinds, continued.
 
-  kind     reads          takes             module
-  door     open / closed  open, close       door operator
-  window   open / closed  open, close       window operator
-  curtain  open / closed  open, close       curtain motor
-  lock     locked/unlocked lock, unlock     strike
-  win      locked/unlocked (read only)      magnetic contact
-  sensor   read only      (none)            sensor
-  floppy   read only      (none)            floppy drive
-  radio    read only      (none)            radio tuner
+  kind     reads               takes         module
+  door     open/closed/locked  open, close   door operator
+  window   open / closed       open, close   window operator
+  curtain  open / closed       open, close   curtain motor
+  lock     locked / unlocked   lock, unlock  strike
+  win      locked / unlocked   (read only)   contact
+  sensor   clear / motion      (read only)   sensor
+  floppy   blank/ready/mounted  (read only)  floppy drive
+  radio    megahertz           (read only)   radio tuner
 
-win is the window's own contact, which senses the latch and never moves
-it: 440 whatever you chmod, the same reason a sensor is.]],
+door0 answers locked only when a lock is also fitted and thrown; with
+no lock, or the lock unthrown, it reads open or closed like any door,
+and lock is never a word door0 takes, since that word belongs to lock0.
+
+win is the window's own contact, which senses the latch and never
+moves it: 440 whatever you chmod, the same reason a sensor is.]],
 
 [[Working a list of them.
 

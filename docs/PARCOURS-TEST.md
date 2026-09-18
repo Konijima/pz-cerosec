@@ -4286,9 +4286,10 @@ porte avec un opérateur ET une gâche (`door0` et `lock0` tous les deux posés)
      open et close, lock prend lock et unlock, et la page dit que lock est son
      propre noeud à côté de door0, posé par la gâche. [ ]
 444. **Verrouiller par le bon noeud.** `echo lock > /dev/lock0` → accepté,
-     `cat /dev/lock0` répond `locked`. `cat /dev/door0` reste `open` ou
-     `closed`, jamais `locked` : ce sont deux noeuds, pas un mot de plus sur
-     le même. [ ]
+     `cat /dev/lock0` répond `locked`. Sur une porte extérieure, `cat
+     /dev/door0` répond alors `locked` lui aussi (la gâche verrouille la
+     même porte) ; `door0` ne prend quand même jamais le mot `lock` en
+     écriture, ce sont deux noeuds, pas un mot de plus sur le même. [ ]
 
 ## Rapport
 
