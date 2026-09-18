@@ -16468,4 +16468,29 @@ do
 	badAt(state, admin, "cp a.txt b.txt c.txt", "cp: c.txt: not a directory")
 end
 
+-- 51g. A pattern ending in "/" matches only directories, and the match
+-- keeps that slash -- "echo */" prints "onlydir/", never "onlydir"
+-- (debts 2).
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "mkdir onlydir", {})
+	put(state, admin, "/home/admin/onlyfile.txt", "f")
+	okAt(state, admin, "echo */", { "onlydir/" })
+end
+
+do
+	local state = fresh()
+	local root = open(state, "root")
+	addUser(state, "other", "x")
+	okAt(state, root, "echo /home/*/", { "/home/admin/ /home/other/" })
+end
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/only.txt", "f")
+	okAt(state, admin, "echo */", { "*/" })
+end
+
 print("os_test: " .. count .. " assertions passed")

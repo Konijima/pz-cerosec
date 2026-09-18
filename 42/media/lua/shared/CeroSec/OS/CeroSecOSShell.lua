@@ -3578,6 +3578,10 @@ local function joinPath(base, absolute, name)
 	return base .. "/" .. name
 end
 
+-- Second return is true when text ends in "/" -- sh keeps that slash on
+-- every match ("echo */" prints "onlydir/") and restricts the last
+-- component to directories, the same restriction a non-glob last
+-- component ending in "/" already gets by simply not being the last one.
 local function splitPatternComponents(text, mask)
 	local comps = {}
 	local n = #text
@@ -3603,14 +3607,15 @@ local function splitPatternComponents(text, mask)
 		end
 		i = i + 1
 	end
-	return comps
+	local trailingSlash = n > 0 and string.sub(text, n, n) == "/"
+	return comps, trailingSlash
 end
 
 function CeroSecOS.expandGlob(state, session, text, mask)
 	if type(text) ~= "string" or text == "" then return nil end
 	if type(mask) ~= "string" or #mask ~= #text then mask = string.rep("l", #text) end
 
-	local comps = splitPatternComponents(text, mask)
+	local comps, trailingSlash = splitPatternComponents(text, mask)
 	local any = false
 	for i = 1, #comps do
 		if comps[i].glob then any = true end
@@ -3643,7 +3648,16 @@ function CeroSecOS.expandGlob(state, session, text, mask)
 						if dotOk and CeroSecOS.globMatch(name, comp.text) then
 							local candidate = joinPath(base, absolute, name)
 							if isLast then
-								nextBases[#nextBases + 1] = candidate
+								-- "*/" only matches directories, and keeps the
+								-- slash it was typed with (POSIX.2 2.13.3).
+								if trailingSlash then
+									local cn = CeroSecOS.getNode(state, session, candidate)
+									if cn ~= nil and cn.type == "dir" then
+										nextBases[#nextBases + 1] = candidate .. "/"
+									end
+								else
+									nextBases[#nextBases + 1] = candidate
+								end
 							else
 								local cn = CeroSecOS.getNode(state, session, candidate)
 								if cn ~= nil and cn.type == "dir" then
