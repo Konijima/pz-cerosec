@@ -8,6 +8,12 @@ date.
 
 ## Unreleased
 
+- The shell expands `*`, `?` and `[...]` in an unquoted word against the
+  files that are actually there, sorted, the way a real sh always has --
+  `cp -r /mnt/* /usr/local/bin` now copies what the floppy holds instead of
+  failing on the literal word. `cp` and `mv` also take more than one source
+  when the last argument is a directory.
+
 ## 0.5.0 - 2026-09-18
 
 The fixes of the first day of 0.4.0, and what was built while they were being

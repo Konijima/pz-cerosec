@@ -355,16 +355,17 @@ room, and you will see it all over other people's scripts.]],
 
 [[What the shell will not do, and one honest warning.
 
-Two things you may be expecting are not here, and it is better to know
-now than to debug it later.
-
-There is no star. On a bigger machine a star in a word becomes every name
-that matches it; on this one it is a star, and stays one:
+There is a star, and it is a real one: an unquoted *, ? or [...] in a
+word is matched against the names in the directory it sits in before the
+command ever sees it, sorted, and left exactly as typed when nothing
+matches.
 
   admin@ksp-04-11:~$ for f in *; do echo $f; done
-  *
+  note.txt
+  notes
 
-The way to walk a directory here is ls inside a $( ), which is chapter 6.
+Quote a star meant literally -- "*", '*' or \* -- as grep's patterns are.
+A leading dot needs a dot in the pattern too: * alone never shows one.
 
 And there is no keyboard behind a command. Nothing on this machine reads
 what you would have typed at it except read, which chapter 3 covers.

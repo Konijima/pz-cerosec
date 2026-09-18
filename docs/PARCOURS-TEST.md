@@ -3368,6 +3368,13 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      de relais. Attendre 21:00 sur place : les lampes de la boutique s'éteignent,
      celles des voisines restent allumées. [ ]
 
+339o. **L'étoile marche enfin.** Mettre une disquette avec des fichiers dans le
+     lecteur, `mount /dev/fd0 /mnt`, puis `cp -r /mnt/* /usr/local/bin` :
+     tout ce qui est sur la disquette arrive, chaque nom trié. `umount /mnt`
+     puis relancer la même ligne : `cp: /mnt/*: no such file`, comme avant.
+     Au prompt : `echo *` liste sans les fichiers cachés, `echo .*` les montre,
+     et `echo "*"` répond `*`. [ ]
+
 ## AI. Les outils de l'admin et du testeur (fenêtre de débogage, 2e rangée)
 
 Huit boutons de plus sur la fenêtre de débogage, sur une **deuxième rangée** sous la
