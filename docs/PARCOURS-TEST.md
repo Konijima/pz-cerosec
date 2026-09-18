@@ -3375,6 +3375,16 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      Au prompt : `echo *` liste sans les fichiers cachés, `echo .*` les montre,
      et `echo "*"` répond `*`. [ ]
 
+339p. **Les guillemets inverses marchent, la vraie forme de 1993.** Avec la
+     disquette montée sur `/mnt` (deux fichiers dessus) :
+     `` for f in `ls /mnt`; do cp -r /mnt/$f /usr/local; done `` copie les
+     deux, comme `$(ls /mnt)` l'aurait fait. `` echo `echo a b` `` répond
+     `a b`. `` echo "`echo a b`" `` (un seul mot, pas de découpage) affiché
+     entre crochets avec `for w in "`echo a b`"; do echo [$w]; done` répond
+     `[a b]`. `` echo '`echo a b`' `` (guillemets simples) répond
+     `` `echo a b` `` au lieu de l'exécuter. Et l'imbrication par échappement :
+     `` echo `echo \`echo hi\` ` `` répond `hi`. [ ]
+
 ## AI. Les outils de l'admin et du testeur (fenêtre de débogage, 2e rangée)
 
 Huit boutons de plus sur la fenêtre de débogage, sur une **deuxième rangée** sous la

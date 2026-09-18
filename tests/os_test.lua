@@ -16493,4 +16493,81 @@ do
 	okAt(state, admin, "echo */", { "*/" })
 end
 
+--
+-- 52. Backquote command substitution: the ORIGINAL sh(1) form, alongside
+-- $( ) (debts 2).
+--
+-- 52a. The bug report itself: backquotes read as literal characters, so
+-- `for f in `ls /mnt`; do cp -r /mnt/$f /usr/local; done` copied nothing and
+-- printed `cp: /mnt/`ls: no such file`.
+do
+	local state = fresh()
+	local root = open(state, "root")
+	put(state, root, "/mnt/one.txt", "1")
+	put(state, root, "/mnt/two.txt", "2")
+	okAt(state, root, "for f in `ls /mnt`; do cp -r /mnt/$f /usr/local; done", {})
+	eq("one.txt landed", CeroSecOS.getNode(state, root, "/usr/local/one.txt") ~= nil, true)
+	eq("two.txt landed", CeroSecOS.getNode(state, root, "/usr/local/two.txt") ~= nil, true)
+	local dst = CeroSecOS.getNode(state, root, "/usr/local")
+	eq("nothing else landed (the skeleton's own bin, plus the two)",
+		CeroSecOS.countEntries(dst), 3)
+end
+
+-- 52b. Unquoted: output, trailing newlines stripped, split into fields --
+-- same as unquoted $(cmd).
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "echo `echo a b`", { "a b" })
+end
+
+-- 52c. Inside double quotes: substituted, one word, no splitting.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, 'for w in "`echo a b`"; do echo [$w]; done', { "[a b]" })
+end
+
+-- 52d. Inside single quotes: literal characters.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "echo '`echo a b`'", { "`echo a b`" })
+end
+
+-- 52e. Nesting, written with escaped backquotes: the inner pair runs first.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "echo `echo \\`echo hi\\` `", { "hi" })
+end
+
+-- 52f. `x=`cat f`` -- the everyday shape, a variable set from a file.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/f", "42")
+	okAt(state, admin, "x=`cat f`; echo $x", { "42" })
+end
+
+-- 52g. Unterminated: the same refusal an unterminated $( gets.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	badAt(state, admin, "echo `echo a", "sh: syntax error: bad substitution")
+end
+
+-- 52h. Charged the same as $( ): the same loop, one with each spelling,
+-- spends the same steps.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local dollar = runScript(state, admin,
+		"for i in 1 2 3; do x=$(echo $i); done")
+	local backq = runScript(state, admin,
+		"for i in 1 2 3; do x=`echo $i`; done")
+	eq("a backquote loop costs what the $( ) loop costs",
+		backq.job.steps, dollar.job.steps)
+end
+
 print("os_test: " .. count .. " assertions passed")

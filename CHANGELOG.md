@@ -13,6 +13,9 @@ date.
   `cp -r /mnt/* /usr/local/bin` now copies what the floppy holds instead of
   failing on the literal word. `cp` and `mv` also take more than one source
   when the last argument is a directory.
+- The shell reads `` `command` `` as a command substitution again, the same
+  as `$(command)` -- `for f in `ls /mnt`; do cp -r /mnt/$f /usr/local; done`
+  used to copy nothing at all, the backquotes read as two stray characters.
 
 ## 0.5.0 - 2026-09-18
 

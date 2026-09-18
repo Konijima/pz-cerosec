@@ -169,6 +169,50 @@ local function readCommandSub(text, i, depth)
 	return nil, "syntax error: bad substitution"
 end
 
+-- `command`, from the opening backquote to the matching closing one: the
+-- program inside, and the index just past the closer. nil plus a reason for
+-- a line that is not one.
+--
+-- sh(1) "Command Substitution": backquotes are the ORIGINAL form, from the
+-- Bourne shell -- $( ) is the later ksh and POSIX.2 (1992) spelling of the
+-- same thing, and this machine is 1993, so both are on it. A backquote pair
+-- does not balance the way `(` and `)` count, so nesting is written by
+-- escaping the inner pair: ``echo \`echo hi\` `` runs the inner command
+-- first. Inside the backquotes a backslash is literal except before `$`,
+-- `` ` `` or `\`, where it escapes that character (same page); escaping
+-- strips the backslash before the text reaches the parser, which is what
+-- turns `` \` `` into a literal opening backquote one level in and leaves
+-- the outer pair's own closer the first UNESCAPED backquote found. Reuses
+-- CeroSecOS.parseScript, the same as readCommandSub below, so the result is
+-- the identical { t = "sub", prog = ... } node and every step after parsing
+-- -- expansion, budget charging, field splitting, globbing -- has one path.
+local function readBackquoteSub(text, i, depth)
+	if depth >= CeroSecOS.MAX_NEST then return nil, "syntax error: bad substitution" end
+	local n = #text
+	local j, buf = i + 1, ""
+	while j <= n do
+		local ch = string.sub(text, j, j)
+		if ch == "`" then
+			local prog, reason = CeroSecOS.parseScript(buf, depth + 1)
+			if prog == nil then return nil, reason end
+			return prog, j + 1
+		elseif ch == "\\" then
+			local nx = string.sub(text, j + 1, j + 1)
+			if nx == "$" or nx == "`" or nx == "\\" then
+				buf = buf .. nx
+				j = j + 2
+			else
+				buf = buf .. ch
+				j = j + 1
+			end
+		else
+			buf = buf .. ch
+			j = j + 1
+		end
+	end
+	return nil, "syntax error: bad substitution"
+end
+
 -- The inside of a $(( )) as an array of PARTS, when it holds a command
 -- substitution; nil when it is plain text and the arithmetic reader can have it
 -- whole.
@@ -417,6 +461,13 @@ local function tokenize(text, depth)
 								parts[#parts + 1] = part
 								i = second
 							end
+						elseif q == "`" then
+							-- ``cmd`` inside double quotes: substituted, one
+							-- word, no splitting -- same as `$(cmd)` here.
+							local prog, second = readBackquoteSub(text, i, depth)
+							if prog == nil then return nil, second, line end
+							parts[#parts + 1] = { t = "sub", prog = prog, q = true }
+							i = second
 						else
 							if q == "\n" then line = line + 1 end
 							addLit(parts, q, true, false)
@@ -447,6 +498,13 @@ local function tokenize(text, depth)
 						parts[#parts + 1] = part
 						i = second
 					end
+				elseif ch == "`" then
+					-- Unquoted ``cmd`` -- output, trailing newlines stripped,
+					-- split into fields, same as unquoted `$(cmd)`.
+					local prog, second = readBackquoteSub(text, i, depth)
+					if prog == nil then return nil, second, line end
+					parts[#parts + 1] = { t = "sub", prog = prog, q = false }
+					i = second
 				else
 					addLit(parts, ch, true, true)
 					i = i + 1

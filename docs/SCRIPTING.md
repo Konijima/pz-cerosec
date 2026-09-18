@@ -231,7 +231,11 @@ trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
 alternatives, the shell's own globs (`*`, `?`, `[…]`) in the patterns and `*)` as the
 default; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
 `=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep
-and `$((1 + 2 * 3))` on whole numbers, with `$1`, `$#`, `$?`, `$$` and `${NAME}`
+and `` `command` `` -- the ORIGINAL sh(1) form, before ksh and POSIX.2 (1992)
+added `$( )` -- nesting where `$( )` cannot, by escaping the inner pair:
+``echo \`echo hi\` `` runs the inner command first, and both spellings parse
+into the same substitution so what follows treats them alike; and
+`$((1 + 2 * 3))` on whole numbers, with `$1`, `$#`, `$?`, `$$` and `${NAME}`
 read inside the double brackets as POSIX.2 reads them, the expansion first and the
 sum afterwards, so `$((5 % $1))` is a sum on the first argument. **The two kinds
 of bracket nest**, in POSIX.2's own order: every command substitution is run first
