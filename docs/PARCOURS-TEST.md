@@ -4125,7 +4125,7 @@ seuls au tour de ronde suivant. La règle complète est dans
      Un appareil **nu** (aucun module dessus) n'a pas d'entrée **Relier à un
      ordinateur** du tout, et la machine dont le câble est **déjà** sur cet
      appareil non plus : ce sont les deux refus que le menu cache plutôt que
-     grise — pour celle-là, sa ligne **Débrancher de …**, plus bas, dit déjà
+     grise, car pour celle-là, sa ligne **Débrancher de …**, plus bas, dit déjà
      qu'elle est reliée ; le sous-menu du matériel juste au-dessus dit déjà quoi
      faire pour l'appareil nu. [ ]
 429. **Ce qu'un câble ne demande pas.** Debout **sur le trottoir**, la porte du

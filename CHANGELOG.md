@@ -118,6 +118,10 @@ there is nothing else for you to do.
   door, not a new one. A machine with no building of its own reads the same
   way: anything already inside its ten-tile radius outdoors is greyed too, not
   just the pavement version of a wall fixture.
+- **Link to computer no longer lists a computer this fixture already answers
+  to.** A cable already run there would only have bought a second entry for
+  the same machine, so the line is gone rather than greyed; its **Unlink from
+  ...** line at the bottom of the menu already says the fixture is wired to it.
 - **The inside rule was refusing a relay on a porch lamp.** Fitting a module from
   the pavement is refused for the building's skin -- a door, a window, a curtain --
   and for nothing else: an outdoor lamp, a generator, an oven somebody dragged into
