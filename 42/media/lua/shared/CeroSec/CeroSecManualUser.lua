@@ -1215,10 +1215,9 @@ are a name to match and a kind to keep:
 lists, and it matches the last part of the path only. -type f keeps files
 and -type d keeps directories. Give both and both must be true.
 
-Quote the star. This prompt globs an unquoted "*.txt" itself, against
-your OWN directory, before find ever sees the word -- so an unquoted
-pattern hands find a name or two out of ".", or the star back untouched
-when nothing here matches it, and never the tree you meant to search.
+Quote the star. This prompt globs an unquoted *.txt itself, against
+your OWN directory, before find ever sees the word -- so it hands find
+whatever matched here, not the tree you meant to search.
 
 Classic mistake. find with no path. It does not guess at the directory you
 are in; name it, even if that is just a dot.]],
