@@ -16356,4 +16356,116 @@ do
 	eq("and nothing was asked of the machine", #unknown.orders, 0)
 end
 
+-- 51a. Pathname expansion: the bug report itself (debts 2).
+--
+-- The shell had no globbing at all, so `cp -r /mnt/* /usr/local/bin` failed
+-- with `cp: /mnt/*: no such file` even when /mnt held exactly what the
+-- floppy's label said it did. Proven both ways: the star reaching three
+-- names when they are there, and the star staying a literal word -- the
+-- same error as before -- when /mnt is empty.
+do
+	local state = fresh()
+	local root = open(state, "root")
+	okAt(state, root, "mkdir /mnt/sub", {})
+	put(state, root, "/mnt/one.txt", "1")
+	put(state, root, "/mnt/two.txt", "2")
+	okAt(state, root, "cp -r /mnt/* /usr/local/bin", {})
+	local bin = CeroSecOS.getNode(state, root, "/usr/local/bin")
+	local names = CeroSecOS.childNames(bin)
+	eq("all three landed", #names, 3)
+	eq("one.txt", names[1], "one.txt")
+	eq("sub", names[2], "sub")
+	eq("two.txt", names[3], "two.txt")
+end
+
+do
+	local state = fresh()
+	local root = open(state, "root")
+	badAt(state, root, "cp -r /mnt/* /usr/local/bin", "cp: /mnt/*: no such file")
+	local bin = CeroSecOS.getNode(state, root, "/usr/local/bin")
+	eq("nothing landed", CeroSecOS.countEntries(bin), 0)
+end
+
+-- 51b. Only an UNQUOTED metacharacter globs (debts 2).
+--
+-- `"*"`, `'*'` and `\*` are the three ways sh keeps a star literal, and a
+-- star that came out of an unquoted "$x" globs while one out of a quoted
+-- "$x" does not -- the mask carries that answer, not the byte itself.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/alpha.txt", "a")
+	put(state, admin, "/home/admin/beta.txt", "b")
+
+	okAt(state, admin, "echo *", { "alpha.txt beta.txt" })
+	okAt(state, admin, 'echo "*"', { "*" })
+	okAt(state, admin, "echo '*'", { "*" })
+	okAt(state, admin, "echo \\*", { "*" })
+	okAt(state, admin, "x='*'; echo \"$x\"", { "*" })
+	okAt(state, admin, "x='*'; echo $x", { "alpha.txt beta.txt" })
+end
+
+-- 51c. A dotfile needs an explicit dot, same as sh (debts 2).
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/seen.txt", "s")
+	put(state, admin, "/home/admin/.hidden", "h")
+
+	okAt(state, admin, "echo *", { "seen.txt" })
+	okAt(state, admin, "echo .*", { ".hidden" })
+end
+
+-- 51d. ?, a bracket set, and a two component pattern -- sorted (debts 2).
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/ax.txt", "1")
+	put(state, admin, "/home/admin/bx.txt", "2")
+	put(state, admin, "/home/admin/cx.txt", "3")
+	put(state, admin, "/home/admin/dx.txt", "4")
+
+	okAt(state, admin, "echo a?.txt", { "ax.txt" })
+	okAt(state, admin, "echo [a-c]x.txt", { "ax.txt bx.txt cx.txt" })
+
+	okAt(state, admin, "mkdir tree", {})
+	okAt(state, admin, "mkdir tree/inner", {})
+	put(state, admin, "/home/admin/tree/READ.ME", "r")
+	put(state, admin, "/home/admin/tree/inner/READ.ME", "i")
+	okAt(state, admin, "echo tree/*/READ.ME", { "tree/inner/READ.ME" })
+	okAt(state, admin, "echo /home/admin/tree/*/READ*", { "/home/admin/tree/inner/READ.ME" })
+end
+
+-- 51e. An unreadable directory keeps the pattern literal, silently (debts 2).
+do
+	local state = fresh()
+	local root = open(state, "root")
+	local admin = open(state, "admin")
+	okAt(state, root, "mkdir /home/admin/shut", {})
+	put(state, root, "/home/admin/shut/secret.txt", "s")
+	okAt(state, root, "chmod 700 /home/admin/shut", {})
+	okAt(state, admin, "echo shut/*.txt", { "shut/*.txt" })
+end
+
+-- 51f. cp/mv take N sources when the last operand is a directory (debts 2).
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/a.txt", "a")
+	put(state, admin, "/home/admin/b.txt", "b")
+	put(state, admin, "/home/admin/c.txt", "c")
+	okAt(state, admin, "mkdir box", {})
+	okAt(state, admin, "cp a.txt b.txt c.txt box", {})
+	local box = CeroSecOS.getNode(state, admin, "/home/admin/box")
+	local names = CeroSecOS.childNames(box)
+	eq("all three copied in", #names, 3)
+	eq("a.txt", names[1], "a.txt")
+	eq("b.txt", names[2], "b.txt")
+	eq("c.txt", names[3], "c.txt")
+
+	-- More than two operands and a non directory last is an error, not a
+	-- guess at which of them was meant as the destination.
+	badAt(state, admin, "cp a.txt b.txt c.txt", "cp: c.txt: not a directory")
+end
+
 print("os_test: " .. count .. " assertions passed")
