@@ -2079,8 +2079,8 @@ Groups, and who may read what.
   groupadd <name>
   groupdel <name>
   usermod -G group[,group...] login
-  chmod <mode> <path>
-  chown <user> <path>
+  chmod <mode> <path>...
+  chown <user> <path>...
   chgrp <group> <path>]==],
 
 [==[The machine itself.

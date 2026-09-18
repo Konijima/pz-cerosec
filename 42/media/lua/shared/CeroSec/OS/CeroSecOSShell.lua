@@ -209,9 +209,9 @@ end
 -- though it had been typed again -- csh's, and every shell's since.
 --
 -- One deviation, and it is deliberate: only a line that is NOTHING BUT the
--- event is expanded. There is no globbing on this machine and no quoting rule
--- for "!" either, so expanding one in the middle of a line would make every
--- exclamation mark a player types a trap.
+-- event is expanded. "!" carries no quoting rule of its own here, so
+-- expanding one in the middle of a line would make every exclamation mark a
+-- player types a trap.
 --
 -- line, or nil plus the refusal. A line with no event in it comes straight
 -- back, which is what every line is.
@@ -510,10 +510,11 @@ end
 -- that `cat /dev/lock0` can say "no such device" about a number a player wrote
 -- down, and it is not on the shelf, because it is not there.
 -- A name that begins with a dot is HIDDEN, the way it has been since the
--- third edition of Unix: `ls` walks past it and `ls -a` does not. Nothing else
--- on this machine treats it as special -- `cat .profile` reads it and `edit
--- .sh_history` opens it, because a name is a name and there is no globbing
--- here for a dot to hide from.
+-- third edition of Unix: `ls` walks past it and `ls -a` does not. No other
+-- command treats it as special when it is TYPED -- `cat .profile` reads it and
+-- `edit .sh_history` opens it, because a name given straight is a name and
+-- not a pattern. Only a "*" or a "?" the shell expands has to spell the dot
+-- to match it (CeroSecOS.expandGlob).
 --
 -- Not local: completion lists a directory too (CeroSecOSComplete.lua), and the
 -- rule about what is on the shelf must be written down once.
@@ -668,10 +669,10 @@ CeroSecOS.COMMAND_INFO = {
 	-- (see CeroSecOS.isShellWord, and the note above CeroSecOS.BUILTINS).
 	cd       = { desc = "change the working directory", usage = "cd [dir]", shell = true },
 	chgrp    = { desc = "change a file's group", usage = "chgrp <group> <path>" },
-	chmod    = { desc = "change a file's mode", usage = "chmod <mode> <path>" },
-	chown    = { desc = "change a file's owner", usage = "chown <user> <path>" },
+	chmod    = { desc = "change a file's mode", usage = "chmod <mode> <path>..." },
+	chown    = { desc = "change a file's owner", usage = "chown <user> <path>..." },
 	clear    = { desc = "clear the screen", usage = "clear" },
-	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src> <dst>" },
+	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src>... <dst>" },
 	crontab  = { desc = "list, edit or drop your crontab", usage = "crontab -e|-l|-r" },
 	-- The two forms cut(1) has and they are exclusive: -c cuts characters out of a
 	-- line and -f cuts fields out of a record, and a line carrying both is a line
@@ -762,7 +763,7 @@ CeroSecOS.COMMAND_INFO = {
 	-- is why the whole of its operand half is optional.
 	mount    = { desc = "list the filesystems, or mount one",
 		usage = "mount [<device> <dir>]" },
-	mv       = { desc = "move or rename a file", usage = "mv <src> <dst>" },
+	mv       = { desc = "move or rename a file", usage = "mv <src>... <dst>" },
 	newfs    = { desc = "put a filesystem on a disk", usage = "newfs <device>" },
 	passwd   = { desc = "change a password", usage = "passwd [user]" },
 	pwd      = { desc = "print the working directory", usage = "pwd" },
@@ -1812,28 +1813,55 @@ commands.rm = function(state, session, args, env)
 	return ok, out
 end
 
+-- mv SRC DST, or mv SRC... DIR -- the second form only when DIR already is
+-- one, exactly the rule cp below shares with it: a last operand that is not a
+-- directory and more than one source is a line the machine will not guess at.
 commands.mv = function(state, session, args, env)
-	if #args ~= 3 then return usage("mv") end
-	local src, dst = args[2], args[3]
-
-	local node, reason = CeroSecOS.getNode(state, session, src)
-	if node == nil then return fail("mv", src, reason) end
-	-- Said about the SOURCE, before the destination is worked out: what is a
-	-- device is the thing being moved, and mv's other refusals all name the
-	-- target because it is the target they are about.
-	if CeroSecOS.isDev(node) then return fail("mv", src, "is a device") end
-
-	local target = dst
+	if #args < 3 then return usage("mv") end
+	local dst = args[#args]
+	local srcs = {}
+	for i = 2, #args - 1 do srcs[#srcs + 1] = args[i] end
 	local dstNode = CeroSecOS.getNode(state, session, dst)
-	if dstNode ~= nil and dstNode.type == "dir" then
-		local name = baseName(session, src)
-		if name == nil then return fail("mv", src, "permission denied") end
-		target = dst .. "/" .. name
+	if #srcs > 1 and (dstNode == nil or dstNode.type ~= "dir") then
+		return fail("mv", dst, "not a directory")
 	end
 
-	local done, mreason = CeroSecOS.moveNode(state, session, src, target, CeroSecOS.clockOf(env))
-	if done == nil then return fail("mv", target, mreason) end
-	return true, {}
+	local out, ok = {}, true
+	for si = 1, #srcs do
+		local src = srcs[si]
+		local node, reason = CeroSecOS.getNode(state, session, src)
+		if node == nil then
+			ok = false
+			out[#out + 1] = "mv: " .. src .. ": " .. reason
+		-- Said about the SOURCE, before the destination is worked out: what is
+		-- a device is the thing being moved, and mv's other refusals all name
+		-- the target because it is the target they are about.
+		elseif CeroSecOS.isDev(node) then
+			ok = false
+			out[#out + 1] = "mv: " .. src .. ": is a device"
+		else
+			local target = dst
+			if dstNode ~= nil and dstNode.type == "dir" then
+				local name = baseName(session, src)
+				if name == nil then
+					ok = false
+					out[#out + 1] = "mv: " .. src .. ": permission denied"
+					target = nil
+				else
+					target = dst .. "/" .. name
+				end
+			end
+			if target ~= nil then
+				local done, mreason =
+					CeroSecOS.moveNode(state, session, src, target, CeroSecOS.clockOf(env))
+				if done == nil then
+					ok = false
+					out[#out + 1] = "mv: " .. target .. ": " .. mreason
+				end
+			end
+		end
+	end
+	return ok, out
 end
 
 -- Every node of a subtree readable? A copy walks the whole of it, so a
@@ -1851,6 +1879,57 @@ local function canCopyTree(state, session, node)
 	return true
 end
 
+-- One source into one target, or a directory. Split out of commands.cp so
+-- the loop below reads as the loop it is and not as one long function with
+-- the count of its operands folded into the middle of it.
+local function cpOne(state, session, src, dst, dstIsDir, recursive, env)
+	local node, reason, srcAbs = CeroSecOS.getNode(state, session, src)
+	if node == nil then return "cp: " .. src .. ": " .. reason end
+	-- A device cannot be copied: what would come out is a file holding the word
+	-- "on", which is a lie about a light switch.
+	if CeroSecOS.isDev(node) then return "cp: " .. src .. ": is a device" end
+	if node.type ~= "file" and not recursive then
+		return "cp: " .. src .. ": is a directory"
+	end
+	if not canCopyTree(state, session, node) then
+		return "cp: " .. src .. ": permission denied"
+	end
+
+	local target = dst
+	if dstIsDir then
+		local name = baseName(session, src)
+		if name == nil then return "cp: " .. src .. ": permission denied" end
+		target = dst .. "/" .. name
+	end
+
+	-- A directory never goes inside itself: the copy would be a child of what
+	-- is being copied. Judged on the paths the WALK takes and not on the ones that
+	-- were typed -- so neither "." and ".." nor a symbolic link can spell a way
+	-- around it. The same test mv makes, for the same reason and with the same
+	-- two paths (see CeroSecOS.moveNode).
+	if node.type == "dir" then
+		local srcPhys = select(4, CeroSecOS.getNode(state, session, src)) or srcAbs
+		local targetPhys = CeroSecOS.physicalOf(state, session, target)
+			or CeroSecOS.resolve(session, target)
+		if CeroSecOS.isInside(targetPhys, srcPhys) then
+			return "cp: " .. target .. ": invalid destination"
+		end
+	end
+
+	-- The copy is the caller's, and it is stamped with now: cp without -p makes
+	-- a new file, and a new file is new.
+	local copy = CeroSecOS.copyNode(node, CeroSecOS.userOf(session))
+	local created, creason =
+		CeroSecOS.createNode(state, session, target, copy, CeroSecOS.clockOf(env))
+	if created == nil then return "cp: " .. target .. ": " .. creason end
+	return nil
+end
+
+-- cp [-r] SRC DST, or cp [-r] SRC... DIR -- the second form only when the
+-- last operand already is one, which is what turns `cp -r /mnt/* dst` into
+-- a line that can run at all: the shell hands cp as many sources as /mnt had
+-- entries, and cp only knows what to do with more than one of them because
+-- DST is a directory.
 commands.cp = function(state, session, args, env)
 	local recursive, paths = false, {}
 	for i = 2, #args do
@@ -1866,46 +1945,24 @@ commands.cp = function(state, session, args, env)
 			paths[#paths + 1] = a
 		end
 	end
-	if #paths ~= 2 then return usage("cp") end
-	local src, dst = paths[1], paths[2]
+	if #paths < 2 then return usage("cp") end
+	local dst = paths[#paths]
+	local srcs = {}
+	for i = 1, #paths - 1 do srcs[#srcs + 1] = paths[i] end
 
-	local node, reason, srcAbs = CeroSecOS.getNode(state, session, src)
-	if node == nil then return fail("cp", src, reason) end
-	-- A device cannot be copied: what would come out is a file holding the word
-	-- "on", which is a lie about a light switch.
-	if CeroSecOS.isDev(node) then return fail("cp", src, "is a device") end
-	if node.type ~= "file" and not recursive then return fail("cp", src, "is a directory") end
-	if not canCopyTree(state, session, node) then return fail("cp", src, "permission denied") end
-
-	local target = dst
 	local dstNode = CeroSecOS.getNode(state, session, dst)
-	if dstNode ~= nil and dstNode.type == "dir" then
-		local name = baseName(session, src)
-		if name == nil then return fail("cp", src, "permission denied") end
-		target = dst .. "/" .. name
-	end
+	local dstIsDir = dstNode ~= nil and dstNode.type == "dir"
+	if #srcs > 1 and not dstIsDir then return fail("cp", dst, "not a directory") end
 
-	-- A directory never goes inside itself: the copy would be a child of what
-	-- is being copied. Judged on the paths the WALK takes and not on the ones that
-	-- were typed -- so neither "." and ".." nor a symbolic link can spell a way
-	-- around it. The same test mv makes, for the same reason and with the same
-	-- two paths (see CeroSecOS.moveNode).
-	if node.type == "dir" then
-		local srcPhys = select(4, CeroSecOS.getNode(state, session, src)) or srcAbs
-		local targetPhys = CeroSecOS.physicalOf(state, session, target)
-			or CeroSecOS.resolve(session, target)
-		if CeroSecOS.isInside(targetPhys, srcPhys) then
-			return fail("cp", target, "invalid destination")
+	local out, ok = {}, true
+	for i = 1, #srcs do
+		local line = cpOne(state, session, srcs[i], dst, dstIsDir, recursive, env)
+		if line ~= nil then
+			ok = false
+			out[#out + 1] = line
 		end
 	end
-
-	-- The copy is the caller's, and it is stamped with now: cp without -p makes
-	-- a new file, and a new file is new.
-	local copy = CeroSecOS.copyNode(node, CeroSecOS.userOf(session))
-	local created, creason =
-		CeroSecOS.createNode(state, session, target, copy, CeroSecOS.clockOf(env))
-	if created == nil then return fail("cp", target, creason) end
-	return true, {}
+	return ok, out
 end
 
 --
@@ -1971,44 +2028,70 @@ end
 -- wears. Which of the two it is is decided BEFORE the path is looked at, so
 -- `chmod zzz nosuchfile` still answers about the mode: a typo in the mode is
 -- the thing the player got wrong and is what he should be told about.
+-- chmod MODE FILE..., a mode and one file or several, exactly as chmod has
+-- taken them since a mode became a word of its own and not part of the name.
 commands.chmod = function(state, session, args, env)
-	if #args ~= 3 then return usage("chmod") end
+	if #args < 3 then return usage("chmod") end
 	local mode = parseMode(args[2])
 	-- Tried against 000 only to judge the grammar; the real mode is the file's
 	-- and is not known until the node is in hand.
 	local symbolic = mode == nil and CeroSecOS.applyModeSpec(0, args[2]) ~= nil
 	if mode == nil and not symbolic then return fail("chmod", args[2], "invalid mode") end
-	local node, reason = CeroSecOS.getNode(state, session, args[3])
-	if node == nil then return fail("chmod", args[3], reason) end
-	if not isOwnerOrRoot(session, node) then return fail("chmod", args[3], "permission denied") end
-	if symbolic then
-		mode = CeroSecOS.applyModeSpec(node.mode, args[2])
-		if mode == nil then return fail("chmod", args[2], "invalid mode") end
-	end
-	node.mode = mode
-	-- One timestamp for the two a real filesystem has: a chmod moves the ctime
-	-- there and moves this one here.
 	local now = CeroSecOS.clockOf(env)
-	if now ~= nil then node.mtime = now end
-	return true, {}
+	local out, ok = {}, true
+	for i = 3, #args do
+		local node, reason = CeroSecOS.getNode(state, session, args[i])
+		if node == nil then
+			ok = false
+			out[#out + 1] = "chmod: " .. args[i] .. ": " .. reason
+		elseif not isOwnerOrRoot(session, node) then
+			ok = false
+			out[#out + 1] = "chmod: " .. args[i] .. ": permission denied"
+		else
+			local m = mode
+			if symbolic then m = CeroSecOS.applyModeSpec(node.mode, args[2]) end
+			if m == nil then
+				ok = false
+				out[#out + 1] = "chmod: " .. args[2] .. ": invalid mode"
+			else
+				node.mode = m
+				-- One timestamp for the two a real filesystem has: a chmod
+				-- moves the ctime there and moves this one here.
+				if now ~= nil then node.mtime = now end
+			end
+		end
+	end
+	return ok, out
 end
 
+-- chown OWNER FILE..., the same way.
 commands.chown = function(state, session, args, env)
-	if #args ~= 3 then return usage("chown") end
+	if #args < 3 then return usage("chown") end
 	local user = CeroSecOS.getUser(state, args[2])
 	if user == nil then return fail("chown", args[2], "no such user") end
-	local node, reason = CeroSecOS.getNode(state, session, args[3])
-	if node == nil then return fail("chown", args[3], reason) end
-	-- A device is root's, always. Only the MODE of one is remembered across a
-	-- command (see CeroSecOS.mountDev), so an owner given away here would be
-	-- back to root by the next line, and a change that does not last is a
-	-- change not to accept.
-	if CeroSecOS.isDev(node) then return fail("chown", args[3], "is a device") end
-	if not isOwnerOrRoot(session, node) then return fail("chown", args[3], "permission denied") end
-	node.owner = user.name
 	local now = CeroSecOS.clockOf(env)
-	if now ~= nil then node.mtime = now end
-	return true, {}
+	local out, ok = {}, true
+	for i = 3, #args do
+		local node, reason = CeroSecOS.getNode(state, session, args[i])
+		if node == nil then
+			ok = false
+			out[#out + 1] = "chown: " .. args[i] .. ": " .. reason
+		-- A device is root's, always. Only the MODE of one is remembered
+		-- across a command (see CeroSecOS.mountDev), so an owner given away
+		-- here would be back to root by the next line, and a change that
+		-- does not last is a change not to accept.
+		elseif CeroSecOS.isDev(node) then
+			ok = false
+			out[#out + 1] = "chown: " .. args[i] .. ": is a device"
+		elseif not isOwnerOrRoot(session, node) then
+			ok = false
+			out[#out + 1] = "chown: " .. args[i] .. ": permission denied"
+		else
+			node.owner = user.name
+			if now ~= nil then node.mtime = now end
+		end
+	end
+	return ok, out
 end
 
 -- chgrp. The owner's to give away and root's to take, exactly as chown is: a
@@ -3376,9 +3459,9 @@ end
 
 -- One name against a shell glob. "*" is any run, "?" is one character, "[...]"
 -- is one of a set with ranges and a leading "!" or "^" to negate it. The same
--- three sh has had since the sixth edition -- and the only three, because there
--- is no globbing at this prompt and a fourth would be one the shell could not
--- spell.
+-- three sh has had since the sixth edition -- and the only three this shell's
+-- own pathname expansion uses too (see CeroSecOS.expandGlob below): a fourth
+-- would be one the shell could not spell.
 --
 -- Walked rather than turned into a Lua pattern: a name carrying "%" or "-" would
 -- have to be escaped into one, and an escaper is a second place for the grammar
@@ -3462,6 +3545,128 @@ function CeroSecOS.globMatch(name, pattern)
 	-- What is left of the pattern may only be stars.
 	while string.sub(pattern, pi, pi) == "*" do pi = pi + 1 end
 	return pi > #pattern
+end
+
+--
+-- Pathname expansion (globbing)
+--
+-- A word's own text and a MASK of the same length, one character a byte:
+-- "g" where that byte came from someplace unquoted and may still be read as
+-- "*", "?" or "[", "l" everywhere else -- literal text, a quoted run, an
+-- escaped character, the value of a quoted "$x", a right-hand side of "=", an
+-- arithmetic expansion. CeroSecOSVM.lua's expandStep builds this mask beside
+-- the field itself; nothing here re-derives quoting, it only reads the answer.
+--
+-- One path component is a pattern when ANY of its "*", "?" or "[" sits on a
+-- "g" byte. A component that mixes a quoted metacharacter with an unquoted one
+-- is rarer than the rest of this file worries about; it is read as plain text,
+-- which is the same answer an escaper-free matcher gives a pattern it cannot
+-- spell (see the comment on CeroSecOS.globMatch above).
+--
+-- nil when the word held no unquoted metacharacter at all -- the common case,
+-- and the caller's sign to leave the word exactly as typed. Otherwise an array
+-- of the paths that matched, sorted, which may be empty: an empty answer is
+-- the caller's cue to fall back on the word AS WRITTEN (see CeroSecOS.jobStep's
+-- caller), which is the one and only reason `cp -r /mnt/* x` on an empty /mnt
+-- still says "/mnt/*: no such file" -- a shell with nothing to glob to hands
+-- the program the star.
+local function joinPath(base, absolute, name)
+	if base == "" then
+		if absolute then return "/" .. name end
+		return name
+	end
+	return base .. "/" .. name
+end
+
+local function splitPatternComponents(text, mask)
+	local comps = {}
+	local n = #text
+	local start = 1
+	local i = 1
+	while i <= n + 1 do
+		if i > n or string.sub(text, i, i) == "/" then
+			if i > start then
+				local ctext = string.sub(text, start, i - 1)
+				local cmask = string.sub(mask, start, i - 1)
+				local isGlob = false
+				for k = 1, #ctext do
+					local c = string.sub(ctext, k, k)
+					if (c == "*" or c == "?" or c == "[")
+							and string.sub(cmask, k, k) == "g" then
+						isGlob = true
+						break
+					end
+				end
+				comps[#comps + 1] = { text = ctext, glob = isGlob }
+			end
+			start = i + 1
+		end
+		i = i + 1
+	end
+	return comps
+end
+
+function CeroSecOS.expandGlob(state, session, text, mask)
+	if type(text) ~= "string" or text == "" then return nil end
+	if type(mask) ~= "string" or #mask ~= #text then mask = string.rep("l", #text) end
+
+	local comps = splitPatternComponents(text, mask)
+	local any = false
+	for i = 1, #comps do
+		if comps[i].glob then any = true end
+	end
+	if not any then return nil end
+
+	local absolute = string.sub(text, 1, 1) == "/"
+	local bases = { "" }
+	for ci = 1, #comps do
+		local comp = comps[ci]
+		local isLast = ci == #comps
+		local nextBases = {}
+		for bi = 1, #bases do
+			local base = bases[bi]
+			if comp.glob then
+				local dirPath = base
+				if dirPath == "" then dirPath = absolute and "/" or "." end
+				local node = CeroSecOS.getNode(state, session, dirPath)
+				-- No entry, not a directory, or unreadable: no match down this
+				-- branch, and silently -- the same answer "no such file" gives
+				-- a literal component, and the same one a real glob gives a
+				-- directory it may not read (see docs/SCRIPTING.md).
+				if node ~= nil and node.type == "dir"
+						and CeroSecOS.can(state, session, node, "r") then
+					local names = CeroSecOS.childNames(node)
+					for ni = 1, #names do
+						local name = names[ni]
+						local dotOk = string.sub(comp.text, 1, 1) == "."
+							or string.sub(name, 1, 1) ~= "."
+						if dotOk and CeroSecOS.globMatch(name, comp.text) then
+							local candidate = joinPath(base, absolute, name)
+							if isLast then
+								nextBases[#nextBases + 1] = candidate
+							else
+								local cn = CeroSecOS.getNode(state, session, candidate)
+								if cn ~= nil and cn.type == "dir" then
+									nextBases[#nextBases + 1] = candidate
+								end
+							end
+						end
+					end
+				end
+			else
+				local candidate = joinPath(base, absolute, comp.text)
+				local node = CeroSecOS.getNode(state, session, candidate)
+				if node ~= nil and (isLast or node.type == "dir") then
+					nextBases[#nextBases + 1] = candidate
+				end
+			end
+		end
+		bases = nextBases
+		if #bases == 0 then break end
+	end
+
+	table.sort(bases)
+	return bases
 end
 
 -- The last component of a path as it was typed, for -name to judge. The path
