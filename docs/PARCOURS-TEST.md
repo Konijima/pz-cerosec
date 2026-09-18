@@ -4268,6 +4268,28 @@ le banc hors jeu ne juge qu'une doublure.** Les deux mods abonnés et actifs.
      de plus à l'écran, et une machine laissée allumée est toujours allumée. Dans le
      journal, **aucune** ligne `compat:`. [ ]
 
+## AS. Le bon mot, sur la machine (palier documentation)
+
+Un joueur a copié `autoclose.sh` (disquette **HOME AUTOMATION**) en `autolock`,
+changé `echo close` pour `echo lock` et l'état surveillé pour `locked`, gardé
+`grep ^door`, et reçu `door0: invalid value`. Ce palier vérifie qu'il peut
+trouver sur la machine, sans quitter le jeu, le mot que chaque genre de
+périphérique accepte, et qu'un verrou est son propre noeud. Préparation : une
+porte avec un opérateur ET une gâche (`door0` et `lock0` tous les deux posés).
+
+442. **La confusion, provoquée.** `echo lock > /dev/door0` → `door0: invalid
+     value`. [ ]
+443. **Trouver le bon mot.** `man door` ne répond rien pour un genre de
+     périphérique : `man` ne documente que ce qui est dans `/bin`. Le tableau
+     est dans le manuel imprimé, Volume 3 (Programmer's Guide), chapitre 10,
+     pages « The kinds, one table. » et « The kinds, continued. » : door prend
+     open et close, lock prend lock et unlock, et la page dit que lock est son
+     propre noeud à côté de door0, posé par la gâche. [ ]
+444. **Verrouiller par le bon noeud.** `echo lock > /dev/lock0` → accepté,
+     `cat /dev/lock0` répond `locked`. `cat /dev/door0` reste `open` ou
+     `closed`, jamais `locked` : ce sont deux noeuds, pas un mot de plus sur
+     le même. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

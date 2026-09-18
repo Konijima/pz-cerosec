@@ -16,6 +16,9 @@ date.
 - The shell reads `` `command` `` as a command substitution again, the same
   as `$(command)` -- `for f in `ls /mnt`; do cp -r /mnt/$f /usr/local; done`
   used to copy nothing at all, the backquotes read as two stray characters.
+- The printed manual (Volume 3, chapter 10) now carries a table of every
+  /dev kind and the words it takes, and says plainly that a lock is its own
+  node beside its door's, not a second word the door answers to.
 
 ## 0.5.0 - 2026-09-18
 

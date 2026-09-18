@@ -1519,6 +1519,42 @@ do
 		string.find(flat, NUMBER[CeroSecOS.MAX_NEST] ..
 			" deep is as far as these nest, and " .. NUMBER[CeroSecOS.MAX_STAGES] ..
 			" is as long as a pipeline may be", 1, true) ~= nil)
+
+	-- 4. The /dev vocabulary, derived from CeroSecOS.DEV_VALUES so a kind or a
+	-- word the engine gains later goes red here until the table says so too.
+	do
+		local pages = {}
+		for ci = 1, #vol.chapters do
+			local ch = vol.chapters[ci]
+			for pi = 1, #ch.pages do
+				if string.find(ch.pages[pi], "The kinds, one table.", 1, true) ~= nil
+				or string.find(ch.pages[pi], "The kinds, continued.", 1, true) ~= nil then
+					pages[#pages + 1] = ch.pages[pi]
+				end
+			end
+		end
+		check("Volume 3 carries the device kinds table (2 pages)", #pages == 2)
+		local page = table.concat(pages, "\n")
+		local said = {}
+		for word in string.gmatch(page, "[%a%-]+") do said[word] = true end
+
+		local kinds = 0
+		for kind, words in pairs(CeroSecOS.DEV_VALUES) do
+			kinds = kinds + 1
+			check("the kinds table names " .. kind, said[kind] == true)
+			local any = false
+			for word in pairs(words) do
+				any = true
+				check("the kinds table gives " .. kind .. "'s word \"" .. word .. "\"",
+					said[word] == true)
+			end
+			if not any then
+				check("the kinds table marks " .. kind .. " read only",
+					string.find(page, "read only", 1, true) ~= nil)
+			end
+		end
+		check("and there really are some kinds (" .. kinds .. ")", kinds >= 10)
+	end
 end
 
 --

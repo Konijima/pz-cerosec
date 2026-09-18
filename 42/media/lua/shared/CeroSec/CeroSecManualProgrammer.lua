@@ -1862,8 +1862,9 @@ you already know how to do.
   on
 
 The words are few and each kind has its own. A light takes on and off. A
-door takes open and close. A lock and a window latch take lock and
-unlock. Anything else is refused before it reaches the world:
+door takes open and close. A lock (its own node beside the door's, not a
+word door0 takes) and a window latch take lock and unlock. Anything else
+is refused before it reaches the world:
 
   admin@ksp-04-11:~$ echo blue > /dev/light0
   light0: invalid value
@@ -1873,6 +1874,38 @@ one name is a question, and a name and a word is an order.
 
   admin@ksp-04-11:~$ dev door0
   door0: closed]],
+
+[[The kinds, one table.
+
+A device with no module behind it has no node: the strike is what puts
+lock0 under /dev, beside door0 and not inside it. Reading lock0 answers
+locked or unlocked; writing door0 the word lock gets door0: invalid
+value, the word belongs to lock0.
+
+  kind    reads          takes               module
+  light   on / off       on, off             fixture
+  stove   on / off       on, off             appliance
+  washer  on / off       on, off             appliance
+  gen     on / off       on, off             generator
+  tv      on / off       on, off, channel N   TV set
+  rx      on / off       on, off, channel N   radio set
+
+Continued on the next page.]],
+
+[[The kinds, continued.
+
+  kind     reads          takes             module
+  door     open / closed  open, close       door operator
+  window   open / closed  open, close       window operator
+  curtain  open / closed  open, close       curtain motor
+  lock     locked/unlocked lock, unlock     strike
+  win      locked/unlocked (read only)      magnetic contact
+  sensor   read only      (none)            sensor
+  floppy   read only      (none)            floppy drive
+  radio    read only      (none)            radio tuner
+
+win is the window's own contact, which senses the latch and never moves
+it: 440 whatever you chmod, the same reason a sensor is.]],
 
 [[Working a list of them.
 
