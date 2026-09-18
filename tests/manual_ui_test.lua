@@ -4449,17 +4449,21 @@ do
 	end
 
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
-	carried = { "CeroSec.MagneticContact", "Base.Screwdriver" }
+	local ALL_ITEMS = { "CeroSec.MagneticContact", "CeroSec.Relay",
+		"CeroSec.ElectricStrike", "CeroSec.DoorOperator", "CeroSec.CurtainMotor",
+		"CeroSec.ApplianceSwitch", "CeroSec.WindowOperator",
+		"CeroSec.GeneratorSwitch", "CeroSec.TunerControl", "Base.Screwdriver" }
+	carried = ALL_ITEMS
 
 	--
 	-- 0. WHICH LINES ARE THERE AT ALL, which is what a survivor sees first
 	--
-	-- A module that does not fit this SORT of fixture is not a line. Everything
-	-- that could ever go on one is, carried or not: a box he has never been told
-	-- about is a box he will never look for. Asserted as the WHOLE list and in
-	-- order, because the way this goes wrong is the entry nobody meant to add.
+	-- A module that does not fit this SORT of fixture is not a line, carried
+	-- or not: `fitsOn` answering "fixture" is the only answer this menu hides.
+	-- Everything below IS carried and he is skilled enough for all of it, so
+	-- this rung is fitsOn's own filter and nothing else -- the carry gate
+	-- itself is rung 0a, next.
 	--
-	carried = {}
 	door.open = true
 	eq("a door offers the three that go on a door", idsOn(door),
 		"contact strike operator")
@@ -4481,6 +4485,60 @@ do
 	eq("a fridge offers nothing", idsOn(fridge), "")
 	check("and has no CeroSec: parent entry over it", not parentOn(fridge))
 	check("while a door does", parentOn(door))
+
+	--
+	-- 0a. THE CARRY GATE: nothing in his bag, nothing screwed to the fixture
+	--
+	-- 2026-09-17: an INSTALL row now needs the module in his bag, and the
+	-- parent itself needs at least one row he could actually act on today --
+	-- a carried module he has the skill for, or a fitted one he has the skill
+	-- to touch. Short of that, no entry and no grey line either.
+	--
+	carried = {}
+	eq("carrying nothing, a door offers no lines", idsOn(door), "")
+	check("and no CeroSec: parent either", not parentOn(door))
+
+	-- Carried, but under level, and nothing posé: the box alone is not enough.
+	carried = { "CeroSec.MagneticContact" }
+	level = 0
+	eq("carried but unskilled, with nothing posé, is still nothing", idsOn(door), "")
+	check("no parent for it either", not parentOn(door))
+
+	-- Carried AND skilled opens the parent, with that one row on it -- and a
+	-- module he does NOT carry ("strike", "operator") is not a row at all,
+	-- parent open or not.
+	level = 5
+	eq("carrying it and skilled enough, that line is there", idsOn(door), "contact")
+	check("and the parent opens", parentOn(door))
+
+	-- Two carried, one of them under level: the parent opens for the one
+	-- that is ready, and the other still shows -- greyed, not absent.
+	carried = { "CeroSec.MagneticContact", "CeroSec.ElectricStrike", "Base.Screwdriver" }
+	level = 1
+	eq("both rows show once one of them is doable", idsOn(door), "contact strike")
+	check("the parent is open", parentOn(door))
+	local ready = entry(door, "contact", true)
+	eq("the ready one is not greyed", ready.notAvailable, nil)
+	local short = entry(door, "strike", true)
+	eq("the other still greys for the trade", short.notAvailable, true)
+	eq("with the trade as the reason", reason(short), "Tooltip_CeroSec_NeedSkill")
+	level = 5
+
+	-- POSÉ instead of carried: the row is data (a module already screwed to
+	-- the fixture always gets a REMOVE row, rule 3), but the parent itself
+	-- stays shut until his level reaches that one module's own.
+	carried = {}
+	door.modData[CeroSecModules.DATA_KEY] = { strike = true }
+	level = 1
+	eq("a posé module above his level opens nothing", idsOn(door), "")
+	check("no parent for a fixture he cannot yet touch", not parentOn(door))
+	level = 5
+	eq("skilled enough, the posé module is the whole line", idsOn(door), "strike")
+	check("and the parent opens for it alone", parentOn(door))
+	check("it is the REMOVE row and not an INSTALL one",
+		entry(door, "strike", false) ~= nil)
+	door.modData[CeroSecModules.DATA_KEY] = nil
+	carried = ALL_ITEMS
 
 	--
 	-- 0b. THE PARENT IS NAMED BY THE OBJECT, and the two survol rules
@@ -4619,35 +4677,29 @@ do
 		check("and every exit turns it back off", door.lit == false and door.outline == false)
 	end
 
-	-- EVERY LINE CARRIES ITS DESCRIPTION, and a survivor carrying nothing at all
-	-- is the case this rung exists for: greyed, with what the box does on the
-	-- first line and how to get one on the second.
+	-- EVERY LINE CARRIES ITS DESCRIPTION -- but a box he has never seen is no
+	-- longer a row at all (rung 0a above). refusal() asked directly still
+	-- knows both halves of the old two-part reason, which is why the key
+	-- stays: something other than a menu row may still ask it, and this same
+	-- bench does, a few lines down.
 	carried = { "Base.Screwdriver" }
-	local row = entry(door, "operator", true)
-	eq("an entry for a box he has never seen is greyed", row.notAvailable, true)
-	eq("and says what a door operator is", desc(row),
-		"Tooltip_CeroSec_ModuleDesc_operator")
-	eq("with the reason under it", reason(row), "Tooltip_CeroSec_ModuleItem")
+	level = 5
+	check("a box he has never seen is not a row at all",
+		entry(door, "operator", true) == nil)
+	local ghost = CeroSecModuleMenu.refusal(door, player,
+		CeroSecModules.byId("operator"), true)
+	eq("refusal itself still sends him to find or craft one", ghost,
+		"Tooltip_CeroSec_ModuleItem")
 	known = false
-	row = entry(door, "operator", true)
-	eq("and a survivor who has not read the guide is sent to the guide",
-		reason(row), "Tooltip_CeroSec_ModuleRecipe")
+	ghost = CeroSecModuleMenu.refusal(door, player,
+		CeroSecModules.byId("operator"), true)
+	eq("or to the guide, when he has not read it", ghost,
+		"Tooltip_CeroSec_ModuleRecipe")
 	known = true
 
-	-- Electricity 0: every line greyed with the trade, description and all.
-	carried = { "CeroSec.MagneticContact", "CeroSec.ElectricStrike",
-		"CeroSec.DoorOperator", "Base.Screwdriver" }
-	level = 0
-	for _, id in ipairs({ "contact", "strike", "operator" }) do
-		row = entry(door, id, true)
-		eq(id .. " is greyed at Electricity 0", row.notAvailable, true)
-		eq("with the trade as the reason", reason(row), "Tooltip_CeroSec_NeedSkill")
-		eq("and its own description over it", desc(row),
-			"Tooltip_CeroSec_ModuleDesc_" .. id)
-	end
-	level = 5
-	-- And with everything in hand: a live entry that still says what it is.
-	row = entry(door, "contact", true)
+	-- Carrying it and skilled: a live entry that still says what it is.
+	carried = { "CeroSec.MagneticContact", "Base.Screwdriver" }
+	local row = entry(door, "contact", true)
 	eq("a fittable entry is not greyed", row.notAvailable, nil)
 	eq("and still carries its description", desc(row),
 		"Tooltip_CeroSec_ModuleDesc_contact")
@@ -4655,7 +4707,9 @@ do
 
 	-- The refusals about THIS fixture rather than about fixtures of its sort are
 	-- lines, not silences: the strike on a door no lock bites, and a leaf of a
-	-- garage door.
+	-- garage door. Carried and skilled, so the row exists to be greyed by the
+	-- lock and not by rung 0a.
+	carried = { "CeroSec.ElectricStrike", "Base.Screwdriver" }
 	local interior = fixture("IsoDoor", inside)
 	interior.open = true
 	interior.isExterior = function() return false end
@@ -5577,6 +5631,21 @@ do
 	objects = {}
 	eq("a fixture with nothing in reach still offers the cut", rowsOn(post),
 		"ContextMenu_CeroSec_UnlinkLoose")
+
+	-- GUARD-RAIL: the LAST module off a fixture does not take a cable with it
+	-- (CeroSecModules.setOn's own comment on isBare) -- so a fixture that has
+	-- gone back to bare must still open for the one thing left to do on it.
+	-- Built straight into modData and not through a module coming off, because
+	-- this suite loads CeroSecLinkMenu alone and never CeroSecModuleMenu.
+	local orphan = fixture("IsoDoor", stand)
+	orphan.modData[CeroSecModules.DATA_KEY] =
+		{ [CeroSecModules.LINK_KEY] = { { x = 22, y = 10, z = 0, wire = 5 } } }
+	check("the bare fixture answers no module fitted at all",
+		not CeroSecModules.anyFitted(orphan))
+	eq("its loose cable still opens the menu with nothing fitted",
+		rowsOn(orphan), "ContextMenu_CeroSec_UnlinkLoose")
+	check("and the CeroSec: parent still exists over it",
+		fixtureSubOn(orphan) ~= nil)
 
 	--
 	-- 5. A COMPUTER RENAMED KEEPS ITS CABLE, which is the naming rule itself

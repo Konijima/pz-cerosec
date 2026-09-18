@@ -3497,6 +3497,14 @@ Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
      après les options vanilla, pas avant) : **CeroSec: Light Switch** est SOUS
      le **Turn on/off** de la lampe qui est au jeu et non à nous, et le
      sous-menu s'ouvre normalement. [ ]
+353a. **Rien à faire, rien à voir.** Inventaire vide de tout module et de tout
+     tournevis, aucun module jamais posé, clic droit sur une porte, une
+     fenêtre, un interrupteur, une prise de courant, un four ou une génératrice
+     (2026-09-17). Attendu : aucune entrée **CeroSec:** du tout, pas même
+     grisée — le clic droit ne montre que les options du jeu. Ramasser un
+     seul module qui va sur cet objet, sans le niveau d'Électricité requis,
+     reclic droit : toujours aucune entrée. Monter le niveau : l'entrée
+     apparaît, avec la ligne de ce module disponible. [ ]
 354. **Les objets dans le sac.** Clic droit sur un volume du manuel dans
      l'inventaire → **Read the User's Guide** est la première entrée, au-dessus
      de **Équiper** et de **Déposer**. Même chose pour une disquette avec un

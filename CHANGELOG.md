@@ -248,6 +248,14 @@ there is nothing else for you to do.
   Door** and its **Link to computer** read after them. The computer itself is
   unchanged: **Use computer**, **Turn on** and the drive still lead its own
   menu, and so does everything on a floppy or a manual in your inventory.
+- **Interface: the CeroSec entry only shows when you can do something: a
+  module you carry and have the skill for, or one already fitted.** A door,
+  switch or other fixture you have never put a module on, and have no module
+  in your bag for, no longer grows a "CeroSec:" entry at all; a module you do
+  carry but have not yet got the skill for still shows, greyed, once that
+  entry is open for another reason. A cable left running with no module on
+  the fixture any more still opens the entry, so "Unlink loose cable" is
+  never out of reach.
 
 ## 0.4.0 - 2026-09-16
 

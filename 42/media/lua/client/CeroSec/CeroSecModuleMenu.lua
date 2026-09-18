@@ -57,6 +57,23 @@ require "CeroSec/ISCeroSecModuleAction"
 -- If nothing is left after all that, there is no submenu and no parent entry
 -- either: a right-click on a fridge says nothing about this mod at all.
 --
+-- 2026-09-17: the "not carrying" row is gone again, and the parent with it when
+-- that is all there was. An INSTALL row now needs the module in his bag -- vanilla
+-- never offers an option that needs an object under the player and grays it
+-- instead, it leaves the line out (ISWorldObjectContextMenu.lua's
+-- doLightSwitchOption, 1195-1198, and doSheetRopeOptions, ~3407, both skip the
+-- option when the object or the level is missing). A module already screwed to
+-- the fixture keeps its row -- REMOVE and the cable ask nothing about his bag --
+-- and the parent only opens when at least one row is something he could actually
+-- do right now: a carried module he has the skill for, or a fitted one he has the
+-- skill to touch. A carried module he lacks the skill for still shows, greyed,
+-- once the parent is open for something else -- the fixture is worth reading
+-- about even if this one box is not yet his to fit. Tooltip_CeroSec_ModuleItem
+-- ("you are not carrying one") cannot be reached through an INSTALL row anymore,
+-- since one only exists for a module already in his bag; the key stays for
+-- whatever calls CeroSecModuleMenu.refusal directly (tests/manual_ui_test.lua
+-- does), so nothing here is deleted, only unreachable from this path.
+--
 -- Every one of them is asked again on the server (SCeroSecSystem's
 -- Commands.installmodule), so what this decides is what a player SEES and never
 -- what he may do.
@@ -343,32 +360,46 @@ function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldob
 	if not object then return end
 	local fitted = CeroSecModules.installedOn(object)
 
-	-- What is worth an entry: a module already on this thing (it can come off),
-	-- or one that could ever go on a fixture of this SORT -- whether he is
-	-- carrying it or not, because a box he has never been told about is a box he
-	-- will never go and look for.
+	-- What is worth a ROW: a module already on this thing (it can come off), or
+	-- one he is carrying that could go on a fixture of this SORT. Not one he is
+	-- not carrying -- vanilla leaves an option out rather than grey it when the
+	-- object it needs is not on the player (the header above has the two calls).
 	--
-	-- The one thing left out is the module that does not fit this sort of fixture
-	-- at all: `fitsOn` answering "fixture". Its other two answers -- a door no
-	-- lock bites on, a leaf of a garage door -- are about THIS door and not about
-	-- doors, so they stay and say so.
+	-- The one thing left out of an INSTALL row is the module that does not fit
+	-- this sort of fixture at all: `fitsOn` answering "fixture". Its other two
+	-- answers -- a door no lock bites on, a leaf of a garage door -- are about
+	-- THIS door and not about doors, so they stay and say so.
 	--
-	-- Counted before anything is added, so a submenu is never built with nothing
-	-- under it and a right-click on something this mod has nothing to say about
-	-- gets no parent entry either.
+	-- `inv:getFirstTypeRecurse` is the same call `refusal` makes below for the
+	-- same question, on purpose: "carrying it" must mean one thing in this file,
+	-- not this check's idea and refusal's idea slowly drifting apart.
+	--
+	-- The level is read ONCE, not once per module: refusal (below) still reads
+	-- it again per row for its own tooltip, which is the existing shape this
+	-- loop is not out to change.
+	local playerLevel = playerObj:getPerkLevel(Perks.Electricity)
+	local inv = playerObj:getInventory()
 	local rows = {}
+	local doable = false
 	for i = 1, #CeroSecModules.LIST do
 		local module = CeroSecModules.LIST[i]
 		if fitted[module.id] then
 			rows[#rows + 1] = { module = module, install = false }
-		else
+			if playerLevel >= module.skill then doable = true end
+		elseif inv ~= nil and inv:getFirstTypeRecurse(module.item) ~= nil then
 			local _, why = CeroSecModules.fitsOn(object, module.id)
 			if why ~= "fixture" then
 				rows[#rows + 1] = { module = module, install = true }
+				if playerLevel >= module.skill then doable = true end
 			end
 		end
 	end
-	if #rows == 0 then return end
+	-- Counted before anything is added: a submenu is never built with nothing
+	-- under it, and a right-click on something this mod has nothing to say about
+	-- -- or nothing he could act on yet -- gets no parent entry either. A row can
+	-- exist (a carried module he lacks the skill for) with `doable` still false;
+	-- that row only ever appears once ANOTHER row opens the parent for it.
+	if not doable then return end
 
 	-- The parent named after the object, at the TOP of the menu (CeroSecMenu),
 	-- shared with the cable menu below it: CeroSecModuleMenu.fixtureParent.

@@ -29,5 +29,6 @@ Safe for existing saves. Nothing to redo.
 [b]Interface[/b]
 [*] One CeroSec entry per fixture in the right-click menu, now after the fixture's own options, with a small green terminal icon. Hovering a line highlights the right object.
 [*] A greyed-out menu line says why, in red.
+[*] The CeroSec entry only shows up when there's something you can actually do with it.
 
 Full notes: github.com/Konijima/pz-cerosec/blob/main/CHANGELOG.md

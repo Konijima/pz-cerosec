@@ -653,6 +653,23 @@ and `getKnownRecipes().contains(name)` (`javap -c`, offsets 0-53), so a master
 electrician who auto-learnt the recipe answers yes without a case of ours. The
 recipe name per module is `recipe` on `CeroSecModules.LIST`.
 
+**2026-09-17: the "not carrying" line is gone again.** An INSTALL row now needs
+the module in his bag, matching vanilla's own rule for an option that needs an
+object under the player: `ISWorldObjectContextMenu.lua`'s `doLightSwitchOption`
+(`:1195-1198`) and `doSheetRopeOptions` (`:~3407`) both leave the option out
+rather than grey it when the object or the level is missing. A module already
+screwed to the fixture keeps its row regardless (REMOVE and the cable ask
+nothing about his bag), and the **parent** itself only opens when at least one
+row is something he could do right now: a carried module he has the skill for,
+or a fitted one he has the skill to touch. A carried module he lacks the skill
+for still shows, greyed, once the parent is open for another reason.
+`Tooltip_CeroSec_ModuleItem` cannot be reached through this menu any more --
+the key stays for whatever still calls `CeroSecModuleMenu.refusal` directly.
+A fixture that has lost its last module but still carries a cable is not
+silenced by this: `CeroSecModules.setOn` keeps that fixture's table alive for
+the link, and `CeroSecLinkMenu`'s own gate reads the raw links, not
+`anyFitted`, so "Unlink loose cable" still opens the parent on its own.
+
 **Every entry carries its description**, greyed or not:
 `Tooltip_CeroSec_ModuleDesc_<id>`, what the box buys, which device it gives and
 the level it wants, with the level passed as `%1` off `CeroSecModules.LIST` so

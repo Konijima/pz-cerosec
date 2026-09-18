@@ -273,13 +273,19 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 
 	local object = CeroSecModuleMenu.findFixture(worldobjects)
 	if not object then return end
-	-- Nothing screwed to it is no submenu at all: the cable is what carries a
-	-- MODULE's device to a machine, and a survivor with a bare door has not got to
-	-- this feature yet (CeroSecModules.anyFitted, the first thing linkRefusal asks).
-	if not CeroSecModules.anyFitted(object) then return end
-
-	local rows = CeroSecLinkMenu.machines(object)
+	-- "Link to computer" needs a module screwed to the fixture to run a cable
+	-- TO (CeroSecModules.anyFitted, the first thing linkRefusal asks); a bare
+	-- fixture gets none of those rows. But the cable OUTLIVES the module: setOn
+	-- keeps a fixture's table alive for a link even after the last module comes
+	-- off it (CeroSecModules.setOn's own comment on isBare), and that link must
+	-- still be reachable to unlink -- CeroSecModules.unlinkRefusal asks nothing
+	-- about anyFitted, on purpose. Gating the WHOLE menu on anyFitted would bury
+	-- that loose cable where nothing can ever cut it again, so only the
+	-- install-side rows are gated; the raw links are read regardless.
+	local fitted = CeroSecModules.anyFitted(object)
 	local links = CeroSecModules.linksOn(object)
+	if not fitted and #links == 0 then return end
+	local rows = fitted and CeroSecLinkMenu.machines(object) or {}
 	if #rows == 0 and #links == 0 then return end
 
 	-- The fixture's own parent, shared with the module menu (CeroSecModuleMenu.
