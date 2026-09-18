@@ -22,6 +22,7 @@ Safe for existing saves. A generator you already controlled needs a cable now.
 [*] Dropped modules all look like the same small circuit board, never scrap metal.
 [*] A long line piped, redirected or captured with [b]$( )[/b] is no longer cut at 60 characters. The screen itself is unchanged.
 [*] Tooltips on CeroSec's menu entries no longer run two words together at the line break.
+[*] A password found on a note always works on the machine it names.
 
 [b]Servers[/b]
 [*] With [b]Safehouse members only[/b] on, a stranger can no longer cable a claimed house's doors or windows.

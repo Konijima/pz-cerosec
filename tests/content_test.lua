@@ -4572,4 +4572,85 @@ do
 	end
 end
 
+-- LOGIN COLLISIONS. Two slots of one profile could derive the same login, and
+-- makeAccounts' setPassword sat OUTSIDE the guard that stops a duplicate from
+-- being added -- so the second slot's password overwrote the first slot's,
+-- silently, while the note for slot 1 kept deriving the letters it opened
+-- with before. accountLogin now keeps every slot of a profile distinct from
+-- the ones before it; makeAccounts' setPassword now runs only where the
+-- account was just added.
+do
+	-- FROZEN, taken before this change touched a line: three slots of the
+	-- office's own secret and premises that never collided. If any of these
+	-- six values ever moves, a save already switched on this profile just had
+	-- somebody's login or password rewritten under it -- the compatibility
+	-- promise this bench exists to keep.
+	local frozen = {
+		{ 1, "steven", "thunder44" }, { 2, "mullins", "compass37" },
+		{ 3, "dlee", "lantern65" },
+	}
+	for i = 1, #frozen do
+		local slot, login, password = frozen[i][1], frozen[i][2], frozen[i][3]
+		local got = CeroSecContent.accountLogin(SECRET_A, 12, 34, slot)
+		eq("slot " .. slot .. " without a collision keeps its login", got, login)
+		eq("and slot " .. slot .. "'s password", CeroSecContent.accountPassword(
+			SECRET_A, 12, 34, slot, got), password)
+	end
+
+	-- THE COLLISION ITSELF, at the level accountLogin is built on: the plain,
+	-- un-retried derivation of slot 1 and slot 3 of this premises really do
+	-- land on the same name -- the bug report's own reproduction, and the
+	-- reason a retry belongs above accountKey and not inside it.
+	eq("slot 1 and slot 3's plain derivation collide (the bug)",
+		CeroSecContent.login("3578003000000000",
+			CeroSecContent.accountKey(71, 16, 1)),
+		CeroSecContent.login("3578003000000000",
+			CeroSecContent.accountKey(71, 16, 3)))
+
+	local SECRET_C = "3578003000000000"
+	local l1 = CeroSecContent.accountLogin(SECRET_C, 71, 16, 1)
+	local l3 = CeroSecContent.accountLogin(SECRET_C, 71, 16, 3)
+	eq("slot 1 keeps the plain name", l1, "baker")
+	check("and slot 3 is now a different one (" .. l3 .. ")", l1 ~= l3)
+end
+
+-- THE SAME COLLISION, through makeAccounts (via prefill, the only door to it):
+-- both accounts must exist, each on its OWN login's password, and a second
+-- prefill of the same machine must not move either password.
+do
+	local secret = "3578003000000000"
+	local premises = WORD_FOR["office"]
+	local o = opts(secret, { premises = premises, b1 = 71, b2 = 16,
+		x = 1, y = 1, z = 0, room = "office" })
+	local state = CeroSecOS.newState("ksp-9-1")
+	local id, _, logins = CeroSecContent.prefill(state, o)
+	eq("the collision premises still resolves to the office profile", id,
+		"office")
+	local l1, l3 = logins[1], logins[3]
+	check("and slots 1 and 3 made two different accounts (" ..
+		tostring(l1) .. " " .. tostring(l3) .. ")",
+		l1 ~= nil and l3 ~= nil and l1 ~= l3)
+
+	-- EACH LOGIN HAS THE PASSWORD ITS OWN NOTE DERIVES -- the whole guarantee a
+	-- paper in a pocket depends on, and the one the bug broke for slot 3.
+	local want1 = CeroSecContent.accountPassword(secret, 71, 16, 1, l1)
+	local want3 = CeroSecContent.accountPassword(secret, 71, 16, 3, l3)
+	check("slot 1's account takes the password its own note derives",
+		CeroSecOS.checkPassword(CeroSecOS.getUser(state, l1), want1))
+	check("slot 3's account takes the password its own note derives",
+		CeroSecOS.checkPassword(CeroSecOS.getUser(state, l3), want3))
+
+	-- MAKEACCOUNTS CALLED TWICE CHANGES NO PASSWORD: both accounts already
+	-- exist, so the getUser == nil guard turns the second call away before it
+	-- ever reaches setPassword, and the stored hash -- salt included, so this
+	-- is not just "the same plaintext would still open it" -- does not move.
+	local hash1 = CeroSecOS.getUser(state, l1).password
+	local hash3 = CeroSecOS.getUser(state, l3).password
+	CeroSecContent.prefill(state, o)
+	eq("a second prefill leaves slot 1's stored hash untouched",
+		CeroSecOS.getUser(state, l1).password, hash1)
+	eq("and slot 3's stored hash untouched",
+		CeroSecOS.getUser(state, l3).password, hash3)
+end
+
 print("content_test: " .. count .. " checks passed")

@@ -4204,9 +4204,50 @@ function CeroSecContent.accountKey(b1, b2, slot)
 	return CeroSecContent.key("a", b1, b2, slot)
 end
 
--- One slot's login, which both the prefill and a paper derive for themselves.
+-- Retries a colliding slot gets before the numeric fallback below. Eight, which
+-- is more shapes than three names and three login shapes can ever need to clear
+-- one collision -- the eighth retry is already a coincidence past what the
+-- lists produce, and the bound exists so this cannot loop.
+CeroSecContent.LOGIN_RETRIES = 8
+
+-- One slot's login, which both the prefill and a paper derive for themselves --
+-- and, since both call this and nothing else, whichever one asks gets the same
+-- answer the other would have.
+--
+-- Slot 1 always gets attempt 0's name: the first slot of a profile never has an
+-- earlier slot to collide with, so nothing above changes what a save already
+-- made. A later slot recomputes its own earlier slots (recursively, through
+-- this same function) to know what it must not repeat, then asks `login` again
+-- with "retry" and the attempt number folded into its key until the name is
+-- new, up to LOGIN_RETRIES tries. A slot that never had a collision gets its
+-- attempt-0 name on the first pass, which is the name this returned before
+-- retries existed -- so a save with no colliding slot keeps every login it
+-- already has.
+--
+-- Past the bound (three names giving the same shape eight times running,
+-- against a slot that already took it), the slot number itself breaks the tie:
+-- it is unique by construction, so appending it always ends the search instead
+-- of asking `login` to keep trying to fail.
 function CeroSecContent.accountLogin(secret, b1, b2, slot)
-	return CeroSecContent.login(secret, CeroSecContent.accountKey(b1, b2, slot))
+	local earlier = {}
+	for j = 1, slot - 1 do
+		earlier[CeroSecContent.accountLogin(secret, b1, b2, j)] = true
+	end
+	local base = CeroSecContent.accountKey(b1, b2, slot)
+	for attempt = 0, CeroSecContent.LOGIN_RETRIES do
+		local key = base
+		if attempt > 0 then key = CeroSecContent.key(base, "retry", attempt) end
+		local name = CeroSecContent.login(secret, key)
+		if not earlier[name] then return name end
+	end
+	local name = CeroSecContent.login(secret, base)
+	local suffix = tostring(slot)
+	if #name + #suffix > CeroSecOS.MAX_USERNAME then
+		name = string.sub(name, 1, CeroSecOS.MAX_USERNAME - #suffix)
+	end
+	name = name .. suffix
+	if not CeroSecOS.isValidUserName(name) then name = "user" .. suffix end
+	return name
 end
 
 -- And its password. The login goes INTO the key as well as the slot, so a change
@@ -4610,7 +4651,9 @@ local function makeAccounts(state, session, profile, secret, b1, b2, mkey, now)
 		-- A login the machine already has -- "root", "admin", or the same name
 		-- generated twice for two slots -- is not a second account. The slot keeps
 		-- the name, so the files it asks for land in the home that is already
-		-- there, and nothing is added to /etc/passwd.
+		-- there, nothing is added to /etc/passwd, and (below) nothing is done to
+		-- its password: this account's own slot, whichever one made it, already
+		-- set the one the note for that slot derives.
 		if name ~= nil and CeroSecOS.getUser(state, name) == nil then
 			local home = "/home/" .. name
 			if not placeDir(state, session, home, name, CeroSecOS.HOME_MODE, now) then
@@ -4646,17 +4689,25 @@ local function makeAccounts(state, session, profile, secret, b1, b2, mkey, now)
 				-- administrator of a shop's computer was.
 				CeroSecOS.setGroupMember(state, name, CeroSecOS.DEV_GROUP, true, now)
 			end
-		end
-		if name ~= nil then
-			if account.pass then
+			-- setPassword lives INSIDE the block that just added this account, under
+			-- the exact same getUser == nil guard, and nowhere else. A slot whose
+			-- name collided with an earlier one never reaches here -- the outer `if`
+			-- above already turned it away -- so a second slot can no longer set a
+			-- password on the first slot's account, whatever accountLogin does or is
+			-- ever changed to do upstream. That is now the only thing making the
+			-- comment below true, not a promise about the login.
+			if name ~= nil and account.pass then
 				local password =
 					CeroSecContent.accountPassword(secret, b1, b2, i, name)
 				-- A refusal here leaves the account OPEN, which is a machine somebody
 				-- can still get into. The reverse -- a password set that the note does
 				-- not know -- is the one outcome that locks a player out, and it cannot
-				-- happen: the note derives the letters and never reads them.
+				-- happen: this is the only setPassword call for this account, ever,
+				-- for as long as the guard above stands.
 				CeroSecOS.setPassword(state, name, password, mkey .. ":p" .. i, now)
 			end
+		end
+		if name ~= nil then
 			made[i] = name
 		end
 	end

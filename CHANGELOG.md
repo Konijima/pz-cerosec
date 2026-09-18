@@ -264,6 +264,9 @@ there is nothing else for you to do.
   a lamppost. **If a save already had a generator on `/dev`, it drops off the
   list until you cable it** -- your `crontab` lines and scripts for it are
   untouched and pick up again the moment the cable is run.
+- **A note's login and password always match the machine it names; two
+  accounts could share a name and the second overwrote the first's
+  password.**
 
 ## 0.4.0 - 2026-09-16
 
