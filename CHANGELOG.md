@@ -6,7 +6,7 @@ reads. At release, `python3 tools/changelog-steam.py` prints the newest section
 in the shape Steam's Change Notes take, and the section gets its version and
 date.
 
-## Unreleased
+## 0.5.1 - 2026-09-19
 
 - A script that is in the middle of a pipeline when the game saves now comes
   back at the very step it was on. `autoclose.sh` running `ls /dev | grep
