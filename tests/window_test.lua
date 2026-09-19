@@ -17812,6 +17812,19 @@ do
 				pipeFrame(graph).pipes[2].bytes = bad[2]
 			end), "bad frame")
 		end
+		-- The same forgeries against a pipe that really HOLDS a good many bytes, so
+		-- that the bound "no more than the lines add up to" is met and can not be the
+		-- rule that refuses them: a count that is not whole has to be refused for
+		-- being that. (One past what a save may carry is not testable here: the size
+		-- gate refuses the whole job as too large before this rule is asked.)
+		for _, bad in ipairs({ { "a fraction with bytes held", 1.5 },
+				{ "a fraction of a byte over a line", 2.5 } }) do
+			dropped("a pipe holding lines whose byte count is " .. bad[1], onJob(function(graph)
+				local pipe = pipeFrame(graph).pipes[2]
+				pipe.lines = { "ab", "cd" }
+				pipe.bytes = bad[2]
+			end), "bad frame")
+		end
 		-- A sleep's clock: a finite number of milliseconds, and nothing else. NaN and
 		-- infinity compare false with every clock there is, so a job that carried one
 		-- would be asleep for ever.
