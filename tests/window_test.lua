@@ -17785,6 +17785,44 @@ do
 			local frame = pipeFrame(graph)
 			frame.stages[2] = frame.stages[3]
 		end), "bad frame")
+		-- Two stages that write into one pipe: every link the walker follows is
+		-- there, and only the pipes being one table each says it is a forgery.
+		dropped("two pipes that are one table", onJob(function(graph)
+			local frame = pipeFrame(graph)
+			frame.pipes[2] = frame.pipes[1]
+			frame.stages[2].pipe = frame.pipes[1]
+			frame.stages[3].stdinBuf = frame.pipes[1]
+		end), "bad frame")
+		-- What a pipe says it holds is a count of bytes the pipeFull test compares.
+		local nan = 0 / 0
+		for _, bad in ipairs({ { "not a number (NaN)", nan }, { "infinite", math.huge },
+				{ "negative infinity", -math.huge }, { "negative", -1 },
+				{ "not a whole number", 1.5 }, { "past what a save may carry", 1e9 },
+				{ "more than the lines in it add up to", 5000 } }) do
+			dropped("a pipe whose byte count is " .. bad[1], onJob(function(graph)
+				pipeFrame(graph).pipes[2].bytes = bad[2]
+			end), "bad frame")
+		end
+		-- A sleep's clock: a finite number of milliseconds, and nothing else. NaN and
+		-- infinity compare false with every clock there is, so a job that carried one
+		-- would be asleep for ever.
+		local function asleep(at)
+			at.state = "sleeping"
+			at.wakeMs = nil
+		end
+		for _, bad in ipairs({ { "NaN", nan }, { "infinite", math.huge },
+				{ "negative infinity", -math.huge }, { "text", "9" }, { "a table", {} },
+				{ "a thousand years", 3.2e13 } }) do
+			dropped("a sleeping job whose time left is " .. bad[1], onJob(function(graph)
+				asleep(graph)
+				graph.sleepLeft = bad[2]
+			end), "bad clock")
+			dropped("a sleeping stage whose time left is " .. bad[1], onJob(function(graph)
+				local stage = pipeFrame(graph).stages[3]
+				asleep(stage)
+				stage.sleepLeft = bad[2]
+			end), "bad clock")
+		end
 		dropped("pipelines nested past the bound", onJob(function(graph)
 			-- Each level a pipe frame inside the stage of the one above.
 			local frame = pipeFrame(graph)
@@ -18564,6 +18602,62 @@ do
 		check("with the line in the log", said("left a job out of the save: too deep"))
 		job.stash = nil
 
+		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
+	end
+
+	--
+	-- A pipe holding more than the back-pressure ceilings is a legal pipe
+	--
+	-- CeroSecOS.PIPE_LINES and PIPE_BYTES are asked BEFORE a stage is stepped, and one
+	-- step of `cat` puts a whole file into the pipe, and two files if it was given
+	-- two. So the gate on the way in does not use them (pipeOk asks that the byte
+	-- count is finite, whole and what the lines add up to), and this is what would
+	-- go red if it did: each job is saved with what is in its pipe, comes back, and
+	-- finishes the count. The first goes past the line ceiling and the second past
+	-- the byte one, because a job that fits a save cannot go past both.
+	--
+	do
+		local realBudget = CeroSec.STEP_BUDGET_PER_MACHINE
+		CeroSec.STEP_BUDGET_PER_MACHINE = 1
+		local function past(name, text, cmd, past, want)
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			local bench = newBench()
+			bench.login("admin")
+			bench.script("/home/admin/big", text)
+			bench.script("/home/admin/p.sh", cmd .. "\necho status=$?\n")
+			bench.enter("sh /home/admin/p.sh")
+			local held = nil
+			for _ = 1, 500 do
+				bench.tick(1)
+				local job = bench.object.jobs and bench.object.jobs.list[1]
+				for i = job and #job.frames or 0, 1, -1 do
+					local frame = job.frames[i]
+					if frame.stages ~= nil and past(frame.pipes[1]) then held = frame.pipes[1] end
+				end
+				if held then break end
+			end
+			check(name .. ": a pipe is past the ceiling (" .. (held and (#held.lines .. " lines, "
+				.. held.bytes .. " bytes") or "none") .. ")", held ~= nil)
+			local saved = bench.save()
+			check(name .. ": the save takes the job", saved.os.jobs ~= nil and #saved.os.jobs.list == 1)
+			local back = newBench(saved)
+			eq(name .. ": and it comes back", jobCount(back), 1)
+			local n = 0
+			while CeroSec.consoleWaiting(back.object:consoleState()) ~= "shell" and n < 3000 do
+				back.tick(10)
+				n = n + 10
+			end
+			local rows = back.object.console.lines
+			eq(name .. ": and counts what was in the pipe", rows[#rows - 1], want)
+		end
+		-- The files are what bench.script makes of them: one more, empty, line at the end.
+		past("fourteen hundred lines", string.rep("abcd\n", 700),
+			"cat /home/admin/big /home/admin/big | wc -l",
+			function(pipe) return #pipe.lines > CeroSecOS.PIPE_LINES end, "  1402")
+		past("forty lines of two hundred bytes", string.rep(string.rep("b", 199) .. "\n", 20),
+			"cat /home/admin/big /home/admin/big | wc -c",
+			function(pipe) return pipe.bytes > CeroSecOS.PIPE_BYTES end, "  8001")
 		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
 	end
 

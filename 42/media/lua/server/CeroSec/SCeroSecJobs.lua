@@ -1578,6 +1578,16 @@ end
 -- else, because job.vars maps the player's own names to text and a player may call
 -- a variable `fprog`. The same walk turns every sleeping job's wakeMs, the
 -- pipeline's stages included, into what is LEFT of it (see the header above).
+--
+-- What a sleep may have LEFT, in milliseconds: a thousand million seconds, thirty
+-- one years, which is more than any script means by `sleep`. A number the clock
+-- cannot do arithmetic on -- `sleep inf`, `sleep nan`, where the shell's tonumber
+-- reads them -- is written as this, and it is the most a save file may claim: a
+-- job that asks for more is forged (shapeOfJob), because NaN and infinity compare
+-- false with every clock there is, so a job that carried one would be asleep for
+-- ever whatever the machine did.
+local SLEEP_MAX_MS = 1e12
+
 local INTERN_ROLE = {
 	-- what a table reached under a key of a role is, by the key
 	job = { frames = "frames" },
@@ -1625,7 +1635,11 @@ local function internValue(value, role, st, depth)
 		if value.state == "sleeping" and type(value.wakeMs) == "number"
 				and type(st.nowMs) == "number" then
 			local left = value.wakeMs - st.nowMs
-			if left < 0 then left = 0 end
+			if left ~= left or left > SLEEP_MAX_MS then
+				left = SLEEP_MAX_MS
+			elseif left < 0 then
+				left = 0
+			end
 			out.sleepLeft = left
 		end
 	end
@@ -1775,6 +1789,26 @@ end
 -- has to be a table, what it prints or concatenates has to be a string.
 local shapeOfJob
 
+-- What a pipe says it holds: bytes is the running total of what is in `lines`
+-- (each line and its newline; the VM adds it on the write and takes it off on the
+-- read), so it is a finite whole number, nowhere above what a save may carry and
+-- nowhere above what the lines really add up to. NaN is what pipeFull cannot
+-- answer -- it is never full, and a writer that never waits is a job that eats
+-- memory -- and a number past what is in it is a pipe that is full of nothing.
+-- The ceiling is NOT PIPE_LINES or PIPE_BYTES: those are back-pressure, asked
+-- before a stage is stepped, and one step of `cat` puts a whole file in (2041 short
+-- lines and 8162 bytes, measured), so a legal pipe passes both.
+local function pipeBytesOk(pipe)
+	local bytes = pipe.bytes
+	if bytes ~= bytes or bytes < 0 or bytes > CeroSec.JOB_SAVE_BYTES
+			or bytes ~= math.floor(bytes) then
+		return false
+	end
+	local held = 0
+	for i = 1, #pipe.lines do held = held + #pipe.lines[i] + 1 end
+	return bytes <= held
+end
+
 -- One pipe frame: the counts and the links the walker relies on. `pipes[i]` is
 -- what stage i writes and what stage i+1 reads, the frame drains the last one, and
 -- every stage answers its refusals to the job that owns the pipeline -- so those
@@ -1793,6 +1827,11 @@ local function pipeOk(frame, owner, depth, ctx)
 				or not stringArray(pipe.lines) then
 			return "bad frame"
 		end
+		-- One pipe each: two stages that write into the same table are one pipe with
+		-- two writers and a reader that is told eof by whichever ends first.
+		if ctx.pipes[pipe] then return "bad frame" end
+		ctx.pipes[pipe] = true
+		if not pipeBytesOk(pipe) then return "bad frame" end
 		if type(stage) ~= "table" or ctx.stages[stage] then return "bad frame" end
 		if stage.pipe ~= pipe or stage.stdinBuf ~= pipes[i - 1] or stage.errTo ~= owner then
 			return "bad frame"
@@ -1818,6 +1857,15 @@ function shapeOfJob(job, isStage, depth, ctx)
 		return "no shell"
 	end
 	if job.funcs ~= nil and not stringMap(job.funcs) then return "no shell" end
+	-- The clock of a sleep is a number of milliseconds and one that is finite: what
+	-- the walker compares it with is the machine's own clock, and nothing compares
+	-- true with NaN or with more than there is. Below nought is what the save
+	-- itself clamps and restoreClocks clamps again; the ceiling is SLEEP_MAX_MS.
+	local left = job.sleepLeft
+	if left ~= nil and (type(left) ~= "number" or left ~= left
+			or left > SLEEP_MAX_MS or left < -SLEEP_MAX_MS) then
+		return "bad clock"
+	end
 	if not programOk(job.prog, 0, ctx.done) then return "bad program" end
 	local frames = job.frames
 	if type(frames) ~= "table" or #frames > CeroSecOS.MAX_FRAMES then
@@ -1907,7 +1955,7 @@ end
 function CeroSecJobs.jobFromData(data, nowMs)
 	if type(data) ~= "table" then return nil, "not a table" end
 	local graph = data.packed ~= nil
-	local ctx = { graph = graph, stages = {}, done = {}, mark = {} }
+	local ctx = { graph = graph, stages = {}, pipes = {}, done = {}, mark = {} }
 	local root = data
 	if graph then
 		if type(data.packed) ~= "table" then return nil, "not a table" end
