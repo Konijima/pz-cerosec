@@ -1148,8 +1148,12 @@ local function newBench(saved)
 	-- what a machine saves is a bench that fails on the far side rather than a
 	-- machine that comes back in the game missing a piece, and nothing that
 	-- survives this is a reference to anything the old machine held.
-	function bench.save()
-		Events.OnSave.trigger()
+	--
+	-- skipEvent is a dedicated server's save: ServerMap.QueuedSaveAll writes the
+	-- state with no event in Lua, so what the machine carries is whatever it wrote
+	-- before.
+	function bench.save(skipEvent)
+		if not skipEvent then Events.OnSave.trigger() end
 		local dropped = 0
 		local function bytes(value, depth)
 			if value == nil then return nil end
@@ -17545,6 +17549,107 @@ do
 
 
 	--
+	-- A dedicated server has no OnSave
+	--
+	-- ServerMap.QueuedSaveAll calls SGlobalObjects.save() and triggers nothing (it
+	-- was found by restarting a real one: the daemon was gone). So the server
+	-- writes the book on a timer, and the save is taken here with NO event, which
+	-- is the only save a server has.
+	--
+	do
+		local hadServer = _G.isServer
+		local world = FakeWorld.new()
+		world.room("office", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0} })
+		world.put(world.squares["10,10,0"], fakeDoor(false, true, world.squares["11,10,0"], true))
+		world.put(world.squares["12,10,0"], fakeDoor(false, true, world.squares["13,10,0"], true))
+		_G.__world = world
+		_G.IsoObjectChange = { STATE = "chg.STATE", WASHER_STATE = "chg.WASHER_STATE" }
+		CeroSecDevices.invalidate()
+
+		local template = nil
+		local function daemon()
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			CeroSecJobs.snapshotMs = 0
+			if template == nil then
+				local first = newBench()
+				first.login("admin")
+				first.script("/home/admin/d.sh",
+					"while true; do ls /dev | grep ^door; sleep 2; done\n")
+				template = first.save()
+				_G.__now = 5000000
+				CeroSecJobs.lastMs = 0
+			end
+			local bench = newBench(deepCopy(template))
+			bench.open()
+			bench.enter("sh /home/admin/d.sh &")
+			return bench
+		end
+
+		_G.isServer = function() return true end
+		local bench = daemon()
+		eq("server: the daemon is running", jobCount(bench), 1)
+		bench.tick(120)
+		local bytes = bench.save(true)
+		check("server: a save with no event carries the book",
+			bytes.os ~= nil and bytes.os.jobs ~= nil and #bytes.os.jobs.list == 1)
+		local back = newBench(bytes)
+		eq("server: and the machine comes back running it", jobCount(back), 1)
+
+		-- The book is cleared as well as written: a job that ended must not be on the
+		-- state for the next load to run again. The scheduler forgets a machine the
+		-- pass its last job ends, so this is the snapshot that has to run with no
+		-- machine in the scheduler at all.
+		_G.__now = 5000000
+		CeroSecJobs.lastMs = 0
+		CeroSecJobs.snapshotMs = 0
+		local short = newBench(deepCopy(template))
+		short.open()
+		short.enter("sleep 8 &")
+		short.tick(60)
+		bytes = short.save(true)
+		check("server: a job that is running is on the state",
+			bytes.os ~= nil and bytes.os.jobs ~= nil)
+		short.tick(100)
+		eq("server: the job has ended", jobCount(short), 0)
+		bytes = short.save(true)
+		check("server: and the next snapshot took it off the state",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("server: so it does not come back", jobCount(newBench(bytes)), 0)
+
+		-- The same on a machine that is not a server's, where OnSave is the moment
+		-- and the timer would be work for nothing.
+		_G.isServer = function() return false end
+		bench = daemon()
+		bench.tick(120)
+		bytes = bench.save(true)
+		check("not a server: nothing is written on a timer",
+			bytes.os == nil or bytes.os.jobs == nil)
+		bytes = bench.save()
+		check("not a server: the save event is what writes it",
+			bytes.os ~= nil and bytes.os.jobs ~= nil)
+
+		-- A job left out of the save is said once, and again only if what is said
+		-- changes: the timer would otherwise fill the log ring with one line.
+		_G.isServer = function() return true end
+		bench = daemon()
+		local realToData = CeroSecJobs.jobToData
+		CeroSecJobs.jobToData = function() return nil, "a test reason" end
+		CeroSec.logRing = {}
+		bench.tick(300)
+		local said = 0
+		for i = 1, #CeroSec.logRing do
+			if string.find(CeroSec.logRing[i].text, "a test reason", 1, true) then said = said + 1 end
+		end
+		CeroSecJobs.jobToData = realToData
+		eq("a job left out is logged once over thirty seconds of snapshots", said, 1)
+
+		_G.isServer = hadServer
+		_G.__world = nil
+		CeroSecDevices.invalidate()
+	end
+
+	--
 	-- After the reload, the pipes are the SAME pipes
 	--
 	-- The number of stages and the text on the glass are the easy half. What the
@@ -18620,6 +18725,10 @@ do
 			end)())
 		eq("and it is one level below the chain", depthOf(packed, 1), 62)
 		CeroSec.logRing = {}
+		-- The book says a refusal once and not again while the same thing is said
+		-- (the timer would repeat it); this is a second occurrence for the test, so
+		-- the note of the first is put away.
+		bench.object.jobs.said = nil
 		eq("so that job is refused too", CeroSecJobs.writeBook(bench.object, _G.__now), 0)
 		check("with the line in the log", said("left a job out of the save: too deep"))
 		job.stash = nil
@@ -18782,6 +18891,9 @@ do
 		local function leftOut(what, reason, wreck, undo)
 			wreck()
 			CeroSec.logRing = {}
+			-- Each case is a first occurrence: the book does not repeat a line it has
+			-- just said (the server's timer would), so the note of the last one goes.
+			bench.object.jobs.said = nil
 			local saved = bench.save()
 			eq(what .. ": it is not in the save", saved.os.jobs, nil)
 			check(what .. ": and the log says " .. reason,

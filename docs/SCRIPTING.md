@@ -800,7 +800,7 @@ save would not have written:
 
 | | |
 | --- | --- |
-| a background `&` job | **survives** |
+| a background `&` job | **survives**; on a dedicated server at the step it had up to five seconds before the save, because the book is written on a timer there (`CeroSec.JOB_SNAPSHOT_MS`), a server having no save event to write it at |
 | a cron or `at` child | **survives**, its output goes to a mailbox on the disk |
 | the foreground job of the machine's own glass | **survives**; the console is saved and the note of which job it was is put back by `SCeroSecObject:consoleState` |
 | a job that has ended | no (`over`), it is about to be reaped |

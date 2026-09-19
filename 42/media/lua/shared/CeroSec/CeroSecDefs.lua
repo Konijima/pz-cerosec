@@ -806,6 +806,16 @@ CeroSec.JOB_CPU_LIMIT_S = 300
 CeroSec.JOB_SAVE_BYTES = 24576
 CeroSec.JOB_SAVE_TABLES = 2048
 
+-- How often a DEDICATED server writes the job book onto the machines' state,
+-- in milliseconds of wall clock, because it has no save event to write it at:
+-- ServerMap.QueuedSaveAll calls SGlobalObjects.save() with nothing in Lua
+-- triggered, and the only "OnSave" in the jar is GameWindow.save's (see the
+-- header of the book in SCeroSecJobs.lua). Five seconds is the age a job can be
+-- when a server is stopped: it comes back at the step it was at then, and a
+-- sleeping stage with the rest of its sleep as it was then. Singleplayer and a
+-- host write at the save itself and lose nothing.
+CeroSec.JOB_SNAPSHOT_MS = 5000
+
 -- How long a motion sensor holds its contact closed after the last movement it
 -- saw, in seconds of wall clock. Five, and it is the mod's own number and not
 -- the game's: a PIR head of 1993 is a relay with an RC network across it, and

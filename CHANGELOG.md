@@ -8,6 +8,12 @@ date.
 
 ## 0.5.1 - 2026-09-19
 
+- A dedicated server now keeps its running scripts across a restart. The game's
+  server saves the world without telling the mod, so the scripts were never
+  written down and every daemon (`autoclose.sh`, `autolock.sh`) was gone after
+  the server came back. The server now writes them down every five seconds; a
+  script resumes at the step it had reached at most five seconds before the
+  server stopped. Singleplayer and a hosted game were not affected.
 - A script that is in the middle of a pipeline when the game saves now comes
   back at the very step it was on. `autoclose.sh` running `ls /dev | grep
   ^door` at the moment you quit used to be left out of the save and gone on

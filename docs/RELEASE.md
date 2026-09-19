@@ -135,7 +135,9 @@ a new sandbox option to change a world if the release notes say so plainly.
 ### 0.5.1
 
 **A running job now survives the world being saved and loaded, at the step
-it had reached.** The book of jobs was already written on save; a job caught
+it had reached** (on a dedicated server, the step it had reached up to five
+seconds before the server stopped: a server writes the book every five seconds
+and not at the save, because it has no save event in Lua). The book of jobs was already written on save; a job caught
 mid-pipeline was left out of it, and `@reboot` does not fire on a load, so a
 daemon such as `autoclose.sh` could be gone for good. Nothing in an existing
 world changes shape: no state or system version moves, and the old book form

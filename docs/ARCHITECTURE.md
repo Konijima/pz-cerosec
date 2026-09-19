@@ -673,10 +673,22 @@ serializer recurses into it, so an added key inside it moves no number at all (a
 field a change added, read with a default — the compatibility contract's own rule)
 and a build that has never heard of it reads a machine with one and ignores it,
 `CeroSecOS.validate` not being a closed namespace over the state's keys the way a
-disk is. It is written at **`Events.OnSave`**, which `zombie.GameWindow.save(boolean)`
-triggers at bytecode offset 302 and calls `zombie.globalObjects.SGlobalObjects.save()`
-at offset 418 of the same method (`javap -p -c` on 42.20.4) — so the event is the one
-moment there is, before `gos_cerosec.bin` is written. It is read at
+disk is. In singleplayer and on a host it is written at **`Events.OnSave`**, which
+`zombie.GameWindow.save(boolean)` triggers at bytecode offset 302 and calls
+`zombie.globalObjects.SGlobalObjects.save()` at offset 418 of the same method
+(`javap -p -c` on 42.20.4) — so the event is the one moment there is, before
+`gos_cerosec.bin` is written. **A dedicated server never gets there**: it saves
+through `zombie.network.ServerMap.QueuedSaveAll`, which calls `SGlobalObjects.save()`
+itself (offset 88) and triggers nothing in Lua. The only classes holding the string
+`OnSave` are `GameWindow`, `IngameState` (which triggers `OnPostSave`) and
+`LuaEventManager`, and `OnServerStartSaving` / `OnServerFinishSaving` are triggered by
+`StartPausePacket` / `StopPausePacket.processClient`, which run on a client. So on a
+server `CeroSecJobs.tick` writes the book every `CeroSec.JOB_SNAPSHOT_MS` (5000 ms of
+wall clock), before its empty-book return so that a book that has just emptied is
+cleared too, and whatever save the server takes carries the last snapshot: a job comes
+back at the step it had at most five seconds before the server stopped. A restart of a
+real server is what found this; the headless benches take a server's save with no
+event (`bench.save(true)`). It is read at
 `SCeroSecSystem:newLuaObject`, the road every machine in the save file comes in by,
 and **taken off the state as it is read**: a book is a thing a machine is running and
 not a thing that lies on its disk, so a second load cannot resurrect a job somebody

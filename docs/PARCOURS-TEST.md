@@ -3884,6 +3884,14 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      et quitter/recharger. Attendu : `jobs` ne montre rien du tout, l'extinction
      a emporté le travail au moment où elle a eu lieu, et rien ne le ramène. Même
      chose pour une machine **ramassée** puis reposée. [ ]
+397e. **Sur un serveur dédié, l'arrêt du serveur.** Le serveur n'a pas d'événement
+     de sauvegarde : le mod écrit la liste des travaux toutes les cinq secondes.
+     Sur un serveur dédié, lancer `sh /usr/local/bin/autoclose.sh start 5 &`,
+     attendre **au moins dix secondes**, puis arrêter le serveur (`quit` dans sa
+     console), le relancer et se reconnecter. Attendu : `jobs` montre la même
+     ligne, `ps` aussi, et une porte ouverte à la main se referme au bout de cinq
+     tours. Ensuite `kill %1`, attendre dix secondes, arrêter et relancer :
+     `jobs` ne montre rien. [ ]
 398. **Les rideaux, à l'heure.** `sh /usr/local/bin/curtains.sh close` → tous les
      rideaux se ferment dans le monde, **et on les entend**, un par rideau.
      Relancer la même ligne tout de suite : le script dit la même chose et plus

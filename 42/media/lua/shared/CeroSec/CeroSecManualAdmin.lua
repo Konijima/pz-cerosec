@@ -1862,9 +1862,9 @@ A job that spins for five minutes with nothing to wait for is taken away:
   killed: cpu limit
 
 The power ends every job: switching off, rebooting or carrying the
-computer away leaves nothing running. Loading the world again does not.
-A program left running with & is still running when you come back, at the
-step it had reached (see Volume 3).
+computer away leaves nothing running. Loading the world again does not:
+a program left running with & is still running, at the step it had
+reached (a server's is up to 5 s old; see Volume 3).
 
 So the honest answer to "the machine is slow" is ps, and the honest fix is
 kill. There is nothing else to tune.]],

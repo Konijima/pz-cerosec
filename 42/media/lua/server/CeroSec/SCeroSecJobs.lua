@@ -43,6 +43,7 @@ CeroSecJobs = CeroSecJobs or {}
 CeroSecJobs.machines = CeroSecJobs.machines or {}
 CeroSecJobs.cursor = 0
 CeroSecJobs.lastMs = 0
+CeroSecJobs.snapshotMs = 0
 
 -- The first job on a machine is 42. A job id is not a slot number -- `[1] 42`
 -- is job one, id forty-two -- so the two can never be read as each other.
@@ -1226,8 +1227,15 @@ function CeroSecJobs.pass(now)
 end
 
 function CeroSecJobs.tick()
-	if #CeroSecJobs.machines == 0 then return end
 	local now = getTimestampMs()
+	-- Before the empty-book return below: a server whose last job has just ended
+	-- has no machine in the scheduler and still has the book of the snapshot before
+	-- on that machine's state (see the header of the section that follows).
+	if isServer() and now - CeroSecJobs.snapshotMs >= CeroSec.JOB_SNAPSHOT_MS then
+		CeroSecJobs.snapshotMs = now
+		CeroSecJobs.saveBooks()
+	end
+	if #CeroSecJobs.machines == 0 then return end
 	if now - CeroSecJobs.lastMs < CeroSec.JOB_PASS_MS then return end
 	CeroSecJobs.lastMs = now
 	CeroSecJobs.pass(now)
@@ -1257,14 +1265,30 @@ end)
 -- CeroSecOS.validate is not a closed namespace over the state's keys the way a
 -- disk's is (CeroSecOS.diskFieldsOk).
 --
--- WHEN IT IS WRITTEN. Events.OnSave, and there is one moment and this is it:
--- zombie.GameWindow.save(boolean) triggers "OnSave" at bytecode offset 302 and
--- calls zombie.globalObjects.SGlobalObjects.save() at offset 418 of the same
--- method (javap -p -c on 42.20.4), so the event runs before gos_cerosec.bin is
--- written and what the handler leaves on the state is what the save carries. A
--- snapshot on every scheduler pass was the other candidate and was rejected on
--- the arithmetic: ten copies of four job tables a second for every machine in
--- the county, for the sake of a thing that happens when a player quits.
+-- WHEN IT IS WRITTEN. At the save where there is one, and on a timer where there
+-- is not.
+--
+-- Singleplayer and a host: Events.OnSave. zombie.GameWindow.save(boolean)
+-- triggers "OnSave" at bytecode offset 302 and calls zombie.globalObjects.
+-- SGlobalObjects.save() at offset 418 of the same method (javap -p -c on
+-- 42.20.4), so the event runs before gos_cerosec.bin is written and what the
+-- handler leaves on the state is what the save carries.
+--
+-- A DEDICATED SERVER never gets there, and that was found by restarting one. It
+-- saves through zombie.network.ServerMap.QueuedSaveAll, which calls SGlobalObjects.
+-- save() itself (offset 88) and triggers nothing; the only classes that contain
+-- the string "OnSave" are GameWindow, IngameState and LuaEventManager, and
+-- GameWindow.save is not on that road. "OnServerStartSaving" and
+-- "OnServerFinishSaving" are triggered by StartPausePacket and StopPausePacket
+-- .processClient, which run on a CLIENT. So there is no moment on a server to
+-- write at, and the book is written on a timer instead (CeroSec.JOB_SNAPSHOT_MS):
+-- the state always carries the book as of at most that long ago, and whatever
+-- save the server takes writes it.
+--
+-- The snapshot was rejected once as "ten copies of four job tables a second for
+-- every machine in the county". Every five seconds and only for a machine with a
+-- job it is a fiftieth of that, and a machine with nothing is two raw field reads
+-- (saveBooks); it is the price of a server that keeps its daemons.
 --
 -- WHEN IT IS READ. SCeroSecSystem:newLuaObject, which the engine calls once for
 -- every machine in the save file with its saved fields already in the table
@@ -2033,6 +2057,7 @@ function CeroSecJobs.writeBook(luaObject, nowMs)
 	if type(console) == "table" and type(console.job) == "number" then held = console.job end
 
 	local list, over, spent = {}, 0, 0
+	local notes = {}
 	local where = "the machine at " .. luaObject.x .. "," .. luaObject.y .. ","
 		.. luaObject.z
 	for i = 1, #book.list do
@@ -2044,8 +2069,7 @@ function CeroSecJobs.writeBook(luaObject, nowMs)
 			-- player had running that will not be there when he comes back for a
 			-- reason he cannot see, so it says why.
 			if why ~= nil and not NOT_SAVED_QUIETLY[why] then
-				CeroSec.log(CeroSec.LOG_ERROR, where .. " left a job out of the save: "
-					.. why)
+				notes[#notes + 1] = " left a job out of the save: " .. why
 			end
 		else
 			-- Weighed once, against the machine's own ceiling and against what is
@@ -2057,7 +2081,7 @@ function CeroSecJobs.writeBook(luaObject, nowMs)
 			local one = { tables = 0, max = CeroSec.JOB_SAVE_TABLES }
 			local bytes = weigh(data, one, ENTRY_BASE)
 			if one.deep then
-				CeroSec.log(CeroSec.LOG_ERROR, where .. " left a job out of the save: too deep")
+				notes[#notes + 1] = " left a job out of the save: too deep"
 			elseif one.over or bytes > CeroSec.JOB_SAVE_BYTES
 					or spent + one.tables > CeroSec.JOB_SAVE_TABLES then
 				over = over + 1
@@ -2075,8 +2099,15 @@ function CeroSecJobs.writeBook(luaObject, nowMs)
 		state.jobs = { seq = book.seq, list = list }
 	end
 	if over > 0 then
-		CeroSec.log(CeroSec.LOG_ERROR, where .. " left " .. over
-			.. " job(s) out of the save: too large")
+		notes[#notes + 1] = " left " .. over .. " job(s) out of the save: too large"
+	end
+	-- Said when it changes and not every time it is written: a server writes the
+	-- book every JOB_SNAPSHOT_MS, and a job that cannot be saved would otherwise
+	-- push the same line into the log ring twelve times a minute.
+	local said = table.concat(notes, "\n")
+	if said ~= (book.said or "") then
+		book.said = said
+		for i = 1, #notes do CeroSec.log(CeroSec.LOG_ERROR, where .. notes[i]) end
 	end
 	return #list
 end
