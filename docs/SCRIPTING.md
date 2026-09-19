@@ -814,11 +814,21 @@ save would not have written:
 | a book entry off an older build | still read: the entry used to be the job itself, and that flat form loads as it did. It never carried a pipeline, and one that claims to is refused (`a pipeline`). The other way round, an older build reading a `{ packed = ... }` entry finds no `id` in it and drops that one job with a line in the log, never the machine |
 | the prompt's own job when it is **not** the one holding the glass (`job.interactive` without the console naming it) | no (`an orphan prompt`), and this one is `jobToData`'s rather than `jobRefused`'s, because whether a job holds the glass is the console's answer and not the job's: only the job the glass names can be given its shell back, so any other interactive job is a shell nobody would be typing at. The console always hands its prompt to the interactive job it makes, so there is no way to build one of these from the glass, it is a belt under a state the wire cannot reach |
 | a job whose saved shape is bigger than `CeroSec.JOB_SAVE_BYTES`, or that does not fit what is left of `CeroSec.JOB_SAVE_TABLES` | no, and it is **not killed for it**: it goes on running, it is left out of the save, and the log says so |
+| a job **too deep** for the state gate, or holding something the graph form cannot say (`not plain data`: a table that already means a marker, a key that is a table), or a pipeline that has more stages than the shell makes or a pipe too few (`bad frame`) | no, and it is **not killed for it** either: it goes on running, it is left out of the save, and the log says which of them it was (`left a job out of the save: <why>`). Depth is counted from the root of the *state* and not of the job: the book's entry is three levels down, the job one more, so a job has sixty-one levels of its own. The refusals that are only what a job is doing (waiting, a session, the wire, mid-order) are not in the log, they are not news |
 
 A **sleep keeps what is left of it**, not the moment it was due: a `sleep 3600`
 started a minute before you quit still has fifty-nine minutes on it when you come
 back. A job's cpu accounting starts again, the runaway ceiling counts continuous
 processor time, and a job just rebuilt has spent none.
+
+A sleep's clock in a save file is a finite number of milliseconds, at most a thousand
+million seconds (a `sleep inf` is written as that): NaN and infinity compare false with
+every clock there is, so a job carrying one would be asleep for ever, and a job that
+does is refused as forged (`bad clock`). The same gate holds a pipe to being what a
+pipe is: one table of its own per stage, and a byte count that is a whole number, no
+more than a save may carry and no more than the lines in it add up to. (Not
+`PIPE_LINES` and `PIPE_BYTES`, which are the back-pressure asked before a stage is
+stepped: one `cat` puts a whole file into the pipe, so a legal pipe is past both.)
 
 A book off the save file goes through a gate of its own before a single job is put
 back (`CeroSecJobs.jobFromData`): every field is asked its type, and a program is
