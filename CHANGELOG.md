@@ -14,6 +14,9 @@ date.
   the next load; it is kept now, and a pipeline's sleeping stage keeps what
   is left of its sleep. Running scripts also weigh a third of what they did
   in the save, so several daemons fit together comfortably.
+- The printed manual no longer says that loading the world again leaves a
+  machine running nothing. A program left running with `&` is kept across a
+  save and a load; the manual now says so, and lists what is not kept.
 - The shell expands `*`, `?` and `[...]` in an unquoted word against the
   files that are actually there, sorted, the way a real sh always has --
   `cp -r /mnt/* /usr/local/bin` now copies what the floppy holds instead of

@@ -1560,6 +1560,10 @@ you had ordered for later -- that clock is the world's, and the world
 stood still. And a shell you had logged in from another machine: the
 session went, and a shell with no terminal has nowhere to write.
 
+A pipeline is written down whole, each stage at the step it had reached,
+and comes back through the same door; one with a stage that was waiting on
+a question, a call or a wait does not.
+
 One honest gap besides. What the machine writes down about a job it is
 running has a size to it, and a program far longer than anything in this
 book goes over it: that one keeps running now and is not there when you

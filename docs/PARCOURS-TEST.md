@@ -784,8 +784,9 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
      Noter si le jeu a saccadé une seule fois pendant ces cinq minutes. [ ]
 139. `sh boucle.sh &` puis `reboot` en `root` (ou couper le courant de la
      pièce) → après le noir, le BIOS et la reconnexion, `ps` est vide : un
-     redémarrage ne laisse aucun travail en cours. Même chose après avoir
-     sauvegardé et rechargé la partie. [ ]
+     redémarrage ne laisse aucun travail en cours. Sauvegarder et recharger
+     la partie, en revanche, ne coupe pas la machine : voir l'étape 397b2,
+     où le même travail est encore là, à la même étape. [ ]
 
 140. `while true; do echo tick; sleep 1; done &` tapé **directement à
      l'invite** (aucun fichier) → la machine répond `[1] <numéro>` et rend
