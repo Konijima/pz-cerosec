@@ -783,15 +783,15 @@ CeroSec.JOB_CPU_LIMIT_S = 300
 -- WHAT THE GATE HAS ALREADY SPENT, measured and not guessed, because the first
 -- number written here was the wrong one. A machine at every ceiling with a full
 -- floppy in the drive is 576 tables when its nodes are FILES -- which is what was
--- measured -- and **1090** when they are all DIRECTORIES, because a directory is
+-- measured -- and **1123** when they are all DIRECTORIES, because a directory is
 -- two tables (the node and its `children`) where a file is one: 512 nodes with 511
 -- of them directories is 1023, a 32-node floppy all directories is 65 with the
 -- disk's own table, and the state itself is the rest. It is an absurd machine --
 -- five hundred empty directories -- and it is legal, which is the only thing a
 -- belt may be sized against.
 --
--- So: 1090 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
--- 1212 of the 4352 still unspent. tests/window_test.lua builds that worst case and
+-- So: 1123 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
+-- 1179 of the 4352 still unspent. tests/window_test.lua builds that worst case and
 -- asserts the arithmetic rather than trusting this paragraph.
 --
 -- 2048 and not 3072, which was the first number and left 188: five of the fattest

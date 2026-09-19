@@ -18924,6 +18924,11 @@ do
 			.. " of PLAIN_VISITS " .. budget .. " (" .. (budget - total) .. " to spare)")
 		check("the worst legal state really is dearer than a machine of files: "
 			.. worst, worst > 1000)
+		-- The number the prose quotes (CeroSecDefs.lua, CeroSecOSState.lua and the
+		-- persistence page of docs/ARCHITECTURE.md), pinned so that it cannot be stale
+		-- again: a change to what a state costs goes red here until they are updated.
+		eq("and it is the number the comments and the docs say", worst, 1123)
+		eq("with the room over that they say", budget - total, 1179)
 		check("and the three numbers fit the gate's budget with room over: " .. total
 			.. " of " .. budget, total < budget)
 		-- And not merely "fits": a belt that fires on a legal machine is a sticky

@@ -708,9 +708,9 @@ the second is the one that binds: it is what is **left of `validate`'s own table
 budget** once the biggest legal filesystem has been paid for. That budget is
 `8 * (MAX_NODES + FLOPPY_NODES)` = 4352, and the worst legal state is the one where
 every node is a **directory**, because a directory is two tables (the node and its
-`children`) where a file is one — 1090 tables, measured, against the 576 a machine of
-files costs. So 1090 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
-1212 unspent (the shipped `autoclose.sh` is 371 tables at its heaviest, mid-pipeline,
+`children`) where a file is one — 1123 tables, measured, against the 576 a machine of
+files costs. So 1123 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
+1179 unspent (the shipped `autoclose.sh` is 371 tables at its heaviest, mid-pipeline,
 and both home-kit daemons together 769, where the tree form was 1205 for one).
 `tests/window_test.lua` builds that worst case and asserts the three
 numbers add up, because a state past the budget is refused and `osState`'s refusal is
