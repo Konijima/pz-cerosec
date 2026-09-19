@@ -687,6 +687,22 @@ ends in `resetForPlacement`, which switches the machine off and kills the book, 
 the other, `stateFromIsoObject` — a machine adopted from its sprite, which *can* come
 up on — strips the key before anything reads the state.
 
+A book entry is `{ packed = graph }`, and the graph is what lets a pipeline in flight
+cross a save. A job's parsed program is shared, by reference, between its frames and
+every stage's frames, and a stage points back at the job that owns the pipeline and at
+the pipes on either side of it; the state's own serializer has no notion of identity
+and `validate` refuses a cycle, so a plain copy of such a job is both several times
+too big and a cycle. `CeroSecJobs.intern` writes it once instead: `seen[table]` is set
+before it descends, a table reached a second time gets a lazily assigned `$id` and is
+replaced there by `{ ["$ref"] = id }`, and only a table reached twice carries an id.
+The one cycle left (a stage's `errTo`) is broken the same way and put back by
+`resolve`, which is two passes so that a marker may come before its target: the first
+counts and validates and registers every id, the second replaces the markers. The
+clocks are converted on the way, a stage's `wakeMs` to a `sleepLeft` exactly as the
+job's is, and `jobFromData` rebuilds them from the moment of the load. What refuses a
+stage is `jobRefused`, recursively, by name. The flat entry, the job itself, is still
+read, and a build that predates the packed one drops the entry for want of an `id`.
+
 `CeroSec.JOB_SAVE_BYTES` and `CeroSec.JOB_SAVE_TABLES` bound what may be written, and
 the second is the one that binds: it is what is **left of `validate`'s own table
 budget** once the biggest legal filesystem has been paid for. That budget is
@@ -694,7 +710,9 @@ budget** once the biggest legal filesystem has been paid for. That budget is
 every node is a **directory**, because a directory is two tables (the node and its
 `children`) where a file is one — 1090 tables, measured, against the 576 a machine of
 files costs. So 1090 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
-1212 unspent. `tests/window_test.lua` builds that worst case and asserts the three
+1212 unspent (the shipped `autoclose.sh` is 371 tables at its heaviest, mid-pipeline,
+and both home-kit daemons together 769, where the tree form was 1205 for one).
+`tests/window_test.lua` builds that worst case and asserts the three
 numbers add up, because a state past the budget is refused and `osState`'s refusal is
 sticky: the failure this bounds is not a slow gate, it is a computer the player cannot
 open again. [SCRIPTING.md](SCRIPTING.md#underneath-the-step-machine-the-job-and-the-scheduler)

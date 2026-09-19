@@ -3863,6 +3863,14 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      numéro de travail qu'avant. Ouvrir une porte à la main : elle se **referme
      toujours** toute seule au bout de cinq tours. `ls /var/tmp` montre
      `autoclose.on` encore là. [ ]
+397b2. **Même chose, en pleine chaîne.** Reprendre 397b avec
+     `autoclose.sh` qui tourne, et sauvegarder **à plusieurs reprises, à des
+     moments différents** (pas seulement quand il dort) : le programme passe un
+     instant dans `ls /dev | grep ^door`, et une sauvegarde à ce moment-là
+     doit le garder aussi. Attendu : après le rechargement, `jobs` montre
+     toujours la même ligne, et une porte ouverte à la main se referme
+     toujours. Aucune ligne « left out of the save » ne doit être apparue dans
+     le journal du jeu. [ ]
 397c. **Ce qui ne revient pas, et c'est voulu.** Toujours sur la même machine :
      `shutdown -h +9`, puis quitter vers le menu et recharger. Attendu : la
      machine est **encore allumée** et `jobs` ne montre **aucun** `shutdown` en

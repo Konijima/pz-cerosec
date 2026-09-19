@@ -8,6 +8,12 @@ date.
 
 ## Unreleased
 
+- A script that is in the middle of a pipeline when the game saves now comes
+  back at the very step it was on. `autoclose.sh` running `ls /dev | grep
+  ^door` at the moment you quit used to be left out of the save and gone on
+  the next load; it is kept now, and a pipeline's sleeping stage keeps what
+  is left of its sleep. Running scripts also weigh a third of what they did
+  in the save, so several daemons fit together comfortably.
 - The shell expands `*`, `?` and `[...]` in an unquoted word against the
   files that are actually there, sorted, the way a real sh always has --
   `cp -r /mnt/* /usr/local/bin` now copies what the floppy holds instead of
