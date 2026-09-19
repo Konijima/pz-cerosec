@@ -1331,7 +1331,18 @@ end)
 -- about legality -- a live job has no cycle in it -- but this walks tables off a
 -- save file too, and an unbounded recursion there is a server that does not come
 -- up.
+--
+-- WHERE the count starts is the caller's to say, because the state gate counts from
+-- the root of the STATE (CeroSecOSState checkPlain, 64 tables down at most) and a
+-- book entry sits three levels below it: state, jobs, list, entry -- and the graph
+-- one more level down again, at `packed`. A walk that counted from the job's own
+-- root let through a job whose deepest table was sixty-four down from `packed`
+-- and sixty-seven from the state, which the gate then refuses as too deep: a
+-- refusal that is sticky, on a machine that was doing nothing wrong.
 local WEIGH_DEPTH = 64
+-- entry (at 3, so 2 above it), and packed a level below it
+local ENTRY_BASE = 2
+local PACKED_BASE = ENTRY_BASE + 1
 
 local function weigh(value, tally, depth)
 	local t = type(value)
@@ -1341,7 +1352,12 @@ local function weigh(value, tally, depth)
 	if t ~= "table" then return 0 end
 	depth = (depth or 0) + 1
 	tally.tables = tally.tables + 1
-	if tally.tables > tally.max or depth > WEIGH_DEPTH then
+	if depth > WEIGH_DEPTH then
+		tally.over = true
+		tally.deep = true
+		return 0
+	end
+	if tally.tables > tally.max then
 		tally.over = true
 		return 0
 	end
@@ -1416,6 +1432,12 @@ local function framesRefused(frames, depth)
 			if frame.asking ~= nil then return "a stage is waiting" end
 			if frame.dialling ~= nil then return "a stage on the wire" end
 			if type(frame.stages) ~= "table" or type(frame.pipes) ~= "table" then
+				return "bad frame"
+			end
+			-- The counts the reader (pipeOk) insists on, asked at the save too, so that
+			-- a job it would drop is left out here with a reason in the log and not
+			-- written to be dropped a session later.
+			if #frame.stages > CeroSecOS.MAX_STAGES or #frame.pipes ~= #frame.stages then
 				return "bad frame"
 			end
 			for k = 1, #frame.stages do
@@ -1611,10 +1633,12 @@ local function internValue(value, role, st, depth)
 end
 
 -- A job as a graph, or nil plus the flags that say why not. Pure: nothing on the
--- job is touched.
-function CeroSecJobs.intern(job, nowMs)
+-- job is touched. `base` is how many tables sit above the job where it will be
+-- written (see WEIGH_DEPTH); the save says three, and a caller that only wants the
+-- shape says nothing.
+function CeroSecJobs.intern(job, nowMs, base)
 	local st = { seen = {}, nextId = 0, flags = {}, nowMs = nowMs }
-	local out = internValue(job, "job", st, 0)
+	local out = internValue(job, "job", st, base or 0)
 	return out, st.flags
 end
 
@@ -1711,7 +1735,7 @@ function CeroSecJobs.jobToData(job, nowMs, fg)
 	-- (CeroSecJobs.restoreForeground). One that is not is a shell nobody would be
 	-- typing at, and it is left where every job used to be left.
 	if job.interactive and not fg then return nil, "an orphan prompt" end
-	local packed, flags = CeroSecJobs.intern(job, nowMs)
+	local packed, flags = CeroSecJobs.intern(job, nowMs, PACKED_BASE)
 	if flags.deep then return nil, "too deep" end
 	if flags.clash or flags.badkey then return nil, "not plain data" end
 	-- Whether this one was holding the glass. Worked out by the caller, which is
@@ -1935,6 +1959,14 @@ function CeroSecJobs.jobFromData(data, nowMs)
 	return job
 end
 
+-- The reasons a job is left out of a save that are not news: what the job is
+-- doing (asking, dialling, holding a session) and not what is wrong with it.
+local NOT_SAVED_QUIETLY = {
+	["over"] = true, ["waiting"] = true, ["a session"] = true, ["the wire"] = true,
+	["mid-order"] = true, ["an orphan prompt"] = true, ["a stage is waiting"] = true,
+	["a stage on the wire"] = true, ["a stage mid-order"] = true,
+}
+
 -- The machine's book onto its state, at the save. Answers how many jobs went in.
 function CeroSecJobs.writeBook(luaObject, nowMs)
 	local book = luaObject.jobs
@@ -1953,17 +1985,32 @@ function CeroSecJobs.writeBook(luaObject, nowMs)
 	if type(console) == "table" and type(console.job) == "number" then held = console.job end
 
 	local list, over, spent = {}, 0, 0
+	local where = "the machine at " .. luaObject.x .. "," .. luaObject.y .. ","
+		.. luaObject.z
 	for i = 1, #book.list do
 		local job = book.list[i]
-		local data = CeroSecJobs.jobToData(job, nowMs, held ~= nil and job.id == held)
-		if data ~= nil then
+		local data, why = CeroSecJobs.jobToData(job, nowMs, held ~= nil and job.id == held)
+		if data == nil then
+			-- A job that is waiting, or holds a session, is left out as a matter of
+			-- course and the log is not the place for it. Anything else is a job the
+			-- player had running that will not be there when he comes back for a
+			-- reason he cannot see, so it says why.
+			if why ~= nil and not NOT_SAVED_QUIETLY[why] then
+				CeroSec.log(CeroSec.LOG_ERROR, where .. " left a job out of the save: "
+					.. why)
+			end
+		else
 			-- Weighed once, against the machine's own ceiling and against what is
 			-- left of the book's: a job past CeroSec.JOB_SAVE_BYTES is refused on its
 			-- own account, and one that fits is still refused when the jobs before it
-			-- have spent the table budget the state gate is going to count.
+			-- have spent the table budget the state gate is going to count. Counted
+			-- from where the entry will sit in the state, so that the depth the gate
+			-- is going to see is the depth that is asked (WEIGH_DEPTH).
 			local one = { tables = 0, max = CeroSec.JOB_SAVE_TABLES }
-			local bytes = weigh(data, one)
-			if one.over or bytes > CeroSec.JOB_SAVE_BYTES
+			local bytes = weigh(data, one, ENTRY_BASE)
+			if one.deep then
+				CeroSec.log(CeroSec.LOG_ERROR, where .. " left a job out of the save: too deep")
+			elseif one.over or bytes > CeroSec.JOB_SAVE_BYTES
 					or spent + one.tables > CeroSec.JOB_SAVE_TABLES then
 				over = over + 1
 			else
@@ -1980,8 +2027,7 @@ function CeroSecJobs.writeBook(luaObject, nowMs)
 		state.jobs = { seq = book.seq, list = list }
 	end
 	if over > 0 then
-		CeroSec.log(CeroSec.LOG_ERROR, "the machine at " .. luaObject.x .. ","
-			.. luaObject.y .. "," .. luaObject.z .. " left " .. over
+		CeroSec.log(CeroSec.LOG_ERROR, where .. " left " .. over
 			.. " job(s) out of the save: too large")
 	end
 	return #list

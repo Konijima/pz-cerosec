@@ -18427,6 +18427,230 @@ do
 	end
 
 	--
+	-- A job too deep for the state gate is left out, and says so
+	--
+	-- The state gate (CeroSecOS.validate) counts table levels from the root of the
+	-- STATE, and the book's entry sits three levels down in it and the job one more:
+	-- so a job that fits sixty-four levels of its own is sixty-seven levels of the
+	-- state, and validate refuses the whole machine for it -- and osState's refusal
+	-- is sticky. Three nested pipelines round eleven nested `if`s is a legal script
+	-- that gets there: the save has to leave THAT job out, with a line in the log,
+	-- and not write it and let the gate find it.
+	--
+	do
+		local realBudget = CeroSec.STEP_BUDGET_PER_MACHINE
+		CeroSec.STEP_BUDGET_PER_MACHINE = 1
+
+		-- `levels` pipelines round one another, `ifs` nested ifs round the innermost.
+		local function nest(levels, ifs)
+			local inner = "echo a | cat"
+			if ifs > 0 then
+				inner = string.rep("if true; then ", ifs) .. inner .. string.rep("; fi", ifs)
+			end
+			if levels <= 1 then return inner end
+			return "echo a | while read g; do " .. nest(levels - 1, ifs) .. "; done | cat"
+		end
+		local function said(needle)
+			for i = 1, #CeroSec.logRing do
+				if string.find(CeroSec.logRing[i].text, needle, 1, true) then return true end
+			end
+			return false
+		end
+
+		-- The three shapes below are sixty-five levels of the state at every moment of
+		-- their lives (the parse tree alone is that deep), and the two after them, one
+		-- nested `if` shallower, are sixty-one: the boundary is the four levels an
+		-- `if` costs, and it lies between them.
+		for _, shape in ipairs({ { 3, 11, false }, { 5, 9, false }, { 4, 10, false },
+				{ 3, 10, true }, { 5, 8, true } }) do
+			local name = shape[1] .. " pipelines round " .. shape[2] .. " nested ifs"
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			CeroSec.logRing = {}
+			local bench = newBench()
+			bench.login("admin")
+			bench.script("/home/admin/n.sh", nest(shape[1], shape[2]) .. "\necho fin\n")
+			bench.enter("sh /home/admin/n.sh")
+			local wrote, refused, worst = 0, 0, nil
+			for _ = 1, 60 do
+				bench.tick(1)
+				if not (bench.object.jobs and #bench.object.jobs.list > 0) then break end
+				if CeroSecJobs.writeBook(bench.object, _G.__now) > 0 then wrote = wrote + 1 end
+				-- The gate, on a copy of what the serializer is about to walk.
+				local ok, why = CeroSecOS.validate(deepCopy(bench.object.os))
+				if not ok then
+					refused = refused + 1
+					worst = worst or tostring(why)
+				end
+			end
+			eq(name .. ": the state gate took every save" .. (worst and (" -- " .. worst) or ""),
+				refused, 0)
+			if shape[3] then
+				check(name .. ": which were written (" .. wrote .. ")", wrote > 0)
+				check(name .. ": and nothing was left out", not said("out of the save"))
+			else
+				eq(name .. ": and none was written", wrote, 0)
+				check(name .. ": with a line in the log to say why",
+					said("left a job out of the save: too deep"))
+				check(name .. ": and the job was left running, not killed",
+					bench.object.jobs ~= nil and #bench.object.jobs.list == 1)
+			end
+			-- What a reload does with the state it was handed: the machine is still there.
+			bench.object:setOS(bench.object.os)
+			check(name .. ": the machine's state still passes its gate", bench.object:osState() ~= nil)
+		end
+
+		-- The line itself, to the level. A job carrying a chain of tables of its own
+		-- is exactly as deep as the chain; sixty-one levels of it is sixty-four of the
+		-- state, and is the deepest the gate takes.
+		local function depthOf(v, d)
+			local most = d
+			for _, sub in pairs(v) do
+				if type(sub) == "table" then
+					local x = depthOf(sub, d + 1)
+					if x > most then most = x end
+				end
+			end
+			return most
+		end
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("sleep 1000 &")
+		seconds(bench, 1)
+		local job = bench.object.jobs.list[1]
+		local function chain(levels)
+			job.pad = nil
+			local at = job
+			for _ = 1, levels - 1 do at.pad = {}; at = at.pad end
+		end
+		chain(61)
+		eq("a job sixty-one levels deep in its own graph", depthOf(CeroSecJobs.intern(job, 0), 1), 61)
+		check("jobToData takes it as the one it is", CeroSecJobs.jobToData(job, 0, false) ~= nil)
+		CeroSec.logRing = {}
+		eq("is written", CeroSecJobs.writeBook(bench.object, _G.__now), 1)
+		check("and the state gate takes it", CeroSecOS.validate(deepCopy(bench.object.os)))
+		check("without a word in the log", not said("out of the save"))
+		chain(62)
+		eq("one level more", depthOf(CeroSecJobs.intern(job, 0), 1), 62)
+		eq("is not", CeroSecJobs.writeBook(bench.object, _G.__now), 0)
+		local data, why = CeroSecJobs.jobToData(job, 0, false)
+		eq("jobToData says the same of it, in its own words", why, "too deep")
+		eq("and hands back nothing", data, nil)
+		check("and the log says it was too deep", said("left a job out of the save: too deep"))
+		check("and the state gate takes what is left", CeroSecOS.validate(deepCopy(bench.object.os)))
+
+		-- A marker is a table as well: a table reached twice is written once and a
+		-- marker stands for it everywhere else, one level below the place that reaches
+		-- it. The shared table is FIRST in an array, so it is the one that is copied and
+		-- the bottom of the chain, met after it, is the one that gets the marker; the
+		-- chain is sixty-one levels deep and the marker is the sixty-second.
+		chain(1)
+		local shared = { ["answer"] = 42 }
+		local head = {}
+		job.stash = { shared, head }
+		local bottom = head
+		for _ = 1, 58 do bottom.pad = {}; bottom = bottom.pad end
+		bottom.shared = shared
+		local packed = CeroSecJobs.intern(job, 0)
+		check("the bottom of the chain holds a marker",
+			(function()
+				local at = packed.stash[2]
+				while at.pad ~= nil do at = at.pad end
+				return at.shared["$ref"] ~= nil
+			end)())
+		eq("and it is one level below the chain", depthOf(packed, 1), 62)
+		CeroSec.logRing = {}
+		eq("so that job is refused too", CeroSecJobs.writeBook(bench.object, _G.__now), 0)
+		check("with the line in the log", said("left a job out of the save: too deep"))
+		job.stash = nil
+
+		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
+	end
+
+	--
+	-- A job the save refuses is left out with its OWN reason in the log
+	--
+	-- Only "too large" used to say anything. A job refused for what is in it -- a
+	-- table that means a marker, a key that is a table, pipelines nested past the
+	-- bound, a pipeline with more stages than the parser makes -- was dropped in
+	-- silence, and the player found out when the daemon was not there. What is not
+	-- news (a job that is asking, or holds a session) stays out of the log.
+	--
+	do
+		local function said(needle)
+			for i = 1, #CeroSec.logRing do
+				if string.find(CeroSec.logRing[i].text, needle, 1, true) then return true end
+			end
+			return false
+		end
+		_G.__now = 5000000
+		CeroSecJobs.lastMs = 0
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("sleep 1000 &")
+		seconds(bench, 1)
+		local job = bench.object.jobs.list[1]
+
+		local function leftOut(what, reason, wreck, undo)
+			wreck()
+			CeroSec.logRing = {}
+			local saved = bench.save()
+			eq(what .. ": it is not in the save", saved.os.jobs, nil)
+			check(what .. ": and the log says " .. reason,
+				said("left a job out of the save: " .. reason))
+			eq(what .. ": while it goes on running", jobCount(bench), 1)
+			undo()
+		end
+		local function unstash() job.stash = nil end
+		leftOut("a table that already means a marker (id)", "not plain data",
+			function() job.stash = { ["$id"] = 3 } end, unstash)
+		leftOut("a table that already means a marker (ref)", "not plain data",
+			function() job.stash = { ["$ref"] = 3 } end, unstash)
+		leftOut("a key that is a table", "not plain data",
+			function() job.stash = { [{}] = 1 } end, unstash)
+		leftOut("a chain of tables past the depth the gate takes", "too deep",
+			function()
+				local at = {}
+				job.stash = at
+				for _ = 1, 70 do at.deeper = {}; at = at.deeper end
+			end, unstash)
+		-- Pipelines that contain themselves are nested past every bound there is.
+		local nested = { state = "running", prog = {}, frames = {} }
+		nested.frames[1] = { k = "pipe", stages = { nested }, pipes = { {} } }
+		leftOut("pipelines nested past the bound", "too deep",
+			function() job.frames[#job.frames + 1] = { k = "pipe", stages = { nested }, pipes = { {} } } end,
+			function() job.frames[#job.frames] = nil end)
+		-- More stages than the parser makes (CeroSecOS.MAX_STAGES), and pipes that do
+		-- not number the stages: what the reader would drop, said at the save.
+		local function pipeOf(stages, pipes)
+			local frame = { k = "pipe", stages = {}, pipes = {} }
+			for i = 1, stages do
+				frame.stages[i] = { state = "running", prog = {}, frames = {} }
+			end
+			for i = 1, pipes do frame.pipes[i] = {} end
+			return frame
+		end
+		leftOut("a pipeline of more stages than the shell makes", "bad frame",
+			function() job.frames[#job.frames + 1] = pipeOf(CeroSecOS.MAX_STAGES + 1, CeroSecOS.MAX_STAGES + 1) end,
+			function() job.frames[#job.frames] = nil end)
+		leftOut("a pipeline with a pipe too few", "bad frame",
+			function() job.frames[#job.frames + 1] = pipeOf(3, 2) end,
+			function() job.frames[#job.frames] = nil end)
+
+		-- The other side of it: what is left out as a matter of course is not in the log.
+		job.state = "waiting"
+		CeroSec.logRing = {}
+		local saved = bench.save()
+		eq("a job that is waiting is not in the save", saved.os.jobs, nil)
+		check("and that is not a line in the log either", not said("out of the save"))
+		job.state = "sleeping"
+		CeroSec.logRing = {}
+		saved = bench.save()
+		check("the control: the same job, sound, is in the save", saved.os.jobs ~= nil)
+		check("and the log has nothing to say", not said("out of the save"))
+	end
+
+	--
 	-- THE THREE NUMBERS ADD UP, and this bench is what says so
 	--
 	-- CeroSec.JOB_SAVE_TABLES is not a taste: it is what is LEFT of the gate's own
