@@ -1306,6 +1306,12 @@ end)
 --     (job.remote), a dial in flight (job.dial), a radio link (job.ring), an
 --     order the machine has not carried out yet (job.orders), an `&` it has asked
 --     for and not been given (job.spawn), a kill it has been asked for.
+--   * a job in the MIDDLE OF A PIPELINE survives, at the step it was at, when
+--     every stage of it is running, asleep or over: `ls /dev | grep ^door` is what
+--     a polling daemon is in the middle of at one save in ten (see the graph form
+--     below). A stage that is asking or waiting, or holding any of the things
+--     above, refuses the whole job by name (stageRefused), exactly as the job
+--     itself would be refused.
 --
 -- THE CLOCK. A sleep is saved as the milliseconds it has LEFT and not as the
 -- moment it is due. getTimestampMs is System.currentTimeMillis (javap
@@ -1542,8 +1548,8 @@ end
 -- marker { ["$ref"] = id }, the copy it points at carrying ["$id"] = id. Only a
 -- table that IS reached twice gets an id, so a job with no sharing in it costs
 -- what it always did. A ref is one small table, and what the state gate counts is
--- tables: the shipped daemon mid-pipeline is 370 of them (351 distinct and 19
--- markers) and not 1205.
+-- tables: the shipped daemon mid-pipeline is about 370 of them (351 distinct and
+-- 19 markers, measured) and not 1205.
 --
 -- The walk carries a ROLE and not a list of names to drop: `fprog` is dropped from
 -- a job (and from a stage, which is one) and `oldFprog` from a frame, and nowhere

@@ -18534,10 +18534,10 @@ do
 
 		-- The other half of the pair, and it is what stops JOB_SAVE_TABLES being
 		-- quietly cut to nothing to make the line above pass: the ceiling still has
-		-- to take the daemons this change exists for. The home kit's two together
-		-- were measured at 1209 tables.
+		-- to take the daemons this change exists for. The home kit's two together,
+		-- saved at every pass, were measured at 769 tables at the most.
 		check("and the book's ceiling still holds the home kit's daemons",
-			CeroSec.JOB_SAVE_TABLES >= 1209)
+			CeroSec.JOB_SAVE_TABLES >= 769)
 	end
 
 	--
