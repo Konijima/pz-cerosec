@@ -17529,6 +17529,15 @@ do
 			"while true; do echo y; done | head -n 1\necho status=$?\n", "y")
 		check("the saves landed inside it (" .. pipe7 .. ")", pipe7 > 5)
 
+		-- A stage that WRITES TO STDERR: the refusal goes to the job that owns the
+		-- pipeline (a stage's errTo) and so onto the owner's screen, and not down the
+		-- pipe. It is the one scenario where a copy of errTo instead of the owner
+		-- itself is a difference a player can read: the copy's line is written to a
+		-- job that nobody prints.
+		local pipe8 = everyStep("a stage that answers with a refusal",
+			"cat /nofile | wc -l\necho status=$?\n", "/nofile")
+		check("the saves landed inside it (" .. pipe8 .. ")", pipe8 > 5)
+
 		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
 		_G.__world = nil
 		CeroSecDevices.invalidate()
@@ -18603,6 +18612,78 @@ do
 		job.stash = nil
 
 		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
+	end
+
+	--
+	-- A stage that is ASLEEP wakes when its time is up, not before and not never
+	--
+	-- What a save keeps of a sleeping stage is what it has LEFT, and the reload has
+	-- to turn that back into a moment (restoreClocks). The saved form is asserted
+	-- above; what this asserts is what the machine DOES with it: a stage restored
+	-- with nothing left wakes at once and the script runs on early, and a stage whose
+	-- clock is not restored at all is a stage that never sleeps. The pipeline is saved
+	-- one second into a sleep of three, reloaded, and the clock is advanced in
+	-- steps: it is still asleep before the time left is up, and is over after it.
+	--
+	do
+		local function runsOn(name, text)
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			local bench = newBench()
+			bench.login("admin")
+			bench.script("/home/admin/s.sh", text)
+			bench.enter("sh /home/admin/s.sh &")
+			seconds(bench, 1)
+			eq(name .. ": the job is running a second in", jobCount(bench), 1)
+			local saved = bench.save()
+			local back = newBench(saved)
+			eq(name .. ": it comes back", jobCount(back), 1)
+			-- Two seconds of the first sleep are left, and the second is three.
+			seconds(back, 1)
+			eq(name .. ": one second after the reload it is still asleep", back.fileText("/var/tmp/e"), nil)
+			check(name .. ": and the second turn of the loop has not begun",
+				back.fileText("/var/tmp/w") ~= "1\n2")
+			seconds(back, 3)
+			eq(name .. ": four after it, with five to go in all, still", back.fileText("/var/tmp/e"), nil)
+			seconds(back, 4)
+			eq(name .. ": and eight after, it is over", back.fileText("/var/tmp/e"), "end")
+			eq(name .. ": having said what the script says", back.fileText("/var/tmp/w"), "1\n2")
+			eq(name .. ": nothing is left running", jobCount(back), 0)
+		end
+		-- Two stages asleep for different times. The pipeline as a whole wakes when the
+		-- EARLIEST of them does (pipeStep hands its owner that clock), so a save that
+		-- restored only the owner's clock would still wake the later stage at the
+		-- earlier one's time: what tells the two apart is the LATER stage's own clock.
+		local function sleepers(name, text)
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			local bench = newBench()
+			bench.login("admin")
+			bench.script("/home/admin/s.sh", text)
+			bench.enter("sh /home/admin/s.sh &")
+			seconds(bench, 1)
+			eq(name .. ": the job is running a second in", jobCount(bench), 1)
+			local back = newBench(bench.save())
+			eq(name .. ": it comes back", jobCount(back), 1)
+			-- One second is left of the shorter sleep, four of the longer.
+			seconds(back, 1)
+			eq(name .. ": the shorter sleep is over and the script has not gone on",
+				back.fileText("/var/tmp/e"), nil)
+			seconds(back, 2)
+			eq(name .. ": three seconds after the reload the longer sleep still has one to go",
+				back.fileText("/var/tmp/e"), nil)
+			seconds(back, 3)
+			eq(name .. ": and six after, it is over", back.fileText("/var/tmp/e"), "end")
+			eq(name .. ": nothing is left running", jobCount(back), 0)
+		end
+		sleepers("two stages asleep", "sleep 2 | sleep 5\necho end > /var/tmp/e\n")
+		sleepers("two stages asleep inside a stage",
+			"echo go | while read g; do sleep 2 | sleep 5; done | cat\necho end > /var/tmp/e\n")
+		runsOn("a stage with a sleep in its loop",
+			"for i in 1 2; do echo $i; sleep 3; done | cat > /var/tmp/w\necho end > /var/tmp/e\n")
+		runsOn("a stage inside a stage",
+			"echo go | while read g; do for i in 1 2; do echo $i; sleep 3; done | cat; done"
+			.. " | cat > /var/tmp/w\necho end > /var/tmp/e\n")
 	end
 
 	--
