@@ -6,7 +6,34 @@ reads. At release, `python3 tools/changelog-steam.py` prints the newest section
 in the shape Steam's Change Notes take, and the section gets its version and
 date.
 
-## Unreleased
+## 0.5.1 - 2026-09-19
+
+- A dedicated server now keeps its running scripts across a restart. The game's
+  server saves the world without telling the mod, so the scripts were never
+  written down and every daemon (`autoclose.sh`, `autolock.sh`) was gone after
+  the server came back. The server now writes them down every five seconds; a
+  script resumes at the step it had reached at most five seconds before the
+  server stopped. Singleplayer and a hosted game were not affected.
+- A script that is in the middle of a pipeline when the game saves now comes
+  back at the very step it was on. `autoclose.sh` running `ls /dev | grep
+  ^door` at the moment you quit used to be left out of the save and gone on
+  the next load; it is kept now, and a pipeline's sleeping stage keeps what
+  is left of its sleep. Running scripts also weigh a third of what they did
+  in the save, so several daemons fit together comfortably.
+- The printed manual no longer says that loading the world again leaves a
+  machine running nothing. A program left running with `&` is kept across a
+  save and a load; the manual now says so, and lists what is not kept.
+- The shell expands `*`, `?` and `[...]` in an unquoted word against the
+  files that are actually there, sorted, the way a real sh always has --
+  `cp -r /mnt/* /usr/local/bin` now copies what the floppy holds instead of
+  failing on the literal word. `cp` and `mv` also take more than one source
+  when the last argument is a directory.
+- The shell reads `` `command` `` as a command substitution again, the same
+  as `$(command)` -- `for f in `ls /mnt`; do cp -r /mnt/$f /usr/local; done`
+  used to copy nothing at all, the backquotes read as two stray characters.
+- The printed manual (Volume 3, chapter 10) now carries a table of every
+  /dev kind and the words it takes, and says plainly that a lock is its own
+  node beside its door's, not a second word the door answers to.
 
 ## 0.5.0 - 2026-09-18
 

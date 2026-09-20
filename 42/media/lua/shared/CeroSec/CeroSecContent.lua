@@ -1555,7 +1555,10 @@ CeroSecContent.SCRIPTS["setup.sh"] = {
 -- FIVE THINGS THIS SHELL HAS NOT GOT SHAPED EVERY ONE OF THEM, and each was
 -- measured on the engine before a line was written on top of it:
 --
---   * THERE IS NO FILENAME GLOBBING. `for d in /dev/door*` is one word with a
+--   * THERE WAS NO FILENAME GLOBBING when this disk was written (the shell
+--     expands `*`, `?` and `[...]` since; the scripts keep their form because
+--     it still works and a save may already hold a copy of them). Then,
+--     `for d in /dev/door*` was one word with a
 --     star in it, so the list of doors is `ls /dev | grep ^door` caught in a
 --     $( ) and split into fields. `ls` prints one name a line when what it
 --     writes is not a screen, and a capture is one of the three doors where that

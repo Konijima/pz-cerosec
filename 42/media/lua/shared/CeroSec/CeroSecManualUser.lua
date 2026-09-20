@@ -1215,9 +1215,9 @@ are a name to match and a kind to keep:
 lists, and it matches the last part of the path only. -type f keeps files
 and -type d keeps directories. Give both and both must be true.
 
-Quote the star. There is no globbing at this prompt, so find gets it
-either way -- but quoting it is the habit every other Unix needs and it
-costs nothing here.
+Quote the star. This prompt globs an unquoted *.txt itself, against
+your OWN directory, before find ever sees the word -- so it hands find
+whatever matched here, not the tree you meant to search.
 
 Classic mistake. find with no path. It does not guess at the directory you
 are in; name it, even if that is just a dot.]],
@@ -1845,8 +1845,8 @@ Making, copying, destroying.
 
   mkdir <dir>
   touch <file>
-  cp [-r] <src> <dst>
-  mv <src> <dst>
+  cp [-r] <src>... <dst>
+  mv <src>... <dst>
   rm [-r] <path>...
   echo [text...]
   edit <file>
@@ -1863,8 +1863,8 @@ Reading a file without opening it.
 
 [[Permissions and ownership.
 
-  chmod <mode> <path>
-  chown <user> <path>
+  chmod <mode> <path>...
+  chown <user> <path>...
   chgrp <group> <path>
 
 Your account.

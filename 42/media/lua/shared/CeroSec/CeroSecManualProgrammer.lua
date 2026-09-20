@@ -355,16 +355,17 @@ room, and you will see it all over other people's scripts.]],
 
 [[What the shell will not do, and one honest warning.
 
-Two things you may be expecting are not here, and it is better to know
-now than to debug it later.
-
-There is no star. On a bigger machine a star in a word becomes every name
-that matches it; on this one it is a star, and stays one:
+There is a star, and it is a real one: an unquoted *, ? or [...] in a
+word is matched against the names in the directory it sits in before the
+command ever sees it, sorted, and left exactly as typed when nothing
+matches.
 
   admin@ksp-04-11:~$ for f in *; do echo $f; done
-  *
+  note.txt
+  notes
 
-The way to walk a directory here is ls inside a $( ), which is chapter 6.
+Quote a star meant literally -- "*", '*' or \* -- as grep's patterns are.
+A leading dot needs a dot in the pattern too: * alone never shows one.
 
 And there is no keyboard behind a command. Nothing on this machine reads
 what you would have typed at it except read, which chapter 3 covers.
@@ -955,6 +956,9 @@ printed becomes a word in the line you are writing.
 Nothing was saved and no file was made. date ran, its output was caught,
 and the catch was handed to the assignment.
 
+A pair of backquotes, `` `date +%Y-%m-%d` ``, catches the same way: the
+older Bourne shell spelling of the same idea.
+
 Every newline in the catch is folded into a space, so a command that
 printed three lines becomes one word-list of three:
 
@@ -973,15 +977,15 @@ out.]],
 
 [[Two rules about catching, and one refusal.
 
-One level, and no further. A $( ) inside a $( ) is refused where it is
-typed, before anything runs:
+One level, and no further, the same for backquotes. A $( ) inside a $( )
+is refused where it is typed, before anything runs:
 
   admin@ksp-04-11:~$ x=$(echo $(date))
   sh: syntax error: bad substitution
 
-There is no script worth writing on this desk that needs two, and the
-machine would rather say so than let a short line ask for an unbounded
-amount of work.
+There is no script worth writing on this desk that needs two, in
+either spelling or a mix, and the machine would rather say so than let
+a short line ask for an unbounded amount of work.
 
 And a catch is a WORD, so it meets the word's own ceiling of a thousand
 and twenty-four bytes:
@@ -1556,6 +1560,10 @@ you had ordered for later -- that clock is the world's, and the world
 stood still. And a shell you had logged in from another machine: the
 session went, and a shell with no terminal has nowhere to write.
 
+A pipeline is written down whole, each stage at the step it had reached,
+and comes back through the same door; one with a stage that was waiting on
+a question, a call or a wait does not.
+
 One honest gap besides. What the machine writes down about a job it is
 running has a size to it, and a program far longer than anything in this
 book goes over it: that one keeps running now and is not there when you
@@ -1858,8 +1866,9 @@ you already know how to do.
   on
 
 The words are few and each kind has its own. A light takes on and off. A
-door takes open and close. A lock and a window latch take lock and
-unlock. Anything else is refused before it reaches the world:
+door takes open and close. A lock (its own node beside the door's, not a
+word door0 takes) and a window latch take lock and unlock. Anything else
+is refused before it reaches the world:
 
   admin@ksp-04-11:~$ echo blue > /dev/light0
   light0: invalid value
@@ -1869,6 +1878,42 @@ one name is a question, and a name and a word is an order.
 
   admin@ksp-04-11:~$ dev door0
   door0: closed]],
+
+[[The kinds, one table.
+
+A device with no module behind it has no node: the strike is what puts
+lock0 under /dev, beside door0 and not inside it. Reading lock0 answers
+locked or unlocked; writing door0 the word lock gets door0: invalid
+value, the word belongs to lock0.
+
+  kind    reads          takes               module
+  light   on / off       on, off             fixture
+  stove   on / off       on, off             appliance
+  washer  on / off       on, off             appliance
+  gen     on / off       on, off             generator
+  tv      on / off       on, off, channel N   TV set
+  rx      on / off       on, off, channel N   radio set
+
+Continued on the next page.]],
+
+[[The kinds, continued.
+
+  kind     reads               takes         module
+  door     open/closed/locked  open, close   door operator
+  window   open / closed       open, close   window operator
+  curtain  open / closed       open, close   curtain motor
+  lock     locked / unlocked   lock, unlock  strike
+  win      locked / unlocked   (read only)   contact
+  sensor   clear / motion      (read only)   sensor
+  floppy   blank/ready/mounted  (read only)  floppy drive
+  radio    megahertz           (read only)   radio tuner
+
+door0 answers locked when the door is a way out of the building and
+its lock is thrown, by a key or by lock0; an inside door never reads
+locked. lock is never a word door0 takes: that word belongs to lock0.
+
+win is the window's own contact, which senses the latch and never
+moves it: 440 whatever you chmod, the same reason a sensor is.]],
 
 [[Working a list of them.
 

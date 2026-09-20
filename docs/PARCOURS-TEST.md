@@ -784,8 +784,9 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
      Noter si le jeu a saccadé une seule fois pendant ces cinq minutes. [ ]
 139. `sh boucle.sh &` puis `reboot` en `root` (ou couper le courant de la
      pièce) → après le noir, le BIOS et la reconnexion, `ps` est vide : un
-     redémarrage ne laisse aucun travail en cours. Même chose après avoir
-     sauvegardé et rechargé la partie. [ ]
+     redémarrage ne laisse aucun travail en cours. Sauvegarder et recharger
+     la partie, en revanche, ne coupe pas la machine : voir l'étape 397b2,
+     où le même travail est encore là, à la même étape. [ ]
 
 140. `while true; do echo tick; sleep 1; done &` tapé **directement à
      l'invite** (aucun fichier) → la machine répond `[1] <numéro>` et rend
@@ -3368,6 +3369,24 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      de relais. Attendre 21:00 sur place : les lampes de la boutique s'éteignent,
      celles des voisines restent allumées. [ ]
 
+339o. **L'étoile marche enfin.** Mettre une disquette avec des fichiers dans le
+     lecteur, `mount /dev/fd0 /mnt`, puis `cp -r /mnt/* /usr/local/bin` :
+     tout ce qui est sur la disquette arrive, chaque nom trié. `umount /mnt`
+     puis relancer la même ligne : `cp: /mnt/*: no such file`, comme avant.
+     Au prompt : `echo *` liste sans les fichiers cachés, `echo .*` les montre,
+     et `echo "*"` répond `*`. [ ]
+
+339p. **Les guillemets inverses marchent, la vraie forme de 1993.** Avec la
+     disquette montée sur `/mnt` (deux fichiers dessus) :
+     `` for f in `ls /mnt`; do cp -r /mnt/$f /usr/local; done `` copie les
+     deux, comme `$(ls /mnt)` l'aurait fait. `` echo `echo a b` `` répond
+     `a b`. `` echo "`echo a b`" `` (un seul mot, pas de découpage) affiché
+     entre crochets avec `for w in "`echo a b`"; do echo [$w]; done` répond
+     `[a b]`. `` echo '`echo a b`' `` (guillemets simples) répond
+     `` `echo a b` `` au lieu de l'exécuter. Et un seul niveau, comme
+     pour `$( )` : `` echo `echo \`echo hi\` ` ``, `` echo `echo $(echo hi)` `` et
+     `` echo $(echo `echo hi`) `` répondent tous `sh: syntax error: bad substitution`. [ ]
+
 ## AI. Les outils de l'admin et du testeur (fenêtre de débogage, 2e rangée)
 
 Huit boutons de plus sur la fenêtre de débogage, sur une **deuxième rangée** sous la
@@ -3845,6 +3864,14 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      numéro de travail qu'avant. Ouvrir une porte à la main : elle se **referme
      toujours** toute seule au bout de cinq tours. `ls /var/tmp` montre
      `autoclose.on` encore là. [ ]
+397b2. **Même chose, en pleine chaîne.** Reprendre 397b avec
+     `autoclose.sh` qui tourne, et sauvegarder **à plusieurs reprises, à des
+     moments différents** (pas seulement quand il dort) : le programme passe un
+     instant dans `ls /dev | grep ^door`, et une sauvegarde à ce moment-là
+     doit le garder aussi. Attendu : après le rechargement, `jobs` montre
+     toujours la même ligne, et une porte ouverte à la main se referme
+     toujours. Aucune ligne « left out of the save » ne doit être apparue dans
+     le journal du jeu. [ ]
 397c. **Ce qui ne revient pas, et c'est voulu.** Toujours sur la même machine :
      `shutdown -h +9`, puis quitter vers le menu et recharger. Attendu : la
      machine est **encore allumée** et `jobs` ne montre **aucun** `shutdown` en
@@ -3857,6 +3884,14 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      et quitter/recharger. Attendu : `jobs` ne montre rien du tout, l'extinction
      a emporté le travail au moment où elle a eu lieu, et rien ne le ramène. Même
      chose pour une machine **ramassée** puis reposée. [ ]
+397e. **Sur un serveur dédié, l'arrêt du serveur.** Le serveur n'a pas d'événement
+     de sauvegarde : le mod écrit la liste des travaux toutes les cinq secondes.
+     Sur un serveur dédié, lancer `sh /usr/local/bin/autoclose.sh start 5 &`,
+     attendre **au moins dix secondes**, puis arrêter le serveur (`quit` dans sa
+     console), le relancer et se reconnecter. Attendu : `jobs` montre la même
+     ligne, `ps` aussi, et une porte ouverte à la main se referme au bout de cinq
+     tours. Ensuite `kill %1`, attendre dix secondes, arrêter et relancer :
+     `jobs` ne montre rien. [ ]
 398. **Les rideaux, à l'heure.** `sh /usr/local/bin/curtains.sh close` → tous les
      rideaux se ferment dans le monde, **et on les entend**, un par rideau.
      Relancer la même ligne tout de suite : le script dit la même chose et plus
@@ -4249,6 +4284,29 @@ le banc hors jeu ne juge qu'une doublure.** Les deux mods abonnés et actifs.
      recharger la sauvegarde : le parcours existant passe **inchangé**, aucune ligne
      de plus à l'écran, et une machine laissée allumée est toujours allumée. Dans le
      journal, **aucune** ligne `compat:`. [ ]
+
+## AS. Le bon mot, sur la machine (palier documentation)
+
+Un joueur a copié `autoclose.sh` (disquette **HOME AUTOMATION**) en `autolock`,
+changé `echo close` pour `echo lock` et l'état surveillé pour `locked`, gardé
+`grep ^door`, et reçu `door0: invalid value`. Ce palier vérifie qu'il peut
+trouver sur la machine, sans quitter le jeu, le mot que chaque genre de
+périphérique accepte, et qu'un verrou est son propre noeud. Préparation : une
+porte avec un opérateur ET une gâche (`door0` et `lock0` tous les deux posés).
+
+442. **La confusion, provoquée.** `echo lock > /dev/door0` → `door0: invalid
+     value`. [ ]
+443. **Trouver le bon mot.** `man door` ne répond rien pour un genre de
+     périphérique : `man` ne documente que ce qui est dans `/bin`. Le tableau
+     est dans le manuel imprimé, Volume 3 (Programmer's Guide), chapitre 10,
+     pages « The kinds, one table. » et « The kinds, continued. » : door prend
+     open et close, lock prend lock et unlock, et la page dit que lock est son
+     propre noeud à côté de door0, posé par la gâche. [ ]
+444. **Verrouiller par le bon noeud.** `echo lock > /dev/lock0` → accepté,
+     `cat /dev/lock0` répond `locked`. Sur une porte extérieure, `cat
+     /dev/door0` répond alors `locked` lui aussi (la gâche verrouille la
+     même porte) ; `door0` ne prend quand même jamais le mot `lock` en
+     écriture, ce sont deux noeuds, pas un mot de plus sur le même. [ ]
 
 ## Rapport
 

@@ -231,7 +231,12 @@ trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
 alternatives, the shell's own globs (`*`, `?`, `[…]`) in the patterns and `*)` as the
 default; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
 `=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep
-and `$((1 + 2 * 3))` on whole numbers, with `$1`, `$#`, `$?`, `$$` and `${NAME}`
+and `` `command` `` -- the ORIGINAL sh(1) form, before ksh and POSIX.2 (1992)
+added `$( )`, one level deep the same way, escaped or not:
+``echo \`echo hi\` `` is `bad substitution` just like `$(echo $(echo hi))`,
+and both spellings parse into the same substitution so what follows treats
+them alike; and
+`$((1 + 2 * 3))` on whole numbers, with `$1`, `$#`, `$?`, `$$` and `${NAME}`
 read inside the double brackets as POSIX.2 reads them, the expansion first and the
 sum afterwards, so `$((5 % $1))` is a sum on the first argument. **The two kinds
 of bracket nest**, in POSIX.2's own order: every command substitution is run first
@@ -795,7 +800,7 @@ save would not have written:
 
 | | |
 | --- | --- |
-| a background `&` job | **survives** |
+| a background `&` job | **survives**; on a dedicated server at the step it had up to five seconds before the save, because the book is written on a timer there (`CeroSec.JOB_SNAPSHOT_MS`), a server having no save event to write it at |
 | a cron or `at` child | **survives**, its output goes to a mailbox on the disk |
 | the foreground job of the machine's own glass | **survives**; the console is saved and the note of which job it was is put back by `SCeroSecObject:consoleState` |
 | a job that has ended | no (`over`), it is about to be reaped |
@@ -805,14 +810,25 @@ save would not have written:
 | a job caught between asking the machine for something and being given it (`job.orders`, `job.spawn`, `job.killReq`) | no (`mid-order`): a `wall` or a `clear` the pass has not carried out, an `&` it has asked for and not been given, a `kill` it has been asked for. Each is half of a handshake the scheduler finishes inside one pass, so there is nothing on the far side of a save for the other half to reach |
 | a job with no program or no frames | no (`no program`) |
 | a job table that is not one, or a frame that is not a table | no (`not a job`, `bad frame`), neither is a state a running job can be in; both are the shape refusals under everything above |
-| a pipeline in flight | no (`a pipeline`), and this one is a fact about the shape: a stage carries a link back to the job that owns the pipeline, which makes the job table a cycle, and `CeroSecOS.validate` refuses a cycle. A book written with one in it would cost the player the whole machine and not one job. The copy that builds a job's saved shape carries its own cycle test as a second porter (`a cycle`), so a shape nobody has thought of cannot put one in the save either |
+| a pipeline in flight | **survives**, at the step it was on: the job is written as a graph, each table once and a one-key marker wherever it is reached again, so the pipes, the stages' links back to their pipeline and the parsed program the frames and the stages share all come back as the *same* tables and not as copies of them (`CeroSecJobs.intern` and `resolve`). A stage is asked the same questions the job is, recursively, and refuses by name: a stage that is **waiting** (`a stage is waiting`: a `read` with its question up, a `wait`, a timer), one **on the wire** (`a stage on the wire`) or **mid-order** (`a stage mid-order`), and a pipeline nested deeper than a job may be (`too deep`). A stage's sleep keeps what is left of it, as the job's does. It costs a third of what the same job cost as a tree (the shipped `autoclose.sh` is 371 tables in the middle of `ls /dev \| grep ^door`, where the tree was 1205), which is what lets a pipeline through the book's ceiling |
+| a book entry off an older build | still read: the entry used to be the job itself, and that flat form loads as it did. It never carried a pipeline, and one that claims to is refused (`a pipeline`). The other way round, an older build reading a `{ packed = ... }` entry finds no `id` in it and drops that one job with a line in the log, never the machine |
 | the prompt's own job when it is **not** the one holding the glass (`job.interactive` without the console naming it) | no (`an orphan prompt`), and this one is `jobToData`'s rather than `jobRefused`'s, because whether a job holds the glass is the console's answer and not the job's: only the job the glass names can be given its shell back, so any other interactive job is a shell nobody would be typing at. The console always hands its prompt to the interactive job it makes, so there is no way to build one of these from the glass, it is a belt under a state the wire cannot reach |
 | a job whose saved shape is bigger than `CeroSec.JOB_SAVE_BYTES`, or that does not fit what is left of `CeroSec.JOB_SAVE_TABLES` | no, and it is **not killed for it**: it goes on running, it is left out of the save, and the log says so |
+| a job **too deep** for the state gate, or holding something the graph form cannot say (`not plain data`: a table that already means a marker, a key that is a table), or a pipeline that has more stages than the shell makes or a pipe too few (`bad frame`) | no, and it is **not killed for it** either: it goes on running, it is left out of the save, and the log says which of them it was (`left a job out of the save: <why>`). Depth is counted from the root of the *state* and not of the job: the book's entry is three levels down, the job one more, so a job has sixty-one levels of its own. The refusals that are only what a job is doing (waiting, a session, the wire, mid-order) are not in the log, they are not news |
 
 A **sleep keeps what is left of it**, not the moment it was due: a `sleep 3600`
 started a minute before you quit still has fifty-nine minutes on it when you come
 back. A job's cpu accounting starts again, the runaway ceiling counts continuous
 processor time, and a job just rebuilt has spent none.
+
+A sleep's clock in a save file is a finite number of milliseconds, at most a thousand
+million seconds (a `sleep inf` is written as that): NaN and infinity compare false with
+every clock there is, so a job carrying one would be asleep for ever, and a job that
+does is refused as forged (`bad clock`). The same gate holds a pipe to being what a
+pipe is: one table of its own per stage, and a byte count that is a whole number, no
+more than a save may carry and no more than the lines in it add up to. (Not
+`PIPE_LINES` and `PIPE_BYTES`, which are the back-pressure asked before a stage is
+stepped: one `cat` puts a whole file into the pipe, so a legal pipe is past both.)
 
 A book off the save file goes through a gate of its own before a single job is put
 back (`CeroSecJobs.jobFromData`): every field is asked its type, and a program is

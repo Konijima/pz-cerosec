@@ -116,7 +116,7 @@ local PLAIN_DEPTH = 4 * CeroSecOS.MAX_DEPTH
 -- two, the node and its `children`. So the worst legal state is the one where every
 -- node is a directory -- 512 of them with 511 directories is 1023 tables, a 32-node
 -- floppy all directories is 65 with the disk's own table, and the state itself is
--- the rest: **1090**, measured the same way. Four times clear rather than seven,
+-- the rest: **1123**, measured the same way. Four times clear rather than seven,
 -- and still chosen to be nowhere near anything real: a machine as it ships is 128.
 --
 -- The number matters to more than this walk now. The job book is written into the

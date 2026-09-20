@@ -746,18 +746,29 @@ CeroSec.JOB_CPU_LIMIT_S = 300
 --
 -- A job is written into the machine's own state when the world is saved
 -- (SCeroSecJobs.lua, "The book across a save"), and what makes it expensive is
--- the PROGRAM: a parsed script is nested tables, the frames on the stack point
--- back into it and the serializer writes a table wherever it reaches one, so
--- one copy of the text is three or four copies of the tree.
+-- the PROGRAM: a parsed script is nested tables, and the frames on the stack -- and
+-- every stage of a pipeline -- point into it. The serializer writes a table
+-- wherever it reaches one, so a job written as a tree was one copy of the text
+-- three or four copies of the tree. It is written as a GRAPH now (SCeroSecJobs.lua,
+-- "THE GRAPH FORM"): each table once, and a one-table marker wherever it is reached
+-- again.
 --
--- Measured under lua5.1, every script the world content ships run as a `&` job
--- and weighed AT THE MOMENT IT SLEEPS, which is where a daemon spends its life:
+-- Measured under lua5.1, the shipped autoclose.sh run as a `&` job and weighed at
+-- every pass of its life, at the shipped scheduler's cadence:
 --
---    autoclose.sh    669 bytes of script   12675 bytes of job    654 tables
---    alarm.sh        637                   11464                 555
+--    as a tree     925 tables asleep   1205 in the middle of `ls /dev | grep ^door`
+--    as a graph    308 tables asleep    371 in the middle of it
 --
--- and the widest file this machine will take -- 4034 bytes -- makes 80614 bytes
--- and 4547 tables on its own.
+-- (the 654 this paragraph used to give was an older parse of it, and neither
+-- number was ever the one in the middle of a pipeline, which the save refused).
+-- Both of the home kit's daemons, autoclose.sh and alarm.sh, on one machine and
+-- saved at every one of 300 passes with a step budget of one: 769 tables at the
+-- most, where two of the tree form were 1209 asleep and past the book in the middle
+-- of a pipeline.
+--
+-- And the widest a script may be -- 300 lines of three assignments is 3628 bytes,
+-- with nothing in it to share -- makes 80708 bytes and 4525 tables on its own, as a
+-- tree or a graph alike.
 --
 -- The TABLE count is the number that binds, and it is why there is a ceiling at
 -- all. CeroSecOS.validate walks everything in the state against a budget of
@@ -772,29 +783,38 @@ CeroSec.JOB_CPU_LIMIT_S = 300
 -- WHAT THE GATE HAS ALREADY SPENT, measured and not guessed, because the first
 -- number written here was the wrong one. A machine at every ceiling with a full
 -- floppy in the drive is 576 tables when its nodes are FILES -- which is what was
--- measured -- and **1090** when they are all DIRECTORIES, because a directory is
+-- measured -- and **1123** when they are all DIRECTORIES, because a directory is
 -- two tables (the node and its `children`) where a file is one: 512 nodes with 511
 -- of them directories is 1023, a 32-node floppy all directories is 65 with the
 -- disk's own table, and the state itself is the rest. It is an absurd machine --
 -- five hundred empty directories -- and it is legal, which is the only thing a
 -- belt may be sized against.
 --
--- So: 1090 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
--- 1212 of the 4352 still unspent. tests/window_test.lua builds that worst case and
+-- So: 1123 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
+-- 1179 of the 4352 still unspent. tests/window_test.lua builds that worst case and
 -- asserts the arithmetic rather than trusting this paragraph.
 --
--- 2048 and not 3072, which was the first number and left 188: four of the fattest
--- daemon above no longer all fit (4 x 654 is 2616), three do, and the fourth is
--- left out of the save with a line in the log. That is the right way round to be
--- wrong. A daemon left out costs a player a program he can start again; a gate
--- that fires on a legal machine costs him the computer, and there is no way back
--- from it. In play it binds on nothing: the home kit's two daemons together are
--- 1209 tables.
+-- 2048 and not 3072, which was the first number and left 188: five of the fattest
+-- daemon above (5 x 371 is 1855) fit, a sixth does not, and is left out of the save
+-- with a line in the log. That is the right way round to be wrong. A daemon left out
+-- costs a player a program he can start again; a gate that fires on a legal machine
+-- costs him the computer, and there is no way back from it. In play it binds on
+-- nothing: the home kit's two daemons together are 769 tables at the most.
 --
 -- 24576 bytes is twice the fattest daemon, so one job is never refused for the
 -- length of a script anybody would really write.
 CeroSec.JOB_SAVE_BYTES = 24576
 CeroSec.JOB_SAVE_TABLES = 2048
+
+-- How often a DEDICATED server writes the job book onto the machines' state,
+-- in milliseconds of wall clock, because it has no save event to write it at:
+-- ServerMap.QueuedSaveAll calls SGlobalObjects.save() with nothing in Lua
+-- triggered, and the only "OnSave" in the jar is GameWindow.save's (see the
+-- header of the book in SCeroSecJobs.lua). Five seconds is the age a job can be
+-- when a server is stopped: it comes back at the step it was at then, and a
+-- sleeping stage with the rest of its sleep as it was then. Singleplayer and a
+-- host write at the save itself and lose nothing.
+CeroSec.JOB_SNAPSHOT_MS = 5000
 
 -- How long a motion sensor holds its contact closed after the last movement it
 -- saw, in seconds of wall clock. Five, and it is the mod's own number and not

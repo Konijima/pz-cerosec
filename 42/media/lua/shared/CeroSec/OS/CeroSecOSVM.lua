@@ -1033,19 +1033,26 @@ end
 local function newExpansion(words, nosplit)
 	local kept = {}
 	for i = 1, #words do kept[i] = words[i] end
-	return { words = kept, wi = 1, pi = 1, buf = "", open = false, nosplit = nosplit,
-		fields = {}, out = {}, counts = {} }
+	return { words = kept, wi = 1, pi = 1, buf = "", mask = "", open = false, nosplit = nosplit,
+		fields = {}, fieldMasks = {}, out = {}, outMasks = {}, counts = {} }
 end
 
+-- The mask beside ex.buf: "g" for a byte a pathname expansion may still read
+-- as "*", "?" or "[", "l" for one that may not -- quoted, escaped, or handed
+-- down through a place sh never globs (see CeroSecOS.expandGlob's header).
 local function closeField(ex)
 	ex.fields[#ex.fields + 1] = ex.buf
+	ex.fieldMasks[#ex.fieldMasks + 1] = ex.mask
 	ex.buf = ""
+	ex.mask = ""
 	ex.open = false
 end
 
 -- An unquoted expansion's text: every run of blanks in it ends a field and
 -- starts the next one, which is what makes `for f in $list` walk a list.
-local function addSplit(ex, text)
+-- `glob` is carried onto every byte handed in: a value that came out of an
+-- unquoted "$x" still globs, which is what makes `x='*'; echo $x` expand.
+local function addSplit(ex, text, glob)
 	if text == "" then return end
 	local tokens = {}
 	for piece in string.gmatch(text, "[^ \t\n]+") do tokens[#tokens + 1] = piece end
@@ -1054,10 +1061,12 @@ local function addSplit(ex, text)
 		if ex.open then closeField(ex) end
 		return
 	end
+	local mc = glob and "g" or "l"
 	if string.find(text, "^[ \t\n]") ~= nil and ex.open then closeField(ex) end
 	for i = 1, #tokens do
 		if i > 1 then closeField(ex) end
 		ex.buf = ex.buf .. tokens[i]
+		ex.mask = ex.mask .. string.rep(mc, #tokens[i])
 		ex.open = true
 	end
 	if string.find(text, "[ \t\n]$") ~= nil then closeField(ex) end
@@ -1123,10 +1132,15 @@ local function expandStep(job, state, ex, env)
 				text = v
 			elseif part.t == "all" then
 				-- $@ is one field per argument, quoted or not: it is the one
-				-- expansion that is a list and not a string.
+				-- expansion that is a list and not a string. Each field globs
+				-- exactly as any other unquoted expansion does, unless "$@"
+				-- was itself quoted.
+				local allGlob = (not part.q) and (not ex.nosplit)
+				local allMc = allGlob and "g" or "l"
 				for a = 1, #job.args do
 					if a > 1 then closeField(ex) end
 					ex.buf = ex.buf .. job.args[a]
+					ex.mask = ex.mask .. string.rep(allMc, #job.args[a])
 					ex.open = true
 				end
 				ex.pi = ex.pi + 1
@@ -1142,11 +1156,24 @@ local function expandStep(job, state, ex, env)
 			end
 
 			if text ~= nil then
+				-- "lit" globs when it was typed bare (addLit's `bare`); every
+				-- other expansion globs when it was unquoted and not on the
+				-- right of "=" -- except "arith", which never globs: "$(( 2*3 ))"
+				-- is a sum and a "*" in it is multiplication, never a pattern.
+				local glob
+				if part.t == "lit" then
+					glob = part.bare == true and not ex.nosplit
+				elseif part.t == "arith" then
+					glob = false
+				else
+					glob = (not part.q) and (not ex.nosplit)
+				end
 				if part.t == "lit" or part.q or ex.nosplit then
 					ex.buf = ex.buf .. text
+					ex.mask = ex.mask .. string.rep(glob and "g" or "l", #text)
 					ex.open = true
 				else
-					addSplit(ex, text)
+					addSplit(ex, text, glob)
 				end
 				ex.pi = ex.pi + 1
 			end
@@ -1158,8 +1185,12 @@ local function expandStep(job, state, ex, env)
 		-- How many fields this word turned into, so the caller can tell a
 		-- redirect's target apart from the arguments in front of it.
 		ex.counts[ex.wi] = #ex.fields
-		for i = 1, #ex.fields do ex.out[#ex.out + 1] = ex.fields[i] end
+		for i = 1, #ex.fields do
+			ex.out[#ex.out + 1] = ex.fields[i]
+			ex.outMasks[#ex.outMasks + 1] = ex.fieldMasks[i]
+		end
 		ex.fields = {}
+		ex.fieldMasks = {}
 		ex.wi = ex.wi + 1
 		ex.pi = 1
 	end
@@ -2122,6 +2153,27 @@ local function resumeCont(state, job, text, env)
 	applyControl(job, control, data, env)
 end
 
+-- Pathname expansion over a whole field list, in place of the loop this used
+-- to be duplicated as: `for f in *.txt` globs the very same way a simple
+-- command's arguments do (CeroSecOS.expandGlob's header explains the mask),
+-- because a word list is a word list whether `for` reads it or a command does.
+-- Second return is the total directory entries the expansion visited, for
+-- the caller to charge (see CeroSecOS.GLOB_ENTRIES_PER).
+local function globFields(state, session, out, masks)
+	local expanded = {}
+	local visited = 0
+	for i = 1, #out do
+		local matches, entries = CeroSecOS.expandGlob(state, session, out[i], masks[i])
+		if type(entries) == "number" then visited = visited + entries end
+		if matches == nil or #matches == 0 then
+			expanded[#expanded + 1] = out[i]
+		else
+			for m = 1, #matches do expanded[#expanded + 1] = matches[m] end
+		end
+	end
+	return expanded, visited
+end
+
 local function runSimple(state, job, f, env)
 	local node = f.node
 
@@ -2145,12 +2197,19 @@ local function runSimple(state, job, f, env)
 	-- off the end below, and a second call must find the line as it was written
 	-- and not as the first call left it.
 	local args = {}
-	for i = 1, #f.ex.out do args[i] = f.ex.out[i] end
+	local masks = {}
+	for i = 1, #f.ex.out do
+		args[i] = f.ex.out[i]
+		masks[i] = f.ex.outMasks[i]
+	end
 	local redirect = nil
 	if node.redirect ~= nil then
 		-- The redirect's target is the last word of the expansion, and it has
 		-- to be exactly one field: a target that is two names, or none, is a
-		-- line the machine cannot carry out and will not guess at.
+		-- line the machine cannot carry out and will not guess at. It is also
+		-- never globbed -- sh reads a redirect's target as one word and never
+		-- a pattern, so it is popped off here, before the glob stage below
+		-- ever sees the word it came from.
 		local count = f.ex.counts[#f.ex.words] or 0
 		if count ~= 1 then
 			jobError(job, "ambiguous redirect")
@@ -2158,6 +2217,7 @@ local function runSimple(state, job, f, env)
 		end
 		redirect = { path = args[#args], append = node.redirect.append }
 		args[#args] = nil
+		masks[#masks] = nil
 	end
 
 	if #args == 0 then
@@ -2172,7 +2232,37 @@ local function runSimple(state, job, f, env)
 		return 1
 	end
 
+	-- "~" is the shell's, expanded before the glob stage below sees the word --
+	-- POSIX's own order. What it puts in the word is a system path, not
+	-- anything the survivor typed, so a word it touched globs no further: a
+	-- home directory is never read back as a pattern of its own text.
+	local beforeTilde = {}
+	for i = 2, #args do beforeTilde[i] = args[i] end
 	CeroSecOS.expandTilde(state, job.session, args, redirect)
+	for i = 2, #args do
+		if args[i] ~= beforeTilde[i] then masks[i] = string.rep("l", #args[i]) end
+	end
+
+	-- Pathname expansion. Every field globs, argv[0] included -- the same word
+	-- a real sh would hand to execve after its own passes over it -- and a
+	-- word with no unquoted "*", "?" or "[" in it, which is nearly every word
+	-- anybody types, costs this loop one no-op string scan and nothing more.
+	local globVisited
+	args, globVisited = globFields(state, job.session, args, masks)
+
+	-- What the glob walk itself cost, on top of the flat command charge every
+	-- field already gets: a pattern is run once per entry of every directory
+	-- it opened, the same shape a PATH walk's extra directories cost below
+	-- (walkCost) and a BRE pattern's bytes cost through sh.cost. Charged as
+	-- debt for the same reason those are: `while true; do echo /wide/*; done`
+	-- must slow down instead of costing this pass five hundred names for free.
+	if type(globVisited) == "number" and globVisited > 0 then
+		local globCost = math.floor(globVisited / CeroSecOS.GLOB_ENTRIES_PER)
+		if globCost > 0 then
+			job.debt = (job.debt or 0) + globCost
+			job.steps = job.steps + globCost
+		end
+	end
 
 	local name = args[1]
 
@@ -3049,7 +3139,7 @@ stepOnce = function(state, job, env)
 				return 0
 			end
 			if how == "sub" then return 0 end
-			f.words = f.ex.out
+			f.words = globFields(state, job.session, f.ex.out, f.ex.outMasks)
 			f.ex = nil
 			f.phase = "iter"
 			f.i = 1

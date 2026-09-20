@@ -132,6 +132,21 @@ with what to look at on the glass.
 Said out loud, release by release, because the compatibility contract only allows
 a new sandbox option to change a world if the release notes say so plainly.
 
+### 0.5.1
+
+**A running job now survives the world being saved and loaded, at the step
+it had reached** (on a dedicated server, the step it had reached up to five
+seconds before the server stopped: a server writes the book every five seconds
+and not at the save, because it has no save event in Lua). The book of jobs was already written on save; a job caught
+mid-pipeline was left out of it, and `@reboot` does not fire on a load, so a
+daemon such as `autoclose.sh` could be gone for good. Nothing in an existing
+world changes shape: no state or system version moves, and the old book form
+is still read. A world saved by this build and opened by 0.5.0 loses its
+running jobs (0.5.0 drops the new entries with a log line) and nothing else.
+A daemon that a 0.5.0 save already dropped needs one manual restart, or a
+`reboot`. The shell also expands globs and reads backquotes now, which only
+changes what a script that used to fail does.
+
 ### 0.5.0
 
 **Every machine gains `/usr/local/bin` when it loads.** The three directories

@@ -673,10 +673,22 @@ serializer recurses into it, so an added key inside it moves no number at all (a
 field a change added, read with a default — the compatibility contract's own rule)
 and a build that has never heard of it reads a machine with one and ignores it,
 `CeroSecOS.validate` not being a closed namespace over the state's keys the way a
-disk is. It is written at **`Events.OnSave`**, which `zombie.GameWindow.save(boolean)`
-triggers at bytecode offset 302 and calls `zombie.globalObjects.SGlobalObjects.save()`
-at offset 418 of the same method (`javap -p -c` on 42.20.4) — so the event is the one
-moment there is, before `gos_cerosec.bin` is written. It is read at
+disk is. In singleplayer and on a host it is written at **`Events.OnSave`**, which
+`zombie.GameWindow.save(boolean)` triggers at bytecode offset 302 and calls
+`zombie.globalObjects.SGlobalObjects.save()` at offset 418 of the same method
+(`javap -p -c` on 42.20.4) — so the event is the one moment there is, before
+`gos_cerosec.bin` is written. **A dedicated server never gets there**: it saves
+through `zombie.network.ServerMap.QueuedSaveAll`, which calls `SGlobalObjects.save()`
+itself (offset 88) and triggers nothing in Lua. The only classes holding the string
+`OnSave` are `GameWindow`, `IngameState` (which triggers `OnPostSave`) and
+`LuaEventManager`, and `OnServerStartSaving` / `OnServerFinishSaving` are triggered by
+`StartPausePacket` / `StopPausePacket.processClient`, which run on a client. So on a
+server `CeroSecJobs.tick` writes the book every `CeroSec.JOB_SNAPSHOT_MS` (5000 ms of
+wall clock), before its empty-book return so that a book that has just emptied is
+cleared too, and whatever save the server takes carries the last snapshot: a job comes
+back at the step it had at most five seconds before the server stopped. A restart of a
+real server is what found this; the headless benches take a server's save with no
+event (`bench.save(true)`). It is read at
 `SCeroSecSystem:newLuaObject`, the road every machine in the save file comes in by,
 and **taken off the state as it is read**: a book is a thing a machine is running and
 not a thing that lies on its disk, so a second load cannot resurrect a job somebody
@@ -687,14 +699,32 @@ ends in `resetForPlacement`, which switches the machine off and kills the book, 
 the other, `stateFromIsoObject` — a machine adopted from its sprite, which *can* come
 up on — strips the key before anything reads the state.
 
+A book entry is `{ packed = graph }`, and the graph is what lets a pipeline in flight
+cross a save. A job's parsed program is shared, by reference, between its frames and
+every stage's frames, and a stage points back at the job that owns the pipeline and at
+the pipes on either side of it; the state's own serializer has no notion of identity
+and `validate` refuses a cycle, so a plain copy of such a job is both several times
+too big and a cycle. `CeroSecJobs.intern` writes it once instead: `seen[table]` is set
+before it descends, a table reached a second time gets a lazily assigned `$id` and is
+replaced there by `{ ["$ref"] = id }`, and only a table reached twice carries an id.
+The one cycle left (a stage's `errTo`) is broken the same way and put back by
+`resolve`, which is two passes so that a marker may come before its target: the first
+counts and validates and registers every id, the second replaces the markers. The
+clocks are converted on the way, a stage's `wakeMs` to a `sleepLeft` exactly as the
+job's is, and `jobFromData` rebuilds them from the moment of the load. What refuses a
+stage is `jobRefused`, recursively, by name. The flat entry, the job itself, is still
+read, and a build that predates the packed one drops the entry for want of an `id`.
+
 `CeroSec.JOB_SAVE_BYTES` and `CeroSec.JOB_SAVE_TABLES` bound what may be written, and
 the second is the one that binds: it is what is **left of `validate`'s own table
 budget** once the biggest legal filesystem has been paid for. That budget is
 `8 * (MAX_NODES + FLOPPY_NODES)` = 4352, and the worst legal state is the one where
 every node is a **directory**, because a directory is two tables (the node and its
-`children`) where a file is one — 1090 tables, measured, against the 576 a machine of
-files costs. So 1090 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
-1212 unspent. `tests/window_test.lua` builds that worst case and asserts the three
+`children`) where a file is one — 1123 tables, measured, against the 576 a machine of
+files costs. So 1123 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
+1179 unspent (the shipped `autoclose.sh` is 371 tables at its heaviest, mid-pipeline,
+and both home-kit daemons together 769, where the tree form was 1205 for one).
+`tests/window_test.lua` builds that worst case and asserts the three
 numbers add up, because a state past the budget is refused and `osState`'s refusal is
 sticky: the failure this bounds is not a slow gate, it is a computer the player cannot
 open again. [SCRIPTING.md](SCRIPTING.md#underneath-the-step-machine-the-job-and-the-scheduler)

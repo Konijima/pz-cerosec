@@ -1148,8 +1148,12 @@ local function newBench(saved)
 	-- what a machine saves is a bench that fails on the far side rather than a
 	-- machine that comes back in the game missing a piece, and nothing that
 	-- survives this is a reference to anything the old machine held.
-	function bench.save()
-		Events.OnSave.trigger()
+	--
+	-- skipEvent is a dedicated server's save: ServerMap.QueuedSaveAll writes the
+	-- state with no event in Lua, so what the machine carries is whatever it wrote
+	-- before.
+	function bench.save(skipEvent)
+		if not skipEvent then Events.OnSave.trigger() end
 		local dropped = 0
 		local function bytes(value, depth)
 			if value == nil then return nil end
@@ -16938,7 +16942,14 @@ do
 		-- and the FUNCTION BODIES parsed out of a shell's text are a cache, rebuilt
 		-- on the first call. A save that carried them would be paying for the same
 		-- tree twice.
-		eq("and not the parsed-function cache", saved.os.jobs.list[1].fprog, nil)
+		local function hasKey(v, name, depth)
+			if type(v) ~= "table" or depth > 70 then return false end
+			for k, sub in pairs(v) do
+				if k == name or hasKey(sub, name, depth + 1) then return true end
+			end
+			return false
+		end
+		eq("and not the parsed-function cache", hasKey(saved.os.jobs.list[1], "fprog", 0), false)
 
 		local realValidate = CeroSecOS.validate
 		local sawBook = false
@@ -17037,7 +17048,7 @@ do
 
 		local saved = bench.save()
 		check("it is saved, and marked as the one holding the glass",
-			saved.os.jobs ~= nil and saved.os.jobs.list[1].fg == true)
+			saved.os.jobs ~= nil and saved.os.jobs.list[1].packed.fg == true)
 
 		local back = newBench(saved)
 		eq("the job comes back", jobCount(back), 1)
@@ -17116,48 +17127,1052 @@ do
 	end
 
 	--
-	-- A pipeline in flight is never written, because a stage is a CYCLE
+	-- A pipeline in flight is SAVED, and comes back at the step it was at
 	--
-	-- Every other refusal in this section is a judgement. This one is a fact about
-	-- the shape: a pipeline's stage carries `errTo`, a link back to the job that
-	-- owns the pipeline, so the job table leads to itself -- and CeroSecOS.validate
-	-- refuses a cycle outright. A book written with one in it would not cost the
-	-- player a job, it would cost him the machine, refused at the gate on the next
-	-- load. So the cycle is PROVEN here and then the refusal is asserted; a bench
-	-- that only asserted the refusal would be guarding a hypothesis.
+	-- A stage is a job of its own and it carries `errTo`, a link back to the job that
+	-- owns the pipeline, so the job table is a CYCLE -- and one pipe is three
+	-- tables' worth of references (the stage that writes it, the stage that reads it,
+	-- the frame that drains it). Both are what made a save drop a daemon that was
+	-- caught in the middle of `ls /dev | grep ^door`, which is where a daemon that
+	-- polls is caught one save in ten. The job is now written as a graph
+	-- (SCeroSecJobs.lua, "THE GRAPH FORM") and this section is what says it works,
+	-- from the bottom up: the two pure functions, the shapes, the refusals, the
+	-- forgeries, and then the EFFECT -- a save at every step of a run.
 	--
-	do
-		local bench = newBench()
-		bench.login("admin")
-		local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
-		local prog = CeroSecOS.parseScript("cat /etc/group | grep sudo | wc -l")
+	-- The cycle is still PROVEN, and first: a bench that only asserted the fix would
+	-- be guarding a hypothesis about what the state gate refuses.
+	--
+	local function deepCopy(v)
+		if type(v) ~= "table" then return v end
+		local out = {}
+		for k, sub in pairs(v) do out[k] = deepCopy(sub) end
+		return out
+	end
+
+	local function midPipeline(text)
+		local prog = CeroSecOS.parseScript(text)
 		check("a pipeline parses", prog ~= nil)
+		local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
 		local job = CeroSecOS.newJob({ prog = prog, name = "p.sh", cmd = "p.sh &",
 			bg = true, session = session })
-		local state = bench.object:osState()
+		local state = CeroSecOS.newState("mid")
 		local env = { now = 742000000, nowMs = 1000, jobs = { job } }
 		local staged = nil
-		for _ = 1, 40 do
+		for _ = 1, 400 do
 			CeroSecOS.jobStep(state, job, env, 1)
 			for i = 1, #job.frames do
 				if job.frames[i].stages ~= nil then staged = job.frames[i] end
 			end
 			if staged ~= nil or CeroSecOS.jobIsOver(job) then break end
 		end
+		return job, staged, state, env
+	end
+
+	do
+		local job, staged, state = midPipeline("cat /etc/group | grep sudo | wc -l")
 		check("a pipeline in flight is a frame with stages on it", staged ~= nil)
 		eq("and the first stage points back at the job that owns it",
 			staged.stages[1].errTo, job)
-		-- The consequence, asked of the gate itself and not assumed.
+		eq("and the pipe a stage writes is the pipe the next one reads",
+			staged.stages[2].stdinBuf, staged.pipes[1])
+		-- The consequence, asked of the gate itself and not assumed: the LIVE job put
+		-- on a state is a cycle, which is what the graph form has to never write.
 		state.jobs = { seq = 1, list = { job } }
 		local ok, why = CeroSecOS.validate(state)
-		eq("so a state carrying it is refused by the gate", ok, false)
+		eq("so a state carrying the live job is refused by the gate", ok, false)
 		check("for being a cycle: " .. tostring(why),
 			string.find(tostring(why), "cycle", 1, true) ~= nil)
 		state.jobs = nil
-		-- Which is why the save will not have it.
+		-- Which is why what is written is not the live job.
 		local data, refusal = CeroSecJobs.jobToData(job, 1000, false)
-		eq("and the save refuses it", data, nil)
-		eq("by name", refusal, "a pipeline")
+		check("the save takes it (" .. tostring(refusal) .. ")", data ~= nil)
+		state.jobs = { seq = 1, list = { data } }
+		ok, why = CeroSecOS.validate(state)
+		eq("and a state carrying what it writes passes the gate (" .. tostring(why) .. ")",
+			ok, true)
+		state.jobs = nil
+	end
+
+	--
+	-- The two pure functions
+	--
+	do
+		local intern, resolve = CeroSecJobs.intern, CeroSecJobs.resolve
+
+		-- Identity: a table reached twice comes back as ONE table, a cycle as a cycle.
+		local shared = { x = 1, y = { 2, 3 } }
+		local root = { a = shared, b = shared, c = { d = shared }, frames = {} }
+		root.self = root
+		local packed, flags = intern(root, 0)
+		check("a job with sharing and a cycle interns with no complaint", next(flags) == nil)
+		local back, why = resolve(deepCopy(packed), 1000)
+		check("and resolves (" .. tostring(why) .. ")", back ~= nil)
+		eq("a table reached twice is one table again", back.a, back.b)
+		eq("and again from a third place", back.c.d, back.a)
+		eq("a table that led back to itself still does", back.self, back)
+		eq("and what was in it is there", back.a.y[2], 3)
+		eq("no id is left on anything", back["$id"], nil)
+		eq("not on the shared one either", back.a["$id"], nil)
+		eq("and the input job was not touched", root.a["$id"], nil)
+		-- The weight, which is the other half of it: the shared table is written once.
+		local one = { tables = 0, max = 1000 }
+		CeroSecJobs.weigh(packed, one)
+		local flat = { tables = 0, max = 1000 }
+		CeroSecJobs.weigh({ a = deepCopy(shared), b = deepCopy(shared), c = { d = deepCopy(shared) },
+			frames = {} }, flat)
+		check("a shared table costs its tables once and a marker for each other reach: "
+			.. one.tables .. " against " .. flat.tables, one.tables < flat.tables)
+
+		-- What is dropped is decided by the ROLE and not by the name.
+		local job = { vars = { fprog = "mine" }, fprog = { { k = "cmd" } },
+			frames = { { k = "block", oldFprog = { { k = "cmd" } }, vars = { oldFprog = "x" } } },
+			cpuSince = 5 }
+		local p2 = intern(job, 0)
+		eq("the job's parsed-function cache is not written", p2.fprog, nil)
+		eq("nor the runaway clock", p2.cpuSince, nil)
+		eq("nor the frame's copy of the caller's cache", p2.frames[1].oldFprog, nil)
+		eq("but a shell variable that is called fprog is", p2.vars.fprog, "mine")
+		eq("and so is one that is called oldFprog", p2.frames[1].vars.oldFprog, "x")
+
+		-- The clock of every sleeping job in it, the pipeline's stages included.
+		local stage = { state = "sleeping", wakeMs = 5000, frames = {} }
+		local late = { state = "sleeping", wakeMs = 100, frames = {} }
+		local owner = { state = "running", frames = { { k = "pipe", stages = { stage, late } } } }
+		local p3 = intern(owner, 3000)
+		eq("a stage's sleep is saved as what is left", p3.frames[1].stages[1].sleepLeft, 2000)
+		eq("and not as the moment", p3.frames[1].stages[1].wakeMs, nil)
+		eq("a moment gone by is nought left and not a negative",
+			p3.frames[1].stages[2].sleepLeft, 0)
+		eq("and the live stage is where it was", stage.wakeMs, 5000)
+
+		-- ORDER. `pairs` may walk a table off a file in any order, so a marker can be
+		-- met before the table it names: both layouts, and a run of them.
+		for _, names in ipairs({ { "a", "z" }, { "z", "a" }, { "m", "b" } }) do
+			local p = {}
+			p[names[1]] = { ["$ref"] = 1 }
+			p[names[2]] = { ["$id"] = 1, v = 7 }
+			local r, rwhy = resolve(p, 100)
+			check("a marker before its table (" .. names[1] .. names[2] .. "): "
+				.. tostring(rwhy), r ~= nil and r[names[1]] == r[names[2]]
+				and r[names[1]].v == 7)
+		end
+		local wide = {}
+		for i = 1, 40 do
+			wide["k" .. i] = (i % 2 == 0) and { ["$ref"] = i - 1 } or { ["$id"] = i, v = i }
+		end
+		local rw, rwhy = resolve(wide, 1000)
+		check("forty of them in whatever order the walk takes (" .. tostring(rwhy) .. ")",
+			rw ~= nil)
+		if rw ~= nil then
+			for i = 2, 40, 2 do
+				check("marker " .. i .. " is table " .. (i - 1),
+					rw["k" .. i] == rw["k" .. (i - 1)])
+			end
+		end
+
+		-- The forgeries the resolver itself refuses.
+		local function refused(what, p, max, want)
+			local r, rw2 = resolve(p, max or 100)
+			eq(what .. ": nothing comes back", r, nil)
+			eq(what .. ": and it says why", rw2, want)
+		end
+		refused("a marker for an id nobody has", { a = { ["$ref"] = 9 } }, 100, "bad ref")
+		refused("a marker that is the whole thing", { ["$ref"] = 1 }, 100, "bad ref")
+		refused("a marker with something else in it",
+			{ a = { ["$id"] = 1 }, b = { ["$ref"] = 1, x = 1 } }, 100, "bad ref")
+		refused("a marker whose id is text", { a = { ["$ref"] = "1" } }, 100, "bad ref")
+		refused("two tables with one id",
+			{ a = { ["$id"] = 1 }, b = { ["$id"] = 1 } }, 100, "duplicate id")
+		refused("an id that is text", { a = { ["$id"] = "one" } }, 100, "bad id")
+		refused("an id that is not a whole number", { a = { ["$id"] = 1.5 } }, 100, "bad id")
+		refused("an id below one", { a = { ["$id"] = 0 } }, 100, "bad id")
+		local many = {}
+		for i = 1, 30 do many[i] = {} end
+		refused("more tables than a job may cost", many, 20, "too large")
+		local tall = {}
+		local at = tall
+		for _ = 1, 80 do at.n = {}; at = at.n end
+		refused("a chain deeper than the serializer takes", tall, 1000, "too deep")
+		refused("what is not a table", "x", 100, "not a table")
+	end
+
+	--
+	-- What is refused, and by name
+	--
+	-- A stage is asked what a job is asked: not asking, not waiting, holding no
+	-- wire and no order. Each of them is a stage the save has no road back to a
+	-- working job for -- pipeStep has no pickup for a spawn, a wait or a timer a
+	-- stage holds -- so it is refused by name, and the whole job is left out of the
+	-- book (with a line in the log) and not saved half.
+	--
+	do
+		local job, staged = midPipeline("cat /etc/group | grep sudo | wc -l")
+		check("there is a pipeline to refuse", staged ~= nil)
+		eq("as it stands, the job is not refused", CeroSecJobs.jobRefused(job), nil)
+		local function refuses(what, field, value, want, on)
+			local stage = staged.stages[on or 2]
+			local had = stage[field]
+			stage[field] = value
+			eq(what, CeroSecJobs.jobRefused(job), want)
+			local data, why = CeroSecJobs.jobToData(job, 1000, false)
+			eq(what .. ": and the save says so", data, nil)
+			eq(what .. ": by the same name", why, want)
+			stage[field] = had
+		end
+		refuses("a stage at a question", "ask", { prompt = "pw" }, "a stage is waiting")
+		refuses("a stage holding a continuation", "cont", { cmd = "sudo" }, "a stage is waiting")
+		refuses("a stage in a state a save has no road for", "state", "waiting",
+			"a stage is waiting")
+		refuses("a stage at a `wait`", "waitFor", { 3 }, "a stage is waiting")
+		refuses("a stage at a shutdown", "timer", true, "a stage is waiting")
+		refuses("a stage mid-dial", "dial", { control = "rsh" }, "a stage on the wire")
+		refuses("a stage holding a radio link", "ring", { x = 1 }, "a stage on the wire")
+		refuses("a stage with a session at the far end", "remote", { x = 1 },
+			"a stage on the wire")
+		refuses("a stage with an order for the machine", "orders", { { control = "wall" } },
+			"a stage mid-order")
+		refuses("a stage that has given one to the job", "control", "reboot",
+			"a stage mid-order")
+		refuses("a stage that asked for an &", "spawn", { k = "list" }, "a stage mid-order")
+		refuses("a stage somebody killed", "killReq", "user", "a stage mid-order")
+		refuses("the FIRST stage too", "ask", { prompt = "pw" }, "a stage is waiting", 1)
+		-- What the frame remembers about a stage asking or dialling.
+		staged.asking = 2
+		eq("a frame that remembers a stage asking", CeroSecJobs.jobRefused(job),
+			"a stage is waiting")
+		staged.asking = nil
+		staged.dialling = 2
+		eq("a frame that remembers a stage dialling", CeroSecJobs.jobRefused(job),
+			"a stage on the wire")
+		staged.dialling = nil
+		-- A stage that is OVER is not refused: it is the ordinary middle of a pipeline.
+		staged.stages[1].state = "done"
+		staged.stages[1].frames = {}
+		eq("a stage that has finished is not a reason", CeroSecJobs.jobRefused(job), nil)
+		-- And the same rule reaches a pipeline inside a stage.
+		local inner = { k = "pipe", stages = { { state = "waiting", ask = {}, frames = {},
+			prog = {} } }, pipes = { {} } }
+		staged.stages[2].frames[#staged.stages[2].frames + 1] = inner
+		eq("a pipeline inside a stage is asked the same", CeroSecJobs.jobRefused(job),
+			"a stage is waiting")
+		table.remove(staged.stages[2].frames)
+		eq("and is fine again when it is taken away", CeroSecJobs.jobRefused(job), nil)
+		-- Nested without end is refused too, and does not recurse for ever.
+		local a = { state = "running", prog = {}, frames = {} }
+		a.frames[1] = { k = "pipe", stages = { a }, pipes = { {} } }
+		staged.stages[2].frames[#staged.stages[2].frames + 1] = { k = "pipe", stages = { a },
+			pipes = { {} } }
+		eq("a pipeline that contains itself is refused, not followed",
+			CeroSecJobs.jobRefused(job), "too deep")
+		table.remove(staged.stages[2].frames)
+	end
+
+	--
+	-- The EFFECT, at every step
+	--
+	-- "It came back" is a claim about a table; what a player sees is the last line
+	-- on his glass and the status after it. So each pipeline below is run as a
+	-- foreground script twice: once straight through, and once for EVERY step k of
+	-- it -- k passes, then the real save (bench.save(): Events.OnSave, then the
+	-- object's keys walked the way the serializer walks them, which is what loses
+	-- identity), then a whole new machine out of those bytes, then on to the end.
+	-- The screen at the end has to be the screen of the run that was never
+	-- interrupted, line for line, and the status with it.
+	--
+	-- One step is one pass with the machine's step budget at ONE (CeroSec.
+	-- STEP_BUDGET_PER_MACHINE): at the shipped hundred a short pipeline is over in
+	-- the pass it starts in and the save would only ever fall between rounds -- which
+	-- is exactly the blind spot that hid the bug.
+	--
+	do
+		local realBudget = CeroSec.STEP_BUDGET_PER_MACHINE
+		CeroSec.STEP_BUDGET_PER_MACHINE = 1
+
+		local world = FakeWorld.new()
+		world.room("office", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0} })
+		world.put(world.squares["10,10,0"], fakeDoor(false, true, world.squares["11,10,0"], true))
+		world.put(world.squares["12,10,0"], fakeDoor(false, true, world.squares["13,10,0"], true))
+		_G.__world = world
+		_G.IsoObjectChange = { STATE = "chg.STATE", WASHER_STATE = "chg.WASHER_STATE" }
+		CeroSecDevices.invalidate()
+
+		local function screenOf(bench)
+			return table.concat(bench.object.console.lines, "\n")
+		end
+		-- A machine at its prompt with the script on the disk, made once and stood up
+		-- from its own bytes for every run: the BIOS and the login are 40 ms a piece
+		-- and there are more than a thousand runs. A machine off a save is what a
+		-- player finds after a reload anyway.
+		local templates = {}
+		local function start(text)
+			if templates[text] == nil then
+				_G.__now = 5000000
+				CeroSecJobs.lastMs = 0
+				local first = newBench()
+				first.login("admin")
+				first.script("/home/admin/p.sh", text)
+				templates[text] = first.save()
+			end
+			-- The clock back to where every run starts, and the scheduler's note of its
+			-- last pass with it: a run that began in the past of the one before would
+			-- otherwise be waiting for the wall clock to catch up before its first pass.
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			local bench = newBench(deepCopy(templates[text]))
+			bench.open()
+			bench.enter("sh /home/admin/p.sh")
+			return bench
+		end
+		local function toShell(bench, limit, chunk)
+			chunk = chunk or 10
+			local n = 0
+			while CeroSec.consoleWaiting(bench.object:consoleState()) ~= "shell" and n < limit do
+				bench.tick(chunk)
+				n = n + chunk
+			end
+			return n
+		end
+		-- What the pipeline in the book looks like at this moment.
+		local function liveFrame(bench)
+			local book = bench.object.jobs
+			local job = book ~= nil and book.list[1] or nil
+			if job == nil then return nil, nil end
+			for i = #job.frames, 1, -1 do
+				if job.frames[i].stages ~= nil then return job.frames[i], job end
+			end
+			return nil, job
+		end
+		local function said(needle)
+			for i = 1, #CeroSec.logRing do
+				if string.find(CeroSec.logRing[i].text, needle, 1, true) then return true end
+			end
+			return false
+		end
+
+		local function everyStep(name, text, want)
+			local t0 = os.clock()
+			CeroSec.logRing = {}
+			local straight = start(text)
+			local total = toShell(straight, 3000, 1)
+			check(name .. ": the straight run ends (" .. total .. " passes)", total < 3000)
+			local expected = screenOf(straight)
+			check(name .. ": and says what it should", string.find(expected, want, 1, true) ~= nil)
+			check(name .. ": with a status", string.find(expected, "status=0", 1, true) ~= nil)
+			local sawPipe, sawAsleep, sawOver, mismatches = 0, 0, 0, 0
+			local firstBad = nil
+			-- The saves are all taken in ONE run, one per pass, on the machine that keeps
+			-- running: which is what a player's autosaves are, and it is half the work of
+			-- starting a run over for every k.
+			local live, snaps = {}, {}
+			local bench = start(text)
+			for k = 0, total do
+				live[k] = jobCount(bench) == 1
+				local frame = liveFrame(bench)
+				if frame ~= nil then
+					sawPipe = sawPipe + 1
+					for i = 1, #frame.stages do
+						if frame.stages[i].state == "sleeping" then sawAsleep = sawAsleep + 1 end
+						if CeroSecOS.jobIsOver(frame.stages[i]) then sawOver = sawOver + 1 end
+					end
+				end
+				local saved, dropped = bench.save()
+				if dropped ~= 0 then firstBad = firstBad or ("k=" .. k .. " dropped " .. dropped) end
+				snaps[k] = saved
+				bench.tick(1)
+			end
+			for k = 0, total do
+				local back = newBench(snaps[k])
+				if live[k] and jobCount(back) ~= 1 then
+					firstBad = firstBad or ("k=" .. k .. " the job did not come back")
+				end
+				toShell(back, 3000)
+				if screenOf(back) ~= expected then
+					mismatches = mismatches + 1
+					firstBad = firstBad or ("k=" .. k .. " screen differs:\n" .. screenOf(back))
+				end
+			end
+			eq(name .. ": a save at every one of the " .. (total + 1) .. " steps gives the"
+				.. " straight run's screen" .. (firstBad and (" -- " .. firstBad) or ""),
+				mismatches, 0)
+			eq(name .. ": and nothing was ever dropped or refused", firstBad, nil)
+			eq(name .. ": and the log has no dropped job in it",
+				said("dropped a saved job") or said("out of the save"), false)
+			return sawPipe, sawAsleep, sawOver, total
+		end
+
+		local pipe, _, over = everyStep("a three-stage pipeline",
+			"cat /etc/group | grep sudo | wc -l\necho status=$?\n", "1")
+		check("the saves really landed inside a pipeline (" .. pipe .. ")", pipe > 20)
+		check("and after a stage had finished (" .. over .. ")", over > 0)
+
+		local pipe2 = everyStep("`ls /dev | grep ^door`",
+			"ls /dev | grep ^door\necho status=$?\n", "door1")
+		check("the saves landed inside it (" .. pipe2 .. ")", pipe2 > 5)
+
+		local pipe3, asleep = everyStep("a stage with a sleep",
+			"sleep 3 | cat\necho status=$?\n", "status=0")
+		check("the saves landed inside it (" .. pipe3 .. ")", pipe3 > 20)
+		check("with a stage asleep (" .. asleep .. ")", asleep > 25)
+
+		local pipe4, asleep4 = everyStep("a loop with a sleep in a stage",
+			"for i in 1 2; do echo $i; sleep 1; done | cat\necho status=$?\n", "2")
+		check("the saves landed inside it (" .. pipe4 .. ")", pipe4 > 20)
+		check("with a stage asleep (" .. asleep4 .. ")", asleep4 > 15)
+
+		local pipe5 = everyStep("a for over a pipeline in $( )",
+			"for d in $(ls /dev | grep ^door); do echo got $d; done\necho status=$?\n",
+			"got door1")
+		check("the saves landed inside a pipeline (" .. pipe5 .. ")", pipe5 > 5)
+
+		local pipe6, _, _, total6 = everyStep("a pipeline inside a pipeline",
+			"echo a:1 | while read g; do echo $g | cut -d: -f1; done | cat\n"
+			.. "echo status=$?\n", "a")
+		check("the saves landed inside it (" .. pipe6 .. ")", pipe6 > 20)
+
+		local pipe7 = everyStep("a reader that closes on a writer that never ends",
+			"while true; do echo y; done | head -n 1\necho status=$?\n", "y")
+		check("the saves landed inside it (" .. pipe7 .. ")", pipe7 > 5)
+
+		-- A stage that WRITES TO STDERR: the refusal goes to the job that owns the
+		-- pipeline (a stage's errTo) and so onto the owner's screen, and not down the
+		-- pipe. It is the one scenario where a copy of errTo instead of the owner
+		-- itself is a difference a player can read: the copy's line is written to a
+		-- job that nobody prints.
+		local pipe8 = everyStep("a stage that answers with a refusal",
+			"cat /nofile | wc -l\necho status=$?\n", "/nofile")
+		check("the saves landed inside it (" .. pipe8 .. ")", pipe8 > 5)
+
+		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
+		_G.__world = nil
+		CeroSecDevices.invalidate()
+	end
+
+
+	--
+	-- A dedicated server has no OnSave
+	--
+	-- ServerMap.QueuedSaveAll calls SGlobalObjects.save() and triggers nothing (it
+	-- was found by restarting a real one: the daemon was gone). So the server
+	-- writes the book on a timer, and the save is taken here with NO event, which
+	-- is the only save a server has.
+	--
+	do
+		local hadServer = _G.isServer
+		local world = FakeWorld.new()
+		world.room("office", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0} })
+		world.put(world.squares["10,10,0"], fakeDoor(false, true, world.squares["11,10,0"], true))
+		world.put(world.squares["12,10,0"], fakeDoor(false, true, world.squares["13,10,0"], true))
+		_G.__world = world
+		_G.IsoObjectChange = { STATE = "chg.STATE", WASHER_STATE = "chg.WASHER_STATE" }
+		CeroSecDevices.invalidate()
+
+		local template = nil
+		local function daemon()
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			CeroSecJobs.snapshotMs = 0
+			if template == nil then
+				local first = newBench()
+				first.login("admin")
+				first.script("/home/admin/d.sh",
+					"while true; do ls /dev | grep ^door; sleep 2; done\n")
+				template = first.save()
+				_G.__now = 5000000
+				CeroSecJobs.lastMs = 0
+			end
+			local bench = newBench(deepCopy(template))
+			bench.open()
+			bench.enter("sh /home/admin/d.sh &")
+			return bench
+		end
+
+		_G.isServer = function() return true end
+		local bench = daemon()
+		eq("server: the daemon is running", jobCount(bench), 1)
+		bench.tick(120)
+		local bytes = bench.save(true)
+		check("server: a save with no event carries the book",
+			bytes.os ~= nil and bytes.os.jobs ~= nil and #bytes.os.jobs.list == 1)
+		local back = newBench(bytes)
+		eq("server: and the machine comes back running it", jobCount(back), 1)
+
+		-- The book is cleared as well as written: a job that ended must not be on the
+		-- state for the next load to run again. The scheduler forgets a machine the
+		-- pass its last job ends, so this is the snapshot that has to run with no
+		-- machine in the scheduler at all.
+		_G.__now = 5000000
+		CeroSecJobs.lastMs = 0
+		CeroSecJobs.snapshotMs = 0
+		local short = newBench(deepCopy(template))
+		short.open()
+		short.enter("sleep 8 &")
+		short.tick(60)
+		bytes = short.save(true)
+		check("server: a job that is running is on the state",
+			bytes.os ~= nil and bytes.os.jobs ~= nil)
+		short.tick(100)
+		eq("server: the job has ended", jobCount(short), 0)
+		bytes = short.save(true)
+		check("server: and the next snapshot took it off the state",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("server: so it does not come back", jobCount(newBench(bytes)), 0)
+
+		-- The same on a machine that is not a server's, where OnSave is the moment
+		-- and the timer would be work for nothing.
+		_G.isServer = function() return false end
+		bench = daemon()
+		bench.tick(120)
+		bytes = bench.save(true)
+		check("not a server: nothing is written on a timer",
+			bytes.os == nil or bytes.os.jobs == nil)
+		bytes = bench.save()
+		check("not a server: the save event is what writes it",
+			bytes.os ~= nil and bytes.os.jobs ~= nil)
+
+		-- A job left out of the save is said once, and again only if what is said
+		-- changes: the timer would otherwise fill the log ring with one line.
+		_G.isServer = function() return true end
+		bench = daemon()
+		local realToData = CeroSecJobs.jobToData
+		CeroSecJobs.jobToData = function() return nil, "a test reason" end
+		CeroSec.logRing = {}
+		bench.tick(300)
+		local said = 0
+		for i = 1, #CeroSec.logRing do
+			if string.find(CeroSec.logRing[i].text, "a test reason", 1, true) then said = said + 1 end
+		end
+		CeroSecJobs.jobToData = realToData
+		eq("a job left out is logged once over thirty seconds of snapshots", said, 1)
+
+		_G.isServer = hadServer
+		_G.__world = nil
+		CeroSecDevices.invalidate()
+	end
+
+	--
+	-- After the reload, the pipes are the SAME pipes
+	--
+	-- The number of stages and the text on the glass are the easy half. What the
+	-- serializer takes away is identity, and a pipe is one table held in three
+	-- places: if the reload hands back three, the writer's eof reaches nobody and
+	-- the reader waits for ever. So it is asserted as identity, on the live
+	-- machine, and then as the effect that identity is for.
+	--
+	do
+		local realBudget = CeroSec.STEP_BUDGET_PER_MACHINE
+		CeroSec.STEP_BUDGET_PER_MACHINE = 1
+
+		local function bootPipeline(text)
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			local bench = newBench()
+			bench.login("admin")
+			bench.script("/home/admin/p.sh", text)
+			bench.enter("sh /home/admin/p.sh")
+			return bench
+		end
+		local function frameOf(bench)
+			local book = bench.object.jobs
+			local job = book ~= nil and book.list[1] or nil
+			if job == nil then return nil, nil end
+			for i = #job.frames, 1, -1 do
+				if job.frames[i].stages ~= nil then return job.frames[i], job end
+			end
+			return nil, job
+		end
+		local function until_(bench, pred, limit)
+			for _ = 1, limit do
+				local frame, job = frameOf(bench)
+				if frame ~= nil and pred(frame, job) then return true end
+				bench.tick(1)
+			end
+			return false
+		end
+
+		local bench = bootPipeline("cat /etc/group | grep sudo | wc -l\necho status=$?\n")
+		-- After the writer is over and before the reader is: the moment eof is what the
+		-- reader is waiting to be told.
+		check("the first stage finishes while the pipeline is still going",
+			until_(bench, function(frame)
+				return CeroSecOS.jobIsOver(frame.stages[1]) and not CeroSecOS.jobIsOver(frame.stages[2])
+			end, 500))
+		local before = frameOf(bench)
+		eq("the writer said eof on its pipe", before.pipes[1].eof, true)
+		local back = newBench(bench.save())
+		local frame, job = frameOf(back)
+		check("the pipeline is there after the reload", frame ~= nil)
+		eq("three stages", #frame.stages, 3)
+		eq("and three pipes", #frame.pipes, 3)
+		for i = 1, 3 do
+			eq("stage " .. i .. " writes into pipe " .. i, frame.stages[i].pipe, frame.pipes[i])
+			eq("stage " .. i .. " answers its refusals to the job that owns the pipeline",
+				frame.stages[i].errTo, job)
+		end
+		eq("stage 2 reads what stage 1 writes", frame.stages[2].stdinBuf, frame.pipes[1])
+		eq("stage 3 reads what stage 2 writes", frame.stages[3].stdinBuf, frame.pipes[2])
+		eq("and stage 1 reads nothing", frame.stages[1].stdinBuf, nil)
+		eq("so the writer's eof is the reader's", frame.stages[2].stdinBuf.eof, true)
+		check("the stage that finished is over and the ones behind it are not",
+			CeroSecOS.jobIsOver(frame.stages[1]) and not CeroSecOS.jobIsOver(frame.stages[2]))
+		eq("and a stage still knows who it runs as", frame.stages[2].session.user, "admin")
+		-- The tail's output, which is what the OWNER prints: put a save in the pass
+		-- where the last stage has written its line and nothing has carried it yet.
+		local bench2 = bootPipeline("cat /etc/group | grep sudo | wc -l\necho status=$?\n")
+		check("the last stage writes a line the pipeline has not yet carried",
+			until_(bench2, function(f) return #f.pipes[3].lines > 0 end, 500))
+		local back2 = newBench(bench2.save())
+		local frame2 = frameOf(back2)
+		check("it is still in the tail's pipe after the reload",
+			frame2 ~= nil and #frame2.pipes[3].lines > 0)
+		local n = 0
+		while CeroSec.consoleWaiting(back2.object:consoleState()) ~= "shell" and n < 200 do
+			back2.tick(1); n = n + 1
+		end
+		local rows = back2.object.console.lines
+		eq("and the owner is what prints it", rows[#rows - 1], "     1")
+		eq("with the status after it", rows[#rows], "status=0")
+
+		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
+	end
+
+	--
+	-- A book somebody forged, or a pipeline that was cut
+	--
+	-- What comes off a save file is data, so every way a graph can be wrong is a job
+	-- that is dropped with a line in the log -- never a crash, and never a machine
+	-- lost with it. The forgeries are made on the graph as the job itself (resolved,
+	-- so that a wreck lands on one table and not on a marker that stands for it) and
+	-- written back through the same writer, or on the packed form directly where
+	-- the fault IS in the packing.
+	--
+	do
+		local realBudget = CeroSec.STEP_BUDGET_PER_MACHINE
+		CeroSec.STEP_BUDGET_PER_MACHINE = 1
+		_G.__now = 5000000
+		CeroSecJobs.lastMs = 0
+		local bench = newBench()
+		bench.login("admin")
+		bench.script("/home/admin/p.sh", "cat /etc/group | grep sudo | wc -l\necho status=$?\n")
+		bench.enter("sh /home/admin/p.sh")
+		local stagedAt = false
+		for _ = 1, 500 do
+			bench.tick(1)
+			local book = bench.object.jobs
+			local j = book and book.list[1]
+			local f = j and j.frames[#j.frames]
+			if f ~= nil and f.stages ~= nil and CeroSecOS.jobIsOver(f.stages[1]) then
+				stagedAt = true
+				break
+			end
+		end
+		check("there is a pipeline in the book to spoil", stagedAt)
+		local good = bench.save()
+		check("and the book has it", good.os.jobs ~= nil and #good.os.jobs.list == 1)
+		local goodBack = newBench(deepCopy(good))
+		eq("unspoiled, it comes back", jobCount(goodBack), 1)
+
+		local function dropped(what, spoil, reason)
+			local saved = deepCopy(good)
+			saved.os.jobs.list[1] = spoil(saved.os.jobs.list[1])
+			CeroSec.logRing = {}
+			local back = newBench(saved)
+			eq(what .. ": no job comes back", jobCount(back), 0)
+			check(what .. ": and the log says so, and says " .. reason, (function()
+				for i = 1, #CeroSec.logRing do
+					if string.find(CeroSec.logRing[i].text, "dropped a saved job: " .. reason,
+							1, true) then
+						return true
+					end
+				end
+				return false
+			end)())
+			back.open()
+			back.enter("echo alive")
+			back.frame()
+			check(what .. ": the machine is alive", back.painted("alive"))
+		end
+		-- On the job as it is once resolved, written back as a graph.
+		local function onJob(wreck)
+			return function(entry)
+				local graph = CeroSecJobs.resolve(entry.packed, 100000)
+				wreck(graph)
+				return { packed = (CeroSecJobs.intern(graph, nil)) }
+			end
+		end
+		local function pipeFrame(graph)
+			for i = #graph.frames, 1, -1 do
+				if graph.frames[i].stages ~= nil then return graph.frames[i] end
+			end
+		end
+		-- On the packed form itself.
+		local function markers(packed, out)
+			out = out or {}
+			for _, sub in pairs(packed) do
+				if type(sub) == "table" then
+					if sub["$ref"] ~= nil then out[#out + 1] = sub else markers(sub, out) end
+				end
+			end
+			return out
+		end
+
+		dropped("a marker for an id nobody wrote", function(entry)
+			local all = markers(entry.packed)
+			check("there are markers to spoil (" .. #all .. ")", #all > 0)
+			all[1]["$ref"] = 99999
+			return entry
+		end, "bad ref")
+		dropped("a marker that is text", function(entry)
+			markers(entry.packed)[1]["$ref"] = "3"
+			return entry
+		end, "bad ref")
+		dropped("a marker that is not alone", function(entry)
+			markers(entry.packed)[1].extra = 1
+			return entry
+		end, "bad ref")
+		dropped("a packed job that is a string", function() return { packed = "job" } end, "not a table")
+		dropped("a reference that leads back into the job (a cycle)", onJob(function(graph)
+			graph.session.loop = graph
+		end), "a cycle")
+		dropped("a reference that leads back into the program (a cycle)", onJob(function(graph)
+			graph.prog[1].again = graph.prog
+		end), "a cycle")
+		dropped("a pipe that is not a table", onJob(function(graph)
+			pipeFrame(graph).pipes[2] = "pipe"
+		end), "bad frame")
+		dropped("a pipe with no eof", onJob(function(graph)
+			pipeFrame(graph).pipes[2].eof = nil
+		end), "bad frame")
+		dropped("a pipe whose lines are not text", onJob(function(graph)
+			pipeFrame(graph).pipes[2].lines = { {} }
+		end), "bad frame")
+		dropped("a stage that is not a table", onJob(function(graph)
+			pipeFrame(graph).stages[2] = 7
+		end), "bad frame")
+		dropped("fewer pipes than stages", onJob(function(graph)
+			pipeFrame(graph).pipes[3] = nil
+		end), "bad frame")
+		dropped("a stage that writes into some other pipe", onJob(function(graph)
+			pipeFrame(graph).stages[2].pipe = { lines = {}, bytes = 0, eof = false, closed = false }
+		end), "bad frame")
+		dropped("a stage that reads the wrong pipe", onJob(function(graph)
+			pipeFrame(graph).stages[3].stdinBuf = pipeFrame(graph).pipes[3]
+		end), "bad frame")
+		dropped("a stage that answers to no owner", onJob(function(graph)
+			pipeFrame(graph).stages[2].errTo = nil
+		end), "bad frame")
+		dropped("a stage that answers to somebody else", onJob(function(graph)
+			pipeFrame(graph).stages[2].errTo = pipeFrame(graph).stages[1]
+		end), "bad frame")
+		dropped("a stage whose program is a string", onJob(function(graph)
+			pipeFrame(graph).stages[3].prog = "rm"
+		end), "bad program")
+		dropped("a stage with no session", onJob(function(graph)
+			pipeFrame(graph).stages[3].session = nil
+		end), "no session")
+		dropped("a stage variable that is a table", onJob(function(graph)
+			pipeFrame(graph).stages[3].vars = { X = {} }
+		end), "no shell")
+		dropped("a stage with a frame that has no kind", onJob(function(graph)
+			pipeFrame(graph).stages[3].frames[1].k = nil
+		end), "bad frame")
+		dropped("a stage that is waiting", onJob(function(graph)
+			pipeFrame(graph).stages[3].state = "waiting"
+		end), "a stage is waiting")
+		dropped("a stage with a dial", onJob(function(graph)
+			pipeFrame(graph).stages[3].dial = { control = "rsh" }
+		end), "a stage on the wire")
+		dropped("a stage with an order", onJob(function(graph)
+			pipeFrame(graph).stages[3].orders = { { control = "reboot" } }
+		end), "a stage mid-order")
+		dropped("a pipeline with no stages at all", onJob(function(graph)
+			pipeFrame(graph).stages = {}
+			pipeFrame(graph).pipes = {}
+		end), "bad frame")
+		dropped("more stages than a pipeline may have", onJob(function(graph)
+			local frame = pipeFrame(graph)
+			for i = 4, CeroSecOS.MAX_STAGES + 2 do
+				frame.stages[i] = frame.stages[3]
+				frame.pipes[i] = frame.pipes[3]
+			end
+		end), "bad frame")
+		dropped("the same stage twice", onJob(function(graph)
+			local frame = pipeFrame(graph)
+			frame.stages[2] = frame.stages[3]
+		end), "bad frame")
+		-- Two stages that write into one pipe: every link the walker follows is
+		-- there, and only the pipes being one table each says it is a forgery.
+		dropped("two pipes that are one table", onJob(function(graph)
+			local frame = pipeFrame(graph)
+			frame.pipes[2] = frame.pipes[1]
+			frame.stages[2].pipe = frame.pipes[1]
+			frame.stages[3].stdinBuf = frame.pipes[1]
+		end), "bad frame")
+		-- What a pipe says it holds is a count of bytes the pipeFull test compares.
+		local nan = 0 / 0
+		for _, bad in ipairs({ { "not a number (NaN)", nan }, { "infinite", math.huge },
+				{ "negative infinity", -math.huge }, { "negative", -1 },
+				{ "not a whole number", 1.5 }, { "past what a save may carry", 1e9 },
+				{ "more than the lines in it add up to", 5000 } }) do
+			dropped("a pipe whose byte count is " .. bad[1], onJob(function(graph)
+				pipeFrame(graph).pipes[2].bytes = bad[2]
+			end), "bad frame")
+		end
+		-- The same forgeries against a pipe that really HOLDS a good many bytes, so
+		-- that the bound "no more than the lines add up to" is met and can not be the
+		-- rule that refuses them: a count that is not whole has to be refused for
+		-- being that. (One past what a save may carry is not testable here: the size
+		-- gate refuses the whole job as too large before this rule is asked.)
+		for _, bad in ipairs({ { "a fraction with bytes held", 1.5 },
+				{ "a fraction of a byte over a line", 2.5 } }) do
+			dropped("a pipe holding lines whose byte count is " .. bad[1], onJob(function(graph)
+				local pipe = pipeFrame(graph).pipes[2]
+				pipe.lines = { "ab", "cd" }
+				pipe.bytes = bad[2]
+			end), "bad frame")
+		end
+		-- A sleep's clock: a finite number of milliseconds, and nothing else. NaN and
+		-- infinity compare false with every clock there is, so a job that carried one
+		-- would be asleep for ever.
+		local function asleep(at)
+			at.state = "sleeping"
+			at.wakeMs = nil
+		end
+		for _, bad in ipairs({ { "NaN", nan }, { "infinite", math.huge },
+				{ "negative infinity", -math.huge }, { "text", "9" }, { "a table", {} },
+				{ "a thousand years", 3.2e13 } }) do
+			dropped("a sleeping job whose time left is " .. bad[1], onJob(function(graph)
+				asleep(graph)
+				graph.sleepLeft = bad[2]
+			end), "bad clock")
+			dropped("a sleeping stage whose time left is " .. bad[1], onJob(function(graph)
+				local stage = pipeFrame(graph).stages[3]
+				asleep(stage)
+				stage.sleepLeft = bad[2]
+			end), "bad clock")
+		end
+		dropped("pipelines nested past the bound", onJob(function(graph)
+			-- Each level a pipe frame inside the stage of the one above.
+			local frame = pipeFrame(graph)
+			local at = frame.stages[3]
+			for _ = 1, CeroSecOS.MAX_STAGES + 4 do
+				local inner = { k = "pipe", node = frame.node, stages = {}, pipes = {} }
+				local pipe = { lines = {}, bytes = 0, eof = false, closed = false }
+				inner.pipes[1] = pipe
+				local base = frame.stages[3]
+				local stage = { state = "running", name = base.name, cmd = base.cmd,
+					session = base.session, vars = {}, out = {}, args = {}, prog = base.prog,
+					frames = { { k = "block", prog = base.prog, i = 1 } }, pipe = pipe, errTo = at }
+				inner.stages[1] = stage
+				at.frames[#at.frames + 1] = inner
+				at = stage
+			end
+		end), "too deep")
+		-- Weight and depth, which are what a forged file has to be bounded by.
+		dropped("more tables than a job may cost", onJob(function(graph)
+			graph.junk = {}
+			for i = 1, CeroSec.JOB_SAVE_TABLES + 5 do graph.junk[i] = {} end
+		end), "too large")
+		dropped("more bytes than a job may cost", onJob(function(graph)
+			graph.junk = { string.rep("x", CeroSec.JOB_SAVE_BYTES + 10) }
+		end), "too large")
+		dropped("a chain of tables deeper than the serializer takes", function(entry)
+			local at = entry.packed
+			for _ = 1, 80 do at.deep = {}; at = at.deep end
+			return entry
+		end, "too large")
+		dropped("a table keyed by a table", function(entry)
+			entry.packed[{}] = 1
+			return entry
+		end, "bad key")
+		dropped("an id that is not a number", function(entry)
+			entry.packed["$id"] = "root"
+			return entry
+		end, "bad id")
+		dropped("two tables with one id", function(entry)
+			local all = markers(entry.packed)
+			local first = all[1]["$ref"]
+			-- Find the table that carries that id, and give the job the same one twice.
+			local function carrier(t)
+				for _, sub in pairs(t) do
+					if type(sub) == "table" then
+						if sub["$id"] == first then return sub end
+						local found = carrier(sub)
+						if found then return found end
+					end
+				end
+			end
+			local table_ = carrier(entry.packed)
+			check("a table carries it", table_ ~= nil or entry.packed["$id"] == first)
+			entry.packed.twin = { ["$id"] = first }
+			return entry
+		end, "duplicate id")
+		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
+	end
+
+	--
+	-- An entry written before the graph form is still read
+	--
+	-- The flat form -- the entry IS the job -- is what every build wrote until this
+	-- one, and a save with it in has to come back. It is made here the way the old
+	-- writer made it: the job as a tree, with its clock as what was left of it.
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		bench.script("/home/admin/x.sh", "sleep 5\necho done > /var/tmp/x\n")
+		bench.enter("sh /home/admin/x.sh &")
+		seconds(bench, 1)
+		eq("the job is on the machine", jobCount(bench), 1)
+		local saved = bench.save()
+		local entry = saved.os.jobs.list[1]
+		check("what is written now is the graph form", entry.packed ~= nil)
+		local flat = CeroSecJobs.resolve(deepCopy(entry.packed), 100000)
+		check("the flat form of the same job is the job itself", flat.frames ~= nil
+			and flat.packed == nil and flat.sleepLeft ~= nil)
+		saved.os.jobs.list[1] = flat
+		local back = newBench(saved)
+		eq("an entry in the old flat form still comes back", jobCount(back), 1)
+		seconds(back, 8)
+		eq("and does what it was going to do", back.fileText("/var/tmp/x"), "done")
+
+		-- And what no build ever wrote in it, a pipeline, is not taken from it.
+		local pbench = newBench()
+		pbench.login("admin")
+		pbench.script("/home/admin/p.sh", "cat /etc/group | grep sudo | wc -l\n")
+		pbench.enter("sh /home/admin/p.sh &")
+		local pipeline = nil
+		for _ = 1, 400 do
+			pbench.tick(1)
+			local book = pbench.object.jobs
+			local job = book and book.list[1]
+			if job ~= nil then
+				for i = 1, #job.frames do
+					if job.frames[i].stages ~= nil then pipeline = job end
+				end
+			end
+			if pipeline ~= nil then break end
+		end
+		check("there is a pipeline to write the old way", pipeline ~= nil)
+		local psaved = pbench.save()
+		local tree = CeroSecJobs.resolve(deepCopy(psaved.os.jobs.list[1].packed), 100000)
+		local function untie(v, depth)
+			if type(v) ~= "table" then return v end
+			local out = {}
+			for k, sub in pairs(v) do
+				if k ~= "errTo" then out[k] = untie(sub, depth + 1) end
+			end
+			return out
+		end
+		psaved.os.jobs.list[1] = untie(tree, 0)
+		CeroSec.logRing = {}
+		local pback = newBench(psaved)
+		eq("a flat entry carrying a pipeline is dropped", jobCount(pback), 0)
+		local why = false
+		for i = 1, #CeroSec.logRing do
+			if string.find(CeroSec.logRing[i].text, "a pipeline", 1, true) then why = true end
+		end
+		check("with a line that says why", why)
+	end
+
+
+	--
+	-- Two daemons, saved at every step, are never too large
+	--
+	-- The reason the graph form exists as much as the pipeline is the weight. The
+	-- book is 2048 tables for the whole machine, and the tree copy of the home kit's
+	-- autoclose.sh was 1205 in the middle of `ls /dev | grep ^door` -- so two of
+	-- them, or one and alarm.sh, were refused as "too large" whenever the second
+	-- landed in the middle of its round, and the daemon that was left out did not
+	-- come back. Here both of the home kit's daemons run on one machine, the machine
+	-- is saved at EVERY pass for several rounds, and neither is ever left out.
+	--
+	do
+		local realBudget = CeroSec.STEP_BUDGET_PER_MACHINE
+		local world = FakeWorld.new()
+		world.room("office", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0} })
+		world.put(world.squares["10,10,0"], fakeDoor(false, true, world.squares["11,10,0"], true))
+		world.put(world.squares["12,10,0"], fakeDoor(false, true, world.squares["13,10,0"], true))
+		_G.__world = world
+		_G.IsoObjectChange = { STATE = "chg.STATE", WASHER_STATE = "chg.WASHER_STATE" }
+		CeroSecDevices.invalidate()
+
+		_G.__now = 5000000
+		CeroSecJobs.lastMs = 0
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("su root")
+		bench.enter("")
+		local B = "/usr/local/bin"
+		bench.enter("mkdir /usr")
+		bench.enter("mkdir /usr/local")
+		bench.enter("mkdir " .. B)
+		for _, name in ipairs({ "autoclose.sh", "alarm.sh" }) do
+			local script = CeroSecContent.SCRIPTS[name]
+			check(name .. " is in the library", script ~= nil)
+			local state = bench.object:osState()
+			local done = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+				B .. "/" .. name, script.text, false, 100)
+			check(name .. " goes onto the disk", done ~= nil)
+			CeroSecOS.getNode(state, CeroSecOS.rootSession(), B .. "/" .. name).mode = 755
+		end
+		bench.enter("sh " .. B .. "/autoclose.sh start 2 &")
+		bench.enter("sh " .. B .. "/alarm.sh start &")
+		seconds(bench, 1)
+		eq("both daemons are running", jobCount(bench), 2)
+		-- One step a pass from here, so that a save can land between any two of them.
+		CeroSec.STEP_BUDGET_PER_MACHINE = 1
+
+		CeroSec.logRing = {}
+		local most, least, inPipe, lists = 0, 99999, 0, {}
+		local mostTables = 0
+		local refusedForOther = {}
+		for k = 1, 300 do
+			bench.tick(1)
+			local frames = 0
+			for i = 1, #bench.object.jobs.list do
+				local job = bench.object.jobs.list[i]
+				for f = 1, #job.frames do
+					if job.frames[f].stages ~= nil then frames = frames + 1 end
+				end
+			end
+			if frames > 0 then inPipe = inPipe + 1 end
+			local saved, dropped = bench.save()
+			eq("pass " .. k .. ": nothing in the save is a function", dropped, 0)
+			local list = saved.os.jobs ~= nil and saved.os.jobs.list or {}
+			lists[#lists + 1] = #list
+			if #list > most then most = #list end
+			if #list < least then least = #list end
+			local tally = { tables = 0, max = 100000 }
+			for i = 1, #list do CeroSecJobs.weigh(list[i], tally) end
+			if tally.tables > mostTables then mostTables = tally.tables end
+			-- Anything refused is refused for a REASON, and the reason is never size.
+			for i = 1, #bench.object.jobs.list do
+				local why = CeroSecJobs.jobRefused(bench.object.jobs.list[i])
+				if why ~= nil then refusedForOther[why] = true end
+			end
+		end
+		print("  two daemons saved at 300 passes: " .. mostTables .. " tables at the most, "
+			.. inPipe .. " passes with one of them inside a pipeline, book of " .. least
+			.. ".." .. most)
+		local said = false
+		for i = 1, #CeroSec.logRing do
+			if string.find(CeroSec.logRing[i].text, "too large", 1, true) then said = true end
+		end
+		eq("neither was ever left out of a save as too large", said, false)
+		check("the saves really landed inside pipelines (" .. inPipe .. ")", inPipe > 20)
+		check("and the two together never came near the book's ceiling: " .. mostTables,
+			mostTables < CeroSec.JOB_SAVE_TABLES / 2)
+		local reasons = {}
+		for why in pairs(refusedForOther) do reasons[#reasons + 1] = why end
+		table.sort(reasons)
+		print("  refused for other reasons: " .. (#reasons == 0 and "none" or table.concat(reasons, ", ")))
+		eq("and both were in the book at every pass", least, 2)
+		local back = newBench(bench.save())
+		eq("and after the last of them both come back", jobCount(back), 2)
+
+		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
+		_G.__world = nil
+		CeroSecDevices.invalidate()
 	end
 
 	--
@@ -17381,7 +18396,13 @@ do
 
 		local function spoil(what, wreck)
 			local saved = bench.save()
-			wreck(saved.os.jobs)
+			-- The job is spoiled as the LIVE shape it has once resolved -- one table where
+			-- the graph names one table -- and written back as a graph, because a wreck
+			-- that reached into the packed form would be spoiling a ref marker whenever
+			-- `pairs` happened to walk the reference before the table it names.
+			local graph = CeroSecJobs.resolve(saved.os.jobs.list[1].packed, 100000)
+			wreck({ list = { graph } })
+			saved.os.jobs.list[1] = { packed = (CeroSecJobs.intern(graph, nil)) }
 			CeroSec.logRing = {}
 			local back = newBench(saved)
 			eq(what .. ": no job comes back", jobCount(back), 0)
@@ -17468,13 +18489,14 @@ do
 				return out
 			end
 			copy = dup(one)
+			copy = copy.packed
 			copy.id = 100 + i
 			-- A LEGAL slot on every one of them, and it matters: the gate refuses a
 			-- slot no machine has (`bad slot`), so numbering these 1..7 would have
 			-- them capped by that rule and the ceiling below would be guarding
 			-- nothing. Reused round the four, which a book of seven could not be.
 			copy.n = math.fmod(i - 1, CeroSecOS.MAX_JOBS) + 1
-			many.os.jobs.list[i] = copy
+			many.os.jobs.list[i] = { packed = copy }
 		end
 		eq("the forged book really holds more than a machine takes",
 			#many.os.jobs.list, CeroSecOS.MAX_JOBS + 3)
@@ -17494,13 +18516,14 @@ do
 	do
 		local bench = newBench()
 		bench.login("admin")
-		-- A program whose parsed tree is past the ceiling. Written as statements a
-		-- survivor could really type, and the size is asserted rather than assumed.
-		local lines = { "F=/var/tmp/big.on", "echo run > $F", "while [ -f $F ]; do" }
-		for i = 1, 40 do
-			lines[#lines + 1] = string.format(
-				"  if [ -f /var/tmp/b%d ]; then c%d=$(cat /var/tmp/b%d); fi", i, i, i)
-		end
+		-- A program whose parsed tree is past the ceiling. The graph form writes a
+		-- tree once, so the 40 `if` lines this used to be no longer are: what is left
+		-- that costs more than the ceiling is a script that is BIG ITSELF, which is
+		-- what a file of the widest the machine takes (4096 bytes) makes of three
+		-- assignments a line. The size is asserted rather than assumed.
+		local lines = { "F=/var/tmp/big.on", "echo run > $F" }
+		for _ = 1, 300 do lines[#lines + 1] = "a=1;b=2;c=3" end
+		lines[#lines + 1] = "while [ -f $F ]; do"
 		lines[#lines + 1] = "  sleep 1"
 		lines[#lines + 1] = "done"
 		bench.script("/home/admin/big.sh", table.concat(lines, "\n"))
@@ -17522,7 +18545,7 @@ do
 		eq("and the machine that comes back is running nothing", jobCount(back), 0)
 
 		-- The control, and it is what makes the assertion above mean anything: the
-		-- same daemon with three tests instead of forty is under the ceiling and IS
+		-- same daemon with one test instead of three hundred lines is under the ceiling and IS
 		-- saved. Without this the bench would pass on a save that wrote nothing at
 		-- all.
 		local small = newBench()
@@ -17552,10 +18575,10 @@ do
 		bench.enter("sleep 20; echo late > /var/tmp/late &")
 		seconds(bench, 2)
 		local saved = bench.save()
-		local left = saved.os.jobs.list[1].sleepLeft
+		local left = saved.os.jobs.list[1].packed.sleepLeft
 		check("what is saved is the milliseconds left: " .. tostring(left),
 			type(left) == "number" and left > 15000 and left <= 20000)
-		eq("and not the moment it is due", saved.os.jobs.list[1].wakeMs, nil)
+		eq("and not the moment it is due", saved.os.jobs.list[1].packed.wakeMs, nil)
 
 		-- A week goes by with the game shut. The wall clock moved; the machine did
 		-- not.
@@ -17566,6 +18589,365 @@ do
 			back.fileText("/var/tmp/late"), nil)
 		seconds(back, 20)
 		eq("and it wakes when they are up", back.fileText("/var/tmp/late"), "late")
+	end
+
+	--
+	-- A job too deep for the state gate is left out, and says so
+	--
+	-- The state gate (CeroSecOS.validate) counts table levels from the root of the
+	-- STATE, and the book's entry sits three levels down in it and the job one more:
+	-- so a job that fits sixty-four levels of its own is sixty-seven levels of the
+	-- state, and validate refuses the whole machine for it -- and osState's refusal
+	-- is sticky. Three nested pipelines round eleven nested `if`s is a legal script
+	-- that gets there: the save has to leave THAT job out, with a line in the log,
+	-- and not write it and let the gate find it.
+	--
+	do
+		local realBudget = CeroSec.STEP_BUDGET_PER_MACHINE
+		CeroSec.STEP_BUDGET_PER_MACHINE = 1
+
+		-- `levels` pipelines round one another, `ifs` nested ifs round the innermost.
+		local function nest(levels, ifs)
+			local inner = "echo a | cat"
+			if ifs > 0 then
+				inner = string.rep("if true; then ", ifs) .. inner .. string.rep("; fi", ifs)
+			end
+			if levels <= 1 then return inner end
+			return "echo a | while read g; do " .. nest(levels - 1, ifs) .. "; done | cat"
+		end
+		local function said(needle)
+			for i = 1, #CeroSec.logRing do
+				if string.find(CeroSec.logRing[i].text, needle, 1, true) then return true end
+			end
+			return false
+		end
+
+		-- The three shapes below are sixty-five levels of the state at every moment of
+		-- their lives (the parse tree alone is that deep), and the two after them, one
+		-- nested `if` shallower, are sixty-one: the boundary is the four levels an
+		-- `if` costs, and it lies between them.
+		for _, shape in ipairs({ { 3, 11, false }, { 5, 9, false }, { 4, 10, false },
+				{ 3, 10, true }, { 5, 8, true } }) do
+			local name = shape[1] .. " pipelines round " .. shape[2] .. " nested ifs"
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			CeroSec.logRing = {}
+			local bench = newBench()
+			bench.login("admin")
+			bench.script("/home/admin/n.sh", nest(shape[1], shape[2]) .. "\necho fin\n")
+			bench.enter("sh /home/admin/n.sh")
+			local wrote, refused, worst = 0, 0, nil
+			for _ = 1, 60 do
+				bench.tick(1)
+				if not (bench.object.jobs and #bench.object.jobs.list > 0) then break end
+				if CeroSecJobs.writeBook(bench.object, _G.__now) > 0 then wrote = wrote + 1 end
+				-- The gate, on a copy of what the serializer is about to walk.
+				local ok, why = CeroSecOS.validate(deepCopy(bench.object.os))
+				if not ok then
+					refused = refused + 1
+					worst = worst or tostring(why)
+				end
+			end
+			eq(name .. ": the state gate took every save" .. (worst and (" -- " .. worst) or ""),
+				refused, 0)
+			if shape[3] then
+				check(name .. ": which were written (" .. wrote .. ")", wrote > 0)
+				check(name .. ": and nothing was left out", not said("out of the save"))
+			else
+				eq(name .. ": and none was written", wrote, 0)
+				check(name .. ": with a line in the log to say why",
+					said("left a job out of the save: too deep"))
+				check(name .. ": and the job was left running, not killed",
+					bench.object.jobs ~= nil and #bench.object.jobs.list == 1)
+			end
+			-- What a reload does with the state it was handed: the machine is still there.
+			bench.object:setOS(bench.object.os)
+			check(name .. ": the machine's state still passes its gate", bench.object:osState() ~= nil)
+		end
+
+		-- The line itself, to the level. A job carrying a chain of tables of its own
+		-- is exactly as deep as the chain; sixty-one levels of it is sixty-four of the
+		-- state, and is the deepest the gate takes.
+		local function depthOf(v, d)
+			local most = d
+			for _, sub in pairs(v) do
+				if type(sub) == "table" then
+					local x = depthOf(sub, d + 1)
+					if x > most then most = x end
+				end
+			end
+			return most
+		end
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("sleep 1000 &")
+		seconds(bench, 1)
+		local job = bench.object.jobs.list[1]
+		local function chain(levels)
+			job.pad = nil
+			local at = job
+			for _ = 1, levels - 1 do at.pad = {}; at = at.pad end
+		end
+		chain(61)
+		eq("a job sixty-one levels deep in its own graph", depthOf(CeroSecJobs.intern(job, 0), 1), 61)
+		check("jobToData takes it as the one it is", CeroSecJobs.jobToData(job, 0, false) ~= nil)
+		CeroSec.logRing = {}
+		eq("is written", CeroSecJobs.writeBook(bench.object, _G.__now), 1)
+		check("and the state gate takes it", CeroSecOS.validate(deepCopy(bench.object.os)))
+		check("without a word in the log", not said("out of the save"))
+		chain(62)
+		eq("one level more", depthOf(CeroSecJobs.intern(job, 0), 1), 62)
+		eq("is not", CeroSecJobs.writeBook(bench.object, _G.__now), 0)
+		local data, why = CeroSecJobs.jobToData(job, 0, false)
+		eq("jobToData says the same of it, in its own words", why, "too deep")
+		eq("and hands back nothing", data, nil)
+		check("and the log says it was too deep", said("left a job out of the save: too deep"))
+		check("and the state gate takes what is left", CeroSecOS.validate(deepCopy(bench.object.os)))
+
+		-- A marker is a table as well: a table reached twice is written once and a
+		-- marker stands for it everywhere else, one level below the place that reaches
+		-- it. The shared table is FIRST in an array, so it is the one that is copied and
+		-- the bottom of the chain, met after it, is the one that gets the marker; the
+		-- chain is sixty-one levels deep and the marker is the sixty-second.
+		chain(1)
+		local shared = { ["answer"] = 42 }
+		local head = {}
+		job.stash = { shared, head }
+		local bottom = head
+		for _ = 1, 58 do bottom.pad = {}; bottom = bottom.pad end
+		bottom.shared = shared
+		local packed = CeroSecJobs.intern(job, 0)
+		check("the bottom of the chain holds a marker",
+			(function()
+				local at = packed.stash[2]
+				while at.pad ~= nil do at = at.pad end
+				return at.shared["$ref"] ~= nil
+			end)())
+		eq("and it is one level below the chain", depthOf(packed, 1), 62)
+		CeroSec.logRing = {}
+		-- The book says a refusal once and not again while the same thing is said
+		-- (the timer would repeat it); this is a second occurrence for the test, so
+		-- the note of the first is put away.
+		bench.object.jobs.said = nil
+		eq("so that job is refused too", CeroSecJobs.writeBook(bench.object, _G.__now), 0)
+		check("with the line in the log", said("left a job out of the save: too deep"))
+		job.stash = nil
+
+		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
+	end
+
+	--
+	-- A stage that is ASLEEP wakes when its time is up, not before and not never
+	--
+	-- What a save keeps of a sleeping stage is what it has LEFT, and the reload has
+	-- to turn that back into a moment (restoreClocks). The saved form is asserted
+	-- above; what this asserts is what the machine DOES with it: a stage restored
+	-- with nothing left wakes at once and the script runs on early, and a stage whose
+	-- clock is not restored at all is a stage that never sleeps. The pipeline is saved
+	-- one second into a sleep of three, reloaded, and the clock is advanced in
+	-- steps: it is still asleep before the time left is up, and is over after it.
+	--
+	do
+		local function runsOn(name, text)
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			local bench = newBench()
+			bench.login("admin")
+			bench.script("/home/admin/s.sh", text)
+			bench.enter("sh /home/admin/s.sh &")
+			seconds(bench, 1)
+			eq(name .. ": the job is running a second in", jobCount(bench), 1)
+			local saved = bench.save()
+			local back = newBench(saved)
+			eq(name .. ": it comes back", jobCount(back), 1)
+			-- Two seconds of the first sleep are left, and the second is three.
+			seconds(back, 1)
+			eq(name .. ": one second after the reload it is still asleep", back.fileText("/var/tmp/e"), nil)
+			check(name .. ": and the second turn of the loop has not begun",
+				back.fileText("/var/tmp/w") ~= "1\n2")
+			seconds(back, 3)
+			eq(name .. ": four after it, with five to go in all, still", back.fileText("/var/tmp/e"), nil)
+			seconds(back, 4)
+			eq(name .. ": and eight after, it is over", back.fileText("/var/tmp/e"), "end")
+			eq(name .. ": having said what the script says", back.fileText("/var/tmp/w"), "1\n2")
+			eq(name .. ": nothing is left running", jobCount(back), 0)
+		end
+		-- Two stages asleep for different times. The pipeline as a whole wakes when the
+		-- EARLIEST of them does (pipeStep hands its owner that clock), so a save that
+		-- restored only the owner's clock would still wake the later stage at the
+		-- earlier one's time: what tells the two apart is the LATER stage's own clock.
+		local function sleepers(name, text)
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			local bench = newBench()
+			bench.login("admin")
+			bench.script("/home/admin/s.sh", text)
+			bench.enter("sh /home/admin/s.sh &")
+			seconds(bench, 1)
+			eq(name .. ": the job is running a second in", jobCount(bench), 1)
+			local back = newBench(bench.save())
+			eq(name .. ": it comes back", jobCount(back), 1)
+			-- One second is left of the shorter sleep, four of the longer.
+			seconds(back, 1)
+			eq(name .. ": the shorter sleep is over and the script has not gone on",
+				back.fileText("/var/tmp/e"), nil)
+			seconds(back, 2)
+			eq(name .. ": three seconds after the reload the longer sleep still has one to go",
+				back.fileText("/var/tmp/e"), nil)
+			seconds(back, 3)
+			eq(name .. ": and six after, it is over", back.fileText("/var/tmp/e"), "end")
+			eq(name .. ": nothing is left running", jobCount(back), 0)
+		end
+		sleepers("two stages asleep", "sleep 2 | sleep 5\necho end > /var/tmp/e\n")
+		sleepers("two stages asleep inside a stage",
+			"echo go | while read g; do sleep 2 | sleep 5; done | cat\necho end > /var/tmp/e\n")
+		runsOn("a stage with a sleep in its loop",
+			"for i in 1 2; do echo $i; sleep 3; done | cat > /var/tmp/w\necho end > /var/tmp/e\n")
+		runsOn("a stage inside a stage",
+			"echo go | while read g; do for i in 1 2; do echo $i; sleep 3; done | cat; done"
+			.. " | cat > /var/tmp/w\necho end > /var/tmp/e\n")
+	end
+
+	--
+	-- A pipe holding more than the back-pressure ceilings is a legal pipe
+	--
+	-- CeroSecOS.PIPE_LINES and PIPE_BYTES are asked BEFORE a stage is stepped, and one
+	-- step of `cat` puts a whole file into the pipe, and two files if it was given
+	-- two. So the gate on the way in does not use them (pipeOk asks that the byte
+	-- count is finite, whole and what the lines add up to), and this is what would
+	-- go red if it did: each job is saved with what is in its pipe, comes back, and
+	-- finishes the count. The first goes past the line ceiling and the second past
+	-- the byte one, because a job that fits a save cannot go past both.
+	--
+	do
+		local realBudget = CeroSec.STEP_BUDGET_PER_MACHINE
+		CeroSec.STEP_BUDGET_PER_MACHINE = 1
+		local function past(name, text, cmd, past, want)
+			_G.__now = 5000000
+			CeroSecJobs.lastMs = 0
+			local bench = newBench()
+			bench.login("admin")
+			bench.script("/home/admin/big", text)
+			bench.script("/home/admin/p.sh", cmd .. "\necho status=$?\n")
+			bench.enter("sh /home/admin/p.sh")
+			local held = nil
+			for _ = 1, 500 do
+				bench.tick(1)
+				local job = bench.object.jobs and bench.object.jobs.list[1]
+				for i = job and #job.frames or 0, 1, -1 do
+					local frame = job.frames[i]
+					if frame.stages ~= nil and past(frame.pipes[1]) then held = frame.pipes[1] end
+				end
+				if held then break end
+			end
+			check(name .. ": a pipe is past the ceiling (" .. (held and (#held.lines .. " lines, "
+				.. held.bytes .. " bytes") or "none") .. ")", held ~= nil)
+			local saved = bench.save()
+			check(name .. ": the save takes the job", saved.os.jobs ~= nil and #saved.os.jobs.list == 1)
+			local back = newBench(saved)
+			eq(name .. ": and it comes back", jobCount(back), 1)
+			local n = 0
+			while CeroSec.consoleWaiting(back.object:consoleState()) ~= "shell" and n < 3000 do
+				back.tick(10)
+				n = n + 10
+			end
+			local rows = back.object.console.lines
+			eq(name .. ": and counts what was in the pipe", rows[#rows - 1], want)
+		end
+		-- The files are what bench.script makes of them: one more, empty, line at the end.
+		past("fourteen hundred lines", string.rep("abcd\n", 700),
+			"cat /home/admin/big /home/admin/big | wc -l",
+			function(pipe) return #pipe.lines > CeroSecOS.PIPE_LINES end, "  1402")
+		past("forty lines of two hundred bytes", string.rep(string.rep("b", 199) .. "\n", 20),
+			"cat /home/admin/big /home/admin/big | wc -c",
+			function(pipe) return pipe.bytes > CeroSecOS.PIPE_BYTES end, "  8001")
+		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
+	end
+
+	--
+	-- A job the save refuses is left out with its OWN reason in the log
+	--
+	-- Only "too large" used to say anything. A job refused for what is in it -- a
+	-- table that means a marker, a key that is a table, pipelines nested past the
+	-- bound, a pipeline with more stages than the parser makes -- was dropped in
+	-- silence, and the player found out when the daemon was not there. What is not
+	-- news (a job that is asking, or holds a session) stays out of the log.
+	--
+	do
+		local function said(needle)
+			for i = 1, #CeroSec.logRing do
+				if string.find(CeroSec.logRing[i].text, needle, 1, true) then return true end
+			end
+			return false
+		end
+		_G.__now = 5000000
+		CeroSecJobs.lastMs = 0
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("sleep 1000 &")
+		seconds(bench, 1)
+		local job = bench.object.jobs.list[1]
+
+		local function leftOut(what, reason, wreck, undo)
+			wreck()
+			CeroSec.logRing = {}
+			-- Each case is a first occurrence: the book does not repeat a line it has
+			-- just said (the server's timer would), so the note of the last one goes.
+			bench.object.jobs.said = nil
+			local saved = bench.save()
+			eq(what .. ": it is not in the save", saved.os.jobs, nil)
+			check(what .. ": and the log says " .. reason,
+				said("left a job out of the save: " .. reason))
+			eq(what .. ": while it goes on running", jobCount(bench), 1)
+			undo()
+		end
+		local function unstash() job.stash = nil end
+		leftOut("a table that already means a marker (id)", "not plain data",
+			function() job.stash = { ["$id"] = 3 } end, unstash)
+		leftOut("a table that already means a marker (ref)", "not plain data",
+			function() job.stash = { ["$ref"] = 3 } end, unstash)
+		leftOut("a key that is a table", "not plain data",
+			function() job.stash = { [{}] = 1 } end, unstash)
+		leftOut("a chain of tables past the depth the gate takes", "too deep",
+			function()
+				local at = {}
+				job.stash = at
+				for _ = 1, 70 do at.deeper = {}; at = at.deeper end
+			end, unstash)
+		-- Pipelines that contain themselves are nested past every bound there is.
+		local nested = { state = "running", prog = {}, frames = {} }
+		nested.frames[1] = { k = "pipe", stages = { nested }, pipes = { {} } }
+		leftOut("pipelines nested past the bound", "too deep",
+			function() job.frames[#job.frames + 1] = { k = "pipe", stages = { nested }, pipes = { {} } } end,
+			function() job.frames[#job.frames] = nil end)
+		-- More stages than the parser makes (CeroSecOS.MAX_STAGES), and pipes that do
+		-- not number the stages: what the reader would drop, said at the save.
+		local function pipeOf(stages, pipes)
+			local frame = { k = "pipe", stages = {}, pipes = {} }
+			for i = 1, stages do
+				frame.stages[i] = { state = "running", prog = {}, frames = {} }
+			end
+			for i = 1, pipes do frame.pipes[i] = {} end
+			return frame
+		end
+		leftOut("a pipeline of more stages than the shell makes", "bad frame",
+			function() job.frames[#job.frames + 1] = pipeOf(CeroSecOS.MAX_STAGES + 1, CeroSecOS.MAX_STAGES + 1) end,
+			function() job.frames[#job.frames] = nil end)
+		leftOut("a pipeline with a pipe too few", "bad frame",
+			function() job.frames[#job.frames + 1] = pipeOf(3, 2) end,
+			function() job.frames[#job.frames] = nil end)
+
+		-- The other side of it: what is left out as a matter of course is not in the log.
+		job.state = "waiting"
+		CeroSec.logRing = {}
+		local saved = bench.save()
+		eq("a job that is waiting is not in the save", saved.os.jobs, nil)
+		check("and that is not a line in the log either", not said("out of the save"))
+		job.state = "sleeping"
+		CeroSec.logRing = {}
+		saved = bench.save()
+		check("the control: the same job, sound, is in the save", saved.os.jobs ~= nil)
+		check("and the log has nothing to say", not said("out of the save"))
 	end
 
 	--
@@ -17667,6 +19049,11 @@ do
 			.. " of PLAIN_VISITS " .. budget .. " (" .. (budget - total) .. " to spare)")
 		check("the worst legal state really is dearer than a machine of files: "
 			.. worst, worst > 1000)
+		-- The number the prose quotes (CeroSecDefs.lua, CeroSecOSState.lua and the
+		-- persistence page of docs/ARCHITECTURE.md), pinned so that it cannot be stale
+		-- again: a change to what a state costs goes red here until they are updated.
+		eq("and it is the number the comments and the docs say", worst, 1123)
+		eq("with the room over that they say", budget - total, 1179)
 		check("and the three numbers fit the gate's budget with room over: " .. total
 			.. " of " .. budget, total < budget)
 		-- And not merely "fits": a belt that fires on a legal machine is a sticky
@@ -17676,10 +19063,10 @@ do
 
 		-- The other half of the pair, and it is what stops JOB_SAVE_TABLES being
 		-- quietly cut to nothing to make the line above pass: the ceiling still has
-		-- to take the daemons this change exists for. The home kit's two together
-		-- were measured at 1209 tables.
+		-- to take the daemons this change exists for. The home kit's two together,
+		-- saved at every pass, were measured at 769 tables at the most.
 		check("and the book's ceiling still holds the home kit's daemons",
-			CeroSec.JOB_SAVE_TABLES >= 1209)
+			CeroSec.JOB_SAVE_TABLES >= 769)
 	end
 
 	--
@@ -17742,7 +19129,9 @@ do
 			bg = true, session = session })
 		local listData = CeroSecJobs.jobToData(listJob, 1000, false)
 		check("and the save takes it", listData ~= nil)
-		listData.prog[1].ops[1] = { "not a string" }
+		local listGraph = CeroSecJobs.resolve(listData.packed, 100000)
+		listGraph.prog[1].ops[1] = { "not a string" }
+		listData = { packed = (CeroSecJobs.intern(listGraph, nil)) }
 		local refused, reason = CeroSecJobs.jobFromData(listData, 1000)
 		eq("an operator that is not one is refused", refused, nil)
 		eq("as a bad program", reason, "bad program")

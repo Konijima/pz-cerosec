@@ -3421,6 +3421,45 @@ do
 end
 
 --
+-- 22e. echo * over a WIDE directory, in a loop (debts 2).
+--
+-- Pathname expansion is CeroSecOS.globMatch run once per entry of the
+-- directory it opens, and nothing charged that past the flat cost every
+-- field already pays -- `while true; do echo /wide/*; done` cost this pass
+-- one directory of a thousand names for free, however many were in it. Fixed
+-- the same way grep's BRE walk was: the entries visited are handed back and
+-- charged as debt (CeroSecOS.GLOB_ENTRIES_PER).
+--
+do
+	local machine, state, console = newMachine()
+	local made = CeroSecOS.createNode(state, CeroSecOS.rootSession(), "/home/admin/wide",
+		CeroSecOS.newDir("admin", 755))
+	check("the wide directory exists", made ~= nil)
+	-- CeroSecOS.MAX_DIR_ENTRIES caps a directory at 96 -- this fills it, the
+	-- widest a real glob on this machine ever reads.
+	for i = 1, CeroSecOS.MAX_DIR_ENTRIES do
+		put(state, "/home/admin/wide/f" .. i, "x")
+	end
+	-- Relative and short-named on purpose: the full absolute name of ninety
+	-- six entries is past MAX_VAR_BYTES, and that is a word-too-large refusal
+	-- with its own bench elsewhere. What this one asks is only the glob's own
+	-- cost, so the loop cds in first.
+	put(state, "/home/admin/grind.sh",
+		"cd /home/admin/wide\nwhile true; do echo f* > /dev/null; done\n")
+	local job = typeLine(system, machine, state, console, "sh /home/admin/grind.sh")
+	local widened = drive(machine, PASSES, CeroSec.JOB_PASS_MS)
+	flat("echo * over a wide directory", widened)
+	timely("echo * over a wide directory", widened)
+	note("glob, " .. CeroSecOS.MAX_DIR_ENTRIES .. " entries", widened)
+	-- Charged, not free: still going after PASSES drives, the loop's ceiling
+	-- and not one directory read all at once. Without the charge this test
+	-- was the same shape as grep's dearest pattern before BRE_STEPS_PER --
+	-- five times the budget in one pass.
+	check("and the loop is still running (" .. job.steps .. " steps)",
+		not CeroSecOS.jobIsOver(job))
+end
+
+--
 -- 26. THE COUNTY: the minute sweep, and the windows open on one machine
 --
 -- Every bench above is about one player's script on one machine. These two are

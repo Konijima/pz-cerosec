@@ -1519,6 +1519,78 @@ do
 		string.find(flat, NUMBER[CeroSecOS.MAX_NEST] ..
 			" deep is as far as these nest, and " .. NUMBER[CeroSecOS.MAX_STAGES] ..
 			" is as long as a pipeline may be", 1, true) ~= nil)
+
+	-- 4. The /dev vocabulary, derived from CeroSecOS.DEV_VALUES so a kind or a
+	-- word the engine gains later goes red here until the table says so too.
+	--
+	-- Row-scoped: a whole-page word search is satisfied by the NEIGHBOUR row
+	-- (win passing on lock's row, or lock's own label standing in for its word),
+	-- so each row is split into cells on its own two-space gaps and a word is
+	-- looked for inside THAT row's "takes" cell only, at a word boundary, so
+	-- "lock" cannot be satisfied by "unlock" or by the row's own kind label.
+	do
+		local pages = {}
+		for ci = 1, #vol.chapters do
+			local ch = vol.chapters[ci]
+			for pi = 1, #ch.pages do
+				if string.find(ch.pages[pi], "The kinds, one table.", 1, true) ~= nil
+				or string.find(ch.pages[pi], "The kinds, continued.", 1, true) ~= nil then
+					pages[#pages + 1] = ch.pages[pi]
+				end
+			end
+		end
+		check("Volume 3 carries the device kinds table (2 pages)", #pages == 2)
+		local page = table.concat(pages, "\n")
+
+		local rowOf = {}
+		for line in (page .. "\n"):gmatch("([^\n]*)\n") do
+			if string.sub(line, 1, 2) == "  " then
+				local collapsed = string.gsub(line, "  +", "\1")
+				local cells = {}
+				for cell in string.gmatch(collapsed, "[^\1]+") do
+					cells[#cells + 1] = cell
+				end
+				local kind = cells[1]
+				if kind ~= nil and CeroSecOS.DEV_VALUES[kind] ~= nil then
+					rowOf[kind] = cells
+				end
+			end
+		end
+
+		local kinds = 0
+		for kind, words in pairs(CeroSecOS.DEV_VALUES) do
+			kinds = kinds + 1
+			local cells = rowOf[kind]
+			check("the kinds table has a row for " .. kind, cells ~= nil)
+			local takes = cells ~= nil and cells[3] or ""
+			if kind == "win" then
+				-- The live win node is always read-only (SCeroSecDevices.lua
+				-- sets ro; CeroSecOSDev.lua refuses before the vocabulary is
+				-- ever consulted), so its row says "read only" on purpose and
+				-- not its DEV_VALUES words -- an exception, not a loophole.
+				check("the kinds table marks win read only",
+					string.find(takes, "read only", 1, true) ~= nil)
+			else
+				local any = false
+				for word in pairs(words) do
+					any = true
+					check("the kinds table's " .. kind .. " row takes \"" ..
+						word .. "\"",
+						string.find(takes, "%f[%a]" .. word .. "%f[%A]") ~= nil)
+				end
+				if not any then
+					check("the kinds table marks " .. kind .. " read only",
+						string.find(takes, "read only", 1, true) ~= nil)
+				end
+			end
+		end
+		check("and there really are some kinds (" .. kinds .. ")", kinds >= 10)
+
+		local rows = 0
+		for _ in pairs(rowOf) do rows = rows + 1 end
+		check("the kinds table has exactly one row per kind (" .. rows ..
+			" rows found, " .. kinds .. " kinds)", rows == kinds)
+	end
 end
 
 --

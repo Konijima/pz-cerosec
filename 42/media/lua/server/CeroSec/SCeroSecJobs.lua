@@ -43,6 +43,7 @@ CeroSecJobs = CeroSecJobs or {}
 CeroSecJobs.machines = CeroSecJobs.machines or {}
 CeroSecJobs.cursor = 0
 CeroSecJobs.lastMs = 0
+CeroSecJobs.snapshotMs = 0
 
 -- The first job on a machine is 42. A job id is not a slot number -- `[1] 42`
 -- is job one, id forty-two -- so the two can never be read as each other.
@@ -1226,8 +1227,15 @@ function CeroSecJobs.pass(now)
 end
 
 function CeroSecJobs.tick()
-	if #CeroSecJobs.machines == 0 then return end
 	local now = getTimestampMs()
+	-- Before the empty-book return below: a server whose last job has just ended
+	-- has no machine in the scheduler and still has the book of the snapshot before
+	-- on that machine's state (see the header of the section that follows).
+	if isServer() and now - CeroSecJobs.snapshotMs >= CeroSec.JOB_SNAPSHOT_MS then
+		CeroSecJobs.snapshotMs = now
+		CeroSecJobs.saveBooks()
+	end
+	if #CeroSecJobs.machines == 0 then return end
 	if now - CeroSecJobs.lastMs < CeroSec.JOB_PASS_MS then return end
 	CeroSecJobs.lastMs = now
 	CeroSecJobs.pass(now)
@@ -1257,14 +1265,30 @@ end)
 -- CeroSecOS.validate is not a closed namespace over the state's keys the way a
 -- disk's is (CeroSecOS.diskFieldsOk).
 --
--- WHEN IT IS WRITTEN. Events.OnSave, and there is one moment and this is it:
--- zombie.GameWindow.save(boolean) triggers "OnSave" at bytecode offset 302 and
--- calls zombie.globalObjects.SGlobalObjects.save() at offset 418 of the same
--- method (javap -p -c on 42.20.4), so the event runs before gos_cerosec.bin is
--- written and what the handler leaves on the state is what the save carries. A
--- snapshot on every scheduler pass was the other candidate and was rejected on
--- the arithmetic: ten copies of four job tables a second for every machine in
--- the county, for the sake of a thing that happens when a player quits.
+-- WHEN IT IS WRITTEN. At the save where there is one, and on a timer where there
+-- is not.
+--
+-- Singleplayer and a host: Events.OnSave. zombie.GameWindow.save(boolean)
+-- triggers "OnSave" at bytecode offset 302 and calls zombie.globalObjects.
+-- SGlobalObjects.save() at offset 418 of the same method (javap -p -c on
+-- 42.20.4), so the event runs before gos_cerosec.bin is written and what the
+-- handler leaves on the state is what the save carries.
+--
+-- A DEDICATED SERVER never gets there, and that was found by restarting one. It
+-- saves through zombie.network.ServerMap.QueuedSaveAll, which calls SGlobalObjects.
+-- save() itself (offset 88) and triggers nothing; the only classes that contain
+-- the string "OnSave" are GameWindow, IngameState and LuaEventManager, and
+-- GameWindow.save is not on that road. "OnServerStartSaving" and
+-- "OnServerFinishSaving" are triggered by StartPausePacket and StopPausePacket
+-- .processClient, which run on a CLIENT. So there is no moment on a server to
+-- write at, and the book is written on a timer instead (CeroSec.JOB_SNAPSHOT_MS):
+-- the state always carries the book as of at most that long ago, and whatever
+-- save the server takes writes it.
+--
+-- The snapshot was rejected once as "ten copies of four job tables a second for
+-- every machine in the county". Every five seconds and only for a machine with a
+-- job it is a fiftieth of that, and a machine with nothing is two raw field reads
+-- (saveBooks); it is the price of a server that keeps its daemons.
 --
 -- WHEN IT IS READ. SCeroSecSystem:newLuaObject, which the engine calls once for
 -- every machine in the save file with its saved fields already in the table
@@ -1306,6 +1330,12 @@ end)
 --     (job.remote), a dial in flight (job.dial), a radio link (job.ring), an
 --     order the machine has not carried out yet (job.orders), an `&` it has asked
 --     for and not been given (job.spawn), a kill it has been asked for.
+--   * a job in the MIDDLE OF A PIPELINE survives, at the step it was at, when
+--     every stage of it is running, asleep or over: `ls /dev | grep ^door` is what
+--     a polling daemon is in the middle of at one save in ten (see the graph form
+--     below). A stage that is asking or waiting, or holding any of the things
+--     above, refuses the whole job by name (stageRefused), exactly as the job
+--     itself would be refused.
 --
 -- THE CLOCK. A sleep is saved as the milliseconds it has LEFT and not as the
 -- moment it is due. getTimestampMs is System.currentTimeMillis (javap
@@ -1325,7 +1355,18 @@ end)
 -- about legality -- a live job has no cycle in it -- but this walks tables off a
 -- save file too, and an unbounded recursion there is a server that does not come
 -- up.
+--
+-- WHERE the count starts is the caller's to say, because the state gate counts from
+-- the root of the STATE (CeroSecOSState checkPlain, 64 tables down at most) and a
+-- book entry sits three levels below it: state, jobs, list, entry -- and the graph
+-- one more level down again, at `packed`. A walk that counted from the job's own
+-- root let through a job whose deepest table was sixty-four down from `packed`
+-- and sixty-seven from the state, which the gate then refuses as too deep: a
+-- refusal that is sticky, on a machine that was doing nothing wrong.
 local WEIGH_DEPTH = 64
+-- entry (at 3, so 2 above it), and packed a level below it
+local ENTRY_BASE = 2
+local PACKED_BASE = ENTRY_BASE + 1
 
 local function weigh(value, tally, depth)
 	local t = type(value)
@@ -1335,7 +1376,12 @@ local function weigh(value, tally, depth)
 	if t ~= "table" then return 0 end
 	depth = (depth or 0) + 1
 	tally.tables = tally.tables + 1
-	if tally.tables > tally.max or depth > WEIGH_DEPTH then
+	if depth > WEIGH_DEPTH then
+		tally.over = true
+		tally.deep = true
+		return 0
+	end
+	if tally.tables > tally.max then
 		tally.over = true
 		return 0
 	end
@@ -1345,6 +1391,8 @@ local function weigh(value, tally, depth)
 	end
 	return bytes
 end
+
+CeroSecJobs.weigh = weigh
 
 -- The parse tree's own shape, asked of a program that came off a save file.
 --
@@ -1357,10 +1405,19 @@ end
 -- (tests/window_test.lua, section 44d): every value at an integer key is a table,
 -- `k` and `t` are strings where they appear, and the one exception is `ops` -- a
 -- list node's `&&`, `||` and `;`, which really are strings in an array.
-local function programOk(value, depth)
+--
+-- `done` is the set of tables already answered for, and it is passed by the graph
+-- form's gate only: a tree that came out of a graph is shared between the job, its
+-- frames and its stages, and a forged graph can share one table many times over,
+-- so walking it once per path would be the cost of a bomb.
+local function programOk(value, depth, done)
 	if type(value) ~= "table" then return false end
 	depth = (depth or 0) + 1
 	if depth > WEIGH_DEPTH then return false end
+	if done ~= nil then
+		if done[value] then return true end
+		done[value] = true
+	end
 	for k, sub in pairs(value) do
 		if type(k) == "number" then
 			if type(sub) ~= "table" then return false end
@@ -1373,10 +1430,88 @@ local function programOk(value, depth)
 			end
 		end
 		if type(sub) == "table" and k ~= "ops" then
-			if not programOk(sub, depth) then return false end
+			if not programOk(sub, depth, done) then return false end
 		end
 	end
 	return true
+end
+
+-- How many pipelines may sit inside one another. A stage is a job, so a stage may
+-- itself be running a pipeline (`a | for x in $(b | c); do ..; done | d`); a real
+-- script nests a level or two, and the bound is what lets both the save and the
+-- gate recurse without trusting the shape they are handed.
+local MAX_NEST = 8
+
+local stageRefused
+
+-- The frames of one job or stage, asked for what a pipeline in them holds.
+local function framesRefused(frames, depth)
+	for i = 1, #frames do
+		local frame = frames[i]
+		if type(frame) ~= "table" then return "bad frame" end
+		if frame.stages ~= nil then
+			-- A PIPELINE IN FLIGHT is saved, stage by stage (the graph form above), when
+			-- every stage is somewhere a save can put it back: running, asleep, or
+			-- finished. What is refused is refused by NAME, below.
+			if frame.asking ~= nil then return "a stage is waiting" end
+			if frame.dialling ~= nil then return "a stage on the wire" end
+			if type(frame.stages) ~= "table" or type(frame.pipes) ~= "table" then
+				return "bad frame"
+			end
+			-- The counts the reader (pipeOk) insists on, asked at the save too, so that
+			-- a job it would drop is left out here with a reason in the log and not
+			-- written to be dropped a session later.
+			if #frame.stages > CeroSecOS.MAX_STAGES or #frame.pipes ~= #frame.stages then
+				return "bad frame"
+			end
+			for k = 1, #frame.stages do
+				local why = stageRefused(frame.stages[k], depth + 1)
+				if why ~= nil then return why end
+			end
+		end
+	end
+	return nil
+end
+
+-- One stage of a pipeline. It is a job of its own, so it is asked what a job is
+-- asked, minus what only the job holding the glass has (job.pty, job.interactive)
+-- -- and plus what only a stage can be caught doing. The reasons are the ones the
+-- top job's rule already has, said of a stage:
+--
+--   * waiting: a stage at a question (ask, cont), at a `wait` (waitFor), at a
+--     shutdown (timer) or in any state but running, asleep or over. pipeStep has
+--     no road from a saved stage back to any of them -- the question lives on the
+--     job, the answer is routed by frame.asking -- so restoring one would restore
+--     a stuck job, and a stuck job is worse than a job that did not come back.
+--   * the wire: a dial or a radio link, or a session at the far end.
+--   * mid-order: an order for the machine (orders, control), an `&` asked for and
+--     not granted, a kill asked for and not delivered.
+--
+-- A stage that is OVER is fine and is common: in `cat f | grep x | wc -l` the
+-- first one is done long before the last. Its frames are gone and its pipe says
+-- eof, which is exactly what its reader still has to be told.
+function stageRefused(stage, depth)
+	if type(stage) ~= "table" then return "bad frame" end
+	if depth > MAX_NEST then return "too deep" end
+	if not CeroSecOS.jobIsOver(stage) and stage.state ~= "running"
+			and stage.state ~= "sleeping" then
+		return "a stage is waiting"
+	end
+	if stage.ask ~= nil or stage.cont ~= nil or stage.waitFor ~= nil
+			or stage.timer ~= nil then
+		return "a stage is waiting"
+	end
+	if stage.dial ~= nil or stage.ring ~= nil or stage.remote ~= nil then
+		return "a stage on the wire"
+	end
+	if stage.orders ~= nil or stage.control ~= nil or stage.spawn ~= nil
+			or stage.killReq ~= nil then
+		return "a stage mid-order"
+	end
+	if type(stage.prog) ~= "table" or type(stage.frames) ~= "table" then
+		return "no program"
+	end
+	return framesRefused(stage.frames, depth)
 end
 
 -- Which jobs are written, and the word for why one is not. nil when it survives.
@@ -1388,24 +1523,10 @@ function CeroSecJobs.jobRefused(job)
 	if job.remote ~= nil or job.dial ~= nil or job.ring ~= nil then return "the wire" end
 	if job.orders ~= nil or job.spawn ~= nil or job.killReq ~= nil then return "mid-order" end
 	if type(job.prog) ~= "table" or type(job.frames) ~= "table" then return "no program" end
-	for i = 1, #job.frames do
-		local frame = job.frames[i]
-		if type(frame) ~= "table" then return "bad frame" end
-		-- A PIPELINE IN FLIGHT, and this one is not a taste. A stage is a job table
-		-- of its own and it carries `errTo` -- a link back to the job that owns the
-		-- pipeline, so a stage's refusals land in the owner's output -- which makes
-		-- the job table a CYCLE. CeroSecOS.validate refuses a cycle outright
-		-- (checkPlain, "cycle"), so a book written with one in it would not cost the
-		-- player a job: it would cost him the whole machine, refused at the gate on
-		-- the next load. Measured: every one of the home kit's daemons builds a
-		-- pipeline in the middle of a round and none of them is holding one when it
-		-- sleeps, which is where a daemon is found at a save.
-		if frame.stages ~= nil then return "a pipeline" end
-	end
-	return nil
+	return framesRefused(job.frames, 0)
 end
 
--- The keys of a job that must NOT be written, and it is a deny-list on purpose.
+-- What is left OUT of a job, and it is a deny-list on purpose.
 --
 -- An allow-list would silently drop a field the VM grows next, and a job that
 -- comes back missing one of them is a job that runs subtly wrong -- which is the
@@ -1415,19 +1536,19 @@ end
 -- metatable and no function anywhere in a job, so there is nothing in one that
 -- could be a handle to something the save file cannot carry.
 --
--- fprog is the only thing here, and it is a CACHE: the function bodies parsed out
--- of the text in job.funcs, rebuilt on the first call after the load. The frames
+-- fprog is the only thing, and it is a CACHE: the function bodies parsed out of
+-- the text in job.funcs, rebuilt on the first call after the load. The frames
 -- carry their own copy of it (oldFprog, the caller's, put back on the way out of
--- a script) and that goes for the same reason.
-local JOB_UNSAVED = { fprog = true, frames = true }
-local FRAME_UNSAVED = { oldFprog = true }
+-- a script) and that goes for the same reason. Which table a name is dropped
+-- from is decided by the ROLE of the table in the walk (internValue): a job, a
+-- stage, a frame.
 
--- The copy, and it is the belt under the pipeline rule above rather than a
--- convenience: `seen` is kept along the PATH being walked, exactly as
+-- The plain copy, which is what a book entry in the FLAT form is read through (a
+-- job written before the graph form: the entry is the job itself, and it is a
+-- tree). `seen` is kept along the PATH being walked, exactly as
 -- CeroSecOS.validate's own checkPlain keeps it, so a table that leads back to
 -- itself is caught here and the job is refused instead of being copied until the
--- depth guard gives out. A cycle in the state is a machine the gate refuses on
--- the next load, so the one thing this must never do is write one.
+-- depth guard gives out.
 --
 -- flags carries what went wrong back up, because the copy answers a table and a
 -- table cannot also say "no".
@@ -1453,7 +1574,197 @@ local function copyJobData(value, drop, depth, seen, flags)
 	return out
 end
 
+-- THE GRAPH FORM: a job written with the identity it has in memory.
+--
+-- The serializer has no identity map (docs/notes/modules-proofs.md), so a table
+-- reached from several places is written once per place and comes back as as many
+-- tables. For a job that is not a nicety, it is two problems:
+--
+--   * WEIGHT. The parse tree of the script is reached from job.prog, from the
+--     frames that walk it and from every stage of a pipeline: one copy of the text
+--     is three copies of the tree, and the shipped autoclose.sh was 925 tables
+--     asleep and 1205 in the middle of `ls /dev | grep ^door`, against a book of
+--     2048 for the whole machine.
+--   * MEANING. A pipe is ONE table held by the stage that writes it, the stage
+--     that reads it and the frame that drains it; a stage's `errTo` is the job that
+--     owns the pipeline. A tree copy hands back three pipes that never meet, and
+--     a writer's `eof` that reaches nobody.
+--
+-- So the first time a table is reached it is copied, and every later reach is the
+-- marker { ["$ref"] = id }, the copy it points at carrying ["$id"] = id. Only a
+-- table that IS reached twice gets an id, so a job with no sharing in it costs
+-- what it always did. A ref is one small table, and what the state gate counts is
+-- tables: the shipped daemon mid-pipeline is about 370 of them (351 distinct and
+-- 19 markers, measured) and not 1205.
+--
+-- The walk carries a ROLE and not a list of names to drop: `fprog` is dropped from
+-- a job (and from a stage, which is one) and `oldFprog` from a frame, and nowhere
+-- else, because job.vars maps the player's own names to text and a player may call
+-- a variable `fprog`. The same walk turns every sleeping job's wakeMs, the
+-- pipeline's stages included, into what is LEFT of it (see the header above).
+--
+-- What a sleep may have LEFT, in milliseconds: a thousand million seconds, thirty
+-- one years, which is more than any script means by `sleep`. A number the clock
+-- cannot do arithmetic on -- `sleep inf`, `sleep nan`, where the shell's tonumber
+-- reads them -- is written as this, and it is the most a save file may claim: a
+-- job that asks for more is forged (shapeOfJob), because NaN and infinity compare
+-- false with every clock there is, so a job that carried one would be asleep for
+-- ever whatever the machine did.
+local SLEEP_MAX_MS = 1e12
+
+local INTERN_ROLE = {
+	-- what a table reached under a key of a role is, by the key
+	job = { frames = "frames" },
+	frame = { stages = "stages" },
+}
+
+local function internValue(value, role, st, depth)
+	if type(value) ~= "table" then return value end
+	local prior = st.seen[value]
+	if prior ~= nil then
+		if prior["$id"] == nil then
+			st.nextId = st.nextId + 1
+			prior["$id"] = st.nextId
+		end
+		return { ["$ref"] = prior["$id"] }
+	end
+	depth = depth + 1
+	if depth > WEIGH_DEPTH then
+		st.flags.deep = true
+		return nil
+	end
+	local out = {}
+	st.seen[value] = out
+	for k, sub in pairs(value) do
+		if type(k) == "table" or type(k) == "function" then
+			st.flags.badkey = true
+		elseif k == "$id" or k == "$ref" then
+			-- The one thing the form cannot say: a table that already means a marker.
+			st.flags.clash = true
+		elseif role == "job" and (k == "fprog" or k == "cpuSince") then
+			-- dropped: a cache, and the machine's own clock
+		elseif role == "frame" and k == "oldFprog" then
+			-- dropped: the caller's cache, put back on the way out of a script
+		else
+			local child = "plain"
+			if role == "job" then child = INTERN_ROLE.job[k] or "plain"
+			elseif role == "frame" then child = INTERN_ROLE.frame[k] or "plain"
+			elseif role == "frames" then child = "frame"
+			elseif role == "stages" then child = "job" end
+			out[k] = internValue(sub, child, st, depth)
+		end
+	end
+	if role == "job" then
+		out.wakeMs = nil
+		if value.state == "sleeping" and type(value.wakeMs) == "number"
+				and type(st.nowMs) == "number" then
+			local left = value.wakeMs - st.nowMs
+			if left ~= left or left > SLEEP_MAX_MS then
+				left = SLEEP_MAX_MS
+			elseif left < 0 then
+				left = 0
+			end
+			out.sleepLeft = left
+		end
+	end
+	return out
+end
+
+-- A job as a graph, or nil plus the flags that say why not. Pure: nothing on the
+-- job is touched. `base` is how many tables sit above the job where it will be
+-- written (see WEIGH_DEPTH); the save says three, and a caller that only wants the
+-- shape says nothing.
+function CeroSecJobs.intern(job, nowMs, base)
+	local st = { seen = {}, nextId = 0, flags = {}, nowMs = nowMs }
+	local out = internValue(job, "job", st, base or 0)
+	return out, st.flags
+end
+
+-- The way back, in two passes and in no order at all. What a save file hands back
+-- is a tree of tables, and `pairs` may walk it in a different order than it was
+-- written in, so a ref can be met before the table it names. Pass one only READS:
+-- it counts every table against `max` (a forged file is bounded by what a real
+-- one may cost), bounds the depth, and registers every ["$id"]. Pass two replaces
+-- each marker by the table registered under its id and takes the ids off. A
+-- marker is exactly one key, a number, so that a table that merely looks like one
+-- is refused and not half-resolved. Nothing is evaluated: it is shape and
+-- numbers all the way down.
+--
+-- The tables of `packed` are the ones handed back, so it is the caller's copy and
+-- not the save file's that must go in.
+function CeroSecJobs.resolve(packed, max)
+	if type(packed) ~= "table" then return nil, "not a table" end
+	local registry, count = {}, 0
+	local function markerOf(t)
+		local ref = t["$ref"]
+		if ref == nil then return false end
+		local n = 0
+		for _ in pairs(t) do n = n + 1 end
+		if n ~= 1 or type(ref) ~= "number" then return nil end
+		return true
+	end
+	local function collect(t, depth)
+		count = count + 1
+		if count > max then return "too large" end
+		if depth > WEIGH_DEPTH then return "too deep" end
+		local marker = markerOf(t)
+		if marker == nil then return "bad ref" end
+		if marker then return nil end
+		local id = t["$id"]
+		if id ~= nil then
+			if type(id) ~= "number" or id ~= id or id < 1 or id ~= math.floor(id) then
+				return "bad id"
+			end
+			if registry[id] ~= nil then return "duplicate id" end
+			registry[id] = t
+		end
+		for k, sub in pairs(t) do
+			if type(k) == "table" then return "bad key" end
+			if type(sub) == "table" then
+				local why = collect(sub, depth + 1)
+				if why ~= nil then return why end
+			end
+		end
+		return nil
+	end
+	if packed["$ref"] ~= nil then return nil, "bad ref" end
+	local why = collect(packed, 1)
+	if why ~= nil then return nil, why end
+	local function replace(t)
+		local swap = nil
+		for k, sub in pairs(t) do
+			if type(sub) == "table" then
+				local ref = sub["$ref"]
+				if ref ~= nil then
+					local target = registry[ref]
+					if target == nil then return "bad ref" end
+					swap = swap or {}
+					swap[#swap + 1] = k
+					swap[#swap + 1] = target
+				else
+					local bad = replace(sub)
+					if bad ~= nil then return bad end
+				end
+			end
+		end
+		if swap ~= nil then
+			for i = 1, #swap, 2 do t[swap[i]] = swap[i + 1] end
+		end
+		t["$id"] = nil
+		return nil
+	end
+	local bad = replace(packed)
+	if bad ~= nil then return nil, bad end
+	return packed
+end
+
 -- One job as the save file will hold it, or nil plus the word for why not.
+--
+-- The entry is { packed = <the job as a graph> } and not the job itself. The name
+-- of the key is what keeps a build from before the graph form honest: it finds no
+-- `id` and no `prog` on an entry it does not know, and drops that ONE job with a
+-- line in the log (jobFromData's gate) instead of running half of one. The flat
+-- entry, which is what every build wrote until now, is still read.
 function CeroSecJobs.jobToData(job, nowMs, fg)
 	local refusal = CeroSecJobs.jobRefused(job)
 	if refusal ~= nil then return nil, refusal end
@@ -1462,31 +1773,13 @@ function CeroSecJobs.jobToData(job, nowMs, fg)
 	-- (CeroSecJobs.restoreForeground). One that is not is a shell nobody would be
 	-- typing at, and it is left where every job used to be left.
 	if job.interactive and not fg then return nil, "an orphan prompt" end
-	-- The frames are left out of the copy above and taken one at a time, because
-	-- the one thing dropped from a frame is not the one thing dropped from a job.
-	local flags = {}
-	local data = copyJobData(job, JOB_UNSAVED, 0, {}, flags)
-	data.frames = {}
-	for i = 1, #job.frames do
-		data.frames[i] = copyJobData(job.frames[i], FRAME_UNSAVED, 0, {}, flags)
-	end
-	if flags.cycle then return nil, "a cycle" end
+	local packed, flags = CeroSecJobs.intern(job, nowMs, PACKED_BASE)
 	if flags.deep then return nil, "too deep" end
-	-- The sleep, as what is LEFT of it. Never a negative: a job whose moment went
-	-- by while the machine was busy is a job that is due, and due is nought left.
-	data.wakeMs = nil
-	if job.state == "sleeping" and type(job.wakeMs) == "number"
-			and type(nowMs) == "number" then
-		local left = job.wakeMs - nowMs
-		if left < 0 then left = 0 end
-		data.sleepLeft = left
-	end
-	-- The runaway clock is the machine's and starts again with it.
-	data.cpuSince = nil
+	if flags.clash or flags.badkey then return nil, "not plain data" end
 	-- Whether this one was holding the glass. Worked out by the caller, which is
 	-- the only place that has the console to ask.
-	if fg then data.fg = true end
-	return data
+	if fg then packed.fg = true end
+	return { packed = packed }
 end
 
 -- An array of strings, and nothing else in it. What a job holds under `out` and
@@ -1515,6 +1808,156 @@ local function stringMap(map, want)
 	return true
 end
 
+-- The shape of a job or of one stage of a pipeline, asked of what came off a save
+-- file. The same rule for both, because a stage IS a job: what the walker indexes
+-- has to be a table, what it prints or concatenates has to be a string.
+local shapeOfJob
+
+-- What a pipe says it holds: bytes is the running total of what is in `lines`
+-- (each line and its newline; the VM adds it on the write and takes it off on the
+-- read), so it is a finite whole number, nowhere above what a save may carry and
+-- nowhere above what the lines really add up to. NaN is what pipeFull cannot
+-- answer -- it is never full, and a writer that never waits is a job that eats
+-- memory -- and a number past what is in it is a pipe that is full of nothing.
+-- The ceiling is NOT PIPE_LINES or PIPE_BYTES: those are back-pressure, asked
+-- before a stage is stepped, and one step of `cat` puts a whole file in (2041 short
+-- lines and 8162 bytes, measured), so a legal pipe passes both.
+local function pipeBytesOk(pipe)
+	local bytes = pipe.bytes
+	if bytes ~= bytes or bytes < 0 or bytes > CeroSec.JOB_SAVE_BYTES
+			or bytes ~= math.floor(bytes) then
+		return false
+	end
+	local held = 0
+	for i = 1, #pipe.lines do held = held + #pipe.lines[i] + 1 end
+	return bytes <= held
+end
+
+-- One pipe frame: the counts and the links the walker relies on. `pipes[i]` is
+-- what stage i writes and what stage i+1 reads, the frame drains the last one, and
+-- every stage answers its refusals to the job that owns the pipeline -- so those
+-- are TESTED to be the same tables, and not merely tables of the right shape, or
+-- a forged graph could hand the walker a pipeline whose stages never meet.
+local function pipeOk(frame, owner, depth, ctx)
+	local stages, pipes = frame.stages, frame.pipes
+	if type(stages) ~= "table" or type(pipes) ~= "table" then return "bad frame" end
+	local n = #stages
+	if n < 1 or n > CeroSecOS.MAX_STAGES or #pipes ~= n then return "bad frame" end
+	if frame.asking ~= nil or frame.dialling ~= nil then return "bad frame" end
+	for i = 1, n do
+		local pipe, stage = pipes[i], stages[i]
+		if type(pipe) ~= "table" or type(pipe.bytes) ~= "number"
+				or type(pipe.eof) ~= "boolean" or type(pipe.closed) ~= "boolean"
+				or not stringArray(pipe.lines) then
+			return "bad frame"
+		end
+		-- One pipe each: two stages that write into the same table are one pipe with
+		-- two writers and a reader that is told eof by whichever ends first.
+		if ctx.pipes[pipe] then return "bad frame" end
+		ctx.pipes[pipe] = true
+		if not pipeBytesOk(pipe) then return "bad frame" end
+		if type(stage) ~= "table" or ctx.stages[stage] then return "bad frame" end
+		if stage.pipe ~= pipe or stage.stdinBuf ~= pipes[i - 1] or stage.errTo ~= owner then
+			return "bad frame"
+		end
+		ctx.stages[stage] = true
+		local why = shapeOfJob(stage, true, depth + 1, ctx)
+		if why ~= nil then return why end
+	end
+	return nil
+end
+
+function shapeOfJob(job, isStage, depth, ctx)
+	if depth > MAX_NEST then return "too deep" end
+	if isStage and (type(job.name) ~= "string" or type(job.cmd) ~= "string") then
+		return "no name"
+	end
+	if type(job.session) ~= "table" or type(job.session.user) ~= "string" then
+		return "no session"
+	end
+	if not stringMap(job.vars) then return "no shell" end
+	if not stringArray(job.out) or not stringArray(job.args) then return "no shell" end
+	if job.exported ~= nil and not stringMap(job.exported, "boolean") then
+		return "no shell"
+	end
+	if job.funcs ~= nil and not stringMap(job.funcs) then return "no shell" end
+	-- The clock of a sleep is a number of milliseconds and one that is finite: what
+	-- the walker compares it with is the machine's own clock, and nothing compares
+	-- true with NaN or with more than there is. Below nought is what the save
+	-- itself clamps and restoreClocks clamps again; the ceiling is SLEEP_MAX_MS.
+	local left = job.sleepLeft
+	if left ~= nil and (type(left) ~= "number" or left ~= left
+			or left > SLEEP_MAX_MS or left < -SLEEP_MAX_MS) then
+		return "bad clock"
+	end
+	if not programOk(job.prog, 0, ctx.done) then return "bad program" end
+	local frames = job.frames
+	if type(frames) ~= "table" or #frames > CeroSecOS.MAX_FRAMES then
+		return "bad frames"
+	end
+	-- A stage that is over has no frames left; nothing else has none.
+	if #frames < 1 and not (isStage and CeroSecOS.jobIsOver(job)) then
+		return "bad frames"
+	end
+	for i = 1, #frames do
+		local frame = frames[i]
+		if type(frame) ~= "table" or type(frame.k) ~= "string" then return "bad frame" end
+		-- The two fields a frame walks into. A frame that carries neither is one
+		-- of the walker's own and is left alone.
+		if frame.prog ~= nil and not programOk(frame.prog, 0, ctx.done) then
+			return "bad frame"
+		end
+		if frame.node ~= nil and not programOk(frame.node, 0, ctx.done) then
+			return "bad frame"
+		end
+		if frame.stages ~= nil then
+			if not ctx.graph then return "a pipeline" end
+			local why = pipeOk(frame, job, depth, ctx)
+			if why ~= nil then return why end
+		end
+	end
+	return nil
+end
+
+-- No cycle in what the graph came back as, except the one the engine makes itself:
+-- a stage's errTo. Marked along the path and finished once, so a graph that shares
+-- a table many times over is walked once and not once per way in.
+local function acyclic(value, ctx, depth)
+	if type(value) ~= "table" then return true end
+	local mark = ctx.mark[value]
+	if mark == 1 then return false end
+	if mark == 2 then return true end
+	if depth > 2 * WEIGH_DEPTH then return false end
+	ctx.mark[value] = 1
+	for k, sub in pairs(value) do
+		if not (k == "errTo" and ctx.stages[value]) then
+			if not acyclic(sub, ctx, depth + 1) then return false end
+		end
+	end
+	ctx.mark[value] = 2
+	return true
+end
+
+-- The clocks of a job and of every stage under it, put back the other way round
+-- from the save: a sleep that had so much LEFT is due that much after now.
+local function restoreClocks(job, nowMs, depth)
+	local left = job.sleepLeft
+	job.sleepLeft = nil
+	job.wakeMs = nil
+	if job.state == "sleeping" then
+		if type(left) ~= "number" or left < 0 then left = 0 end
+		job.wakeMs = (nowMs or 0) + left
+	end
+	job.cpuSince = nil
+	if depth > MAX_NEST or type(job.frames) ~= "table" then return end
+	for i = 1, #job.frames do
+		local frame = job.frames[i]
+		if type(frame) == "table" and type(frame.stages) == "table" then
+			for k = 1, #frame.stages do restoreClocks(frame.stages[k], nowMs, depth + 1) end
+		end
+	end
+end
+
 -- One job back off the save file, or nil plus the reason. This is the gate: what
 -- comes through it is a table out of gos_cerosec.bin, and the belt every other
 -- thing in the state gets is the belt it gets.
@@ -1524,55 +1967,55 @@ end
 -- prints or concatenates has to be a string, and everything the SAVE refuses to
 -- write is refused again on the way in through the very same rule
 -- (CeroSecJobs.jobRefused), so a forged book cannot hand back a job holding a dial,
--- a radio link or an order the machine would carry out.
+-- a radio link or an order the machine would carry out -- in a stage as in the job.
+--
+-- Two forms come in. { packed = graph } is what is written now: the size is asked
+-- of the graph before anything is built from it, then it is resolved (two passes,
+-- CeroSecJobs.resolve) and the resolved job is asked what the flat one is, plus
+-- what a pipeline has -- the pipes and the stages have to be the same tables the
+-- walker will index, stage by stage, and nothing but the stages' own errTo may
+-- lead back to where it came from. The flat form, an entry that is the job itself,
+-- is read as it always was and cannot carry a pipeline: no build ever wrote one.
 function CeroSecJobs.jobFromData(data, nowMs)
 	if type(data) ~= "table" then return nil, "not a table" end
-	if type(data.id) ~= "number" then return nil, "no id" end
-	if data.n ~= nil and (type(data.n) ~= "number" or data.n < 1
-			or data.n > CeroSecOS.MAX_JOBS) then
+	local graph = data.packed ~= nil
+	local ctx = { graph = graph, stages = {}, pipes = {}, done = {}, mark = {} }
+	local root = data
+	if graph then
+		if type(data.packed) ~= "table" then return nil, "not a table" end
+		local one = { tables = 0, max = CeroSec.JOB_SAVE_TABLES }
+		local bytes = weigh(data.packed, one)
+		if one.over or bytes > CeroSec.JOB_SAVE_BYTES then return nil, "too large" end
+		local why
+		root, why = CeroSecJobs.resolve(data.packed, CeroSec.JOB_SAVE_TABLES)
+		if root == nil then return nil, why end
+	end
+	if type(root.id) ~= "number" then return nil, "no id" end
+	if root.n ~= nil and (type(root.n) ~= "number" or root.n < 1
+			or root.n > CeroSecOS.MAX_JOBS) then
 		return nil, "bad slot"
 	end
-	if data.state ~= "running" and data.state ~= "sleeping" then return nil, "bad state" end
-	if type(data.name) ~= "string" or type(data.cmd) ~= "string" then return nil, "no name" end
-	if type(data.session) ~= "table" or type(data.session.user) ~= "string" then
-		return nil, "no session"
+	if root.state ~= "running" and root.state ~= "sleeping" then return nil, "bad state" end
+	if type(root.name) ~= "string" or type(root.cmd) ~= "string" then return nil, "no name" end
+	if root.interactive and not root.fg then return nil, "an orphan prompt" end
+	if root.errTo ~= nil then return nil, "bad frame" end
+	local why = shapeOfJob(root, false, 0, ctx)
+	if why ~= nil then return nil, why end
+	local job = root
+	if graph then
+		if not acyclic(root, ctx, 0) then return nil, "a cycle" end
+	else
+		-- A copy and never the table off the save file itself: what the scheduler
+		-- steps has to be ours, and the state this came out of is cleared behind it.
+		-- The same cycle guard as on the way out, for a table that has been through a
+		-- file.
+		local flags = {}
+		job = copyJobData(root, nil, 0, {}, flags)
+		if flags.cycle then return nil, "a cycle" end
+		if flags.deep then return nil, "too deep" end
 	end
-	if not stringMap(data.vars) then return nil, "no shell" end
-	if not stringArray(data.out) or not stringArray(data.args) then return nil, "no shell" end
-	if data.exported ~= nil and not stringMap(data.exported, "boolean") then
-		return nil, "no shell"
-	end
-	if data.funcs ~= nil and not stringMap(data.funcs) then return nil, "no shell" end
-	if data.interactive and not data.fg then return nil, "an orphan prompt" end
-	if not programOk(data.prog) then return nil, "bad program" end
-	local frames = data.frames
-	if type(frames) ~= "table" or #frames < 1 or #frames > CeroSecOS.MAX_FRAMES then
-		return nil, "bad frames"
-	end
-	for i = 1, #frames do
-		local frame = frames[i]
-		if type(frame) ~= "table" or type(frame.k) ~= "string" then return nil, "bad frame" end
-		-- The two fields a frame walks into. A frame that carries neither is one
-		-- of the walker's own and is left alone.
-		if frame.prog ~= nil and not programOk(frame.prog) then return nil, "bad frame" end
-		if frame.node ~= nil and not programOk(frame.node) then return nil, "bad frame" end
-	end
-	-- A copy and never the table off the save file itself: what the scheduler steps
-	-- has to be ours, and the state this came out of is cleared behind it. The same
-	-- cycle guard as on the way out, for a table that has been through a file.
-	local flags = {}
-	local job = copyJobData(data, nil, 0, {}, flags)
-	if flags.cycle then return nil, "a cycle" end
-	if flags.deep then return nil, "too deep" end
 	-- The clock again, the other way round.
-	job.sleepLeft = nil
-	job.wakeMs = nil
-	if job.state == "sleeping" then
-		local left = data.sleepLeft
-		if type(left) ~= "number" or left < 0 then left = 0 end
-		job.wakeMs = (nowMs or 0) + left
-	end
-	job.cpuSince = nil
+	restoreClocks(job, nowMs, 0)
 	-- Whatever the last pass left of the machine's half of a line. The pass that
 	-- rebuilt this job is not the pass that made it, so neither flag means
 	-- anything any more (SCeroSecSystem:startPrompt reads them).
@@ -1581,12 +2024,20 @@ function CeroSecJobs.jobFromData(data, nowMs)
 	-- And the save's own rule, asked again on the way in. What the writer will not
 	-- write is what the reader will not take -- a job holding a dial, a session at
 	-- the far end, a radio link, an order the machine has not carried out, or a
-	-- pipeline in flight -- so a forged book cannot hand one back by putting on the
-	-- state something no save would ever have made.
+	-- pipeline with a stage that is asking or waiting -- so a forged book cannot
+	-- hand one back by putting on the state something no save would ever have made.
 	local refusal = CeroSecJobs.jobRefused(job)
 	if refusal ~= nil then return nil, refusal end
 	return job
 end
+
+-- The reasons a job is left out of a save that are not news: what the job is
+-- doing (asking, dialling, holding a session) and not what is wrong with it.
+local NOT_SAVED_QUIETLY = {
+	["over"] = true, ["waiting"] = true, ["a session"] = true, ["the wire"] = true,
+	["mid-order"] = true, ["an orphan prompt"] = true, ["a stage is waiting"] = true,
+	["a stage on the wire"] = true, ["a stage mid-order"] = true,
+}
 
 -- The machine's book onto its state, at the save. Answers how many jobs went in.
 function CeroSecJobs.writeBook(luaObject, nowMs)
@@ -1606,17 +2057,32 @@ function CeroSecJobs.writeBook(luaObject, nowMs)
 	if type(console) == "table" and type(console.job) == "number" then held = console.job end
 
 	local list, over, spent = {}, 0, 0
+	local notes = {}
+	local where = "the machine at " .. luaObject.x .. "," .. luaObject.y .. ","
+		.. luaObject.z
 	for i = 1, #book.list do
 		local job = book.list[i]
-		local data = CeroSecJobs.jobToData(job, nowMs, held ~= nil and job.id == held)
-		if data ~= nil then
+		local data, why = CeroSecJobs.jobToData(job, nowMs, held ~= nil and job.id == held)
+		if data == nil then
+			-- A job that is waiting, or holds a session, is left out as a matter of
+			-- course and the log is not the place for it. Anything else is a job the
+			-- player had running that will not be there when he comes back for a
+			-- reason he cannot see, so it says why.
+			if why ~= nil and not NOT_SAVED_QUIETLY[why] then
+				notes[#notes + 1] = " left a job out of the save: " .. why
+			end
+		else
 			-- Weighed once, against the machine's own ceiling and against what is
 			-- left of the book's: a job past CeroSec.JOB_SAVE_BYTES is refused on its
 			-- own account, and one that fits is still refused when the jobs before it
-			-- have spent the table budget the state gate is going to count.
+			-- have spent the table budget the state gate is going to count. Counted
+			-- from where the entry will sit in the state, so that the depth the gate
+			-- is going to see is the depth that is asked (WEIGH_DEPTH).
 			local one = { tables = 0, max = CeroSec.JOB_SAVE_TABLES }
-			local bytes = weigh(data, one)
-			if one.over or bytes > CeroSec.JOB_SAVE_BYTES
+			local bytes = weigh(data, one, ENTRY_BASE)
+			if one.deep then
+				notes[#notes + 1] = " left a job out of the save: too deep"
+			elseif one.over or bytes > CeroSec.JOB_SAVE_BYTES
 					or spent + one.tables > CeroSec.JOB_SAVE_TABLES then
 				over = over + 1
 			else
@@ -1633,9 +2099,15 @@ function CeroSecJobs.writeBook(luaObject, nowMs)
 		state.jobs = { seq = book.seq, list = list }
 	end
 	if over > 0 then
-		CeroSec.log(CeroSec.LOG_ERROR, "the machine at " .. luaObject.x .. ","
-			.. luaObject.y .. "," .. luaObject.z .. " left " .. over
-			.. " job(s) out of the save: too large")
+		notes[#notes + 1] = " left " .. over .. " job(s) out of the save: too large"
+	end
+	-- Said when it changes and not every time it is written: a server writes the
+	-- book every JOB_SNAPSHOT_MS, and a job that cannot be saved would otherwise
+	-- push the same line into the log ring twelve times a minute.
+	local said = table.concat(notes, "\n")
+	if said ~= (book.said or "") then
+		book.said = said
+		for i = 1, #notes do CeroSec.log(CeroSec.LOG_ERROR, where .. notes[i]) end
 	end
 	return #list
 end

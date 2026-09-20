@@ -714,10 +714,10 @@ Two orders at once are allowed, because two processes are: both warn, and
 the first minute to arrive wins. What bounds them is the job book.
 
 The order lives on the MACHINE and not in your window: close the window,
-walk away, come back, and it is still counting down. But it is not written
-to the disk. The power going out, the computer being carried off, or the
-world being loaded again all forget it and the machine stays up: this
-computer keeps no list of running work on its disk.
+walk away, come back, and it is still counting down. But the order is not
+written to the disk. The power going out, the computer being carried off,
+or the world being loaded again all forget it and the machine stays up.
+The programs you left running are kept, and this one is not.
 
 The power going out is not gentle either: the screen clears, anything
 unsaved in the editor is gone, and the disk is as it was. A computer that
@@ -1861,9 +1861,10 @@ A job that spins for five minutes with nothing to wait for is taken away:
 
   killed: cpu limit
 
-And no job survives the power. Switching off, rebooting, picking the
-computer up or the world being loaded again all leave the machine running
-nothing at all. A machine you come back to is a machine at its prompt.
+The power ends every job: switching off, rebooting or carrying the
+computer away leaves nothing running. Loading the world again does not:
+a program left running with & is still running, at the step it had
+reached (a server's is up to 5 s old; see Volume 3).
 
 So the honest answer to "the machine is slow" is ps, and the honest fix is
 kill. There is nothing else to tune.]],
@@ -2079,8 +2080,8 @@ Groups, and who may read what.
   groupadd <name>
   groupdel <name>
   usermod -G group[,group...] login
-  chmod <mode> <path>
-  chown <user> <path>
+  chmod <mode> <path>...
+  chown <user> <path>...
   chgrp <group> <path>]==],
 
 [==[The machine itself.
