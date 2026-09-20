@@ -690,9 +690,28 @@ back at the step it had at most five seconds before the server stopped. A restar
 real server is what found this; the headless benches take a server's save with no
 event (`bench.save(true)`). It is read at
 `SCeroSecSystem:newLuaObject`, the road every machine in the save file comes in by,
-and **taken off the state as it is read**: a book is a thing a machine is running and
-not a thing that lies on its disk, so a second load cannot resurrect a job somebody
-stopped and the gate never spends its table budget walking one. That it is read
+and **taken off the state as it is read**, then put back for the jobs that came
+back and for nothing else. A book is a thing a machine is running and not a thing
+that lies on its disk, so the file's own copy cannot be left where the next save
+would write it again over a book that has since been killed, or resurrect a job the
+load dropped. It is put back because of the server option `PauseEmpty`: a server
+with nobody connected fires no `Events.OnTick`, so a server that came up and was
+stopped again with nobody on it took its shutdown save with no snapshot before it,
+and every machine went to disk with no `os.jobs` — every running job gone, and an
+`@reboot` daemon with it, which a load does not run again. What waits on the state
+is `{ seq, list }` of *copies* of the entries that came back (`keepEntry`): a copy
+because `jobFromData` resolves a graph entry in place and the job it returns *is*
+that table, so the file's own entry would be a table the scheduler mutates and the
+serializer would meet as a cycle. Each entry has to pass `writeBook`'s own rule (the
+per-job bytes and the shared table budget), so the book on the state is one a save
+could have written, and it is inside the budget the gate was sized for: the gate is
+handed it at the first read of the state and `tests/window_test.lua` takes the worst
+legal filesystem with a full book on it through `CeroSecOS.validate`. It is replaced
+whole by the next `writeBook` (the snapshot, or `Events.OnSave`) and cleared by
+`killAll` and by `writeBook` for a machine with nothing running, and `saveBooks`
+visits a machine that has it and no live book. A machine switched off has it off the
+state at once (`killAll`); a job stopped with `kill` after the load is off it at the
+next snapshot or at the save, whichever comes first, and not before. That it is read
 *there and nowhere else* is what keeps a client out of it — a state also arrives from
 an item's `movableData`, which on a server is a table a client wrote, and that road
 ends in `resetForPlacement`, which switches the machine off and kills the book, and

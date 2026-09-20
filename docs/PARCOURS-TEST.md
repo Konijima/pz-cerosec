@@ -3949,6 +3949,18 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      ligne, `ps` aussi, et une porte ouverte à la main se referme au bout de cinq
      tours. Ensuite `kill %1`, attendre dix secondes, arrêter et relancer :
      `jobs` ne montre rien. [ ]
+397f. **Un serveur redémarré alors que personne n'y était.** Sur un serveur
+     dédié dont l'option **PauseEmpty** (pause quand le serveur est vide) est
+     **activée**, lancer `sh /usr/local/bin/autoclose.sh start 5 &`, attendre au
+     moins dix secondes, puis **se déconnecter** : le serveur est vide et se met
+     en pause. Arrêter le serveur (`quit` dans sa console), le **relancer sans
+     se connecter**, attendre une minute, l'arrêter encore avec `quit`, le
+     relancer une dernière fois et se connecter. Attendu : `jobs` et `ps`
+     montrent **encore** le démon, avec le même numéro, et une porte ouverte à la
+     main se referme au bout de cinq tours. Un démon lancé par une ligne
+     `@reboot` de `crontab` doit y être aussi, une seule fois. Puis `kill %1`,
+     attendre dix secondes, et refaire le même aller-retour à vide : `jobs` ne
+     montre rien, un travail arrêté ne revient pas. [ ]
 398. **Les rideaux, à l'heure.** `sh /usr/local/bin/curtains.sh close` → tous les
      rideaux se ferment dans le monde, **et on les entend**, un par rideau.
      Relancer la même ligne tout de suite : le script dit la même chose et plus

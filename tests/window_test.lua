@@ -17828,13 +17828,13 @@ do
 		local back = newBench(saved)
 		eq("the machine comes back with the job still on it", jobCount(back), 1)
 		-- The first read of the state, which is where the gate walks it. The book is
-		-- taken OFF the state as it is read, so what the gate walks is a filesystem
-		-- and not a filesystem plus a process table: a book left lying there would
-		-- be spending the gate's own table budget on every load for the rest of the
-		-- save's life (CeroSec.JOB_SAVE_TABLES has the arithmetic).
+		-- on the state from the load until the first snapshot or save replaces it
+		-- (a server with nobody on it never fires a tick, and its shutdown save has
+		-- to carry the jobs), so the gate IS handed it -- bounded by writeBook's own
+		-- rule, which is what the three numbers bench below adds up.
 		check("the state still passes the gate", back.object:osState() ~= nil)
 		CeroSecOS.validate = realValidate
-		eq("and the gate was never handed the book that came off it", sawBook, false)
+		eq("and the gate was handed the book that came off it", sawBook, true)
 		back.open()
 		back.enter("jobs")
 		back.frame()
@@ -18511,6 +18511,134 @@ do
 		end
 		CeroSecJobs.jobToData = realToData
 		eq("a job left out is logged once over thirty seconds of snapshots", said, 1)
+
+		-- A SERVER WITH NOBODY ON IT. PauseEmpty stops Events.OnTick, so a server that
+		-- came up, loaded the county and was stopped again saved every machine with
+		-- whatever the LOAD left on its state -- which used to be nothing, and every
+		-- running job was gone. The load is done here and no tick follows it.
+		_G.isServer = function() return true end
+		bench = daemon()
+		bench.tick(120)
+		local wasId = bench.object.jobs.list[1].id
+		local bytes0 = bench.save(true)
+		local loaded = newBench(deepCopy(bytes0))
+		check("empty server: the state carries the book straight after the load",
+			loaded.object.os.jobs ~= nil and #loaded.object.os.jobs.list == 1)
+		check("empty server: and the state gate accepts it at the first read",
+			loaded.object:osState() ~= nil and not loaded.object.osBroken)
+		check("empty server: and it is a copy, not the table the running job is made of",
+			loaded.object.os.jobs.list[1].packed ~= loaded.object.jobs.list[1])
+		bytes = loaded.save(true)
+		check("empty server: a save with no tick after the load still carries it",
+			bytes.os ~= nil and bytes.os.jobs ~= nil and #bytes.os.jobs.list == 1)
+		back = newBench(bytes)
+		eq("empty server: the machine comes back running it", jobCount(back), 1)
+		eq("empty server: the same job, with its own id", back.object.jobs.list[1].id, wasId)
+		eq("empty server: and the ids handed out next are still past it",
+			back.object.jobs.seq, bench.object.jobs.seq)
+
+		-- What waits on the state is a copy: the scheduler resolves a job's graph in
+		-- place, so a state that held the file's own tables would be handed the
+		-- cycles the walker runs on. Steps run, no snapshot between, then the save.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		CeroSecJobs.snapshotMs = _G.__now + 1000000000
+		loaded.tick(60)
+		bytes = loaded.save(true)
+		eq("empty server: the loaded book is still plain data after the job has run",
+			#bytes.os.jobs.list, 1)
+		eq("empty server: and still a job when it comes back", jobCount(newBench(bytes)), 1)
+
+		-- A job somebody STOPPED does not come back. The first three are the road to
+		-- that: a kill and the next snapshot, a switch-off, and a save with an event.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		CeroSecJobs.snapshotMs = 0
+		loaded.enter("kill " .. wasId)
+		loaded.tick(60)
+		bytes = loaded.save(true)
+		check("stopped: a job killed after the load is off the state at the next snapshot",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("stopped: so it does not come back", jobCount(newBench(bytes)), 0)
+
+		loaded = newBench(deepCopy(bytes0))
+		loaded.object:turnOff()
+		check("stopped: a machine switched off after the load has no book on its state",
+			loaded.object.os.jobs == nil)
+		bytes = loaded.save(true)
+		eq("stopped: and does not come back running", jobCount(newBench(bytes)), 0)
+
+		_G.isServer = function() return false end
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		CeroSecJobs.snapshotMs = _G.__now + 1000000000
+		loaded.tick(60)
+		local before = loaded.object.os.jobs
+		bytes = loaded.save()
+		check("save event: the book is written again from the running job",
+			loaded.object.os.jobs ~= before and #bytes.os.jobs.list == 1)
+		_G.isServer = function() return true end
+
+		-- Only the jobs that came back go back on the state: one the load dropped
+		-- must not be there for the next snapshot to find.
+		local forged = deepCopy(bytes0)
+		forged.os.jobs.list[2] = { packed = 5 }
+		loaded = newBench(forged)
+		eq("partial: one job came back", jobCount(loaded), 1)
+		eq("partial: and the state names only that one", #loaded.object.os.jobs.list, 1)
+		eq("partial: so a save with no tick does not write the other",
+			#loaded.save(true).os.jobs.list, 1)
+
+		-- saveBooks visits a machine that has the loaded book on its state and NO
+		-- live book: `luaObject.os.jobs ~= nil` is what gets it there, and a walk
+		-- that looked at the live book alone would leave the copy for the next load
+		-- to run again. Drained first the way a machine really drains -- the job is
+		-- killed and no snapshot has run since -- so the copy is still there, then
+		-- the snapshot alone (no writeBook of the machine's own) has to take it off.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		CeroSecJobs.snapshotMs = _G.__now + 1000000000
+		loaded.enter("kill " .. wasId)
+		loaded.tick(60)
+		eq("drained: the live book is empty", jobCount(loaded), 0)
+		check("drained: and no snapshot has run, so the loaded copy is still on the state",
+			loaded.object.os.jobs ~= nil)
+		CeroSecJobs.snapshotMs = 0
+		loaded.tick(1)
+		check("drained: the snapshot takes the loaded copy off the state",
+			loaded.object.os.jobs == nil)
+		bytes = loaded.save(true)
+		check("drained: so a save with no event carries no book",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("drained: and it does not come back", jobCount(newBench(bytes)), 0)
+
+		-- The same with no live book table at all, which is the machine the clause
+		-- is for: the copy on the state is all there is of the book.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		loaded.object.jobs = nil
+		check("no live book: the loaded copy is on the state", loaded.object.os.jobs ~= nil)
+		CeroSecJobs.saveBooks()
+		check("no live book: saveBooks takes it off",
+			loaded.object.os.jobs == nil)
+		bytes = loaded.save(true)
+		eq("no live book: and it does not come back", jobCount(newBench(bytes)), 0)
+
+		-- A machine that is off never gets the file's book onto its state: readBook
+		-- takes it off and puts nothing back for a machine that is not running
+		-- (`if not luaObject.on`), because writeBook would not have written it and
+		-- nothing would ever clear it on a machine no scheduler holds.
+		local dark = deepCopy(bytes0)
+		dark.on = false
+		loaded = newBench(dark)
+		check("off: the file carried a book to refuse", bytes0.os.jobs ~= nil)
+		check("off: the state carries no book after the load",
+			loaded.object.os == nil or loaded.object.os.jobs == nil)
+		eq("off: and nothing is running", jobCount(loaded), 0)
+		bytes = loaded.save(true)
+		check("off: a save carries no book",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("off: and a reload runs nothing", jobCount(newBench(bytes)), 0)
 
 		_G.isServer = hadServer
 		_G.__world = nil
@@ -19915,6 +20043,16 @@ do
 		print("  worst legal state " .. worst .. " tables + JOB_SAVE_TABLES "
 			.. CeroSec.JOB_SAVE_TABLES .. " + 2 = " .. total
 			.. " of PLAIN_VISITS " .. budget .. " (" .. (budget - total) .. " to spare)")
+		-- And the book at its ceiling on top of it, through the gate itself, because
+		-- the book now sits on the state at load (readBook) and the first read walks
+		-- it. One entry of JOB_SAVE_TABLES tables is the most a book can hold.
+		local entry = {}
+		for i = 1, CeroSec.JOB_SAVE_TABLES - 1 do entry[i] = {} end
+		worstState.jobs = { seq = 1, list = { entry } }
+		local okBook, whyBook = CeroSecOS.validate(worstState)
+		eq("the gate takes the worst legal machine with a full book on it ("
+			.. tostring(whyBook) .. ")", okBook, true)
+		worstState.jobs = nil
 		check("the worst legal state really is dearer than a machine of files: "
 			.. worst, worst > 1000)
 		-- The number the prose quotes (CeroSecDefs.lua, CeroSecOSState.lua and the

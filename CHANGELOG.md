@@ -15,6 +15,12 @@ date.
   when the door is worked. A door still says `barricaded`, `locked` or
   `blocked` the way a hand would meet them. Before, a computer refused to work
   either kind.
+- A server that was restarted while nobody was connected no longer forgets its
+  running scripts. With the "pause when empty" server option on, a server that
+  came up and was stopped again with nobody on it wrote every machine down with
+  nothing running, so `autoclose.sh` and every `@reboot` daemon were gone the
+  next time a player joined. The scripts are now kept until the server next
+  writes them down. A script somebody stopped still does not come back.
 
 ## 0.5.1 - 2026-09-19
 
