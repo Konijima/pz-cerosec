@@ -403,7 +403,12 @@ function SCeroSecObject:checkPower()
 	if self.luaSystem and self.luaSystem.evictWatchers then
 		self.luaSystem:evictWatchers(self, "power")
 	end
-	return self:turnOff()
+	local off = self:turnOff()
+	if off then
+		CeroSec.log("the machine at " .. self.x .. "," .. self.y .. "," .. self.z
+			.. " lost power and was switched off")
+	end
+	return off
 end
 
 --

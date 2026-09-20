@@ -2154,8 +2154,22 @@ function CeroSecJobs.readBook(system, luaObject)
 	-- next save write it again over a book that has since been killed, and a
 	-- second load resurrect a job somebody stopped.
 	luaObject.os.jobs = nil
-	if type(saved) ~= "table" or type(saved.list) ~= "table" then return 0 end
-	if not luaObject.on then return 0 end
+	-- A machine with no book says nothing: that is nearly every machine in the
+	-- save. One that HAS a book and loses it says so, because a job that
+	-- vanishes across a restart with no trace is the loss CeroSec.ServerLog is
+	-- there to hunt -- the two early returns below were silent until it was.
+	if saved == nil then return 0 end
+	local where = "the machine at " .. luaObject.x .. "," .. luaObject.y .. ","
+		.. luaObject.z
+	if type(saved) ~= "table" or type(saved.list) ~= "table" then
+		CeroSec.log(CeroSec.LOG_WARN, where .. ": a saved book was ignored: it is not a list")
+		return 0
+	end
+	if not luaObject.on then
+		CeroSec.log(CeroSec.LOG_WARN, where .. ": a saved book of " .. #saved.list
+			.. " job(s) ignored: the machine is off")
+		return 0
+	end
 
 	local now = 0
 	if getTimestampMs ~= nil then now = getTimestampMs() end
@@ -2179,6 +2193,8 @@ function CeroSecJobs.readBook(system, luaObject)
 			back = back + 1
 		end
 	end
+	CeroSec.log(CeroSec.LOG_INFO, where .. ": " .. back .. " of " .. #saved.list
+		.. " saved job(s) came back")
 	if back == 0 then
 		-- Nothing came back, so there is no book to keep and no machine to
 		-- schedule: killAll puts both back the way they were.
