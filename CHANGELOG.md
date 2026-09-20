@@ -6,6 +6,15 @@ reads. At release, `python3 tools/changelog-steam.py` prints the newest section
 in the shape Steam's Change Notes take, and the section gets its version and
 date.
 
+## Unreleased
+
+- A server that was restarted while nobody was connected no longer forgets its
+  running scripts. With the "pause when empty" server option on, a server that
+  came up and was stopped again with nobody on it wrote every machine down with
+  nothing running, so `autoclose.sh` and every `@reboot` daemon were gone the
+  next time a player joined. The scripts are now kept until the server next
+  writes them down. A script somebody stopped still does not come back.
+
 ## 0.5.1 - 2026-09-19
 
 - A dedicated server now keeps its running scripts across a restart. The game's
