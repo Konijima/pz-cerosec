@@ -4308,6 +4308,29 @@ porte avec un opérateur ET une gâche (`door0` et `lock0` tous les deux posés)
      même porte) ; `door0` ne prend quand même jamais le mot `lock` en
      écriture, ce sont deux noeuds, pas un mot de plus sur le même. [ ]
 
+## AT. Le journal du mod dans la console (option `CeroSec.ServerLog`)
+
+L'option de bac à sable **Journal du mod dans la console du serveur**
+(`CeroSec.ServerLog`, page « CeroSec », **désactivée par défaut**) fait écrire
+dans la console du jeu -- celle du serveur sur un serveur dédié, `console.txt`
+sinon -- tout ce que le mod dit de lui-même, sans toucher à `CeroSec.DEBUG`.
+Préparation : `CeroSec.DEBUG` reste à `false` ; une partie avec une machine
+allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
+
+445. **Désactivée, la console reste muette.** Option à sa valeur par défaut :
+     quitter la partie, la recharger, puis chercher `CeroSec:` dans la
+     console. Aucune ligne. [ ]
+446. **Activée, la console parle.** Cocher l'option dans les options de bac à
+     sable (nouvelle partie ou partie existante), sauvegarder, quitter, recharger.
+     La console contient une ligne `CeroSec: the machine at x,y,z: 1 of 1 saved
+     job(s) came back` pour la machine au démon, et **aucune** ligne de ce
+     genre pour une machine qui ne fait rien tourner. Le démon tourne toujours.
+     [ ]
+447. **Sans courant, la machine le dit.** Avec l'option activée, couper le
+     générateur devant une machine allumée et attendre une minute : la console
+     contient `CeroSec: the machine at x,y,z lost power and was switched off`.
+     Rétablir le courant ne produit aucune ligne de ce genre. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

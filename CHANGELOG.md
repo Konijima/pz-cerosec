@@ -6,6 +6,17 @@ reads. At release, `python3 tools/changelog-steam.py` prints the newest section
 in the shape Steam's Change Notes take, and the section gets its version and
 date.
 
+## Unreleased
+
+- A new sandbox option, **Log the mod to the server console**
+  (`CeroSec.ServerLog`, off by default), for a server owner who has to find out
+  why something went wrong and cannot edit the mod. On, everything the mod says
+  about itself is also written to the server console as `CeroSec:` lines: every
+  saved job that was dropped or refused when the world loaded, how many of a
+  machine's saved jobs came back, a saved book ignored because its machine was
+  off, and every machine switched off for lack of power. It is safe to leave on
+  while you hunt a bug, and turning it off changes nothing else.
+
 ## 0.5.1 - 2026-09-19
 
 - A dedicated server now keeps its running scripts across a restart. The game's
