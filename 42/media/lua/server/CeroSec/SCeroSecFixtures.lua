@@ -144,7 +144,12 @@ function SCeroSecFixtures.dropModules(object)
 	-- walked up here and a table a LATER build wrote reads as empty -- which means
 	-- a fixture whose ids this build cannot name sheds nothing and keeps them all,
 	-- exactly as every other question about it answers (CeroSecModules.migrate).
-	local fitted = CeroSecModules.installedOn(object)
+	--
+	-- ownedBy and setOwn, never installedOn and setOn: for one leaf of a double or a
+	-- garage door those read and write the WHOLE gate, and a map double door has its
+	-- leaves 2 and 3 removed and made again at every toggle -- which would refund the
+	-- anchor's boxes each time the door opened.
+	local fitted = CeroSecModules.ownedBy(object)
 	local square = nil
 	local paid = 0
 
@@ -177,7 +182,7 @@ function SCeroSecFixtures.dropModules(object)
 					module.id .. " off the fixture at " .. square:getX() .. "," ..
 					square:getY() .. "," .. square:getZ())
 			else
-				CeroSecModules.setOn(object, module.id, false)
+				CeroSecModules.setOwn(object, module.id, false)
 				paid = paid + 1
 			end
 		end
@@ -215,7 +220,7 @@ end
 -- survivor would have dropped there taking it down himself.
 function SCeroSecFixtures.dropLinks(object)
 	if object == nil then return 0 end
-	local links = CeroSecModules.linksOn(object)
+	local links = CeroSecModules.ownLinksOn(object)
 	if #links == 0 then return 0 end
 	local square = object:getSquare()
 	-- dropModules' own reason: no floor, no refund, and the modData goes with the
@@ -238,7 +243,7 @@ function SCeroSecFixtures.dropLinks(object)
 				entry.wire .. " tiles of wire off the fixture at " .. square:getX() ..
 				"," .. square:getY() .. "," .. square:getZ())
 		end
-		if CeroSecModules.unlinkOn(object, entry.x, entry.y, entry.z) ~= nil then
+		if CeroSecModules.unlinkOwn(object, entry.x, entry.y, entry.z) ~= nil then
 			paid = paid + given
 		end
 	end

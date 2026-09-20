@@ -897,7 +897,11 @@ Four of the eight are built round a SMALL MOTOR, and Knox County never
 sold one on its own. The guide has the two recipes for that too: take a
 screwdriver to a hair dryer, a pair of sheep shears, a CD player or a
 blower fan and the motor comes out, with the electronics scrap you would
-have got anyway.]],
+have got anyway.
+
+A double door or a garage door is ONE door, however many leaves it has: one
+doorN, one lockN, one operator, one strike, fitted to any leaf. A car across
+a garage door's line stops it closing: door0: blocked.]],
 
 [[Fitting a box, and taking it off.
 
@@ -912,10 +916,9 @@ have one or not, and each line says what it does and which device it
 gives. One you have not got is greyed and says so, or says to go and read
 the Field Wiring Guide. A box that could never fit is not listed.
 
-Two are greyed for what the fixture IS:
+One is greyed for what the fixture IS:
 
   a strike on an interior door: a key stops nobody
-  an operator on a garage door: one leaf would move
 
 A boarded window and a broken stove are NOT greyed: that is what the
 fixture does today, not what it is.
@@ -925,12 +928,12 @@ Remove gives the box back whole, and the NUMBER stays.]],
 [[With the door open, and from inside.
 
 A box goes on the building's SKIN -- a door, a window, a curtain -- only
-from INSIDE, or anybody walking past strips the hardware off your front
-door without coming in. On the pavement those entries are greyed. An
-interior door has a room on both sides and is wired from either.
+from INSIDE, or a passer-by strips the hardware off your front door
+without coming in. On the pavement those entries are greyed. An
+interior door has a room on both sides and is wired from either. A yard
+gate has no room on either side, so no inside: fit it anywhere.
 
-Nothing else asks where you stand: a porch lamp, a generator, an oven in
-the yard are fitted from where they are.
+Nothing else asks where you stand: a porch lamp, a generator, an oven.
 
 And the thing has to be at rest:
 

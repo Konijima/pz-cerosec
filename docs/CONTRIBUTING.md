@@ -27,8 +27,12 @@ actionable:
 2. **Your mod list.** CeroSec touches computers, doors, lights and the radio; a
    mod that also touches them is the first suspect.
 3. **The `console.txt` lines around the failure**, not just the last one. It is
-   at `~/Zomboid/console.txt`. Set `CeroSec.DEBUG = true` in
-   `42/media/lua/shared/CeroSec/CeroSecDefs.lua` to get this mod's own lines.
+   at `~/Zomboid/console.txt`. To get this mod's own lines in it, a server owner
+   turns on the sandbox option **Log the mod to the server console**
+   (`CeroSec.ServerLog`, off by default, no code change and safe to leave on for
+   a bug hunt); a developer sets `CeroSec.DEBUG = true` in
+   `42/media/lua/shared/CeroSec/CeroSecDefs.lua`. Either way the lines start with
+   `CeroSec:`.
 4. **Where on the glass it happened**, as a step of
    [PARCOURS-TEST.md](PARCOURS-TEST.md) if you can find it there — that turns a
    report into a reproduction.

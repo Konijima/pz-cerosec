@@ -451,7 +451,7 @@ went back to magic and looks exactly like a working one.
 | `contact` | `CeroSec.MagneticContact` | door, window | that `door`/`win`, **read-only** | 1 |
 | `relay` | `CeroSec.Relay` | light switch | `light` | 1 |
 | `strike` | `CeroSec.ElectricStrike` | a door `doorLocks` says yes to | `lock` | 2 |
-| `operator` | `CeroSec.DoorOperator` | door, not a garage or double leaf | `door`, read-write | 3 |
+| `operator` | `CeroSec.DoorOperator` | door, a double door and a garage door included | `door`, read-write | 3 |
 | `curtain` | `CeroSec.CurtainMotor` | an `IsoCurtain`, or a door whose `HasCurtains()` answers | `curtain` | 2 |
 | `appliance` | `CeroSec.ApplianceSwitch` | `IsoStove`, washer, dryer, combination | `stove` / `washer` | 2 |
 | `window` | `CeroSec.WindowOperator` | window | `window` | 3 |
@@ -660,8 +660,9 @@ the building does not take the building's wiring with it.
 **What the right-click menu lists, and what it hides.** One line per module that
 could ever go on a fixture of that **sort**, carried or not, and the only thing
 hidden is `fitsOn` answering `fixture`, the module that could never fit. Its
-other two answers (`nolock`, `manydoors`) are about *this* door and not about
-doors, so they are lines and they say so. A survivor cannot go and look for a box
+other answer (`nolock`; `manydoors` is retired, see *A double door and a garage
+door* below, and its translation key is left in place) is about *this* door and not
+about doors, so it is a line and it says so. A survivor cannot go and look for a box
 he has never been told exists, which is why the entry is now there before he owns
 one; it is greyed with `Tooltip_CeroSec_ModuleItem` ("you are not carrying one")
 or, when he does not know how one is made,
@@ -740,6 +741,22 @@ of them has a room*, and he stands on one side of it or the other. The inside
 side is in a room; the pavement is not. An interior door has a room on both
 sides, so both sides are allowed.
 
+**A door with no room on either face is not asked at all.** A yard gate, a fence
+door or the window of an open shed has open air on both sides, so there is no inside to be standing in and the
+rule, which is written to stop a stranger stripping a *building's* skin, has
+nothing to protect (reported in game: a fence gate whose menu said "from inside"
+and offered no side that was). `roomEitherSide` asks both faces, the fixture's
+own square and `getOppositeSquare()`, each with `isInARoom()` for the reason above,
+so a finished base's door keeps the rule. A face the world cannot give (an
+unstreamed chunk) is unknown and not "no room": the rule stays on, since a wrong
+guess here is the one that opens somebody's door. The window and the curtain
+follow the same rule as the door, since a curtain hangs on a window. **A known
+limit:** a base's door or window whose roof is not on, or whose region the engine has not worked out,
+reads "no room" on both faces and is exempt like a gate; on a server that
+matters, the safehouse option is what protects a claimed base. The state rules
+(`closed` and the others) are the door's own and are still asked of a gate. The
+cable asks the same question (`envelopeRefusal`).
+
 **The inside rule is the ENVELOPE's, and the envelope is three classes**, the
 door, the window and the curtain, which are what a stranger would strip to get in
 or to blind the alarm. That is what the rule was written for, and a module anybody
@@ -817,13 +834,64 @@ item what it is. See **Motion sensors, underneath** below.
   `padlock` is a `lock` state and never a `door` one, and a padlocked base door
   still opens from the computer, exactly as it does for a survivor clicking it.
 
-**Which doors are not `door` devices.** A leaf of a double or a garage door:
-`IsoDoor.getDoubleDoorIndex(object) ~= -1` or
-`IsoDoor.getGarageDoorIndex(object) ~= -1`, both public statics and both vanilla
-Lua's own way of asking (`server/BuildingObjects/ISBuildUtil.lua:556`,
-`ISDoubleDoor.lua:315`). `ToggleDoorSilent` moves the one object it is called on
-while vanilla's own toggle walks every leaf through `forEachDoorObject`, so a
-machine that opened one would leave the rest shut. Those keep their `lock`.
+**A double door and a garage door are one `door` device each.** A leaf of one is
+told by `IsoDoor.getDoubleDoorIndex(object) ~= -1` (double) or
+`IsoDoor.getGarageDoorIndex(object) ~= -1` (garage), both public statics and both
+vanilla Lua's own way of asking (`server/BuildingObjects/ISBuildUtil.lua:556`,
+`ISDoubleDoor.lua:315`). Until this rung an operator on a leaf was refused as
+`manydoors`, because `ToggleDoorSilent` moves the one object it is called on and
+the hand's toggle walks every leaf through `forEachDoorObject`. The machine no
+longer calls `ToggleDoorSilent` on a leaf of a gate at all: it calls the two statics
+the hand's own `ToggleDoorActual` ends on, `IsoDoor.toggleDoubleDoor(obj, true)` and
+`IsoDoor.toggleGarageDoor(obj, true)`, which flip every leaf, swap every sprite and
+send the packet (`docs/notes/actuators.md`, section 5, has the bytecode). So there
+is one `door` (worked by an `operator`) and one `lock` (worked by a `strike`) for
+the whole opening, and `lock` sets every leaf, as vanilla's `ISLockDoor` does.
+
+- **The anchor rule.** The devices are filed on one **anchor** leaf, the one the
+  engine never takes away: for a double door the hinge leaves 1 and 4 (they never
+  move), for a garage door the first of the chain. Its square and its side make the
+  device's key, so `doorN` and `lockN` keep their numbers however often the door is
+  worked. Modules and cables are **written** on the anchor and **read** from every
+  leaf, because a map double door's leaves 2 and 3 are removed and made again on
+  another square at every toggle (`IsoDoor.toggleDoubleDoorObject`) and the leaf
+  made again does **not** inherit modData. A world that already holds a strike or a
+  contact on some other leaf loses nothing: the read is the union of the leaves.
+  An older world that holds a strike on a non-anchor leaf keeps working, but its
+  lock is now the gate's one `lockN`: the numbers of the lock devices of its leaves
+  merge into the anchor's. And the same box or cable found on several leaves (each
+  one was bought) is handed back in full when it is taken off or cut, one item per
+  box and the sum of every wire.
+- **The refusals, in the hand's order:** `barricaded`, then `locked`, then
+  `blocked`. Barricaded asks the **anchor** leaf only, which is what vanilla does
+  with the leaf that was clicked, not every leaf. (By hand this refusal cannot
+  arise on these two kinds: `IsoDoor.isBarricadeAllowed()` returns false when the
+  sprite has `DOUBLE_DOOR` or `GARAGE_DOOR`, bytecode offsets 20 and 33 of the
+  installed jar, so the game offers no barricade on either. The check stays because
+  it costs nothing and is the engine's own first test.) Locked asks **any** leaf, and only
+  when the door is being opened. Blocked is `IsoDoor.isDoubleDoorObstructed(obj)` for a double
+  door, and for a garage door it is asked only when **closing an open one**: a
+  vehicle standing on a leaf's square and across the door line.
+- **A known approximation, the garage door's `blocked`.** The engine's test for it,
+  `isGarageDoorObstructed`, is private, so it cannot be called; the machine's is
+  rebuilt from the public `IsoGridSquare.isVehicleIntersecting()` on the leaf's
+  square and on the square across it. That asks "some vehicle" of each square where
+  the engine asks "this vehicle" of both. It is therefore stricter than the engine
+  in one case only: two **different** vehicles standing one on either side of the
+  door, neither across it, are refused by the machine and would be allowed by the
+  engine. It never lets through what the engine refuses.
+- **Not proven: how a second client sees a garage door move.** The machine calls
+  `IsoDoor.toggleGarageDoor(obj, true)` from the server exactly as the hand's path
+  does, but vanilla's `IsoDoor.syncIsoObject` has no garage receive branch, so how
+  the *other* leaves reach a second client is vanilla's own mechanism and **has not
+  been proven by a real dedicated-server test with two clients**. A double door's
+  one-packet fan-out is read in the bytecode (`syncIsoObject` /
+  `syncIsoObjectReceive` run `toggleDoubleDoor(this, false)` when the open flag
+  differs), the garage door's is not; it is a to-do step in
+  [PARCOURS-TEST.md](PARCOURS-TEST.md).
+
+What is still not a `door` device: a door that is neither a map or built `IsoDoor`
+nor an `IsoThumpable` door, and a leaf's **curtain**, which stays per leaf.
 
 **A window's states** are `smashed`, `barricaded`, `open`, `locked` and
 `unlocked`, read in that order, the glass, then the sash

@@ -1297,6 +1297,11 @@ end)
 -- out in a county nobody has walked through keeps its jobs the way it keeps its
 -- cron, because neither is a thing in the world.
 --
+-- AND IT STAYS ON THE STATE until something replaces it. The load takes the file's
+-- copy off and puts back a copy of each entry that came back (readBook), because a
+-- server with nobody connected and PauseEmpty on fires no tick, and a shutdown save
+-- taken before the first snapshot would otherwise carry no book at all.
+--
 -- AND IT IS READ THERE AND NOWHERE ELSE, which is what keeps a CLIENT out of it.
 -- A state also arrives from an ITEM's movableData -- a computer carried across
 -- town, which on a server is a table a client wrote -- and that road ends in
@@ -2140,6 +2145,43 @@ function CeroSecJobs.saveBooks()
 	end
 end
 
+-- What of a saved job goes back on the state at load: a copy of the entry as the
+-- file held it, or nil when it does not fit the book's own limits. The limits are
+-- writeBook's (a job past CeroSec.JOB_SAVE_BYTES, or one the tables spent so far
+-- leave no room for) and for the same reason -- what the state gate counts on the
+-- next walk of it (CeroSecOSState, PLAIN_VISITS) -- so nothing is put back that a
+-- save would not have written.
+--
+-- A COPY, and never the entry itself: jobFromData resolves a graph entry IN PLACE
+-- (CeroSecJobs.resolve swaps every $ref for its target, which makes the shared
+-- tables and the cycles the scheduler walks) and the job it returns IS that
+-- table. The entry left on the state would be a table the scheduler mutates and
+-- the serializer would meet as a cycle. So it is copied first, while it is still
+-- the plain tree the file made, and the copy is what waits on the state.
+local function keepEntry(entry, spent)
+	local one = { tables = 0, max = CeroSec.JOB_SAVE_TABLES }
+	local bytes = weigh(entry, one, ENTRY_BASE)
+	if one.deep or one.over or bytes > CeroSec.JOB_SAVE_BYTES
+			or spent + one.tables > CeroSec.JOB_SAVE_TABLES then
+		return nil
+	end
+	local function copy(value)
+		local t = type(value)
+		if t == "string" or t == "number" or t == "boolean" then return value end
+		if t ~= "table" then return nil end
+		local out = {}
+		for k, sub in pairs(value) do
+			local tk = type(k)
+			if tk == "string" or tk == "number" then
+				local c = copy(sub)
+				if c ~= nil then out[k] = c end
+			end
+		end
+		return out
+	end
+	return copy(entry), one.tables
+end
+
 -- And the way back in, for one machine, at load. Answers how many jobs came
 -- back. The state is read raw and not through osState(): this runs for every
 -- machine in the save file, and walking the validator over a county of them
@@ -2149,13 +2191,28 @@ end
 function CeroSecJobs.readBook(system, luaObject)
 	if type(luaObject.os) ~= "table" then return 0 end
 	local saved = luaObject.os.jobs
-	-- Taken off the state whatever comes of it. A book is a thing a machine is
-	-- RUNNING, not a thing that lies on its disk: leaving it there would have the
-	-- next save write it again over a book that has since been killed, and a
-	-- second load resurrect a job somebody stopped.
+	-- Taken off the state whatever comes of it, and put back below for the jobs
+	-- that did come back and nothing else. A book is a thing a machine is RUNNING,
+	-- not a thing that lies on its disk: leaving the file's own copy there would
+	-- have the next save write it again over a book that has since been killed, and
+	-- a second load resurrect a job somebody stopped -- or one this load dropped.
 	luaObject.os.jobs = nil
-	if type(saved) ~= "table" or type(saved.list) ~= "table" then return 0 end
-	if not luaObject.on then return 0 end
+	-- A machine with no book says nothing: that is nearly every machine in the
+	-- save. One that HAS a book and loses it says so, because a job that
+	-- vanishes across a restart with no trace is the loss CeroSec.ServerLog is
+	-- there to hunt -- the two early returns below were silent until it was.
+	if saved == nil then return 0 end
+	local where = "the machine at " .. luaObject.x .. "," .. luaObject.y .. ","
+		.. luaObject.z
+	if type(saved) ~= "table" or type(saved.list) ~= "table" then
+		CeroSec.log(CeroSec.LOG_WARN, where .. ": a saved book was ignored: it is not a list")
+		return 0
+	end
+	if not luaObject.on then
+		CeroSec.log(CeroSec.LOG_WARN, where .. ": a saved book of " .. #saved.list
+			.. " job(s) ignored: the machine is off")
+		return 0
+	end
 
 	local now = 0
 	if getTimestampMs ~= nil then now = getTimestampMs() end
@@ -2164,11 +2221,16 @@ function CeroSecJobs.readBook(system, luaObject)
 		book.seq = math.floor(saved.seq)
 	end
 	local back = 0
+	-- What goes back on the state, below: a copy of the entry of each job that came
+	-- back, so that a save with no snapshot before it still carries them.
+	local kept, keptSpent = {}, 0
 	for i = 1, #saved.list do
 		-- The machine's own ceiling, asked the way enrol asks it: the prompt's own
 		-- job holds no slot and counts against nothing, so a forged list of five
 		-- cannot put a fifth SCRIPT on a machine that takes four.
 		if liveCount(book) >= CeroSecOS.MAX_JOBS then break end
+		-- Before jobFromData, which resolves a graph entry in place (keepEntry).
+		local entry, tables = keepEntry(saved.list[i], keptSpent)
 		local job, why = CeroSecJobs.jobFromData(saved.list[i], now)
 		if job == nil then
 			CeroSec.log(CeroSec.LOG_ERROR, "the machine at " .. luaObject.x .. ","
@@ -2177,8 +2239,14 @@ function CeroSecJobs.readBook(system, luaObject)
 		else
 			book.list[#book.list + 1] = job
 			back = back + 1
+			if entry ~= nil then
+				kept[#kept + 1] = entry
+				keptSpent = keptSpent + tables
+			end
 		end
 	end
+	CeroSec.log(CeroSec.LOG_INFO, where .. ": " .. back .. " of " .. #saved.list
+		.. " saved job(s) came back")
 	if back == 0 then
 		-- Nothing came back, so there is no book to keep and no machine to
 		-- schedule: killAll puts both back the way they were.
@@ -2187,6 +2255,24 @@ function CeroSecJobs.readBook(system, luaObject)
 	end
 	register(luaObject)
 	if system ~= nil then CeroSecJobs.system = system end
+	-- WHY THE BOOK GOES BACK. A dedicated server writes the book on a timer, and
+	-- the timer is Events.OnTick -- which does not fire on a server with nobody
+	-- connected when PauseEmpty is on. A server that came up, loaded this machine
+	-- and was stopped again with nobody on it saved a state with no book, and every
+	-- job the machine had been running (a @reboot daemon among them, which a load
+	-- does not run again) was gone for good. So the state carries what came back
+	-- until the first snapshot or save replaces it: writeBook and killAll clear or
+	-- overwrite it whole, saveBooks visits a machine that has it and no book, and a
+	-- job dropped above is not in it -- only the entries that came back are.
+	--
+	-- The state gate is not at risk from it: the book is bounded by writeBook's own
+	-- rule (keepEntry), which is what CeroSecOSState's PLAIN_VISITS was sized for
+	-- (see the comment on it), and the gate is asked at the first real read, as
+	-- before. No mark is kept on the luaObject that this copy is the loaded one:
+	-- nothing has to tell it from one writeBook made.
+	if #kept > 0 then
+		luaObject.os.jobs = { seq = book.seq, list = kept }
+	end
 	return back
 end
 

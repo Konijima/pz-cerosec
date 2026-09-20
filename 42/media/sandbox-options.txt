@@ -81,3 +81,27 @@ option CeroSec.SafehouseModules
     page = CeroSec,
     translation = CeroSec_SafehouseModules,
 }
+
+/* Does the mod's own log go to the console? Off, which is the default and the
+ * way it was before this option existed: the mod keeps its lines in a ring of
+ * two hundred that a dedicated server loses at every restart, and prints none
+ * of them. On, every line is also printed, as "CeroSec: <line>", to the game's
+ * console -- the server console on a dedicated server, console.txt beside it.
+ *
+ * What it prints is everything the mod says about itself, which is little in
+ * a quiet world: every saved job dropped or refused at a load, every book that
+ * came back and how many of its jobs did, every machine switched off for lack
+ * of power. It is safe to leave on for a bug hunt. CeroSec.DEBUG in
+ * CeroSecDefs.lua is the developer's way to the same lines, a constant a
+ * server owner cannot flip; this is the owner's.
+ *
+ * Read at each line (CeroSec.serverLog), so changing it in the sandbox takes
+ * effect at once. Only the value true turns it on.
+ */
+option CeroSec.ServerLog
+{
+    type = boolean,
+    default = false,
+    page = CeroSec,
+    translation = CeroSec_ServerLog,
+}

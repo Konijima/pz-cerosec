@@ -792,6 +792,22 @@ foot of `SCeroSecJobs.lua`, which carries the whole of it. Reboot, shutdown, a r
 that lost its power and a computer picked up all still kill everything; a save and a
 load do not, because a computer the world saved was never switched off.
 
+A server with nobody on it fires no tick (the `PauseEmpty` option), and so writes no
+snapshot; a book that came back at load therefore stays on the state, as copies of
+the jobs that came back, until the first snapshot or save replaces it. A server that
+is started and stopped with nobody connected loses no running job, and an `@reboot`
+daemon is not run a second time. Switching the machine off drops the copy at
+once; `kill` drops it at the next snapshot (or at the save, whichever comes first),
+so a job somebody stopped does not come back.
+
+What a load did with a book is a line in the log: `the machine at x,y,z: N of M
+saved job(s) came back`, `... a saved book of M job(s) ignored: the machine is
+off`, or `... a saved book was ignored: it is not a list`, each one printed to the
+console when the sandbox option `CeroSec.ServerLog` is on -- which is how a job
+that is missing after a dedicated server's restart is told from one that was never
+saved. A machine whose state carries no book says nothing, and that is nearly all
+of them.
+
 What survives, and what does not. Every "no" below is one test in
 `CeroSecJobs.jobRefused`, and the word in brackets is the one it answers with, the
 table is the function's rows and not a summary of them, and `jobFromData` asks the

@@ -547,8 +547,8 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      malgré le cadenas, même résultat qu'un clic à la main : le cadenas ne
      tenant pas la porte. Poser plutôt une **clé** sur la porte (`lockN` à
      `locked`) : `dev doorN open` → `doorN: locked`. Enfin, une porte de
-     garage ou une porte double : elle a un `lockN` et **aucun** `doorN`, et
-     `dev door<son numéro> open` répond `dev: ...: no such device`. [ ]
+     garage ou une porte double : voir les étapes 232c à 232g, elle est
+     **une** porte à part entière (un `doorN` et un `lockN`). [ ]
 100f. **Détecteur de mouvement, le posé.** Trouver un **Motion Sensor**
      (`Base.MotionSensor`), le module électronique : il se ramasse dans le
      butin d'électronique, se démonte d'une `HomeAlarm`
@@ -1954,14 +1954,79 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      `crw-rw----`, et `echo open > /dev/doorN` ouvre la porte pour de bon. Si la
      porte est verrouillée, elle répond `doorN: locked` : c'est la serrure, pas
      le module. [ ]
-232. **La gâche, et les deux portes qui la refusent.** Sur une porte
+232. **La gâche, et la porte qui la refuse.** Sur une porte
      **intérieure** (une pièce de chaque côté), clic droit avec la gâche →
-     entrée grisée, « Cette porte n'a pas de serrure à câbler. ». Sur une porte
-     de **garage** ou une porte double, avec l'opérateur → grisée, « Un
-     ordinateur ne peut pas actionner une porte double ou de garage. ». Sur la
+     entrée grisée, « Cette porte n'a pas de serrure à câbler. ». Sur la
      porte extérieure de l'étape 230 → la gâche se pose, et `lockN` apparaît à
      côté de `doorN` : `echo unlock > /dev/lockN` déverrouille, essayer d'entrer
-     depuis dehors le confirme. [ ]
+     depuis dehors le confirme. Une porte de garage ou une porte double ne
+     fait plus partie des refus : voir 232c. [ ]
+232c. **Une porte double, un seul périphérique.** Une porte double (quatre
+     battants) et une porte de garage, de l'intérieur, chacune avec un
+     `CeroSec.DoorOperator` (Électricité 3) et une `CeroSec.ElectricStrike`
+     (Électricité 2), posés sur **n'importe quel** battant : le clic droit sur
+     un battant, puis sur un autre, propose les mêmes entrées et plus jamais
+     « Un ordinateur ne peut pas actionner une porte double ou de garage. ».
+     `dev` liste **un** `doorN` et **un** `lockN` par porte, pas un par battant.
+     Sur un battant, retirer le module → il disparaît aussi vu depuis les
+     autres battants ; le reposer sur un autre battant → **même numéro**. [ ]
+232d. **Ouvrir, fermer, verrouiller.** Pour chacune des deux portes :
+     `dev doorN open` → **tous** les battants bougent ensemble (les quatre de la
+     porte double, toute la chaîne du garage), le son est celui d'une main sur
+     la porte, `cat /dev/doorN` dit `open`. `dev doorN close` le contraire.
+     `dev lockN lock` → `lockN: locked`, et `cat /dev/doorN` dit `locked` ; à la
+     main, aucun battant ne s'ouvre. `dev doorN open` → `doorN: locked`, rien
+     ne bouge. `dev lockN unlock` → la porte s'ouvre de nouveau, à la main
+     comme au clavier. Fermée par la gâche depuis un autre battant que celui du
+     module : même résultat. [ ]
+232e. **Les refus, dans l'ordre de la main.** Pas de barricade ici : le jeu ne
+     permet pas de barricader une porte double ni une porte de garage à la main
+     (`IsoDoor.isBarricadeAllowed()` rend faux dès que le sprite porte
+     `DOUBLE_DOOR` ou `GARAGE_DOOR`, décalages 20 et 33), donc le refus
+     `barricaded` n'a rien à montrer sur ces deux portes. Verrouiller
+     (`lockN lock`) : `doorN: locked`. Déverrouiller. Puis,
+     porte double : mettre un objet ou un arbre (mode debug) dans le passage →
+     `doorN: blocked`. Porte de garage **ouverte** : garer un véhicule **en
+     travers** de la ligne de la porte → `dev doorN close` répond
+     `doorN: blocked` et le garage reste ouvert ; retirer le véhicule → la
+     porte se ferme. Porte de garage **fermée** avec un véhicule devant :
+     `dev doorN open` fonctionne (le refus ne vaut que pour la fermeture).
+     Contre-épreuve : un véhicule à un seul côté de la porte, sans la
+     traverser, ne bloque pas la fermeture. Cas connu, à ne pas compter comme
+     un défaut : **deux** véhicules différents de part et d'autre, aucun ne
+     traversant la porte, sont refusés par la machine alors que le jeu les
+     laisserait passer (voir `docs/DEVICES.md`). [ ]
+232f. **Le numéro ne bouge pas quand la porte bouge.** Sur la porte double
+     **de la carte** (celle dont les battants 2 et 3 sont supprimés puis
+     recréés par le moteur à chaque manoeuvre), noter `doorN` et `lockN`, puis
+     ouvrir et fermer la porte **cinq fois** (`dev doorN toggle`, puis à la
+     main, en alternant). Après chaque manoeuvre `dev` liste toujours les mêmes
+     `doorN` et `lockN`, l'opérateur et la gâche sont toujours posés (le clic
+     droit sur le battant recréé les montre), et `ls -l /dev` n'a pas changé.
+     Un câble tiré depuis un ordinateur jusqu'à cette porte tient aussi. Puis
+     sauvegarder, quitter, recharger : mêmes numéros. [ ]
+232g. **Sur un serveur dédié, avec un SECOND client qui regarde la porte de
+     garage. À FAIRE, non prouvé.** Serveur dédié réel, deux clients connectés
+     et proches du garage, un ordinateur avec l'opérateur posé : depuis le
+     premier client, `dev doorN open` puis `close`. Le second client, qui ne
+     touche à rien, doit voir **toute** la chaîne de battants s'ouvrir et se
+     fermer, et pas seulement le battant d'ancrage. Le serveur appelle
+     `toggleGarageDoor(obj, true)` comme le fait la main, mais `syncIsoObject`
+     de vanilla n'a pas de branche de réception pour le garage : ce que le
+     second client voit est le mécanisme du jeu, jamais vérifié à deux clients
+     sur un serveur dédié. Noter ce qui se passe, y compris un client qui ne
+     voit qu'un battant bouger. Même essai avec la porte double (dont la
+     réception est lue dans le bytecode) et, pour la comparaison, une porte de
+     garage ouverte à la main par le premier client. [ ]
+232h. **Un portail de jardin n'a pas d'intérieur.** Une porte, une fenêtre ou un
+     rideau sans pièce de l'un ni de l'autre côté (un portail de clôture, une
+     porte de jardin, la fenêtre d'un abri ouvert), debout
+     dehors : le clic droit propose l'opérateur et la gâche et ne dit plus
+     « Ça se fait de l'intérieur. » ; ils se posent, `dev` liste `doorN`
+     et `lockN` (le portail ouvert : fermé, la machine refuse comme pour toute
+     porte, `closed`). Contre-épreuve : la porte d'entrée d'une maison, debout
+     sur le trottoir, reste refusée avec ce même message, et un câble tiré
+     depuis le trottoir jusqu'à elle aussi. [ ]
 233. **La fenêtre ne prend qu'un contact, et le contact sent le châssis.** Clic
      droit sur une fenêtre avec la gâche ou l'opérateur en poche → « Ce module
      ne va pas ici. ». Avec le contact → il se pose, `winN` apparaît. Ouvrir la
@@ -3892,6 +3957,18 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      ligne, `ps` aussi, et une porte ouverte à la main se referme au bout de cinq
      tours. Ensuite `kill %1`, attendre dix secondes, arrêter et relancer :
      `jobs` ne montre rien. [ ]
+397f. **Un serveur redémarré alors que personne n'y était.** Sur un serveur
+     dédié dont l'option **PauseEmpty** (pause quand le serveur est vide) est
+     **activée**, lancer `sh /usr/local/bin/autoclose.sh start 5 &`, attendre au
+     moins dix secondes, puis **se déconnecter** : le serveur est vide et se met
+     en pause. Arrêter le serveur (`quit` dans sa console), le **relancer sans
+     se connecter**, attendre une minute, l'arrêter encore avec `quit`, le
+     relancer une dernière fois et se connecter. Attendu : `jobs` et `ps`
+     montrent **encore** le démon, avec le même numéro, et une porte ouverte à la
+     main se referme au bout de cinq tours. Un démon lancé par une ligne
+     `@reboot` de `crontab` doit y être aussi, une seule fois. Puis `kill %1`,
+     attendre dix secondes, et refaire le même aller-retour à vide : `jobs` ne
+     montre rien, un travail arrêté ne revient pas. [ ]
 398. **Les rideaux, à l'heure.** `sh /usr/local/bin/curtains.sh close` → tous les
      rideaux se ferment dans le monde, **et on les entend**, un par rideau.
      Relancer la même ligne tout de suite : le script dit la même chose et plus
@@ -4307,6 +4384,29 @@ porte avec un opérateur ET une gâche (`door0` et `lock0` tous les deux posés)
      /dev/door0` répond alors `locked` lui aussi (la gâche verrouille la
      même porte) ; `door0` ne prend quand même jamais le mot `lock` en
      écriture, ce sont deux noeuds, pas un mot de plus sur le même. [ ]
+
+## AT. Le journal du mod dans la console (option `CeroSec.ServerLog`)
+
+L'option de bac à sable **Journal du mod dans la console du serveur**
+(`CeroSec.ServerLog`, page « CeroSec », **désactivée par défaut**) fait écrire
+dans la console du jeu -- celle du serveur sur un serveur dédié, `console.txt`
+sinon -- tout ce que le mod dit de lui-même, sans toucher à `CeroSec.DEBUG`.
+Préparation : `CeroSec.DEBUG` reste à `false` ; une partie avec une machine
+allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
+
+445. **Désactivée, la console reste muette.** Option à sa valeur par défaut :
+     quitter la partie, la recharger, puis chercher `CeroSec:` dans la
+     console. Aucune ligne. [ ]
+446. **Activée, la console parle.** Cocher l'option dans les options de bac à
+     sable (nouvelle partie ou partie existante), sauvegarder, quitter, recharger.
+     La console contient une ligne `CeroSec: the machine at x,y,z: 1 of 1 saved
+     job(s) came back` pour la machine au démon, et **aucune** ligne de ce
+     genre pour une machine qui ne fait rien tourner. Le démon tourne toujours.
+     [ ]
+447. **Sans courant, la machine le dit.** Avec l'option activée, couper le
+     générateur devant une machine allumée et attendre une minute : la console
+     contient `CeroSec: the machine at x,y,z lost power and was switched off`.
+     Rétablir le courant ne produit aucune ligne de ce genre. [ ]
 
 ## Rapport
 

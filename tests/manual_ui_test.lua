@@ -4310,6 +4310,12 @@ do
 		local o = { __class = class, modData = {}, square = sq, open = false,
 			activated = false, curtainOpen = false, deviceOn = false }
 		o.getSquare = function() return o.square end
+		-- The far face of the wall, which the inside rule now asks (a door with
+		-- no room on EITHER face has no inside). Not given here: an unloaded face
+		-- is unknown and the rule stays on, which is what every bench below
+		-- that stands on the pavement wants. A bench that wants another answer
+		-- sets it (see interior, below).
+		o.getOppositeSquare = function() return o.opposite end
 		o.hasModData = function() return true end
 		o.getModData = function() return o.modData end
 		o.transmitModData = function() end
@@ -4953,6 +4959,9 @@ do
 	local function fixture(class, sq)
 		local o = { __class = class, modData = {}, transmits = 0 }
 		o.getSquare = function() return sq end
+		-- The far face, unknown: the inside rule stays on (see the other
+		-- fixture builder in this file).
+		o.getOppositeSquare = function() return o.opposite end
 		o.hasModData = function() return true end
 		o.getModData = function() return o.modData end
 		o.transmitModData = function() o.transmits = o.transmits + 1 end

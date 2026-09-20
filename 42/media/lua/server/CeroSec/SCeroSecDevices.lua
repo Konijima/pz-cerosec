@@ -134,6 +134,18 @@ require "CeroSec/SCeroSecRadio"
 --           while both classes' syncIsoObjectSend writes the open flag
 --           (IsoDoor: isOpen(); IsoThumpable: the open field).
 --
+--   gate    A DOUBLE DOOR or a GARAGE DOOR, which is one opening of several leaves and
+--           is ONE `door` device (and one `lock`), filed on its anchor leaf. The
+--           machine calls IsoDoor.toggleDoubleDoor(obj, true) or
+--           IsoDoor.toggleGarageDoor(obj, true), the last call of the hand's own
+--           ToggleDoorActual, never ToggleDoorSilent on one leaf: the static flips
+--           every leaf, swaps every sprite and sends the packet. Refusals are the
+--           hand's, in the hand's order: barricaded (the anchor leaf), locked (any
+--           leaf), then blocked -- isDoubleDoorObstructed for a double door, and for a
+--           garage door a rebuilt isGarageDoorObstructed, see `blocked`. `lock` sets
+--           every leaf, as ISLockDoor does. Nothing about a leaf's own square,
+--           barricade or key is asked of any other leaf that the hand does not ask.
+--
 --   sensor  nothing at all. A motion sensor is a device that is only ever READ,
 --           and what it reads is not a question asked of the item lying on the
 --           floor -- there is nothing on a dropped item to ask -- but what the
@@ -296,20 +308,44 @@ local function doorLocks(door)
 	return CeroSecModules.doorLocks(door)
 end
 
--- One leaf of a double or a garage door. ToggleDoorSilent moves ONE object, and
--- vanilla's own toggle walks every leaf of the thing (forEachDoorObject, inside
--- ToggleDoorActual), so a machine that called Silent on one half would leave the
--- other half shut. Those are not `door` devices -- they are still `lock` ones,
--- because setLockedByKey is per-object in vanilla too.
+-- A GATE: a double door or a garage door, several leaves that are ONE opening.
+-- ToggleDoorSilent moves ONE object and vanilla's own toggle walks every leaf of
+-- the thing (forEachDoorObject, inside ToggleDoorActual), so the machine never calls
+-- Silent on a leaf of one: it calls the two statics the hand's path calls,
+-- IsoDoor.toggleDoubleDoor(obj, true) and IsoDoor.toggleGarageDoor(obj, true) (the
+-- last instruction of both classes' ToggleDoorActual before the sound), and adds the
+-- sound and the refusals beside them. See the door act.
+--
+-- ONE DEVICE PER GATE, filed on the ANCHOR leaf (CeroSecModules.gateParts): the one
+-- that is never taken away, so its square, its side and therefore its `doorN` number
+-- do not move when the gate does. Whichever leaf the walk reaches first speaks for
+-- the gate (addDevices) and a gate's other leaves add no second door and no second
+-- lock. A leaf's CURTAIN is its own and stays per leaf.
 --
 -- `IsoDoor.getGarageDoorIndex(object) ~= -1` is vanilla's own way of asking
 -- (media/lua/server/BuildingObjects/ISBuildUtil.lua:556, and :315 of
 -- ISDoubleDoor.lua for the double-door one). Both are public statics and both
 -- answer -1 for an object with no DOUBLE_DOOR / GARAGE_DOOR property on it.
--- Moved to CeroSecModules with the two above and for the same reason: an
--- operator is refused on a leaf of a garage door at the menu, by this test.
 local function isManyDoors(object)
 	return CeroSecModules.isManyDoors(object)
+end
+
+-- Every leaf, anchor first, or just the object when it is no gate.
+local function leavesOf(object)
+	return CeroSecModules.gateParts(object) or { object }
+end
+
+-- Is this door held by a key? For a gate, on ANY leaf. ISLockDoor locks every leaf
+-- at once (vanilla's own lock walks buildUtil.getDoubleDoorObjects and
+-- getGarageDoorObjects), so the two readings agree for a gate locked by the book;
+-- one locked leaf is what a hand would have met on THAT leaf, so the machine reads
+-- as strict as the strictest leaf and never opens a gate a hand would not.
+local function lockedByKey(object)
+	local leaves = leavesOf(object)
+	for i = 1, #leaves do
+		if leaves[i]:isLockedByKey() then return true end
+	end
+	return false
 end
 
 -- open, closed, or locked -- three words and not four, because locked implies
@@ -322,7 +358,7 @@ end
 -- isOpen(), IsoThumpable's reads its open field).
 local function doorState(object, locks)
 	if object:IsOpen() then return "open" end
-	if locks and object:isLockedByKey() then return "locked" end
+	if locks and lockedByKey(object) then return "locked" end
 	return "closed"
 end
 
@@ -479,7 +515,7 @@ local function stateOf(kind, object, locks)
 		-- A map door's key and a built door's padlock are two different
 		-- readings, and classify made the same split when it wrote the first one.
 		if instanceof(object, "IsoDoor") then
-			return object:isLockedByKey() and "locked" or "unlocked"
+			return lockedByKey(object) and "locked" or "unlocked"
 		end
 		return thumpState(object)
 	end
@@ -583,22 +619,29 @@ function CeroSecDevices.classify(object, allowGen)
 
 	if instanceof(object, "IsoDoor") then
 		local fitted = fittedOn(object)
-		local side = object:getNorth() and "N" or "W"
-		local desc = doorDesc(object)
-		local locks = doorLocks(object)
 		local out = {}
+		-- A gate's door and lock are the GATE's, filed on its anchor leaf and marked
+		-- `gate`: addDevices puts them at the anchor's square and adds them once,
+		-- whichever leaf the walk reached (see isManyDoors). `subject` is the object
+		-- they speak for -- the anchor -- and for a door that is no gate, itself.
+		local subject = leavesOf(object)[1]
+		local gate = isManyDoors(object)
+		local side = subject:getNorth() and "N" or "W"
+		local desc = doorDesc(subject)
+		local locks = doorLocks(subject)
 		-- The operator is what MOVES a door and the contact is what sees it, so a
 		-- door with only a contact on it is the same doorN with the same words
 		-- and no way to carry them out (`ro`): it reads open, closed or locked,
 		-- and every write to it is "operation not supported".
 		local moves, sees = has(fitted, "operator"), has(fitted, "contact")
-		if (moves or sees) and not isManyDoors(object) then
+		if moves or sees then
 			out[#out + 1] = { kind = "door", side = side, desc = desc,
-				locks = locks, state = stateOf("door", object, locks), ro = not moves }
+				locks = locks, state = stateOf("door", subject, locks), ro = not moves,
+				gate = gate and subject or nil }
 		end
 		if locks and has(fitted, "strike") then
 			out[#out + 1] = { kind = "lock", side = side, desc = desc,
-				state = stateOf("lock", object) }
+				state = stateOf("lock", subject), gate = gate and subject or nil }
 		end
 		-- A door's curtain is a pair of FIELDS on the door and not a second
 		-- object, so a door with a sheet on it is a third device on one object
@@ -757,13 +800,19 @@ function CeroSecDevices.classify(object, allowGen)
 		local side = object:getNorth() and "N" or "W"
 		local out = {}
 		local moves, sees = has(fitted, "operator"), has(fitted, "contact")
-		if (moves or sees) and not isManyDoors(object) then
+		-- A built double door is a gate too (see isManyDoors): its devices are its
+		-- anchor leaf's, `subject`, and filed there by addDevices.
+		local subject = leavesOf(object)[1]
+		local gate = isManyDoors(object)
+		side = subject:getNorth() and "N" or "W"
+		if moves or sees then
 			out[#out + 1] = { kind = "door", side = side, desc = "built",
-				locks = true, state = stateOf("door", object, true), ro = not moves }
+				locks = true, state = stateOf("door", subject, true), ro = not moves,
+				gate = gate and subject or nil }
 		end
 		if has(fitted, "strike") then
 			out[#out + 1] = { kind = "lock", side = side, desc = "built",
-				state = stateOf("lock", object) }
+				state = stateOf("lock", subject), gate = gate and subject or nil }
 		end
 		return out
 	end
@@ -873,29 +922,51 @@ local function addDevices(object, index, x, y, z, found, seen, allowGen)
 	local entries = CeroSecDevices.classify(object, allowGen) or {}
 	for k = 1, #entries do
 		local entry = entries[k]
-		entry.x, entry.y, entry.z = x, y, z
-		entry.object = object
-		-- WHICH of the square's objects it is, kept for one kind of device and
-		-- one only: a television or a radio set whose state this mod has to
-		-- broadcast itself, because the far end has to find the same object
-		-- again and two identical televisions on one tile are the one case a
-		-- class and a sprite name cannot tell apart (CCeroSecDevices.objectAt).
-		-- It is not a key and cannot be one -- the object index is not stable
-		-- across a reload, which is why `seen` counts ordinals instead -- and it
-		-- is not asked of anything else.
-		entry.index = index
-		-- Where it is, as a string, and that is the key its number hangs
-		-- on. Two devices of one kind facing the same way on one square are
-		-- told apart by an ordinal -- the object index would have done it
-		-- too, and it is not stable across a reload. The kind is in the key,
-		-- so door3 and lock1 on the same door hang on two keys and neither
-		-- number moves when the other kind's numbering changes.
-		local base = entry.kind .. ":" .. x .. ":" .. y .. ":" .. z .. ":" .. entry.side
-		local n = 0
-		while seen[base .. ":" .. n] do n = n + 1 end
-		entry.key = base .. ":" .. n
-		seen[entry.key] = true
-		found[#found + 1] = entry
+		-- A GATE's door and lock speak for the anchor leaf (classify) and stand on ITS
+		-- square, so the key -- and the number a survivor's script hangs on it -- is
+		-- the same whichever leaf the walk got there by. The second leaf of a gate
+		-- to arrive finds the entry already filed and takes THAT one, so the gate is
+		-- one device with one number and the cable walk still finds the entry to put
+		-- its wire on (entries[k] is replaced, and it is what is returned).
+		local ex, ey, ez, eobject = x, y, z, object
+		local twin = nil
+		if entry.gate ~= nil then
+			local at = entry.gate:getSquare()
+			if at ~= nil then
+				ex, ey, ez, eobject = at:getX(), at:getY(), at:getZ(), entry.gate
+			end
+			local gkey = "gate:" .. entry.kind .. ":" .. ex .. ":" .. ey .. ":" .. ez
+				.. ":" .. entry.side
+			twin = seen[gkey]
+			if twin == nil then seen[gkey] = entry end
+		end
+		if twin ~= nil then
+			entries[k] = twin
+		else
+			entry.x, entry.y, entry.z = ex, ey, ez
+			entry.object = eobject
+			-- WHICH of the square's objects it is, kept for one kind of device and
+			-- one only: a television or a radio set whose state this mod has to
+			-- broadcast itself, because the far end has to find the same object
+			-- again and two identical televisions on one tile are the one case a
+			-- class and a sprite name cannot tell apart (CCeroSecDevices.objectAt).
+			-- It is not a key and cannot be one -- the object index is not stable
+			-- across a reload, which is why `seen` counts ordinals instead -- and it
+			-- is not asked of anything else.
+			entry.index = index
+			-- Where it is, as a string, and that is the key its number hangs
+			-- on. Two devices of one kind facing the same way on one square are
+			-- told apart by an ordinal -- the object index would have done it
+			-- too, and it is not stable across a reload. The kind is in the key,
+			-- so door3 and lock1 on the same door hang on two keys and neither
+			-- number moves when the other kind's numbering changes.
+			local base = entry.kind .. ":" .. ex .. ":" .. ey .. ":" .. ez .. ":" .. entry.side
+			local n = 0
+			while seen[base .. ":" .. n] do n = n + 1 end
+			entry.key = base .. ":" .. n
+			seen[entry.key] = true
+			found[#found + 1] = entry
+		end
 	end
 	-- And the object itself, under where it stands (placeKey), for the walk that
 	-- comes after this one: the link walk visits squares the building walk may
@@ -1338,6 +1409,12 @@ local function scanLinked(cell, links, found, seen, mx, my, mz)
 			else
 				local objects = square:getObjects()
 				local cabled = false
+				-- Where the entry is KEPT: its own square, or a gate's anchor square when
+				-- the cable turns out to be on a gate (a book from before a gate was filed
+				-- on its anchor names the leaf that was clicked, and the leaf may be taken
+				-- away and made again elsewhere; this rewrites the entry to the leaf that
+				-- stays).
+				local keepX, keepY, keepZ = at.x, at.y, at.z
 				if objects ~= nil then
 					for k = 0, objects:size() - 1 do
 						local object = objects:get(k)
@@ -1347,6 +1424,8 @@ local function scanLinked(cell, links, found, seen, mx, my, mz)
 						local wire = CeroSecModules.wireOf(object, mx, my, mz)
 						if wire ~= nil then
 							cabled = true
+							local px, py, pz = CeroSecModules.placeOf(object)
+							if px ~= nil then keepX, keepY, keepZ = px, py, pz end
 							local already = seen[placeKey(at.x, at.y, at.z, k)]
 							if already == nil then
 								-- true: this IS the cable, the one thing that lets a
@@ -1362,7 +1441,15 @@ local function scanLinked(cell, links, found, seen, mx, my, mz)
 				-- and so is the entry. A fixture whose MODULE came off keeps its cable
 				-- and stays on the list -- the wire is still run, and what it reaches is
 				-- a fixture with no device on it.
-				if cabled then kept[#kept + 1] = { x = at.x, y = at.y, z = at.z } end
+				if cabled then
+					local dup = false
+					for j = 1, #kept do
+						if kept[j].x == keepX and kept[j].y == keepY and kept[j].z == keepZ then
+							dup = true
+						end
+					end
+					if not dup then kept[#kept + 1] = { x = keepX, y = keepY, z = keepZ } end
+				end
 			end
 		end
 	end
@@ -1885,7 +1972,37 @@ end
 -- (ISOpenCloseDoor:complete calls ToggleDoor and checks nothing first), so the
 -- machine does too. A refusal the game does not make is a refusal we would have
 -- invented.
+--
+-- AND A GATE'S, which is not the doorway test. The hand's toggle of a gate never asks
+-- isObstructed: a double door asks IsoDoor.isDoubleDoorObstructed(obj) (public,
+-- the same static ToggleDoorActual calls) and a garage door asks a private static,
+-- isGarageDoorObstructed, that only looks at all when the door is OPEN, i.e. when
+-- it is being closed: for every square of the door, a vehicle of that chunk that
+-- intersects the square AND the square across the door line (BaseVehicle.
+-- isIntersectingSquare, javap -c offsets 415-465). Private, so it is rebuilt here
+-- from the public parts: IsoGridSquare.isVehicleIntersecting() on the two squares.
+-- That answers "some vehicle" for each where the engine asks "this vehicle" for
+-- both, so it refuses in one case the engine would allow -- two DIFFERENT vehicles
+-- standing one either side of the door and neither across it -- and never the other
+-- way round. Stated in docs/DEVICES.md rather than left to be found.
+local function garageBlocked(object)
+	if not object:IsOpen() then return false end
+	local leaves = leavesOf(object)
+	for i = 1, #leaves do
+		local here = leaves[i]:getSquare()
+		local across = leaves[i]:getOppositeSquare()
+		if here ~= nil and across ~= nil
+				and here:isVehicleIntersecting() and across:isVehicleIntersecting() then
+			return true
+		end
+	end
+	return false
+end
+
 local function blocked(object)
+	local kind = CeroSecModules.gateKind(object)
+	if kind == "double" then return IsoDoor.isDoubleDoorObstructed(object) end
+	if kind == "garage" then return garageBlocked(object) end
 	return object:isObstructed()
 end
 
@@ -2157,7 +2274,7 @@ local function act(entry, value)
 		-- The computer is not a key. A locked door is only locked at all when
 		-- the lock means something on it (entry.locks), and the way past it is
 		-- `unlock` on the lock device beside it.
-		if want and entry.locks and object:isLockedByKey() then
+		if want and entry.locks and lockedByKey(object) then
 			return false, "locked"
 		end
 		if blocked(object) then return false, "blocked" end
@@ -2165,11 +2282,25 @@ local function act(entry, value)
 		-- alone and nothing is broadcast: two `dev door0 open` in a row are one
 		-- open door, not an open one and a shut one.
 		if object:IsOpen() ~= want then
-			object:ToggleDoorSilent()
-			-- ToggleDoorSilent syncs nothing. syncIsoObject's server branch
-			-- walks GameServer.udpEngine.connections, and both classes'
-			-- syncIsoObjectSend writes the open flag.
-			object:syncIsoObject(false, 0, nil, nil)
+			local gate = CeroSecModules.gateKind(object)
+			if gate == "double" then
+				-- All four leaves, the property swap and the packet, in the call the
+				-- hand's own toggle ends on. sync=true sends on leaf 1 and every
+				-- client's receive side runs toggleDoubleDoor(this, false) when the
+				-- packet's open flag differs from its own, so one packet moves the
+				-- four (IsoDoor.syncIsoObject / IsoThumpable.syncIsoObjectReceive).
+				IsoDoor.toggleDoubleDoor(object, true)
+			elseif gate == "garage" then
+				-- The same call the hand's path makes, from the same side of the
+				-- wire, so the fan-out to a client is whatever vanilla's own is.
+				IsoDoor.toggleGarageDoor(object, true)
+			else
+				object:ToggleDoorSilent()
+				-- ToggleDoorSilent syncs nothing. syncIsoObject's server branch
+				-- walks GameServer.udpEngine.connections, and both classes'
+				-- syncIsoObjectSend writes the open flag.
+				object:syncIsoObject(false, 0, nil, nil)
+			end
 			-- And it is HEARD, which the silent toggle is named for not doing:
 			-- the same name the hand plays, read off the door after it moved
 			-- (see "the sound a hand would have made"). Inside this branch and
@@ -2483,28 +2614,42 @@ local function act(entry, value)
 		return true, nil, waveState(object), detailOf(entry.kind, object)
 	end
 
-	-- lock: a map door, or a player-built one.
+	-- lock: a map door, or a player-built one. Every leaf of a gate, like
+	-- vanilla's ISLockDoor, which walks buildUtil.getDoubleDoorObjects and
+	-- getGarageDoorObjects and sets and syncs each one: the lock is the opening's.
+	local want = value == "lock"
 	if instanceof(object, "IsoDoor") then
-		object:setLockedByKey(value == "lock")
-		object:syncIsoObject(false, 0, nil, nil)
-		return true, nil, object:isLockedByKey() and "locked" or "unlocked"
+		local leaves = leavesOf(object)
+		for i = 1, #leaves do
+			leaves[i]:setLockedByKey(want)
+			leaves[i]:syncIsoObject(false, 0, nil, nil)
+		end
+		return true, nil, lockedByKey(object) and "locked" or "unlocked"
 	end
 
-	local want = value == "lock"
-	if object:isLockedByPadlock() or object:canBeLockByPadlock() then
-		-- setLockedByPadlock syncs itself, on the server included.
-		object:setLockedByPadlock(want)
-		return true, nil, thumpState(object)
+	local leaves = leavesOf(object)
+	for i = 1, #leaves do
+		local leaf = leaves[i]
+		local done = false
+		if leaf:isLockedByPadlock() or leaf:canBeLockByPadlock() then
+			-- setLockedByPadlock syncs itself, on the server included.
+			leaf:setLockedByPadlock(want)
+			done = true
+		elseif leaf:getKeyId() > 0 then
+			-- A padlock is set to keyId -1 when it is taken off
+			-- (media/lua/shared/TimedActions/ISPadlockAction.lua:46), and a door
+			-- built with no lock at all carries 0, so a real key is a positive one.
+			leaf:setLockedByKey(want)
+			leaf:syncIsoThumpable()
+			done = true
+		end
+		-- The answer is the ANCHOR's, which is the first leaf: what the machine
+		-- reports is the leaf it speaks for. A gate whose anchor takes no lock is
+		-- refused WITHOUT touching the others, so the machine never leaves a gate
+		-- half locked and then says it could not.
+		if i == 1 and not done then return false, "no padlock" end
 	end
-	-- A padlock is set to keyId -1 when it is taken off
-	-- (media/lua/shared/TimedActions/ISPadlockAction.lua:46), and a door built
-	-- with no lock at all carries 0, so a real key is a positive one.
-	if object:getKeyId() > 0 then
-		object:setLockedByKey(want)
-		object:syncIsoThumpable()
-		return true, nil, thumpState(object)
-	end
-	return false, "no padlock"
+	return true, nil, thumpState(object)
 end
 
 --

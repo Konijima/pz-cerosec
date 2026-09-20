@@ -6,6 +6,45 @@ reads. At release, `python3 tools/changelog-steam.py` prints the newest section
 in the shape Steam's Change Notes take, and the section gets its version and
 date.
 
+## Unreleased
+
+## 0.6.0 - 2026-09-20
+
+Doors that were out of reach and a restart that no longer costs a server its
+scripts. Double doors, garage doors and yard gates now take a module like any
+other door, and a dedicated server that is started and stopped with nobody on it
+keeps every running script. Nothing here needs a new save: no state or system
+version moves, and the new sandbox option is off unless a server owner turns it
+on. A server owner whose world lost its `autoclose.sh` in an empty restart still
+needs one `reboot` on that machine to start it again.
+
+- Double doors and garage doors can now take a door operator and be opened and
+  closed from `/dev` (`dev door0 open`), and locked and unlocked from `lock`
+  with a strike. Each one is a single `door` and a single `lock` however many
+  leaves it has, all the leaves move together, and the number does not change
+  when the door is worked. A door still says `barricaded`, `locked` or
+  `blocked` the way a hand would meet them. Before, a computer refused to work
+  either kind.
+- A server that was restarted while nobody was connected no longer forgets its
+  running scripts. With the "pause when empty" server option on, a server that
+  came up and was stopped again with nobody on it wrote every machine down with
+  nothing running, so `autoclose.sh` and every `@reboot` daemon were gone the
+  next time a player joined. The scripts are now kept until the server next
+  writes them down. A script somebody stopped still does not come back.
+- A door, window or curtain with open air on both sides, such as a yard gate,
+  now takes a module (a door operator, a strike, a contact). It used to say
+  "This has to be done from inside" on a door that has no inside. One with a
+  room on either side still has to be fitted from inside, so a front door cannot
+  be stripped from the pavement.
+- A new sandbox option, **Log the mod to the server console**
+  (`CeroSec.ServerLog`, off by default), for a server owner who has to find out
+  why something went wrong and cannot edit the mod. On, everything the mod says
+  about itself is also written to the server console as `CeroSec:` lines: every
+  saved job that was dropped or refused when the world loaded, how many of a
+  machine's saved jobs came back, a saved book ignored because its machine was
+  off, and every machine switched off for lack of power. It is safe to leave on
+  while you hunt a bug, and turning it off changes nothing else.
+
 ## 0.5.1 - 2026-09-19
 
 - A dedicated server now keeps its running scripts across a restart. The game's

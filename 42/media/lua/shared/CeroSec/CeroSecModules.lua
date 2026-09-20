@@ -314,7 +314,7 @@ end
 -- through installedOn's own gate -- the migration chain and a table a LATER build
 -- wrote -- so a fixture whose modules this build will not read has no cables
 -- either, which is the same answer to the same question.
-function CeroSecModules.linksOn(object)
+function CeroSecModules.ownLinksOn(object)
 	local out = {}
 	if object == nil then return out end
 	if type(object.hasModData) ~= "function" or not object:hasModData() then return out end
@@ -329,6 +329,30 @@ function CeroSecModules.linksOn(object)
 		local entry = links[i]
 		if linkOk(entry) and #out < CeroSecModules.LINKS_MAX then
 			out[#out + 1] = { x = entry.x, y = entry.y, z = entry.z, wire = entry.wire }
+		end
+	end
+	return out
+end
+
+-- Every cable run to this fixture AS A WHOLE: the ones on the object itself and,
+-- for a leaf of a double or a garage door, the ones on its other leaves
+-- (CeroSecModules.gateParts), each machine once. A cable is run to the opening and
+-- goes on the anchor leaf (linkOn), but a world may hold one on another leaf from
+-- before a gate was one device, and it is still a cable to this gate.
+function CeroSecModules.linksOn(object)
+	local out = CeroSecModules.ownLinksOn(object)
+	local parts = CeroSecModules.gateParts(object)
+	if parts == nil then return out end
+	for i = 1, #parts do
+		if parts[i] ~= object then
+			local more = CeroSecModules.ownLinksOn(parts[i])
+			for j = 1, #more do
+				local e = more[j]
+				if CeroSecModules.linkIndexOf(out, e.x, e.y, e.z) == nil
+					and #out < CeroSecModules.LINKS_MAX then
+					out[#out + 1] = e
+				end
+			end
 		end
 	end
 	return out
@@ -382,6 +406,9 @@ local function writeLinks(object, links)
 end
 
 -- Run one. true, or false and the reason in one word.
+--
+-- On the anchor leaf when the fixture is a gate (gateParts), and counted against
+-- the whole gate's cables: one opening has one cable budget.
 function CeroSecModules.linkOn(object, x, y, z, wire)
 	if object == nil then return false, "fixture" end
 	local links = CeroSecModules.linksOn(object)
@@ -390,20 +417,76 @@ function CeroSecModules.linkOn(object, x, y, z, wire)
 	if type(wire) ~= "number" or wire < 1 or wire > CeroSecModules.LINK_RANGE then
 		return false, "far"
 	end
-	links[#links + 1] = { x = x, y = y, z = z, wire = math.floor(wire) }
-	if not writeLinks(object, links) then return false, "fixture" end
+	local parts = CeroSecModules.gateParts(object)
+	local holder = parts and parts[1] or object
+	local own = CeroSecModules.ownLinksOn(holder)
+	own[#own + 1] = { x = x, y = y, z = z, wire = math.floor(wire) }
+	if not writeLinks(holder, own) then return false, "fixture" end
 	return true
 end
 
--- Take one off. The wire that comes back, or nil when there was no cable.
+-- Take one off, from whichever leaf holds it. The wire that comes back, or nil when
+-- there was no cable.
 function CeroSecModules.unlinkOn(object, x, y, z)
 	if object == nil then return nil end
-	local links = CeroSecModules.linksOn(object)
-	local at = CeroSecModules.linkIndexOf(links, x, y, z)
+	local holders = CeroSecModules.gateParts(object) or { object }
+	local wire = nil
+	for i = 1, #holders do
+		local own = CeroSecModules.ownLinksOn(holders[i])
+		local at = CeroSecModules.linkIndexOf(own, x, y, z)
+		if at ~= nil then
+			local w = own[at].wire
+			table.remove(own, at)
+			-- The SUM: a legacy gate can carry the same cable on two leaves, each
+			-- paid for, and one cut hands back every tile that was bought.
+			if writeLinks(holders[i], own) then wire = (wire or 0) + w end
+		end
+	end
+	return wire
+end
+
+-- What every cable from this fixture to that machine cost, summed over the leaves of
+-- a gate (a fixture that is no gate has the one). nil when there is none. The refund
+-- of a cut, where wireOf is the price of the one the discovery reads.
+function CeroSecModules.wireTotal(object, x, y, z)
+	if object == nil then return nil end
+	local holders = CeroSecModules.gateParts(object) or { object }
+	local total = nil
+	for i = 1, #holders do
+		local own = CeroSecModules.ownLinksOn(holders[i])
+		local at = CeroSecModules.linkIndexOf(own, x, y, z)
+		if at ~= nil then total = (total or 0) + own[at].wire end
+	end
+	return total
+end
+
+-- Where a fixture's devices and cables are FILED: the square of its anchor leaf for
+-- a gate, its own for anything else. x, y, z, or nil for an object with no square.
+-- The machine's cable book names this square, because a leaf of a map double door
+-- is taken away and made again on another square at every toggle and the anchor is
+-- the one that is not.
+function CeroSecModules.placeOf(object)
+	if object == nil then return nil end
+	local parts = CeroSecModules.gateParts(object)
+	local at = (parts and parts[1] or object):getSquare()
 	if at == nil then return nil end
-	local wire = links[at].wire
-	table.remove(links, at)
-	if not writeLinks(object, links) then return nil end
+	return at:getX(), at:getY(), at:getZ()
+end
+
+-- The same two, for the ONE object and nothing else: what the engine's
+-- OnObjectAboutToBeRemoved handler sheds (SCeroSecFixtures). A gate's leaf is taken
+-- away and put back on every toggle of a map double door (toggleDoubleDoorObject
+-- removes the tile object of part 2 or 3 and makes a new one), and the handler that
+-- refunds what was on the leaf being removed must refund THAT leaf's boxes and
+-- cables, not the gate's, or every toggle would strip the anchor.
+function CeroSecModules.unlinkOwn(object, x, y, z)
+	if object == nil then return nil end
+	local own = CeroSecModules.ownLinksOn(object)
+	local at = CeroSecModules.linkIndexOf(own, x, y, z)
+	if at == nil then return nil end
+	local wire = own[at].wire
+	table.remove(own, at)
+	if not writeLinks(object, own) then return nil end
 	return wire
 end
 
@@ -583,7 +666,7 @@ end
 -- CeroSecModules.LIST is looked at and nothing but `true` counts, so somebody else's writing in that
 -- table -- or a forged one out of an old save -- fits no hardware.
 --
-function CeroSecModules.installedOn(object)
+function CeroSecModules.ownedBy(object)
 	local out = {}
 	if object == nil then return out end
 	if type(object.hasModData) ~= "function" or not object:hasModData() then return out end
@@ -600,6 +683,31 @@ function CeroSecModules.installedOn(object)
 	for i = 1, #CeroSecModules.LIST do
 		local id = CeroSecModules.LIST[i].id
 		if fitted[id] == true then out[id] = true end
+	end
+	return out
+end
+
+-- What is fitted to this fixture AS A WHOLE, which for one leaf of a double or a
+-- garage door is what is fitted to any leaf of it (CeroSecModules.gateParts): a gate
+-- is one opening and a survivor who looks at any leaf of it sees the one operator,
+-- the one strike. Everything that asks "what does this fixture carry" -- the menu,
+-- the device walk, the install and the removal -- asks this one, and only the two
+-- that shed a fixture's own boxes when the ENGINE takes the object away ask
+-- ownedBy and write with setOwn / unlinkOwn, for the reason given on unlinkOwn.
+--
+-- A union, and not the anchor's table alone, because a world may already hold a
+-- strike or a contact on any leaf: those were allowed on every leaf before there
+-- was a gate device (only the operator was refused, as `manydoors`). Reading all of
+-- them means an existing world loses nothing by this.
+function CeroSecModules.installedOn(object)
+	local out = CeroSecModules.ownedBy(object)
+	local parts = CeroSecModules.gateParts(object)
+	if parts == nil then return out end
+	for i = 1, #parts do
+		if parts[i] ~= object then
+			local more = CeroSecModules.ownedBy(parts[i])
+			for id in pairs(more) do out[id] = true end
+		end
 	end
 	return out
 end
@@ -636,7 +744,7 @@ end
 -- LEAVE A FIXTURE ALONE, and a table whose ids may mean something this build does not
 -- know is the last thing to write into. So "unreadable" reads as "already done",
 -- which is the safe direction for both readings of the question.
-function CeroSecModules.preFitted(object)
+local function ownPreFitted(object)
 	if object == nil then return false end
 	if type(object.hasModData) ~= "function" or not object:hasModData() then return false end
 	local data = object:getModData()
@@ -647,12 +755,28 @@ function CeroSecModules.preFitted(object)
 	return fitted[CeroSecModules.PRE_KEY] == true
 end
 
+-- For a gate: marked on ANY leaf. The modules go on the anchor whichever leaf the
+-- walk was at, so the mark goes there too (markPreFitted) and every leaf the walk
+-- reaches afterwards reads "done"; a world where only a non-anchor leaf carries the
+-- mark from before is read as done as well, which is the safe direction (see above).
+function CeroSecModules.preFitted(object)
+	local parts = CeroSecModules.gateParts(object)
+	if parts == nil then return ownPreFitted(object) end
+	for i = 1, #parts do
+		if ownPreFitted(parts[i]) then return true end
+	end
+	return false
+end
+
 -- The mark, and only the mark: the modules themselves go on through setOn, which is
 -- the one writer. The server's, like every other write into a fixture's modData.
 -- false when there is nothing there to mark, which is a fixture nothing was fitted
--- to and therefore nothing to remember.
+-- to and therefore nothing to remember. On the anchor leaf of a gate, where setOn
+-- put the modules.
 function CeroSecModules.markPreFitted(object)
 	if object == nil then return false end
+	local parts = CeroSecModules.gateParts(object)
+	if parts ~= nil then object = parts[1] end
 	local data = object:getModData()
 	if data == nil then return false end
 	local fitted = data[CeroSecModules.DATA_KEY]
@@ -675,7 +799,7 @@ end
 -- behind. IsoObject.save skips a modData table that isEmpty() and this one would
 -- not be empty -- it would hold one empty table -- so a door somebody wired and
 -- unwired would carry a few bytes for the rest of the save otherwise.
-function CeroSecModules.setOn(object, id, on)
+function CeroSecModules.setOwn(object, id, on)
 	if object == nil or CeroSecModules.byId(id) == nil then return false end
 	local data = object:getModData()
 	if data == nil then return false end
@@ -721,6 +845,29 @@ function CeroSecModules.setOn(object, id, on)
 	return true
 end
 
+-- The same, for a fixture as a whole (see installedOn): a module goes on the ANCHOR
+-- leaf of a gate and comes off whichever leaf holds it. setOwn is the one that
+-- touches exactly the object it is given, for the drop paths that must not spread.
+function CeroSecModules.setOn(object, id, on)
+	if object == nil or CeroSecModules.byId(id) == nil then return false end
+	local parts = CeroSecModules.gateParts(object)
+	if parts == nil then return CeroSecModules.setOwn(object, id, on) end
+	if on then return CeroSecModules.setOwn(parts[1], id, true) end
+	-- Off: from EVERY leaf that holds it, and HOW MANY that was is the second answer.
+	-- A world from before a gate was one device can hold the same box on several
+	-- leaves (a strike or a contact was allowed on each, and the pre-fitting walk
+	-- fitted each), and the survivor paid for each: the caller hands back one item
+	-- per box that came off, so nothing bought is lost by the merge.
+	local n = 0
+	for i = 1, #parts do
+		if CeroSecModules.ownedBy(parts[i])[id] then
+			CeroSecModules.setOwn(parts[i], id, false)
+			n = n + 1
+		end
+	end
+	return true, n
+end
+
 --
 -- Where a module may go
 --
@@ -756,16 +903,58 @@ function CeroSecModules.doorLocks(door)
 	return here == nil or there == nil
 end
 
--- One leaf of a double or a garage door. Vanilla's own way of asking, both
--- public statics, both -1 for an object with no such property on it
--- (server/BuildingObjects/ISBuildUtil.lua:556, ISDoubleDoor.lua:315). Here for
--- the same reason doorLocks is: an operator on one leaf of a garage door is a
--- motor on a door the machine will not work, because ToggleDoorSilent moves one
--- object and vanilla's own toggle walks every leaf.
+-- One leaf of a double or a garage door: "double", "garage", or nil. Vanilla's own
+-- way of asking, both public statics, both -1 for an object with no such property
+-- on it (server/BuildingObjects/ISBuildUtil.lua:556, ISDoubleDoor.lua:315).
+--
+-- A gate is ONE opening with several leaves, and the vanilla toggle moves them
+-- together (IsoDoor.toggleDoubleDoor / toggleGarageDoor flip every leaf; the packet
+-- for one moves the rest on every client). So the machine treats it as one door:
+-- one operator, one strike, one device. Which leaf holds the boxes is gateParts.
+function CeroSecModules.gateKind(object)
+	if IsoDoor == nil or object == nil then return nil end
+	if IsoDoor.getDoubleDoorIndex(object) ~= -1 then return "double" end
+	if IsoDoor.getGarageDoorIndex(object) ~= -1 then return "garage" end
+	return nil
+end
+
+-- Every leaf of the gate this object is one leaf of, ANCHOR FIRST, or nil for an
+-- object that is no gate. The anchor is where a module or a cable is written, so it
+-- must be the leaf that is never taken away:
+--   * double: the hinge leaves 1 and 4 never move; leaves 2 and 3 are removed and
+--     made again on another square at every toggle
+--     (IsoDoor.toggleDoubleDoorObject), and a map door's new leaf does NOT inherit
+--     the old one's modData (a built one's does). So 1, 4, 2, 3, in that order.
+--   * garage: the leaves are never recreated; the first of the chain.
+-- The object asked about is always in the list, so the union reads never miss it.
+function CeroSecModules.gateParts(object)
+	local kind = CeroSecModules.gateKind(object)
+	if kind == nil then return nil end
+	local out = {}
+	local seen = false
+	if kind == "double" then
+		local order = { 1, 4, 2, 3 }
+		for n = 1, #order do
+			local leaf = IsoDoor.getDoubleDoorObject(object, order[n])
+			if leaf ~= nil then
+				out[#out + 1] = leaf
+				if leaf == object then seen = true end
+			end
+		end
+	else
+		local leaf = IsoDoor.getGarageDoorFirst(object) or object
+		while leaf ~= nil and #out < 8 do
+			out[#out + 1] = leaf
+			if leaf == object then seen = true end
+			leaf = IsoDoor.getGarageDoorNext(leaf)
+		end
+	end
+	if not seen then out[#out + 1] = object end
+	return out
+end
+
 function CeroSecModules.isManyDoors(object)
-	if IsoDoor == nil then return false end
-	return IsoDoor.getDoubleDoorIndex(object) ~= -1
-		or IsoDoor.getGarageDoorIndex(object) ~= -1
+	return CeroSecModules.gateKind(object) ~= nil
 end
 
 -- Is it a door at all -- a map one or a built one? Vanilla asks the pair the
@@ -990,10 +1179,9 @@ function CeroSecModules.fitsOn(object, id)
 	-- The two that work a door itself, and neither goes on a window.
 	if not CeroSecModules.isDoor(object) then return false, "fixture" end
 
-	if id == "operator" then
-		if CeroSecModules.isManyDoors(object) then return false, "manydoors" end
-		return true
-	end
+	-- An operator goes on any leaf of a gate too: the machine works the WHOLE gate
+	-- through the vanilla toggle (SCeroSecDevices, the door act), never one leaf.
+	if id == "operator" then return true end
 
 	-- strike: only where the lock bites. A built door's always does.
 	if instanceof(object, "IsoDoor") and not CeroSecModules.doorLocks(object) then
@@ -1160,6 +1348,36 @@ local function needsInside(object)
 		or CeroSecModules.isCurtain(object)
 end
 
+-- Is there a room on EITHER side of this fixture? Only then is there an inside for a
+-- survivor to be standing in, and only then is a module something a stranger could
+-- unscrew from the pavement. A yard gate, a fence door, a window of an open shed
+-- with open air on both faces has no inside at all: asking the survivor to stand in
+-- a room would grey the fitting on a fixture nobody can ever be inside of, from
+-- either side (reported in game: a fence gate whose menu said "from inside").
+--
+-- The same test as the one asked of HIS square, isInARoom() and not getRoom(),
+-- for the same reason: four walls a player put up read as a room, and the door of
+-- a base must keep the rule. The fixture's own square and its opposite one are the
+-- two faces (getOppositeSquare, as houseRefusal reads it: IsoDoor, IsoWindow,
+-- IsoThumpable and IsoCurtain all answer it). A square the world cannot give us,
+-- an unstreamed chunk, is UNKNOWN and not "no room": the rule stays on, because
+-- this is the one place where a wrong guess opens a door to a stranger.
+local function roomEitherSide(object)
+	local own = object:getSquare()
+	if own == nil or own:isInARoom() then return true end
+	local opposite = object:getOppositeSquare()
+	if opposite == nil or opposite:isInARoom() then return true end
+	return false
+end
+
+-- The envelope that has an inside to be in: needsInside, and a room on one face.
+-- Door, window and curtain alike: the reasoning is about the wall and not about
+-- the kind of hole in it, and a curtain hangs on a window, so exempting the one
+-- and not the other would be a rule that contradicts itself.
+local function insideRequired(object)
+	return needsInside(object) and roomEitherSide(object)
+end
+
 -- The state the fixture has to be in for THIS module, or nil when the module has
 -- none. A light switch is the one that asks for nothing: a relay goes behind a
 -- plate whose only state is the light it works, and a machine that would not let
@@ -1221,8 +1439,10 @@ local function envelopeRefusal(object, playerObj)
 	-- still owed its wire) has no state to protect and asks nothing here: the
 	-- comment on unlinkRefusal's own bare-fixture case still holds.
 	if not CeroSecModules.anyFitted(object) then return nil end
-	local square = playerObj:getCurrentSquare()
-	if square == nil or not square:isInARoom() then return "outside" end
+	if insideRequired(object) then
+		local square = playerObj:getCurrentSquare()
+		if square == nil or not square:isInARoom() then return "outside" end
+	end
 	local fitted = CeroSecModules.installedOn(object)
 	for i = 1, #CeroSecModules.LIST do
 		local module = CeroSecModules.LIST[i]
@@ -1245,7 +1465,7 @@ function CeroSecModules.fittingRefusal(object, id, playerObj)
 	local house = houseRefusal(object, playerObj)
 	if house ~= nil then return house end
 
-	if needsInside(object) then
+	if insideRequired(object) then
 		local square = playerObj:getCurrentSquare()
 		-- No square at all is a survivor the world cannot place, and the honest
 		-- answer for one is the refusal: nothing here is worth guessing at.

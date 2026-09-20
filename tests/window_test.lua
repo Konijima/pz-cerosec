@@ -169,11 +169,22 @@ _G.instanceof = function(object, class)
 	return true
 end
 
--- The two statics the device layer asks about a door before it will call
--- ToggleDoorSilent on it: is this one leaf of a double door, or of a garage
--- door? Vanilla answers -1 for an object with no such property on it
+-- The statics the device layer asks about a door, and the ones it moves a gate
+-- with. Is this one leaf of a double door, or of a garage door? Vanilla answers -1
+-- for an object with no such property on it
 -- (media/lua/server/BuildingObjects/ISBuildUtil.lua:556), and so does this.
+--
+-- A GATE is modelled the way the engine holds one: every leaf carries its own index
+-- (`doubleDoor` 1-4, or `garageDoor`) and the SAME list, `gateLeaves`, which is what
+-- the getters walk. The two toggles flip `open` on EVERY leaf of the list, which is
+-- what IsoDoor.toggleDoubleDoor / toggleGarageDoor do to the opening, and they never
+-- call the leaf's own ToggleDoorSilent -- so a machine that used the silent toggle
+-- on a gate would leave three leaves where they were and `silentToggles` shows it.
+-- Every call is recorded (`calls`), with the object it was made on and the sync flag,
+-- because "which leaf was asked" and "was it sent to the clients" are the two things
+-- a field cannot show.
 _G.IsoDoor = {
+	calls = {},
 	getDoubleDoorIndex = function(object)
 		if type(object) == "table" and type(object.doubleDoor) == "number" then
 			return object.doubleDoor
@@ -185,6 +196,58 @@ _G.IsoDoor = {
 			return object.garageDoor
 		end
 		return -1
+	end,
+	-- The leaf with index i of the double door this one is part of, nil when the
+	-- opening has no such leaf (a two-leaf door in a wall has 1 and 4 only).
+	getDoubleDoorObject = function(object, i)
+		if type(object) ~= "table" or object.gateLeaves == nil then return nil end
+		for n = 1, #object.gateLeaves do
+			if object.gateLeaves[n].doubleDoor == i then return object.gateLeaves[n] end
+		end
+		return nil
+	end,
+	-- The chain of a garage door: first, then next until there is none.
+	getGarageDoorFirst = function(object)
+		if type(object) ~= "table" or object.gateLeaves == nil then return nil end
+		return object.gateLeaves[1]
+	end,
+	getGarageDoorNext = function(object)
+		if type(object) ~= "table" or object.gateLeaves == nil then return nil end
+		for n = 1, #object.gateLeaves do
+			if object.gateLeaves[n] == object then return object.gateLeaves[n + 1] end
+		end
+		return nil
+	end,
+	getGarageDoorPrev = function(object)
+		if type(object) ~= "table" or object.gateLeaves == nil then return nil end
+		for n = 1, #object.gateLeaves do
+			if object.gateLeaves[n] == object then return object.gateLeaves[n - 1] end
+		end
+		return nil
+	end,
+	-- Every leaf flips; the call is what is recorded, once, and not one per leaf.
+	toggleDoubleDoor = function(object, sync)
+		local list = object.gateLeaves
+		for n = 1, #list do
+			list[n].open = not list[n].open
+			list[n].gateToggles = (list[n].gateToggles or 0) + 1
+		end
+		_G.IsoDoor.calls[#_G.IsoDoor.calls + 1] = { what = "double", object = object,
+			sync = sync }
+	end,
+	toggleGarageDoor = function(object, sync)
+		local list = object.gateLeaves
+		for n = 1, #list do
+			list[n].open = not list[n].open
+			list[n].gateToggles = (list[n].gateToggles or 0) + 1
+		end
+		_G.IsoDoor.calls[#_G.IsoDoor.calls + 1] = { what = "garage", object = object,
+			sync = sync }
+	end,
+	-- The engine asks the opening, not a leaf: the flag lives on the shared list.
+	isDoubleDoorObstructed = function(object)
+		_G.IsoDoor.calls[#_G.IsoDoor.calls + 1] = { what = "obstructed", object = object }
+		return object.gateLeaves ~= nil and object.gateLeaves.obstructed == true
 	end,
 }
 
@@ -3433,6 +3496,61 @@ local function fakeDoor(locked, north, opposite, exterior)
 	return o
 end
 
+-- A GATE: the leaves of one double door (`kind` "double", index 1-4 in the order
+-- given) or one garage door ("garage"), each put on its square and all sharing the
+-- one `gateLeaves` list the IsoDoor statics walk. `make` builds a leaf, and is an
+-- exterior map door on the north edge by default; it is how a built door is made
+-- into a gate. The first leaf is index 1, the one that is never taken away.
+function FakeWorld.gate(world, kind, coords, make)
+	local leaves = {}
+	for i = 1, #coords do
+		local x, y, z = coords[i][1], coords[i][2], coords[i][3]
+		local leaf
+		if make ~= nil then
+			leaf = make(world, x, y, z)
+		else
+			leaf = fakeDoor(false, true, world.square(x, y - 1, z, nil), true)
+		end
+		if kind == "double" then leaf.doubleDoor = i else leaf.garageDoor = i - 1 end
+		leaf.gateLeaves = leaves
+		leaves[i] = world.put(world.square(x, y, z, nil), leaf)
+	end
+	leaves.kind, leaves.make = kind, make
+	return leaves
+end
+
+-- ONE LEAF OF A MAP DOUBLE DOOR, TAKEN AWAY AND MADE AGAIN ON ANOTHER SQUARE, which
+-- is what every toggle does to leaves 2 and 3 (IsoDoor.toggleDoubleDoorObject): the
+-- old object is removed and a new one is created with NO modData of its own, so
+-- whatever was written on the leaf is gone with it. The engine's removal event
+-- fires first, with the old leaf still on its square, exactly as
+-- Events.OnObjectAboutToBeRemoved does -- SCeroSecFixtures refunds what THAT leaf
+-- held (dropModules, dropLinks). The new leaf takes the old one's place in the
+-- shared list, so the gate is the same gate and the anchor (leaf 1, never taken
+-- away) is untouched. `to` is {x, y, z}. Answers the new leaf.
+function FakeWorld.regate(world, leaves, i, to)
+	local old = leaves[i]
+	-- The client's listener on the same event is put out of reach for the moment the
+	-- server's runs, as every other bench does (the window benches stub that system).
+	local had = CCeroSecSystem.instance
+	CCeroSecSystem.instance = nil
+	Events.OnObjectAboutToBeRemoved.trigger(old)
+	CCeroSecSystem.instance = had
+	world.remove(old)
+	local x, y, z = to[1], to[2], to[3]
+	local leaf
+	if leaves.make ~= nil then
+		leaf = leaves.make(world, x, y, z)
+	else
+		leaf = fakeDoor(false, true, world.square(x, y - 1, z, nil), true)
+	end
+	if leaves.kind == "double" then leaf.doubleDoor = i else leaf.garageDoor = i - 1 end
+	leaf.gateLeaves = leaves
+	leaf.open = old.open
+	leaves[i] = world.put(world.square(x, y, z, nil), leaf)
+	return leaves[i]
+end
+
 -- A window, with the sash AND its three silent returns AND the two side effects
 -- the motor rung's operator is built on.
 --
@@ -4970,42 +5088,387 @@ do
 end
 
 do
-	-- A garage door, and a double door: several objects making one opening.
-	-- ToggleDoorSilent moves the object it is called on and nothing else, while
-	-- vanilla's own toggle walks every leaf of the thing, so a leaf is NOT a
-	-- `door` device -- a machine that opened one would leave the other half
-	-- shut. It is still a `lock` one, setLockedByKey being per-object in vanilla
-	-- too.
-	local world = FakeWorld.new()
-	world.room("garage", { {10,10,0}, {11,10,0} })
-	local outside = world.square(11, 9, 0, nil)
-	local leaf = world.put(world.squares["11,10,0"], fakeDoor(true, false, outside))
-	leaf.garageDoor = 0
-	_G.__world = world
+	-- A GARAGE DOOR, AND A DOUBLE DOOR: several objects making ONE opening.
+	--
+	-- The vanilla toggle moves every leaf of the opening together
+	-- (IsoDoor.toggleDoubleDoor / toggleGarageDoor), and the lock is set on every
+	-- leaf (ISLockDoor), so the machine treats the gate as one door and one lock:
+	-- one number each, filed on the ANCHOR leaf -- the one the engine never takes
+	-- away (CeroSecModules.gateParts) -- whichever leaf the walk reached first.
+	-- ToggleDoorSilent moves the object it is called on and nothing else, so it is
+	-- the one call that must never move a gate: every leaf's silentToggles is
+	-- asserted at zero.
+	local COORDS = { {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} }
+	local names = { "double", "garage" }
 
-	local bench = newBench()
-	bench.login("admin")
-	bench.enter("su root")
-	bench.enter("")
-	bench.enter("ls -l /dev")
-	bench.frame()
-	check("a garage door leaf is a lock",
-		bench.painted("crw-rw----  root  sudo  lock0    exterior      W  locked"))
-	check("and is not a door", not bench.painted("door0"))
+	-- The gate in a room, and the machine on its own square. `reverse` lists the
+	-- gate's squares back to front, which is the order the walk reaches the leaves in,
+	-- so the anchor is the LAST leaf the walk finds.
+	local function scene(kind, reverse)
+		local world = FakeWorld.new()
+		local squares = { {10,10,0} }
+		for i = 1, #COORDS do
+			squares[#squares + 1] = COORDS[reverse and (#COORDS + 1 - i) or i]
+		end
+		world.room("hall", squares)
+		local leaves = FakeWorld.gate(world, kind, COORDS)
+		-- A vehicle standing on a square, for the garage door's own obstruction
+		-- test, asked of the leaf's square and of the one across it.
+		for i = 1, #leaves do
+			local here, across = leaves[i]:getSquare(), leaves[i]:getOppositeSquare()
+			here.isVehicleIntersecting = function() return here.vehicle == true end
+			across.isVehicleIntersecting = function() return across.vehicle == true end
+		end
+		_G.__world = world
+		CeroSecDevices.invalidate()
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("su root")
+		bench.enter("")
+		bench.frame()
+		return world, leaves, bench
+	end
 
-	-- A double door reads exactly the same way.
-	leaf.garageDoor = nil
-	leaf.doubleDoor = 1
-	bench.enter("ls -l /dev")
-	bench.frame()
-	check("a double door leaf is no door either", not bench.painted("door0"))
-	check("and still locks", bench.painted("lock0    exterior"))
+	-- Every order through the glass, with the two books wiped first: what is
+	-- asserted after a line is what THAT line made.
+	local function typed(bench, line)
+		_G.__sounds = {}
+		_G.IsoDoor.calls = {}
+		CeroSecDevices.invalidate()
+		bench.enter(line)
+		bench.frame()
+	end
+	-- The toggles the engine was asked for, and not the obstruction questions.
+	local function toggled()
+		local out = {}
+		for i = 1, #_G.IsoDoor.calls do
+			if _G.IsoDoor.calls[i].what ~= "obstructed" then out[#out + 1] = _G.IsoDoor.calls[i] end
+		end
+		return out
+	end
+	local function ofKind(kind)
+		local found = CeroSecDevices.find(10, 10, 0)
+		local out = {}
+		for i = 1, #found do
+			if found[i].kind == kind then out[#out + 1] = found[i] end
+		end
+		return out
+	end
+	local function allOpen(leaves)
+		local n = 0
+		for i = 1, #leaves do if leaves[i].open then n = n + 1 end end
+		return n
+	end
+	local function noSilent(what, leaves)
+		local n = 0
+		for i = 1, #leaves do n = n + leaves[i].silentToggles end
+		eq(what .. ": ToggleDoorSilent never moved a leaf", n, 0)
+	end
 
-	-- So there is nothing there to open, and the refusal is the command's.
-	bench.enter("dev door0 open")
-	bench.frame()
-	check("nothing to open", bench.painted("dev: door0: no such device"))
-	_G.__world = nil
+	for _, kind in ipairs(names) do
+		local tag = kind .. " door: "
+
+		--
+		-- (a) The module fits every leaf now, and (b) the gate is ONE device
+		--
+		local world, leaves, bench = scene(kind, false)
+		local anchor = leaves[1]
+		for i = 1, #leaves do
+			local ok = CeroSecModules.fitsOn(leaves[i], "operator")
+			eq(tag .. "an operator fits leaf " .. i, ok, true)
+			eq(tag .. "and a strike fits leaf " .. i, CeroSecModules.fitsOn(leaves[i], "strike"), true)
+		end
+		eq(tag .. "the gate is many doors still", CeroSecModules.isManyDoors(anchor), true)
+
+		bench.enter("ls -l /dev")
+		bench.frame()
+		check(tag .. "the gate is door0", bench.painted("door0    exterior"))
+		check(tag .. "and lock0", bench.painted("lock0    exterior"))
+		check(tag .. "and not two doors", not bench.painted("door1"))
+		check(tag .. "nor two locks", not bench.painted("lock1"))
+		eq(tag .. "four leaves scanned, one door", #ofKind("door"), 1)
+		eq(tag .. "four leaves scanned, one lock", #ofKind("lock"), 1)
+		local door = ofKind("door")[1]
+		eq(tag .. "the door is the anchor's object", door.object, anchor)
+		eq(tag .. "and stands on the anchor's square", door.x .. "," .. door.y, "11,10")
+		eq(tag .. "the lock is the anchor's too", ofKind("lock")[1].object, anchor)
+		local forwardKey, forwardLock = door.key, ofKind("lock")[1].key
+
+		-- Reached last, it is still the same device, the same key, the same number.
+		local _, rleaves, rbench = scene(kind, true)
+		local rdoor = ofKind("door")[1]
+		eq(tag .. "reverse walk: still one door", #ofKind("door"), 1)
+		eq(tag .. "and still the anchor's object", rdoor.object, rleaves[1])
+		eq(tag .. "under the same key", rdoor.key, forwardKey)
+		eq(tag .. "and the lock under the same key", ofKind("lock")[1].key, forwardLock)
+		rbench.enter("ls -l /dev")
+		rbench.frame()
+		check(tag .. "reverse walk: same number", rbench.painted("door0    exterior"))
+		check(tag .. "and no second one", not rbench.painted("door1"))
+		world, leaves, bench = scene(kind, false)
+		anchor = leaves[1]
+
+		--
+		-- (c) One line moves all four, through the static, once, and is idempotent
+		--
+		typed(bench, "dev door0 open")
+		check(tag .. "the machine says what it read back", bench.painted("door0: open"))
+		eq(tag .. "every leaf is open", allOpen(leaves), 4)
+		local calls = toggled()
+		eq(tag .. "the engine's toggle was called once", #calls, 1)
+		eq(tag .. "the right static", calls[1] and calls[1].what, kind)
+		eq(tag .. "on the anchor", calls[1] and calls[1].object, anchor)
+		eq(tag .. "with sync on", calls[1] and calls[1].sync, true)
+		noSilent(tag .. "open", leaves)
+		eq(tag .. "no leaf was synced by hand (the static did it)", leaves[3].syncs, 0)
+		eq(tag .. "one sound", #_G.__sounds, 1)
+		eq(tag .. "the open one", _G.__sounds[1] and _G.__sounds[1].name, "WoodDoorOpen")
+		eq(tag .. "at the anchor's square", _G.__sounds[1] and
+			(_G.__sounds[1].x .. "," .. _G.__sounds[1].y), "11,10")
+
+		typed(bench, "dev door0 open")
+		eq(tag .. "a second open toggles nothing", #toggled(), 0)
+		eq(tag .. "and is silent", #_G.__sounds, 0)
+		eq(tag .. "and leaves them open", allOpen(leaves), 4)
+
+		typed(bench, "dev door0 close")
+		check(tag .. "closed again", bench.painted("door0: closed"))
+		eq(tag .. "every leaf shut", allOpen(leaves), 0)
+		eq(tag .. "one toggle", #toggled(), 1)
+		eq(tag .. "the close sound", _G.__sounds[1] and _G.__sounds[1].name, "WoodDoorClose")
+		typed(bench, "dev door0 close")
+		eq(tag .. "a second close toggles nothing", #toggled(), 0)
+		noSilent(tag .. "close", leaves)
+
+		--
+		-- (d) The refusals
+		--
+		anchor.barricaded = true
+		typed(bench, "dev door0 open")
+		check(tag .. "a barricaded anchor refuses", bench.painted("door0: barricaded"))
+		eq(tag .. "and nothing was toggled", #toggled(), 0)
+		eq(tag .. "nor moved", allOpen(leaves), 0)
+		anchor.barricaded = false
+
+		-- Locked on ANY leaf: opening is refused, closing is not.
+		leaves[3].lockedByKey = true
+		typed(bench, "dev door0 open")
+		check(tag .. "one locked leaf locks the gate", bench.painted("door0: locked"))
+		eq(tag .. "nothing toggled", #toggled(), 0)
+		eq(tag .. "and every leaf is where it was", allOpen(leaves), 0)
+		for i = 1, #leaves do leaves[i].open = true end
+		typed(bench, "dev door0 close")
+		eq(tag .. "a locked gate that is open still closes", allOpen(leaves), 0)
+		eq(tag .. "by the engine's toggle", #toggled(), 1)
+		typed(bench, "dev door0")
+		check(tag .. "shut and keyed, it reads locked", bench.painted("door0: locked"))
+		leaves[3].lockedByKey = false
+
+		if kind == "double" then
+			-- The gate's own flag, asked of the anchor.
+			leaves.obstructed = true
+			typed(bench, "dev door0 open")
+			check(tag .. "an obstructed double door is blocked", bench.painted("door0: blocked"))
+			eq(tag .. "nothing toggled", #toggled(), 0)
+			local asked = nil
+			for i = 1, #_G.IsoDoor.calls do
+				if _G.IsoDoor.calls[i].what == "obstructed" then asked = _G.IsoDoor.calls[i].object end
+			end
+			eq(tag .. "the engine was asked about the anchor", asked, anchor)
+			leaves.obstructed = false
+			typed(bench, "dev door0 open")
+			check(tag .. "and once it is clear it opens", bench.painted("door0: open"))
+			typed(bench, "dev door0 close")
+		else
+			-- A garage door is blocked only when it is OPEN and a vehicle is on a
+			-- leaf's square AND across it. The double door's flag means nothing here.
+			leaves.obstructed = true
+			leaves[2]:getSquare().vehicle = true
+			leaves[2]:getOppositeSquare().vehicle = true
+			typed(bench, "dev door0 open")
+			check(tag .. "a shut garage door opens under a vehicle", bench.painted("door0: open"))
+			eq(tag .. "the double door's flag is not its rule", allOpen(leaves), 4)
+			leaves.obstructed = nil
+			-- Open, a vehicle on ONE square only is not across the line.
+			leaves[2]:getOppositeSquare().vehicle = false
+			typed(bench, "dev door0 close")
+			check(tag .. "a vehicle on one side only lets it close", bench.painted("door0: closed"))
+			eq(tag .. "shut", allOpen(leaves), 0)
+			-- On both, and open: refused.
+			for i = 1, #leaves do leaves[i].open = true end
+			leaves[2]:getOppositeSquare().vehicle = true
+			typed(bench, "dev door0 close")
+			check(tag .. "a vehicle across the line blocks the close", bench.painted("door0: blocked"))
+			eq(tag .. "nothing toggled", #toggled(), 0)
+			eq(tag .. "and it stays open", allOpen(leaves), 4)
+			-- On a leaf that is not the one asked about: still the gate's.
+			leaves[2]:getSquare().vehicle = false
+			leaves[2]:getOppositeSquare().vehicle = false
+			leaves[4]:getSquare().vehicle = true
+			leaves[4]:getOppositeSquare().vehicle = true
+			typed(bench, "dev door0 close")
+			check(tag .. "any leaf's vehicle blocks it", bench.painted("door0: blocked"))
+			leaves[4]:getSquare().vehicle = false
+			leaves[4]:getOppositeSquare().vehicle = false
+			typed(bench, "dev door0 close")
+			check(tag .. "clear, it closes", bench.painted("door0: closed"))
+		end
+		noSilent(tag .. "refusals", leaves)
+
+		--
+		-- (e) The lock is the opening's: every leaf, each one synced
+		--
+		local base = {}
+		for i = 1, #leaves do base[i] = leaves[i].syncs end
+		typed(bench, "dev lock0 lock")
+		check(tag .. "lock0 says locked", bench.painted("lock0: locked"))
+		for i = 1, #leaves do
+			eq(tag .. "leaf " .. i .. " is locked", leaves[i].lockedByKey, true)
+			eq(tag .. "and was synced once", leaves[i].syncs, base[i] + 1)
+		end
+		typed(bench, "dev lock0 unlock")
+		check(tag .. "lock0 says unlocked", bench.painted("lock0: unlocked"))
+		for i = 1, #leaves do
+			eq(tag .. "leaf " .. i .. " is unlocked", leaves[i].lockedByKey, false)
+			eq(tag .. "and was synced again", leaves[i].syncs, base[i] + 2)
+		end
+		-- One leaf keyed, by a hand that locked the one: the gate reads locked.
+		leaves[4].lockedByKey = true
+		typed(bench, "dev lock0")
+		check(tag .. "a strike on any one leaf is read", bench.painted("lock0: locked"))
+		leaves[4].lockedByKey = false
+		_G.__world = nil
+	end
+
+	--
+	-- The old world: a strike or an operator written on a leaf that is NOT the
+	-- anchor, by a build that did not know about gates, is still the gate's.
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+		for _, kind in ipairs(names) do
+			local _, leaves, bench = scene(kind, false)
+			fit(leaves[3], "strike")
+			bench.enter("ls -l /dev")
+			bench.frame()
+			check(kind .. " door: a strike on leaf 3 gives lock0", bench.painted("lock0    exterior"))
+			check(kind .. " door: and no door with no operator", not bench.painted("door0"))
+			fit(leaves[4], "operator")
+			bench.enter("ls -l /dev")
+			bench.frame()
+			check(kind .. " door: an operator on leaf 4 gives door0", bench.painted("door0    exterior"))
+			eq(kind .. " door: still one door", #ofKind("door"), 1)
+			eq(kind .. " door: and one lock", #ofKind("lock"), 1)
+			_G.__world = nil
+		end
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+	end
+
+	--
+	-- A BUILT double door: the same opening in the other class. Its lock is a
+	-- padlock or a key, and either way every leaf takes it.
+	--
+	do
+		local world = FakeWorld.new()
+		world.room("base", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} })
+		local function build(padlock)
+			return function()
+				local leaf = fakeThumpable(false, true)
+				leaf.canPadlock = padlock
+				leaf.keyId = padlock and 0 or 7
+				return leaf
+			end
+		end
+		local leaves = FakeWorld.gate(world, "double", COORDS, build(true))
+		_G.__world = world
+		CeroSecDevices.invalidate()
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("su root")
+		bench.enter("")
+		bench.frame()
+		eq("built double door: one door", #ofKind("door"), 1)
+		eq("and one lock", #ofKind("lock"), 1)
+		eq("both on the anchor", ofKind("door")[1].object, leaves[1])
+
+		typed(bench, "dev door0 open")
+		check("a built double door opens", bench.painted("door0: open"))
+		eq("all four leaves", allOpen(leaves), 4)
+		eq("by the engine's toggle, once", #toggled(), 1)
+		eq("with sync", toggled()[1] and toggled()[1].sync, true)
+		noSilent("built double door", leaves)
+		typed(bench, "dev door0 close")
+
+		typed(bench, "dev lock0 lock")
+		check("the padlock goes on", bench.painted("lock0: padlock"))
+		for i = 1, #leaves do
+			eq("built leaf " .. i .. " is padlocked", leaves[i].lockedByPadlock, true)
+			eq("and was synced once", leaves[i].syncs, 1)
+		end
+		typed(bench, "dev lock0 unlock")
+		for i = 1, #leaves do
+			eq("built leaf " .. i .. " is unpadlocked", leaves[i].lockedByPadlock, false)
+		end
+
+		-- A door built with a key and no padlock: the key is what locks.
+		for i = 1, #leaves do
+			leaves[i].canPadlock = false
+			leaves[i].keyId = 7
+			leaves[i].syncs = 0
+		end
+		typed(bench, "dev lock0 lock")
+		for i = 1, #leaves do
+			eq("keyed leaf " .. i .. " is locked", leaves[i].lockedByKey, true)
+			eq("and was synced once", leaves[i].syncs, 1)
+		end
+		_G.__world = nil
+	end
+
+	--
+	-- A BUILT double door whose ANCHOR cannot take a padlock or a key and another leaf
+	-- can. The lock is the machine's one `lockN`, and its answer is the anchor's; so
+	-- the refusal comes BEFORE any leaf is touched, and the machine never leaves a
+	-- gate half locked and then says it could not (act, SCeroSecDevices).
+	--
+	do
+		local world = FakeWorld.new()
+		world.room("base", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} })
+		local leaves = FakeWorld.gate(world, "double", COORDS, function(_, x)
+			local leaf = fakeThumpable(false, true)
+			leaf.canPadlock = x ~= COORDS[1][1]
+			leaf.keyId = 0
+			return leaf
+		end)
+		_G.__world = world
+		CeroSecDevices.invalidate()
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("su root")
+		bench.enter("")
+		bench.frame()
+		eq("the anchor takes nothing", leaves[1].canPadlock or leaves[1].keyId > 0, false)
+		check("and leaf 2 takes a padlock", leaves[2].canPadlock)
+		eq("built gate with a bare anchor: one lock", #ofKind("lock"), 1)
+
+		typed(bench, "dev lock0 lock")
+		check("the refusal is the padlock's", bench.painted("lock0: no padlock"))
+		for i = 1, #leaves do
+			eq("leaf " .. i .. " is not padlocked", leaves[i].lockedByPadlock, false)
+			eq("nor locked by key", leaves[i].lockedByKey, false)
+			eq("and was not synced", leaves[i].syncs, 0)
+		end
+
+		-- THE CONTROL: the same order, on the same gate once its anchor takes a padlock,
+		-- goes through on every leaf, so the refusal above was the anchor's and nothing
+		-- else's.
+		leaves[1].canPadlock = true
+		typed(bench, "dev lock0 lock")
+		check("with a padlock on the anchor it locks", bench.painted("lock0: padlock"))
+		for i = 1, #leaves do
+			eq("leaf " .. i .. " is padlocked", leaves[i].lockedByPadlock, true)
+		end
+		_G.__world = nil
+	end
 end
 
 do
@@ -13641,6 +14104,408 @@ end
 
 
 --
+-- A gate's modules and cables: written on the anchor, read from every leaf, and
+-- shed by the engine one leaf at a time
+--
+-- A double or a garage door is one opening of several leaves and the machine
+-- treats it as one: an operator, a strike or a cable is written on the ANCHOR leaf
+-- (CeroSecModules.gateParts -- the leaf the engine never takes away), read from
+-- every leaf, and taken off whichever leaf holds it. The engine's own removal
+-- handlers are the other half: a map double door has its leaves 2 and 3 removed and
+-- made again at every toggle, and what SCeroSecFixtures.dropModules and dropLinks
+-- refund is what was on THAT leaf and nothing else -- or every swing of the door
+-- would strip the anchor's operator and hand the boxes to the floor.
+--
+do
+	local world = FakeWorld.new()
+	world.room("hall", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} })
+	local COORDS = { {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} }
+	local leaves = FakeWorld.gate(world, "double", COORDS)
+	for i = 1, #leaves do leaves[i].open = true end
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	_G.Perks = { Electricity = "Electricity" }
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	local inv = newInventory()
+	local standAt = 10.5
+	bench.player.getInventory = function() return inv end
+	bench.player.getPerkLevel = function() return 5 end
+	bench.player.getCurrentSquare = function() return world.squares["10,10,0"] end
+	bench.player.getX = function() return standAt end
+	bench.login("admin")
+
+	local function send(command, sx, id)
+		standAt = sx + 0.5
+		CCeroSecSystem.instance:sendCommand(bench.player, command,
+			{ x = sx, y = 10, z = 0, index = 0, module = id })
+		bench.frame()
+	end
+	local function carrying(fullType)
+		return inv:getFirstTypeRecurse(fullType) ~= nil
+	end
+	local anchor = leaves[1]
+
+	-- An operator screwed to leaf 3, by the install command.
+	inv:add("Base.Screwdriver")
+	inv:add("CeroSec.DoorOperator")
+	send("installmodule", 13, "operator")
+	check("the operator left his bag", not carrying("CeroSec.DoorOperator"))
+	eq("it is on the ANCHOR's modData", CeroSecModules.ownedBy(anchor).operator, true)
+	eq("and not on leaf 3's", CeroSecModules.ownedBy(leaves[3]).operator == true, false)
+	for i = 1, #leaves do
+		eq("leaf " .. i .. " sees it", CeroSecModules.installedOn(leaves[i]).operator, true)
+	end
+
+	-- Taken off from leaf 2, which does not hold it: it comes off the leaf that does.
+	send("uninstallmodule", 12, "operator")
+	check("it is his again", carrying("CeroSec.DoorOperator"))
+	for i = 1, #leaves do
+		eq("leaf " .. i .. " no longer has it", CeroSecModules.installedOn(leaves[i]).operator == true, false)
+	end
+	eq("the anchor holds nothing", CeroSecModules.ownedBy(anchor).operator == true, false)
+
+	-- The same for a box an older build wrote on another leaf: it comes off THAT one.
+	fit(leaves[4], "strike")
+	eq("a legacy strike on leaf 4 is seen from leaf 1", CeroSecModules.installedOn(anchor).strike, true)
+	send("uninstallmodule", 11, "strike")
+	eq("and comes off leaf 4 from leaf 1", CeroSecModules.ownedBy(leaves[4]).strike == true, false)
+	check("into his bag", carrying("CeroSec.ElectricStrike"))
+
+	-- The cable: run from leaf 3, it is the anchor's, and every leaf reads it.
+	eq("a cable is run from leaf 3", CeroSecModules.linkOn(leaves[3], 20, 20, 0, 5), true)
+	eq("it is the anchor's", #CeroSecModules.ownLinksOn(anchor), 1)
+	eq("and not leaf 3's", #CeroSecModules.ownLinksOn(leaves[3]), 0)
+	for i = 1, #leaves do
+		eq("leaf " .. i .. " reads the cable", #CeroSecModules.linksOn(leaves[i]), 1)
+	end
+	local again, why = CeroSecModules.linkOn(leaves[2], 20, 20, 0, 5)
+	eq("the same cable from another leaf is already there", again, false)
+	eq("in those words", why, "linked")
+	eq("cut from leaf 2 it gives back its wire once", CeroSecModules.unlinkOn(leaves[2], 20, 20, 0), 5)
+	for i = 1, #leaves do
+		eq("no leaf reads it now: " .. i, #CeroSecModules.linksOn(leaves[i]), 0)
+	end
+	eq("and there is nothing to cut twice", CeroSecModules.unlinkOn(leaves[2], 20, 20, 0), nil)
+	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+--
+-- THE REGRESSION THIS DESIGN EXISTS FOR: the engine removes leaf 2 of a map double
+-- door at every toggle, and what it refunds is leaf 2's own
+--
+do
+	local world = FakeWorld.new()
+	world.room("hall", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} })
+	local leaves = FakeWorld.gate(world, "double", { {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} })
+	_G.__world = world
+	local anchor = leaves[1]
+	local function items(square, fullType)
+		local n = 0
+		for i = 1, #square.items do
+			if square.items[i].getItem():getFullType() == fullType then n = n + 1 end
+		end
+		return n
+	end
+	-- What a build that knew nothing of gates wrote: the box and the cable on the
+	-- leaf that was reached. Written with the gate flags off, which is that build.
+	local function asLegacy(leaf, fn)
+		local d, g = leaf.doubleDoor, leaf.garageDoor
+		leaf.doubleDoor, leaf.garageDoor = nil, nil
+		fn()
+		leaf.doubleDoor, leaf.garageDoor = d, g
+	end
+	local contact = CeroSecModules.byId("contact").item
+	local operator = CeroSecModules.byId("operator").item
+	local strike = CeroSecModules.byId("strike").item
+
+	-- The anchor's own: written the modern way, from leaf 3, so it lands on leaf 1.
+	CeroSecModules.setOn(leaves[3], "operator", true)
+	CeroSecModules.setOn(leaves[3], "strike", true)
+	-- The same box leaf 2 carries of its own, so that a refund that cleared the
+	-- gate's copy along with it is seen.
+	CeroSecModules.setOn(leaves[3], "contact", true)
+	eq("a cable run from leaf 3 is the anchor's", CeroSecModules.linkOn(leaves[3], 30, 30, 0, 3), true)
+	-- Leaf 2's own.
+	asLegacy(leaves[2], function()
+		CeroSecModules.setOn(leaves[2], "contact", true)
+		eq("a legacy cable on leaf 2", CeroSecModules.linkOn(leaves[2], 21, 21, 0, 5), true)
+	end)
+	eq("leaf 2 holds its own contact", CeroSecModules.ownedBy(leaves[2]).contact, true)
+	eq("and its own cable", #CeroSecModules.ownLinksOn(leaves[2]), 1)
+
+	-- The engine removes leaf 2.
+	local paid = SCeroSecFixtures.dropModules(leaves[2])
+	eq("leaf 2 refunds one box", paid, 1)
+	eq("and it is its own contact", items(leaves[2]:getSquare(), contact), 1)
+	eq("the anchor's operator stays on the anchor", CeroSecModules.ownedBy(anchor).operator, true)
+	eq("and its strike", CeroSecModules.ownedBy(anchor).strike, true)
+	eq("and its own contact, though leaf 2 had one too", CeroSecModules.ownedBy(anchor).contact, true)
+	eq("nothing of it went to the floor", items(leaves[2]:getSquare(), operator)
+		+ items(leaves[2]:getSquare(), strike) + #anchor:getSquare().items, 0)
+	eq("leaf 2 holds nothing of its own now", CeroSecModules.ownedBy(leaves[2]).contact == true, false)
+	eq("the gate still reads the operator from leaf 2", CeroSecModules.installedOn(leaves[2]).operator, true)
+
+	local wire = SCeroSecFixtures.dropLinks(leaves[2])
+	eq("leaf 2 refunds its own five tiles of wire", wire, 5)
+	eq("as wire on its own square", items(leaves[2]:getSquare(), CeroSecModules.WIRE), 5)
+	eq("the anchor's cable is untouched", #CeroSecModules.ownLinksOn(anchor), 1)
+	eq("and still read from leaf 2", #CeroSecModules.linksOn(leaves[2]), 1)
+	eq("it is the same one", CeroSecModules.linksOn(leaves[2])[1].x, 30)
+
+	-- And the anchor itself, which goes only when the whole opening does: its own.
+	eq("the anchor refunds its three boxes", SCeroSecFixtures.dropModules(anchor), 3)
+	eq("as boxes on its square", items(anchor:getSquare(), operator)
+		+ items(anchor:getSquare(), strike) + items(anchor:getSquare(), contact), 3)
+	eq("and holds nothing", CeroSecModules.ownedBy(anchor).operator == true, false)
+	eq("and its three tiles of wire", SCeroSecFixtures.dropLinks(anchor), 3)
+	eq("on its square", items(anchor:getSquare(), CeroSecModules.WIRE), 3)
+	_G.__world = nil
+end
+
+--
+-- THE GATE'S CABLE THROUGH THE COMMANDS, WHERE THE LEAF IS RECREATED UNDER IT
+--
+-- A cable is run from the leaf the survivor clicked, and on a map double door that
+-- can be leaf 3 -- which the engine removes and makes again, on another square and
+-- with no modData, at every toggle. So the machine's cable book must name the ANCHOR's
+-- square (CeroSecModules.placeOf) and never the clicked leaf's; and a book from
+-- before that, which does name a leaf, is rewritten to the anchor by the discovery
+-- (scanLinked, writeKept), without a duplicate when two entries are the same gate.
+--
+-- The gate stands OUTSIDE the machine's building: a fixture the building walk
+-- already reaches is refused a cable ("reach", CeroSecModules.linkRefusal), and it is
+-- the cable that is the whole of what this is about.
+--
+do
+	local world = FakeWorld.new()
+	world.room("hall", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0}, {15,10,0} })
+	local leaves = FakeWorld.gate(world, "double", { {11,9,0}, {12,9,0}, {13,9,0}, {14,9,0} })
+	for i = 1, #leaves do leaves[i].open = true end
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	_G.Perks = { Electricity = "Electricity" }
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	local inv = newInventory()
+	local stand = world.squares["13,10,0"]
+	bench.player.getInventory = function() return inv end
+	bench.player.getPerkLevel = function() return 5 end
+	bench.player.getUsername = function() return "carter" end
+	bench.player.getCurrentSquare = function() return stand end
+	bench.player.getX = function() return stand:getX() + 0.5 end
+	bench.player.getY = function() return stand:getY() + 0.5 end
+	-- The machine's own body, which publishOS writes the client's mirror onto.
+	local iso = fittable({ __class = "IsoObject" })
+	bench.object.getIsoObject = function() return iso end
+	bench.login("admin")
+	local state = bench.object:osState()
+	inv:add("Base.Screwdriver")
+	local MACHINE = { 10, 10, 0 }
+
+	-- One packet, the way the timed action sends it: the square the leaf stands on
+	-- and its index there (each leaf is alone on its square). He stands on the room
+	-- square below it, inside, which is where the envelope rule wants him.
+	local function send(command, square, mx, my, mz)
+		stand = world.squares[square:getX() .. ",10,0"]
+		CCeroSecSystem.instance:sendCommand(bench.player, command,
+			{ x = square:getX(), y = square:getY(), z = square:getZ(), index = 0,
+				mx = mx, my = my, mz = mz, module = "strike" })
+		bench.frame()
+	end
+	local function reel(n)
+		while CeroSecModules.wireCount(inv) > n do
+			inv:Remove(inv:getFirstTypeRecurse(CeroSecModules.WIRE))
+		end
+		while CeroSecModules.wireCount(inv) < n do inv:add(CeroSecModules.WIRE) end
+	end
+	local function wires() return CeroSecModules.wireCount(inv) end
+	local function book() return CeroSecOS.linkSquares(state) end
+	local function booked(x, y, z) return CeroSecOS.linkAt(book(), x, y, z) ~= nil end
+	local function doorDevice()
+		local found = CeroSecDevices.find(MACHINE[1], MACHINE[2], MACHINE[3], state.links)
+		for i = 1, #found do
+			if found[i].kind == "door" then return found[i] end
+		end
+		return nil
+	end
+	local function rediscover()
+		CeroSecDevices.invalidate()
+		CeroSecDevices.refresh(bench.object, state)
+	end
+	local function onFloor(fullType)
+		local n = 0
+		for _, square in pairs(world.squares) do
+			for i = 1, #square.items do
+				if square.items[i].getItem():getFullType() == fullType then n = n + 1 end
+			end
+		end
+		return n
+	end
+	local anchor = leaves[1]
+	local ANCHOR = { 11, 9, 0 }
+
+	-- The operator is on the anchor, which is where a gate's boxes are.
+	fit(anchor, "operator")
+	reel(30)
+	local cost = CeroSecModules.linkWire(13, 9, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	check("the run from leaf 3 costs something", cost > 0)
+	eq("and the building's own walk does not reach the gate",
+		CeroSecDevices.find(MACHINE[1], MACHINE[2], MACHINE[3], nil)[1], nil)
+
+	--
+	-- 1. THE CABLE IS RUN FROM LEAF 3
+	--
+	send("linkmodule", world.squares["13,9,0"], MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("the cable is on the anchor", #CeroSecModules.ownLinksOn(anchor), 1)
+	eq("and not on leaf 3", #CeroSecModules.ownLinksOn(leaves[3]), 0)
+	eq("it was paid for as measured from the leaf he clicked", wires(), 30 - cost)
+	eq("the machine's book holds one square", #book(), 1)
+	check("and it is the ANCHOR's", booked(ANCHOR[1], ANCHOR[2], ANCHOR[3]))
+	check("and not the leaf that was clicked", not booked(13, 9, 0))
+	check("the door device carries its wire", doorDevice() ~= nil and doorDevice().wire == cost)
+
+	--
+	-- 2. CUT FROM LEAF 3, with a book that names both a leaf and the anchor
+	--
+	state.links = { { x = 13, y = 9, z = 0 }, { x = ANCHOR[1], y = ANCHOR[2], z = ANCHOR[3] } }
+	send("unlinkmodule", world.squares["13,9,0"], MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("the cable is off the gate", #CeroSecModules.linksOn(leaves[3]), 0)
+	eq("and off the anchor", #CeroSecModules.ownLinksOn(anchor), 0)
+	eq("the wire came back once, not once per book entry", wires(), 30)
+	check("the leaf's entry is out of the book", not booked(13, 9, 0))
+	check("and the anchor's entry too", not booked(ANCHOR[1], ANCHOR[2], ANCHOR[3]))
+	eq("so the book is empty", #book(), 0)
+
+	--
+	-- 3. LEAF 3 IS TAKEN AWAY AND MADE AGAIN ELSEWHERE, AND THE DOOR SWINGS
+	--
+	send("linkmodule", world.squares["13,9,0"], MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("the cable is run again", #CeroSecModules.ownLinksOn(anchor), 1)
+	check("under the anchor's square", booked(ANCHOR[1], ANCHOR[2], ANCHOR[3]))
+	local floorWire = onFloor(CeroSecModules.WIRE)
+	local fresh = FakeWorld.regate(world, leaves, 3, { 13, 8, 0 })
+	for i = 1, #leaves do leaves[i].open = not leaves[i].open end
+	eq("the new leaf 3 has no modData of its own", next(fresh:getModData()), nil)
+	eq("the engine's handler refunded nothing for the anchor's cable",
+		onFloor(CeroSecModules.WIRE), floorWire)
+	rediscover()
+	eq("the machine still has the cable",
+		CeroSecModules.wireOf(fresh, MACHINE[1], MACHINE[2], MACHINE[3]), cost)
+	eq("the anchor still holds it", #CeroSecModules.ownLinksOn(anchor), 1)
+	eq("the book still holds one square", #book(), 1)
+	check("and it is still the anchor's", booked(ANCHOR[1], ANCHOR[2], ANCHOR[3]))
+	local door = doorDevice()
+	check("the gate's door device is still there", door ~= nil)
+	eq("and still carries its wire", door ~= nil and door.wire, cost)
+
+	--
+	-- 4. A BOOK FROM BEFORE: it names leaves, and the cable is on the anchor
+	--
+	-- Three entries that are all the one gate: leaf 3 where it stands now, leaf 2 and
+	-- leaf 4. The discovery finds the cable through each of them and keeps ONE, under
+	-- the anchor's square.
+	state.links = { { x = 13, y = 8, z = 0 }, { x = 12, y = 9, z = 0 },
+		{ x = 14, y = 9, z = 0 } }
+	rediscover()
+	check("the entry is now the anchor's square", booked(ANCHOR[1], ANCHOR[2], ANCHOR[3]))
+	eq("three leaf entries are one entry once rewritten", #book(), 1)
+	check("and no leaf's", not booked(13, 8, 0) and not booked(12, 9, 0)
+		and not booked(14, 9, 0))
+	-- The anchor's own entry among them is not doubled either.
+	state.links = { { x = 13, y = 8, z = 0 }, { x = ANCHOR[1], y = ANCHOR[2], z = ANCHOR[3] } }
+	rediscover()
+	eq("a leaf entry beside the anchor's is not a second one", #book(), 1)
+	state.links = nil
+	CeroSecModules.unlinkOn(anchor, MACHINE[1], MACHINE[2], MACHINE[3])
+
+	--
+	-- 5. AN OLDER WORLD: THE SAME STRIKE ON TWO LEAVES, EACH ONE BOUGHT
+	--
+	-- The door swung shut at the toggle above and the rules want it open for the hand.
+	for i = 1, #leaves do leaves[i].open = true end
+	local STRIKE = CeroSecModules.byId("strike").item
+	local function strikes()
+		local n = 0
+		for i = 1, #inv.items do
+			if inv.items[i].type == STRIKE then n = n + 1 end
+		end
+		return n
+	end
+	CeroSecModules.setOwn(leaves[2], "strike", true)
+	CeroSecModules.setOwn(leaves[4], "strike", true)
+	local ok, n = CeroSecModules.setOn(leaves[3], "strike", false)
+	eq("taking a strike off a gate answers true", ok, true)
+	eq("and how many boxes came off it", n, 2)
+	for i = 1, #leaves do
+		eq("nothing of it is left on leaf " .. i,
+			CeroSecModules.ownedBy(leaves[i]).strike == true, false)
+	end
+	local ok0, n0 = CeroSecModules.setOn(leaves[3], "strike", false)
+	eq("and there is still nothing to fail on when none is there", ok0, true)
+	eq("with a count of none", n0, 0)
+
+	CeroSecModules.setOwn(leaves[2], "strike", true)
+	CeroSecModules.setOwn(leaves[4], "strike", true)
+	local had = strikes()
+	send("uninstallmodule", world.squares["11,9,0"])
+	eq("uninstalling it from leaf 1, which holds none, hands back BOTH", strikes(), had + 2)
+	for i = 1, #leaves do
+		eq("no leaf holds it: " .. i, CeroSecModules.installedOn(leaves[i]).strike == true, false)
+	end
+
+	--
+	-- 6. AN OLDER WORLD: THE SAME CABLE TO ONE MACHINE ON TWO LEAVES
+	--
+	-- Written directly on each leaf with the gate flags off, which is a build that
+	-- knew nothing of gates.
+	local function asLegacy(leaf, fn)
+		local d, g = leaf.doubleDoor, leaf.garageDoor
+		leaf.doubleDoor, leaf.garageDoor = nil, nil
+		fn()
+		leaf.doubleDoor, leaf.garageDoor = d, g
+	end
+	local function twice()
+		asLegacy(leaves[2], function()
+			eq("a legacy cable of three on leaf 2",
+				CeroSecModules.linkOn(leaves[2], MACHINE[1], MACHINE[2], MACHINE[3], 3), true)
+		end)
+		asLegacy(leaves[4], function()
+			eq("and one of four on leaf 4",
+				CeroSecModules.linkOn(leaves[4], MACHINE[1], MACHINE[2], MACHINE[3], 4), true)
+		end)
+	end
+	twice()
+	eq("wireTotal sums both, from leaf 1",
+		CeroSecModules.wireTotal(leaves[1], MACHINE[1], MACHINE[2], MACHINE[3]), 7)
+	eq("and from leaf 3, which holds none",
+		CeroSecModules.wireTotal(leaves[3], MACHINE[1], MACHINE[2], MACHINE[3]), 7)
+	eq("and answers nothing for a machine that is not cabled",
+		CeroSecModules.wireTotal(leaves[3], 99, 99, 0), nil)
+	reel(0)
+	send("unlinkmodule", world.squares["11,9,0"], MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("cutting it refunds the SUM of both wires", wires(), 7)
+	for i = 1, #leaves do
+		eq("no leaf holds a cable now: " .. i,
+			CeroSecModules.wireOf(leaves[i], MACHINE[1], MACHINE[2], MACHINE[3]), nil)
+		eq("and none of its own: " .. i, #CeroSecModules.ownLinksOn(leaves[i]), 0)
+	end
+	-- The library's own answer, which the command is built on.
+	twice()
+	eq("unlinkOn answers the sum too",
+		CeroSecModules.unlinkOn(leaves[3], MACHINE[1], MACHINE[2], MACHINE[3]), 7)
+	for i = 1, #leaves do
+		eq("and leaves none: " .. i, #CeroSecModules.ownLinksOn(leaves[i]), 0)
+	end
+
+	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+--
 -- 43c-bis. The fitting rules: inside, open or off, and whose safehouse it is
 --
 -- Three refusals on top of the fit, all of them about the MOMENT rather than
@@ -13819,6 +14684,93 @@ do
 		CeroSecModules.fittingRefusal(gen, "genset", bench.player), nil)
 	window.open = false
 	curtain.open = false
+
+	-- A DOOR WITH NO ROOM ON EITHER SIDE has no inside to stand in: a yard gate,
+	-- open air on both faces (reported in game, a fence gate whose menu said
+	-- "from inside" and had no inside to go to). The rule is about a stranger
+	-- unscrewing a building's skin from the pavement and there is no building
+	-- here, so it is not asked. Both faces are asked, and each with isInARoom,
+	-- the test HIS square is asked with, so a base's door keeps the rule.
+	local yard = world.square(10, 8, 0, nil)
+	local gate = world.put(pavement, fakeDoor(false, false, yard, true))
+	gate.open = true
+	stand = pavement
+	eq("a yard gate, air on both faces, asks nothing about a room",
+		CeroSecModules.fittingRefusal(gate, "contact", bench.player), nil)
+	check("and takes its module from the pavement", tryFit(pavement, gate, "contact"))
+	send("uninstallmodule", pavement, gate, "contact")
+	eq("and gives it back from the pavement", fittedOn(gate, "contact"), false)
+	-- The state rule is still the door's own: a shut gate takes no strike.
+	gate.open = false
+	eq("a shut gate is still refused as closed",
+		CeroSecModules.fittingRefusal(gate, "strike", bench.player), "closed")
+	gate.open = true
+
+	-- The same door with a room on ONE face is a building's skin again, and it is
+	-- refused from the pavement whichever face the room is on.
+	local shopfront = world.put(pavement, fakeDoor(false, false, world.squares["10,10,0"], true))
+	shopfront.open = true
+	eq("a door with a room on its far face is refused from the pavement",
+		CeroSecModules.fittingRefusal(shopfront, "contact", bench.player), "outside")
+	local backdoor = world.put(world.squares["10,10,0"], fakeDoor(false, false, yard, true))
+	backdoor.open = true
+	eq("and a door with a room on its own face too",
+		CeroSecModules.fittingRefusal(backdoor, "contact", bench.player), "outside")
+	-- A PLAYER-BUILT BASE reads isInARoom() true with getRoom() nil (the engine's
+	-- own test is `getRoom() != null || isPlayerRoom()`), and a base's door must
+	-- keep the rule: the far face is such a square.
+	local baseFace = world.square(10, 7, 0, nil)
+	baseFace.isInARoom = function() return true end
+	local basedoor = world.put(pavement, fakeDoor(false, false, baseFace, true))
+	basedoor.open = true
+	eq("a door with a player-built base on its far face keeps the rule",
+		CeroSecModules.fittingRefusal(basedoor, "contact", bench.player), "outside")
+	-- THE WINDOW AND THE CURTAIN FOLLOW THE SAME RULE, for the same reason: with
+	-- open air on both faces there is no inside, and with a room on either face
+	-- there is one.
+	local airWindow = world.put(pavement, fakeWindow(false, true))
+	airWindow.open = true
+	airWindow.opposite = yard
+	airWindow.getOppositeSquare = function() return yard end
+	eq("a window with open air on both faces asks nothing about a room",
+		CeroSecModules.fittingRefusal(airWindow, "contact", bench.player), nil)
+	local roomWindow = world.put(pavement, fakeWindow(false, true))
+	roomWindow.open = true
+	roomWindow.getOppositeSquare = function() return world.squares["10,10,0"] end
+	eq("a window with a room on its far face is refused from outside",
+		CeroSecModules.fittingRefusal(roomWindow, "contact", bench.player), "outside")
+	local airCurtain = world.put(pavement, fakeCurtain(true))
+	airCurtain.open = true
+	airCurtain.opposite = yard
+	eq("a curtain with open air on both faces asks nothing about a room",
+		CeroSecModules.fittingRefusal(airCurtain, "curtain", bench.player), nil)
+	local roomCurtain = world.put(pavement, fakeCurtain(true))
+	roomCurtain.open = true
+	roomCurtain.opposite = world.squares["10,10,0"]
+	eq("and a curtain with a room on its far face is refused from outside",
+		CeroSecModules.fittingRefusal(roomCurtain, "curtain", bench.player), "outside")
+	-- A face the world cannot give is unknown, not "no room": the rule stays on.
+	local unknown = world.put(pavement, fakeDoor(false, false, nil, true))
+	unknown.open = true
+	eq("a door whose far face is not loaded keeps the rule",
+		CeroSecModules.fittingRefusal(unknown, "contact", bench.player), "outside")
+
+	-- The cable asks the same question of a fixture that already carries a module
+	-- (envelopeRefusal): a gate wired from the pavement, a shop front not.
+	gate.open = true
+	check("the gate takes its module", tryFit(pavement, gate, "contact"))
+	eq("and a cable to it is not refused at all",
+		CeroSecModules.linkRefusal(gate, 10, 10, 0, bench.player), nil)
+	shopfront.open = true
+	check("the shop front takes its module from inside",
+		(function()
+			stand = world.squares["10,10,0"]
+			local ok = tryFit(pavement, shopfront, "contact")
+			stand = pavement
+			return ok
+		end)())
+	eq("and a cable to it from the pavement is refused as outside",
+		CeroSecModules.linkRefusal(shopfront, 10, 10, 0, bench.player), "outside")
 	stand = world.squares["10,10,0"]
 
 	--
@@ -14423,8 +15375,11 @@ do
 	eq("a strike on a door no lock bites is still nolock", nolock, "nolock")
 	local garage = world.put(world.squares["2,1,0"], fakeDoor(false, true, nil, true))
 	garage.garageDoor = 0
-	local _, many = CeroSecModules.fitsOn(garage, "operator")
-	eq("and an operator on a garage leaf is still manydoors", many, "manydoors")
+	-- A garage door is one opening the machine moves as a whole (IsoDoor.
+	-- toggleGarageDoor), so its leaf takes an operator like any door.
+	local fits, refusal = CeroSecModules.fitsOn(garage, "operator")
+	eq("and an operator on a garage leaf fits now", fits, true)
+	eq("with no refusal", refusal, nil)
 
 	-- Everything above is a fixture a module could go on at all, which is the
 	-- FIRST question the right-click menu asks: a survivor right-clicking a
@@ -16960,13 +17915,13 @@ do
 		local back = newBench(saved)
 		eq("the machine comes back with the job still on it", jobCount(back), 1)
 		-- The first read of the state, which is where the gate walks it. The book is
-		-- taken OFF the state as it is read, so what the gate walks is a filesystem
-		-- and not a filesystem plus a process table: a book left lying there would
-		-- be spending the gate's own table budget on every load for the rest of the
-		-- save's life (CeroSec.JOB_SAVE_TABLES has the arithmetic).
+		-- on the state from the load until the first snapshot or save replaces it
+		-- (a server with nobody on it never fires a tick, and its shutdown save has
+		-- to carry the jobs), so the gate IS handed it -- bounded by writeBook's own
+		-- rule, which is what the three numbers bench below adds up.
 		check("the state still passes the gate", back.object:osState() ~= nil)
 		CeroSecOS.validate = realValidate
-		eq("and the gate was never handed the book that came off it", sawBook, false)
+		eq("and the gate was handed the book that came off it", sawBook, true)
 		back.open()
 		back.enter("jobs")
 		back.frame()
@@ -17644,6 +18599,134 @@ do
 		CeroSecJobs.jobToData = realToData
 		eq("a job left out is logged once over thirty seconds of snapshots", said, 1)
 
+		-- A SERVER WITH NOBODY ON IT. PauseEmpty stops Events.OnTick, so a server that
+		-- came up, loaded the county and was stopped again saved every machine with
+		-- whatever the LOAD left on its state -- which used to be nothing, and every
+		-- running job was gone. The load is done here and no tick follows it.
+		_G.isServer = function() return true end
+		bench = daemon()
+		bench.tick(120)
+		local wasId = bench.object.jobs.list[1].id
+		local bytes0 = bench.save(true)
+		local loaded = newBench(deepCopy(bytes0))
+		check("empty server: the state carries the book straight after the load",
+			loaded.object.os.jobs ~= nil and #loaded.object.os.jobs.list == 1)
+		check("empty server: and the state gate accepts it at the first read",
+			loaded.object:osState() ~= nil and not loaded.object.osBroken)
+		check("empty server: and it is a copy, not the table the running job is made of",
+			loaded.object.os.jobs.list[1].packed ~= loaded.object.jobs.list[1])
+		bytes = loaded.save(true)
+		check("empty server: a save with no tick after the load still carries it",
+			bytes.os ~= nil and bytes.os.jobs ~= nil and #bytes.os.jobs.list == 1)
+		back = newBench(bytes)
+		eq("empty server: the machine comes back running it", jobCount(back), 1)
+		eq("empty server: the same job, with its own id", back.object.jobs.list[1].id, wasId)
+		eq("empty server: and the ids handed out next are still past it",
+			back.object.jobs.seq, bench.object.jobs.seq)
+
+		-- What waits on the state is a copy: the scheduler resolves a job's graph in
+		-- place, so a state that held the file's own tables would be handed the
+		-- cycles the walker runs on. Steps run, no snapshot between, then the save.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		CeroSecJobs.snapshotMs = _G.__now + 1000000000
+		loaded.tick(60)
+		bytes = loaded.save(true)
+		eq("empty server: the loaded book is still plain data after the job has run",
+			#bytes.os.jobs.list, 1)
+		eq("empty server: and still a job when it comes back", jobCount(newBench(bytes)), 1)
+
+		-- A job somebody STOPPED does not come back. The first three are the road to
+		-- that: a kill and the next snapshot, a switch-off, and a save with an event.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		CeroSecJobs.snapshotMs = 0
+		loaded.enter("kill " .. wasId)
+		loaded.tick(60)
+		bytes = loaded.save(true)
+		check("stopped: a job killed after the load is off the state at the next snapshot",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("stopped: so it does not come back", jobCount(newBench(bytes)), 0)
+
+		loaded = newBench(deepCopy(bytes0))
+		loaded.object:turnOff()
+		check("stopped: a machine switched off after the load has no book on its state",
+			loaded.object.os.jobs == nil)
+		bytes = loaded.save(true)
+		eq("stopped: and does not come back running", jobCount(newBench(bytes)), 0)
+
+		_G.isServer = function() return false end
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		CeroSecJobs.snapshotMs = _G.__now + 1000000000
+		loaded.tick(60)
+		local before = loaded.object.os.jobs
+		bytes = loaded.save()
+		check("save event: the book is written again from the running job",
+			loaded.object.os.jobs ~= before and #bytes.os.jobs.list == 1)
+		_G.isServer = function() return true end
+
+		-- Only the jobs that came back go back on the state: one the load dropped
+		-- must not be there for the next snapshot to find.
+		local forged = deepCopy(bytes0)
+		forged.os.jobs.list[2] = { packed = 5 }
+		loaded = newBench(forged)
+		eq("partial: one job came back", jobCount(loaded), 1)
+		eq("partial: and the state names only that one", #loaded.object.os.jobs.list, 1)
+		eq("partial: so a save with no tick does not write the other",
+			#loaded.save(true).os.jobs.list, 1)
+
+		-- saveBooks visits a machine that has the loaded book on its state and NO
+		-- live book: `luaObject.os.jobs ~= nil` is what gets it there, and a walk
+		-- that looked at the live book alone would leave the copy for the next load
+		-- to run again. Drained first the way a machine really drains -- the job is
+		-- killed and no snapshot has run since -- so the copy is still there, then
+		-- the snapshot alone (no writeBook of the machine's own) has to take it off.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		CeroSecJobs.snapshotMs = _G.__now + 1000000000
+		loaded.enter("kill " .. wasId)
+		loaded.tick(60)
+		eq("drained: the live book is empty", jobCount(loaded), 0)
+		check("drained: and no snapshot has run, so the loaded copy is still on the state",
+			loaded.object.os.jobs ~= nil)
+		CeroSecJobs.snapshotMs = 0
+		loaded.tick(1)
+		check("drained: the snapshot takes the loaded copy off the state",
+			loaded.object.os.jobs == nil)
+		bytes = loaded.save(true)
+		check("drained: so a save with no event carries no book",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("drained: and it does not come back", jobCount(newBench(bytes)), 0)
+
+		-- The same with no live book table at all, which is the machine the clause
+		-- is for: the copy on the state is all there is of the book.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		loaded.object.jobs = nil
+		check("no live book: the loaded copy is on the state", loaded.object.os.jobs ~= nil)
+		CeroSecJobs.saveBooks()
+		check("no live book: saveBooks takes it off",
+			loaded.object.os.jobs == nil)
+		bytes = loaded.save(true)
+		eq("no live book: and it does not come back", jobCount(newBench(bytes)), 0)
+
+		-- A machine that is off never gets the file's book onto its state: readBook
+		-- takes it off and puts nothing back for a machine that is not running
+		-- (`if not luaObject.on`), because writeBook would not have written it and
+		-- nothing would ever clear it on a machine no scheduler holds.
+		local dark = deepCopy(bytes0)
+		dark.on = false
+		loaded = newBench(dark)
+		check("off: the file carried a book to refuse", bytes0.os.jobs ~= nil)
+		check("off: the state carries no book after the load",
+			loaded.object.os == nil or loaded.object.os.jobs == nil)
+		eq("off: and nothing is running", jobCount(loaded), 0)
+		bytes = loaded.save(true)
+		check("off: a save carries no book",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("off: and a reload runs nothing", jobCount(newBench(bytes)), 0)
+
 		_G.isServer = hadServer
 		_G.__world = nil
 		CeroSecDevices.invalidate()
@@ -18173,6 +19256,190 @@ do
 		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
 		_G.__world = nil
 		CeroSecDevices.invalidate()
+	end
+
+	--
+	-- The sandbox option CeroSec.ServerLog, and what the load now says of a book
+	--
+	-- A dedicated server loses the log ring at every restart and prints none of it,
+	-- so a job that vanished across one left no trace. With the option on, a machine
+	-- whose state carries a book says what became of it -- and one whose state
+	-- carries none says nothing, which is 600 machines in a county. The lines are
+	-- read where a server owner reads them: at print, the option ON.
+	--
+	do
+		local hadSandbox, realPrint = _G.SandboxVars, print
+		local seen
+		local function withOption(on, fn)
+			_G.SandboxVars = { CeroSec = { HardwareRequired = false,
+				PrefilledMachines = false, ServerLog = on } }
+			seen = {}
+			print = function(text) seen[#seen + 1] = tostring(text) end
+			local ok, err = pcall(fn)
+			print = realPrint
+			_G.SandboxVars = hadSandbox
+			if not ok then error(err, 0) end
+		end
+		-- The lines a load printed that are about the machine at 10,10,0.
+		local function said(needle)
+			for i = 1, #seen do
+				if string.find(seen[i], "CeroSec: the machine at 10,10,0: " .. needle,
+						1, true) then
+					return true
+				end
+			end
+			return false
+		end
+		local function anyLine()
+			for i = 1, #seen do
+				if string.find(seen[i], "CeroSec: the machine at 10,10,0", 1, true) then
+					return true
+				end
+			end
+			return false
+		end
+
+		local bench = newBench()
+		bench.login("admin")
+		bench.script("/home/admin/a.sh", "while true; do sleep 1; done\n")
+		bench.script("/home/admin/b.sh", "while true; do sleep 2; done\n")
+		bench.enter("sh /home/admin/a.sh &")
+		bench.enter("sh /home/admin/b.sh &")
+		seconds(bench, 1)
+		eq("two daemons to save", jobCount(bench), 2)
+		local good = bench.save()
+		eq("and the book holds both", #good.os.jobs.list, 2)
+
+		-- All of it back.
+		withOption(true, function()
+			local back = newBench(deepCopy(good))
+			eq("both come back", jobCount(back), 2)
+		end)
+		check("a book that came back whole says so: 2 of 2",
+			said("2 of 2 saved job(s) came back"))
+
+		-- Part of it.
+		local partial = deepCopy(good)
+		partial.os.jobs.list[2] = 5
+		withOption(true, function()
+			local back = newBench(partial)
+			eq("one comes back", jobCount(back), 1)
+		end)
+		check("a partial book says how many: 1 of 2", said("1 of 2 saved job(s) came back"))
+		check("and the job that did not still says why",
+			(function()
+				for i = 1, #seen do
+					if string.find(seen[i], "dropped a saved job", 1, true) then return true end
+				end
+				return false
+			end)())
+
+		-- None of it: the line is there before killAll, so a book that all fell is
+		-- not the same silence as no book.
+		local none = deepCopy(good)
+		none.os.jobs.list[1] = 5
+		none.os.jobs.list[2] = 5
+		withOption(true, function()
+			local back = newBench(none)
+			eq("nothing comes back", jobCount(back), 0)
+		end)
+		check("a book that all fell says 0 of 2", said("0 of 2 saved job(s) came back"))
+
+		-- A book on a machine that is off.
+		local off = deepCopy(good)
+		off.on = false
+		withOption(true, function()
+			local back = newBench(off)
+			eq("an off machine runs nothing", jobCount(back), 0)
+			eq("and the book is off its state", back.object.os.jobs, nil)
+		end)
+		check("a book on an off machine says it was ignored, and why",
+			said("a saved book of 2 job(s) ignored: the machine is off"))
+		check("and does not claim any came back", not said("saved job(s) came back"))
+
+		-- A book that is not one.
+		local junk = deepCopy(good)
+		junk.os.jobs = "junk"
+		withOption(true, function() newBench(junk) end)
+		check("a book that is not a table says so", said("a saved book was ignored"))
+		local nolist = deepCopy(good)
+		nolist.os.jobs = { list = 5 }
+		withOption(true, function() newBench(nolist) end)
+		check("a book whose list is not a table says so", said("a saved book was ignored"))
+
+		-- No book at all: silence, on a machine that is on and on one that is off.
+		local empty = newBench()
+		empty.login("admin")
+		local plain = empty.save()
+		check("the machine has a state and it carries no book",
+			plain.os ~= nil and plain.os.jobs == nil)
+		withOption(true, function()
+			local back = newBench(deepCopy(plain))
+			eq("it loads", jobCount(back), 0)
+		end)
+		eq("no book, nothing said about the machine", anyLine(), false)
+		local plainOff = deepCopy(plain)
+		plainOff.on = false
+		withOption(true, function() newBench(plainOff) end)
+		eq("no book on an off machine, nothing said either", anyLine(), false)
+
+		-- The option off: the same load prints nothing at all, and the ring has it.
+		CeroSec.logRing = {}
+		withOption(false, function() newBench(deepCopy(good)) end)
+		eq("option off: the load printed nothing", #seen, 0)
+		check("but the ring has the line",
+			(function()
+				for i = 1, #CeroSec.logRing do
+					if string.find(CeroSec.logRing[i].text,
+							"2 of 2 saved job(s) came back", 1, true) then
+						return true
+					end
+				end
+				return false
+			end)())
+
+		-- The power check that switches a machine off.
+		local dark = newBench()
+		dark.object.isLoaded = function() return true end
+		dark.object.hasPower = function() return false end
+		withOption(true, function()
+			eq("the check switched it off", dark.object:checkPower(), true)
+		end)
+		check("and says the machine lost power", (function()
+			for i = 1, #seen do
+				if seen[i] == "CeroSec: the machine at 10,10,0 lost power and was switched off" then
+					return true
+				end
+			end
+			return false
+		end)())
+		local lit = newBench()
+		lit.object.isLoaded = function() return true end
+		withOption(true, function()
+			eq("a machine with power is left alone", lit.object:checkPower(), false)
+		end)
+		eq("and says nothing", anyLine(), false)
+
+		-- The option is declared where the game reads it, off by default, and both
+		-- languages carry its two strings.
+		local handle = assert(io.open("42/media/sandbox-options.txt", "r"))
+		local options = handle:read("*a")
+		handle:close()
+		check("ServerLog is declared, boolean, default false, on the mod's page",
+			string.find(options,
+				"option CeroSec.ServerLog%s*{%s*type = boolean,%s*default = false,"
+				.. "%s*page = CeroSec,%s*translation = CeroSec_ServerLog,") ~= nil)
+		for _, lang in ipairs({ "EN", "FR" }) do
+			local h = assert(io.open(
+				"42/media/lua/shared/Translate/" .. lang .. "/Sandbox.json", "r"))
+			local strings = h:read("*a")
+			h:close()
+			check(lang .. " Sandbox.json names the option",
+				string.find(strings, '"Sandbox_CeroSec_ServerLog"', 1, true) ~= nil)
+			check(lang .. " Sandbox.json has its tooltip",
+				string.find(strings, '"Sandbox_CeroSec_ServerLog_tooltip"', 1, true) ~= nil)
+		end
+		CeroSecJobs.machines = {}
 	end
 
 	--
@@ -19047,6 +20314,16 @@ do
 		print("  worst legal state " .. worst .. " tables + JOB_SAVE_TABLES "
 			.. CeroSec.JOB_SAVE_TABLES .. " + 2 = " .. total
 			.. " of PLAIN_VISITS " .. budget .. " (" .. (budget - total) .. " to spare)")
+		-- And the book at its ceiling on top of it, through the gate itself, because
+		-- the book now sits on the state at load (readBook) and the first read walks
+		-- it. One entry of JOB_SAVE_TABLES tables is the most a book can hold.
+		local entry = {}
+		for i = 1, CeroSec.JOB_SAVE_TABLES - 1 do entry[i] = {} end
+		worstState.jobs = { seq = 1, list = { entry } }
+		local okBook, whyBook = CeroSecOS.validate(worstState)
+		eq("the gate takes the worst legal machine with a full book on it ("
+			.. tostring(whyBook) .. ")", okBook, true)
+		worstState.jobs = nil
 		check("the worst legal state really is dearer than a machine of files: "
 			.. worst, worst > 1000)
 		-- The number the prose quotes (CeroSecDefs.lua, CeroSecOSState.lua and the
@@ -23548,6 +24825,93 @@ do
 				CeroSecModules.installedOn(kit.light0).relay, nil)
 			eq("nor is the second machine switched on", second.on, false)
 		end
+	end
+
+	--
+	-- 4b. A GATE IN THE SHOP, AND THE WALK REACHES LEAF 2 FIRST
+	--
+	-- A double door is one device: the modules go on its ANCHOR whichever leaf the
+	-- walk was at (CeroSecModules.setOn), and so does the mark, so that every leaf the
+	-- walk reaches afterwards reads "done" and a survivor who strips the anchor's
+	-- boxes is not undone by the walk coming round again. The leaves are laid out so
+	-- the room's squares list leaf 2, then leaf 3, then the anchor, then leaf 4.
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = true } }
+		local bx, by, b1, b2 = cornerRolling(true)
+		check("some shop in the county rolled automated, for the gate", bx ~= nil)
+		local kit = newShop(bx, by)
+		_G.__world = kit.world
+		-- leaf 1 (the anchor) at bx+5, leaf 2 at bx+3, leaf 3 at bx+4, leaf 4 at bx+6:
+		-- squares of the back room, whose list the walk goes down in order.
+		local leaves = FakeWorld.gate(kit.world, "double", {
+			{ bx + 5, by + 2, 0 }, { bx + 3, by + 2, 0 },
+			{ bx + 4, by + 2, 0 }, { bx + 6, by + 2, 0 } })
+		local anchor = leaves[1]
+		local county = newCounty(kit)
+		local machine = county.machine(bx + 2, by + 2, 0)
+		_G.__fireSquare("new", machine.square)
+
+		-- What the walk fits, counted at the one function that fits: a leaf that is
+		-- passed over is a leaf it was never called for.
+		local fitted = {}
+		local realFit = CeroSecAuto.fit
+		CeroSecAuto.fit = function(object)
+			fitted[#fitted + 1] = object
+			return realFit(object)
+		end
+
+		county.at(20, 55)
+		county.minute()
+		local record = pageOf(county.system, b1, b2)
+		check("the sweep walked the shop", type(record) == "table" and record.wired == true)
+
+		local function fitsOn(object)
+			local n = 0
+			for i = 1, #fitted do if fitted[i] == object then n = n + 1 end end
+			return n
+		end
+		eq("the walk fitted the gate once, at leaf 2", fitsOn(leaves[2]), 1)
+		eq("and not again at leaf 3", fitsOn(leaves[3]), 0)
+		eq("nor at the anchor", fitsOn(anchor), 0)
+		eq("nor at leaf 4", fitsOn(leaves[4]), 0)
+		eq("the contact is on the ANCHOR", CeroSecModules.ownedBy(anchor).contact, true)
+		eq("and the strike, the lock stopping somebody", CeroSecModules.ownedBy(anchor).strike, true)
+		for i = 2, #leaves do
+			eq("nothing is written on leaf " .. i,
+				CeroSecModules.ownedBy(leaves[i]).contact == true
+					or CeroSecModules.ownedBy(leaves[i]).strike == true, false)
+		end
+		local mark = anchor:getModData()[CeroSecModules.DATA_KEY]
+		eq("the mark is on the ANCHOR", mark ~= nil and mark[CeroSecModules.PRE_KEY], true)
+		eq("markPreFitted says it is written", CeroSecModules.markPreFitted(anchor), true)
+		local other = leaves[2]:getModData()[CeroSecModules.DATA_KEY]
+		eq("and not on leaf 2, where the walk was", other, nil)
+		for i = 1, #leaves do
+			eq("leaf " .. i .. " reads it as pre-fitted", CeroSecModules.preFitted(leaves[i]), true)
+		end
+		-- A door that is no gate is unchanged: its own modules, its own mark.
+		eq("a plain door has its own contact", CeroSecModules.ownedBy(kit.front).contact, true)
+		eq("and its own strike", CeroSecModules.ownedBy(kit.front).strike, true)
+		local own = kit.front:getModData()[CeroSecModules.DATA_KEY]
+		eq("and its own mark", own ~= nil and own[CeroSecModules.PRE_KEY], true)
+
+		-- THE SURVIVOR STRIPS THE ANCHOR, and the walk comes round again (a second
+		-- computer of the shop is what does it, as above).
+		CeroSecModules.setOn(anchor, "contact", false)
+		CeroSecModules.setOn(anchor, "strike", false)
+		eq("the gate carries nothing now", CeroSecModules.installedOn(leaves[3]).contact, nil)
+		fitted = {}
+		record.wired = nil
+		county.minute()
+		eq("the walk is finished again", record.wired, true)
+		eq("it fitted nothing at all", #fitted, 0)
+		for i = 1, #leaves do
+			eq("and leaf " .. i .. " has no contact back", CeroSecModules.installedOn(leaves[i]).contact, nil)
+			eq("nor a strike", CeroSecModules.installedOn(leaves[i]).strike, nil)
+		end
+		CeroSecAuto.fit = realFit
+		_G.__world = nil
 	end
 
 	--
