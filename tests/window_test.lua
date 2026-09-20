@@ -169,11 +169,22 @@ _G.instanceof = function(object, class)
 	return true
 end
 
--- The two statics the device layer asks about a door before it will call
--- ToggleDoorSilent on it: is this one leaf of a double door, or of a garage
--- door? Vanilla answers -1 for an object with no such property on it
+-- The statics the device layer asks about a door, and the ones it moves a gate
+-- with. Is this one leaf of a double door, or of a garage door? Vanilla answers -1
+-- for an object with no such property on it
 -- (media/lua/server/BuildingObjects/ISBuildUtil.lua:556), and so does this.
+--
+-- A GATE is modelled the way the engine holds one: every leaf carries its own index
+-- (`doubleDoor` 1-4, or `garageDoor`) and the SAME list, `gateLeaves`, which is what
+-- the getters walk. The two toggles flip `open` on EVERY leaf of the list, which is
+-- what IsoDoor.toggleDoubleDoor / toggleGarageDoor do to the opening, and they never
+-- call the leaf's own ToggleDoorSilent -- so a machine that used the silent toggle
+-- on a gate would leave three leaves where they were and `silentToggles` shows it.
+-- Every call is recorded (`calls`), with the object it was made on and the sync flag,
+-- because "which leaf was asked" and "was it sent to the clients" are the two things
+-- a field cannot show.
 _G.IsoDoor = {
+	calls = {},
 	getDoubleDoorIndex = function(object)
 		if type(object) == "table" and type(object.doubleDoor) == "number" then
 			return object.doubleDoor
@@ -185,6 +196,58 @@ _G.IsoDoor = {
 			return object.garageDoor
 		end
 		return -1
+	end,
+	-- The leaf with index i of the double door this one is part of, nil when the
+	-- opening has no such leaf (a two-leaf door in a wall has 1 and 4 only).
+	getDoubleDoorObject = function(object, i)
+		if type(object) ~= "table" or object.gateLeaves == nil then return nil end
+		for n = 1, #object.gateLeaves do
+			if object.gateLeaves[n].doubleDoor == i then return object.gateLeaves[n] end
+		end
+		return nil
+	end,
+	-- The chain of a garage door: first, then next until there is none.
+	getGarageDoorFirst = function(object)
+		if type(object) ~= "table" or object.gateLeaves == nil then return nil end
+		return object.gateLeaves[1]
+	end,
+	getGarageDoorNext = function(object)
+		if type(object) ~= "table" or object.gateLeaves == nil then return nil end
+		for n = 1, #object.gateLeaves do
+			if object.gateLeaves[n] == object then return object.gateLeaves[n + 1] end
+		end
+		return nil
+	end,
+	getGarageDoorPrev = function(object)
+		if type(object) ~= "table" or object.gateLeaves == nil then return nil end
+		for n = 1, #object.gateLeaves do
+			if object.gateLeaves[n] == object then return object.gateLeaves[n - 1] end
+		end
+		return nil
+	end,
+	-- Every leaf flips; the call is what is recorded, once, and not one per leaf.
+	toggleDoubleDoor = function(object, sync)
+		local list = object.gateLeaves
+		for n = 1, #list do
+			list[n].open = not list[n].open
+			list[n].gateToggles = (list[n].gateToggles or 0) + 1
+		end
+		_G.IsoDoor.calls[#_G.IsoDoor.calls + 1] = { what = "double", object = object,
+			sync = sync }
+	end,
+	toggleGarageDoor = function(object, sync)
+		local list = object.gateLeaves
+		for n = 1, #list do
+			list[n].open = not list[n].open
+			list[n].gateToggles = (list[n].gateToggles or 0) + 1
+		end
+		_G.IsoDoor.calls[#_G.IsoDoor.calls + 1] = { what = "garage", object = object,
+			sync = sync }
+	end,
+	-- The engine asks the opening, not a leaf: the flag lives on the shared list.
+	isDoubleDoorObstructed = function(object)
+		_G.IsoDoor.calls[#_G.IsoDoor.calls + 1] = { what = "obstructed", object = object }
+		return object.gateLeaves ~= nil and object.gateLeaves.obstructed == true
 	end,
 }
 
@@ -3433,6 +3496,28 @@ local function fakeDoor(locked, north, opposite, exterior)
 	return o
 end
 
+-- A GATE: the leaves of one double door (`kind` "double", index 1-4 in the order
+-- given) or one garage door ("garage"), each put on its square and all sharing the
+-- one `gateLeaves` list the IsoDoor statics walk. `make` builds a leaf, and is an
+-- exterior map door on the north edge by default; it is how a built door is made
+-- into a gate. The first leaf is index 1, the one that is never taken away.
+function FakeWorld.gate(world, kind, coords, make)
+	local leaves = {}
+	for i = 1, #coords do
+		local x, y, z = coords[i][1], coords[i][2], coords[i][3]
+		local leaf
+		if make ~= nil then
+			leaf = make(world, x, y, z)
+		else
+			leaf = fakeDoor(false, true, world.square(x, y - 1, z, nil), true)
+		end
+		if kind == "double" then leaf.doubleDoor = i else leaf.garageDoor = i - 1 end
+		leaf.gateLeaves = leaves
+		leaves[i] = world.put(world.square(x, y, z, nil), leaf)
+	end
+	return leaves
+end
+
 -- A window, with the sash AND its three silent returns AND the two side effects
 -- the motor rung's operator is built on.
 --
@@ -4970,42 +5055,341 @@ do
 end
 
 do
-	-- A garage door, and a double door: several objects making one opening.
-	-- ToggleDoorSilent moves the object it is called on and nothing else, while
-	-- vanilla's own toggle walks every leaf of the thing, so a leaf is NOT a
-	-- `door` device -- a machine that opened one would leave the other half
-	-- shut. It is still a `lock` one, setLockedByKey being per-object in vanilla
-	-- too.
-	local world = FakeWorld.new()
-	world.room("garage", { {10,10,0}, {11,10,0} })
-	local outside = world.square(11, 9, 0, nil)
-	local leaf = world.put(world.squares["11,10,0"], fakeDoor(true, false, outside))
-	leaf.garageDoor = 0
-	_G.__world = world
+	-- A GARAGE DOOR, AND A DOUBLE DOOR: several objects making ONE opening.
+	--
+	-- The vanilla toggle moves every leaf of the opening together
+	-- (IsoDoor.toggleDoubleDoor / toggleGarageDoor), and the lock is set on every
+	-- leaf (ISLockDoor), so the machine treats the gate as one door and one lock:
+	-- one number each, filed on the ANCHOR leaf -- the one the engine never takes
+	-- away (CeroSecModules.gateParts) -- whichever leaf the walk reached first.
+	-- ToggleDoorSilent moves the object it is called on and nothing else, so it is
+	-- the one call that must never move a gate: every leaf's silentToggles is
+	-- asserted at zero.
+	local COORDS = { {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} }
+	local names = { "double", "garage" }
 
-	local bench = newBench()
-	bench.login("admin")
-	bench.enter("su root")
-	bench.enter("")
-	bench.enter("ls -l /dev")
-	bench.frame()
-	check("a garage door leaf is a lock",
-		bench.painted("crw-rw----  root  sudo  lock0    exterior      W  locked"))
-	check("and is not a door", not bench.painted("door0"))
+	-- The gate in a room, and the machine on its own square. `reverse` lists the
+	-- gate's squares back to front, which is the order the walk reaches the leaves in,
+	-- so the anchor is the LAST leaf the walk finds.
+	local function scene(kind, reverse)
+		local world = FakeWorld.new()
+		local squares = { {10,10,0} }
+		for i = 1, #COORDS do
+			squares[#squares + 1] = COORDS[reverse and (#COORDS + 1 - i) or i]
+		end
+		world.room("hall", squares)
+		local leaves = FakeWorld.gate(world, kind, COORDS)
+		-- A vehicle standing on a square, for the garage door's own obstruction
+		-- test, asked of the leaf's square and of the one across it.
+		for i = 1, #leaves do
+			local here, across = leaves[i]:getSquare(), leaves[i]:getOppositeSquare()
+			here.isVehicleIntersecting = function() return here.vehicle == true end
+			across.isVehicleIntersecting = function() return across.vehicle == true end
+		end
+		_G.__world = world
+		CeroSecDevices.invalidate()
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("su root")
+		bench.enter("")
+		bench.frame()
+		return world, leaves, bench
+	end
 
-	-- A double door reads exactly the same way.
-	leaf.garageDoor = nil
-	leaf.doubleDoor = 1
-	bench.enter("ls -l /dev")
-	bench.frame()
-	check("a double door leaf is no door either", not bench.painted("door0"))
-	check("and still locks", bench.painted("lock0    exterior"))
+	-- Every order through the glass, with the two books wiped first: what is
+	-- asserted after a line is what THAT line made.
+	local function typed(bench, line)
+		_G.__sounds = {}
+		_G.IsoDoor.calls = {}
+		CeroSecDevices.invalidate()
+		bench.enter(line)
+		bench.frame()
+	end
+	-- The toggles the engine was asked for, and not the obstruction questions.
+	local function toggled()
+		local out = {}
+		for i = 1, #_G.IsoDoor.calls do
+			if _G.IsoDoor.calls[i].what ~= "obstructed" then out[#out + 1] = _G.IsoDoor.calls[i] end
+		end
+		return out
+	end
+	local function ofKind(kind)
+		local found = CeroSecDevices.find(10, 10, 0)
+		local out = {}
+		for i = 1, #found do
+			if found[i].kind == kind then out[#out + 1] = found[i] end
+		end
+		return out
+	end
+	local function allOpen(leaves)
+		local n = 0
+		for i = 1, #leaves do if leaves[i].open then n = n + 1 end end
+		return n
+	end
+	local function noSilent(what, leaves)
+		local n = 0
+		for i = 1, #leaves do n = n + leaves[i].silentToggles end
+		eq(what .. ": ToggleDoorSilent never moved a leaf", n, 0)
+	end
 
-	-- So there is nothing there to open, and the refusal is the command's.
-	bench.enter("dev door0 open")
-	bench.frame()
-	check("nothing to open", bench.painted("dev: door0: no such device"))
-	_G.__world = nil
+	for _, kind in ipairs(names) do
+		local tag = kind .. " door: "
+
+		--
+		-- (a) The module fits every leaf now, and (b) the gate is ONE device
+		--
+		local world, leaves, bench = scene(kind, false)
+		local anchor = leaves[1]
+		for i = 1, #leaves do
+			local ok = CeroSecModules.fitsOn(leaves[i], "operator")
+			eq(tag .. "an operator fits leaf " .. i, ok, true)
+			eq(tag .. "and a strike fits leaf " .. i, CeroSecModules.fitsOn(leaves[i], "strike"), true)
+		end
+		eq(tag .. "the gate is many doors still", CeroSecModules.isManyDoors(anchor), true)
+
+		bench.enter("ls -l /dev")
+		bench.frame()
+		check(tag .. "the gate is door0", bench.painted("door0    exterior"))
+		check(tag .. "and lock0", bench.painted("lock0    exterior"))
+		check(tag .. "and not two doors", not bench.painted("door1"))
+		check(tag .. "nor two locks", not bench.painted("lock1"))
+		eq(tag .. "four leaves scanned, one door", #ofKind("door"), 1)
+		eq(tag .. "four leaves scanned, one lock", #ofKind("lock"), 1)
+		local door = ofKind("door")[1]
+		eq(tag .. "the door is the anchor's object", door.object, anchor)
+		eq(tag .. "and stands on the anchor's square", door.x .. "," .. door.y, "11,10")
+		eq(tag .. "the lock is the anchor's too", ofKind("lock")[1].object, anchor)
+		local forwardKey, forwardLock = door.key, ofKind("lock")[1].key
+
+		-- Reached last, it is still the same device, the same key, the same number.
+		local _, rleaves, rbench = scene(kind, true)
+		local rdoor = ofKind("door")[1]
+		eq(tag .. "reverse walk: still one door", #ofKind("door"), 1)
+		eq(tag .. "and still the anchor's object", rdoor.object, rleaves[1])
+		eq(tag .. "under the same key", rdoor.key, forwardKey)
+		eq(tag .. "and the lock under the same key", ofKind("lock")[1].key, forwardLock)
+		rbench.enter("ls -l /dev")
+		rbench.frame()
+		check(tag .. "reverse walk: same number", rbench.painted("door0    exterior"))
+		check(tag .. "and no second one", not rbench.painted("door1"))
+		world, leaves, bench = scene(kind, false)
+		anchor = leaves[1]
+
+		--
+		-- (c) One line moves all four, through the static, once, and is idempotent
+		--
+		typed(bench, "dev door0 open")
+		check(tag .. "the machine says what it read back", bench.painted("door0: open"))
+		eq(tag .. "every leaf is open", allOpen(leaves), 4)
+		local calls = toggled()
+		eq(tag .. "the engine's toggle was called once", #calls, 1)
+		eq(tag .. "the right static", calls[1] and calls[1].what, kind)
+		eq(tag .. "on the anchor", calls[1] and calls[1].object, anchor)
+		eq(tag .. "with sync on", calls[1] and calls[1].sync, true)
+		noSilent(tag .. "open", leaves)
+		eq(tag .. "no leaf was synced by hand (the static did it)", leaves[3].syncs, 0)
+		eq(tag .. "one sound", #_G.__sounds, 1)
+		eq(tag .. "the open one", _G.__sounds[1] and _G.__sounds[1].name, "WoodDoorOpen")
+		eq(tag .. "at the anchor's square", _G.__sounds[1] and
+			(_G.__sounds[1].x .. "," .. _G.__sounds[1].y), "11,10")
+
+		typed(bench, "dev door0 open")
+		eq(tag .. "a second open toggles nothing", #toggled(), 0)
+		eq(tag .. "and is silent", #_G.__sounds, 0)
+		eq(tag .. "and leaves them open", allOpen(leaves), 4)
+
+		typed(bench, "dev door0 close")
+		check(tag .. "closed again", bench.painted("door0: closed"))
+		eq(tag .. "every leaf shut", allOpen(leaves), 0)
+		eq(tag .. "one toggle", #toggled(), 1)
+		eq(tag .. "the close sound", _G.__sounds[1] and _G.__sounds[1].name, "WoodDoorClose")
+		typed(bench, "dev door0 close")
+		eq(tag .. "a second close toggles nothing", #toggled(), 0)
+		noSilent(tag .. "close", leaves)
+
+		--
+		-- (d) The refusals
+		--
+		anchor.barricaded = true
+		typed(bench, "dev door0 open")
+		check(tag .. "a barricaded anchor refuses", bench.painted("door0: barricaded"))
+		eq(tag .. "and nothing was toggled", #toggled(), 0)
+		eq(tag .. "nor moved", allOpen(leaves), 0)
+		anchor.barricaded = false
+
+		-- Locked on ANY leaf: opening is refused, closing is not.
+		leaves[3].lockedByKey = true
+		typed(bench, "dev door0 open")
+		check(tag .. "one locked leaf locks the gate", bench.painted("door0: locked"))
+		eq(tag .. "nothing toggled", #toggled(), 0)
+		eq(tag .. "and every leaf is where it was", allOpen(leaves), 0)
+		for i = 1, #leaves do leaves[i].open = true end
+		typed(bench, "dev door0 close")
+		eq(tag .. "a locked gate that is open still closes", allOpen(leaves), 0)
+		eq(tag .. "by the engine's toggle", #toggled(), 1)
+		typed(bench, "dev door0")
+		check(tag .. "shut and keyed, it reads locked", bench.painted("door0: locked"))
+		leaves[3].lockedByKey = false
+
+		if kind == "double" then
+			-- The gate's own flag, asked of the anchor.
+			leaves.obstructed = true
+			typed(bench, "dev door0 open")
+			check(tag .. "an obstructed double door is blocked", bench.painted("door0: blocked"))
+			eq(tag .. "nothing toggled", #toggled(), 0)
+			local asked = nil
+			for i = 1, #_G.IsoDoor.calls do
+				if _G.IsoDoor.calls[i].what == "obstructed" then asked = _G.IsoDoor.calls[i].object end
+			end
+			eq(tag .. "the engine was asked about the anchor", asked, anchor)
+			leaves.obstructed = false
+			typed(bench, "dev door0 open")
+			check(tag .. "and once it is clear it opens", bench.painted("door0: open"))
+			typed(bench, "dev door0 close")
+		else
+			-- A garage door is blocked only when it is OPEN and a vehicle is on a
+			-- leaf's square AND across it. The double door's flag means nothing here.
+			leaves.obstructed = true
+			leaves[2]:getSquare().vehicle = true
+			leaves[2]:getOppositeSquare().vehicle = true
+			typed(bench, "dev door0 open")
+			check(tag .. "a shut garage door opens under a vehicle", bench.painted("door0: open"))
+			eq(tag .. "the double door's flag is not its rule", allOpen(leaves), 4)
+			leaves.obstructed = nil
+			-- Open, a vehicle on ONE square only is not across the line.
+			leaves[2]:getOppositeSquare().vehicle = false
+			typed(bench, "dev door0 close")
+			check(tag .. "a vehicle on one side only lets it close", bench.painted("door0: closed"))
+			eq(tag .. "shut", allOpen(leaves), 0)
+			-- On both, and open: refused.
+			for i = 1, #leaves do leaves[i].open = true end
+			leaves[2]:getOppositeSquare().vehicle = true
+			typed(bench, "dev door0 close")
+			check(tag .. "a vehicle across the line blocks the close", bench.painted("door0: blocked"))
+			eq(tag .. "nothing toggled", #toggled(), 0)
+			eq(tag .. "and it stays open", allOpen(leaves), 4)
+			-- On a leaf that is not the one asked about: still the gate's.
+			leaves[2]:getSquare().vehicle = false
+			leaves[2]:getOppositeSquare().vehicle = false
+			leaves[4]:getSquare().vehicle = true
+			leaves[4]:getOppositeSquare().vehicle = true
+			typed(bench, "dev door0 close")
+			check(tag .. "any leaf's vehicle blocks it", bench.painted("door0: blocked"))
+			leaves[4]:getSquare().vehicle = false
+			leaves[4]:getOppositeSquare().vehicle = false
+			typed(bench, "dev door0 close")
+			check(tag .. "clear, it closes", bench.painted("door0: closed"))
+		end
+		noSilent(tag .. "refusals", leaves)
+
+		--
+		-- (e) The lock is the opening's: every leaf, each one synced
+		--
+		local base = {}
+		for i = 1, #leaves do base[i] = leaves[i].syncs end
+		typed(bench, "dev lock0 lock")
+		check(tag .. "lock0 says locked", bench.painted("lock0: locked"))
+		for i = 1, #leaves do
+			eq(tag .. "leaf " .. i .. " is locked", leaves[i].lockedByKey, true)
+			eq(tag .. "and was synced once", leaves[i].syncs, base[i] + 1)
+		end
+		typed(bench, "dev lock0 unlock")
+		check(tag .. "lock0 says unlocked", bench.painted("lock0: unlocked"))
+		for i = 1, #leaves do
+			eq(tag .. "leaf " .. i .. " is unlocked", leaves[i].lockedByKey, false)
+			eq(tag .. "and was synced again", leaves[i].syncs, base[i] + 2)
+		end
+		-- One leaf keyed, by a hand that locked the one: the gate reads locked.
+		leaves[4].lockedByKey = true
+		typed(bench, "dev lock0")
+		check(tag .. "a strike on any one leaf is read", bench.painted("lock0: locked"))
+		leaves[4].lockedByKey = false
+		_G.__world = nil
+	end
+
+	--
+	-- The old world: a strike or an operator written on a leaf that is NOT the
+	-- anchor, by a build that did not know about gates, is still the gate's.
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+		for _, kind in ipairs(names) do
+			local _, leaves, bench = scene(kind, false)
+			fit(leaves[3], "strike")
+			bench.enter("ls -l /dev")
+			bench.frame()
+			check(kind .. " door: a strike on leaf 3 gives lock0", bench.painted("lock0    exterior"))
+			check(kind .. " door: and no door with no operator", not bench.painted("door0"))
+			fit(leaves[4], "operator")
+			bench.enter("ls -l /dev")
+			bench.frame()
+			check(kind .. " door: an operator on leaf 4 gives door0", bench.painted("door0    exterior"))
+			eq(kind .. " door: still one door", #ofKind("door"), 1)
+			eq(kind .. " door: and one lock", #ofKind("lock"), 1)
+			_G.__world = nil
+		end
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+	end
+
+	--
+	-- A BUILT double door: the same opening in the other class. Its lock is a
+	-- padlock or a key, and either way every leaf takes it.
+	--
+	do
+		local world = FakeWorld.new()
+		world.room("base", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} })
+		local function build(padlock)
+			return function()
+				local leaf = fakeThumpable(false, true)
+				leaf.canPadlock = padlock
+				leaf.keyId = padlock and 0 or 7
+				return leaf
+			end
+		end
+		local leaves = FakeWorld.gate(world, "double", COORDS, build(true))
+		_G.__world = world
+		CeroSecDevices.invalidate()
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("su root")
+		bench.enter("")
+		bench.frame()
+		eq("built double door: one door", #ofKind("door"), 1)
+		eq("and one lock", #ofKind("lock"), 1)
+		eq("both on the anchor", ofKind("door")[1].object, leaves[1])
+
+		typed(bench, "dev door0 open")
+		check("a built double door opens", bench.painted("door0: open"))
+		eq("all four leaves", allOpen(leaves), 4)
+		eq("by the engine's toggle, once", #toggled(), 1)
+		eq("with sync", toggled()[1] and toggled()[1].sync, true)
+		noSilent("built double door", leaves)
+		typed(bench, "dev door0 close")
+
+		typed(bench, "dev lock0 lock")
+		check("the padlock goes on", bench.painted("lock0: padlock"))
+		for i = 1, #leaves do
+			eq("built leaf " .. i .. " is padlocked", leaves[i].lockedByPadlock, true)
+			eq("and was synced once", leaves[i].syncs, 1)
+		end
+		typed(bench, "dev lock0 unlock")
+		for i = 1, #leaves do
+			eq("built leaf " .. i .. " is unpadlocked", leaves[i].lockedByPadlock, false)
+		end
+
+		-- A door built with a key and no padlock: the key is what locks.
+		for i = 1, #leaves do
+			leaves[i].canPadlock = false
+			leaves[i].keyId = 7
+			leaves[i].syncs = 0
+		end
+		typed(bench, "dev lock0 lock")
+		for i = 1, #leaves do
+			eq("keyed leaf " .. i .. " is locked", leaves[i].lockedByKey, true)
+			eq("and was synced once", leaves[i].syncs, 1)
+		end
+		_G.__world = nil
+	end
 end
 
 do
@@ -13641,6 +14025,168 @@ end
 
 
 --
+-- A gate's modules and cables: written on the anchor, read from every leaf, and
+-- shed by the engine one leaf at a time
+--
+-- A double or a garage door is one opening of several leaves and the machine
+-- treats it as one: an operator, a strike or a cable is written on the ANCHOR leaf
+-- (CeroSecModules.gateParts -- the leaf the engine never takes away), read from
+-- every leaf, and taken off whichever leaf holds it. The engine's own removal
+-- handlers are the other half: a map double door has its leaves 2 and 3 removed and
+-- made again at every toggle, and what SCeroSecFixtures.dropModules and dropLinks
+-- refund is what was on THAT leaf and nothing else -- or every swing of the door
+-- would strip the anchor's operator and hand the boxes to the floor.
+--
+do
+	local world = FakeWorld.new()
+	world.room("hall", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} })
+	local COORDS = { {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} }
+	local leaves = FakeWorld.gate(world, "double", COORDS)
+	for i = 1, #leaves do leaves[i].open = true end
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	_G.Perks = { Electricity = "Electricity" }
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	local inv = newInventory()
+	local standAt = 10.5
+	bench.player.getInventory = function() return inv end
+	bench.player.getPerkLevel = function() return 5 end
+	bench.player.getCurrentSquare = function() return world.squares["10,10,0"] end
+	bench.player.getX = function() return standAt end
+	bench.login("admin")
+
+	local function send(command, sx, id)
+		standAt = sx + 0.5
+		CCeroSecSystem.instance:sendCommand(bench.player, command,
+			{ x = sx, y = 10, z = 0, index = 0, module = id })
+		bench.frame()
+	end
+	local function carrying(fullType)
+		return inv:getFirstTypeRecurse(fullType) ~= nil
+	end
+	local anchor = leaves[1]
+
+	-- An operator screwed to leaf 3, by the install command.
+	inv:add("Base.Screwdriver")
+	inv:add("CeroSec.DoorOperator")
+	send("installmodule", 13, "operator")
+	check("the operator left his bag", not carrying("CeroSec.DoorOperator"))
+	eq("it is on the ANCHOR's modData", CeroSecModules.ownedBy(anchor).operator, true)
+	eq("and not on leaf 3's", CeroSecModules.ownedBy(leaves[3]).operator == true, false)
+	for i = 1, #leaves do
+		eq("leaf " .. i .. " sees it", CeroSecModules.installedOn(leaves[i]).operator, true)
+	end
+
+	-- Taken off from leaf 2, which does not hold it: it comes off the leaf that does.
+	send("uninstallmodule", 12, "operator")
+	check("it is his again", carrying("CeroSec.DoorOperator"))
+	for i = 1, #leaves do
+		eq("leaf " .. i .. " no longer has it", CeroSecModules.installedOn(leaves[i]).operator == true, false)
+	end
+	eq("the anchor holds nothing", CeroSecModules.ownedBy(anchor).operator == true, false)
+
+	-- The same for a box an older build wrote on another leaf: it comes off THAT one.
+	fit(leaves[4], "strike")
+	eq("a legacy strike on leaf 4 is seen from leaf 1", CeroSecModules.installedOn(anchor).strike, true)
+	send("uninstallmodule", 11, "strike")
+	eq("and comes off leaf 4 from leaf 1", CeroSecModules.ownedBy(leaves[4]).strike == true, false)
+	check("into his bag", carrying("CeroSec.ElectricStrike"))
+
+	-- The cable: run from leaf 3, it is the anchor's, and every leaf reads it.
+	eq("a cable is run from leaf 3", CeroSecModules.linkOn(leaves[3], 20, 20, 0, 5), true)
+	eq("it is the anchor's", #CeroSecModules.ownLinksOn(anchor), 1)
+	eq("and not leaf 3's", #CeroSecModules.ownLinksOn(leaves[3]), 0)
+	for i = 1, #leaves do
+		eq("leaf " .. i .. " reads the cable", #CeroSecModules.linksOn(leaves[i]), 1)
+	end
+	local again, why = CeroSecModules.linkOn(leaves[2], 20, 20, 0, 5)
+	eq("the same cable from another leaf is already there", again, false)
+	eq("in those words", why, "linked")
+	eq("cut from leaf 2 it gives back its wire once", CeroSecModules.unlinkOn(leaves[2], 20, 20, 0), 5)
+	for i = 1, #leaves do
+		eq("no leaf reads it now: " .. i, #CeroSecModules.linksOn(leaves[i]), 0)
+	end
+	eq("and there is nothing to cut twice", CeroSecModules.unlinkOn(leaves[2], 20, 20, 0), nil)
+	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+--
+-- THE REGRESSION THIS DESIGN EXISTS FOR: the engine removes leaf 2 of a map double
+-- door at every toggle, and what it refunds is leaf 2's own
+--
+do
+	local world = FakeWorld.new()
+	world.room("hall", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} })
+	local leaves = FakeWorld.gate(world, "double", { {11,10,0}, {12,10,0}, {13,10,0}, {14,10,0} })
+	_G.__world = world
+	local anchor = leaves[1]
+	local function items(square, fullType)
+		local n = 0
+		for i = 1, #square.items do
+			if square.items[i].getItem():getFullType() == fullType then n = n + 1 end
+		end
+		return n
+	end
+	-- What a build that knew nothing of gates wrote: the box and the cable on the
+	-- leaf that was reached. Written with the gate flags off, which is that build.
+	local function asLegacy(leaf, fn)
+		local d, g = leaf.doubleDoor, leaf.garageDoor
+		leaf.doubleDoor, leaf.garageDoor = nil, nil
+		fn()
+		leaf.doubleDoor, leaf.garageDoor = d, g
+	end
+	local contact = CeroSecModules.byId("contact").item
+	local operator = CeroSecModules.byId("operator").item
+	local strike = CeroSecModules.byId("strike").item
+
+	-- The anchor's own: written the modern way, from leaf 3, so it lands on leaf 1.
+	CeroSecModules.setOn(leaves[3], "operator", true)
+	CeroSecModules.setOn(leaves[3], "strike", true)
+	-- The same box leaf 2 carries of its own, so that a refund that cleared the
+	-- gate's copy along with it is seen.
+	CeroSecModules.setOn(leaves[3], "contact", true)
+	eq("a cable run from leaf 3 is the anchor's", CeroSecModules.linkOn(leaves[3], 30, 30, 0, 3), true)
+	-- Leaf 2's own.
+	asLegacy(leaves[2], function()
+		CeroSecModules.setOn(leaves[2], "contact", true)
+		eq("a legacy cable on leaf 2", CeroSecModules.linkOn(leaves[2], 21, 21, 0, 5), true)
+	end)
+	eq("leaf 2 holds its own contact", CeroSecModules.ownedBy(leaves[2]).contact, true)
+	eq("and its own cable", #CeroSecModules.ownLinksOn(leaves[2]), 1)
+
+	-- The engine removes leaf 2.
+	local paid = SCeroSecFixtures.dropModules(leaves[2])
+	eq("leaf 2 refunds one box", paid, 1)
+	eq("and it is its own contact", items(leaves[2]:getSquare(), contact), 1)
+	eq("the anchor's operator stays on the anchor", CeroSecModules.ownedBy(anchor).operator, true)
+	eq("and its strike", CeroSecModules.ownedBy(anchor).strike, true)
+	eq("and its own contact, though leaf 2 had one too", CeroSecModules.ownedBy(anchor).contact, true)
+	eq("nothing of it went to the floor", items(leaves[2]:getSquare(), operator)
+		+ items(leaves[2]:getSquare(), strike) + #anchor:getSquare().items, 0)
+	eq("leaf 2 holds nothing of its own now", CeroSecModules.ownedBy(leaves[2]).contact == true, false)
+	eq("the gate still reads the operator from leaf 2", CeroSecModules.installedOn(leaves[2]).operator, true)
+
+	local wire = SCeroSecFixtures.dropLinks(leaves[2])
+	eq("leaf 2 refunds its own five tiles of wire", wire, 5)
+	eq("as wire on its own square", items(leaves[2]:getSquare(), CeroSecModules.WIRE), 5)
+	eq("the anchor's cable is untouched", #CeroSecModules.ownLinksOn(anchor), 1)
+	eq("and still read from leaf 2", #CeroSecModules.linksOn(leaves[2]), 1)
+	eq("it is the same one", CeroSecModules.linksOn(leaves[2])[1].x, 30)
+
+	-- And the anchor itself, which goes only when the whole opening does: its own.
+	eq("the anchor refunds its three boxes", SCeroSecFixtures.dropModules(anchor), 3)
+	eq("as boxes on its square", items(anchor:getSquare(), operator)
+		+ items(anchor:getSquare(), strike) + items(anchor:getSquare(), contact), 3)
+	eq("and holds nothing", CeroSecModules.ownedBy(anchor).operator == true, false)
+	eq("and its three tiles of wire", SCeroSecFixtures.dropLinks(anchor), 3)
+	eq("on its square", items(anchor:getSquare(), CeroSecModules.WIRE), 3)
+	_G.__world = nil
+end
+
+--
 -- 43c-bis. The fitting rules: inside, open or off, and whose safehouse it is
 --
 -- Three refusals on top of the fit, all of them about the MOMENT rather than
@@ -14423,8 +14969,11 @@ do
 	eq("a strike on a door no lock bites is still nolock", nolock, "nolock")
 	local garage = world.put(world.squares["2,1,0"], fakeDoor(false, true, nil, true))
 	garage.garageDoor = 0
-	local _, many = CeroSecModules.fitsOn(garage, "operator")
-	eq("and an operator on a garage leaf is still manydoors", many, "manydoors")
+	-- A garage door is one opening the machine moves as a whole (IsoDoor.
+	-- toggleGarageDoor), so its leaf takes an operator like any door.
+	local fits, refusal = CeroSecModules.fitsOn(garage, "operator")
+	eq("and an operator on a garage leaf fits now", fits, true)
+	eq("with no refusal", refusal, nil)
 
 	-- Everything above is a fixture a module could go on at all, which is the
 	-- FIRST question the right-click menu asks: a survivor right-clicking a
