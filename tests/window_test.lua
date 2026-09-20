@@ -14716,6 +14716,39 @@ do
 	backdoor.open = true
 	eq("and a door with a room on its own face too",
 		CeroSecModules.fittingRefusal(backdoor, "contact", bench.player), "outside")
+	-- A PLAYER-BUILT BASE reads isInARoom() true with getRoom() nil (the engine's
+	-- own test is `getRoom() != null || isPlayerRoom()`), and a base's door must
+	-- keep the rule: the far face is such a square.
+	local baseFace = world.square(10, 7, 0, nil)
+	baseFace.isInARoom = function() return true end
+	local basedoor = world.put(pavement, fakeDoor(false, false, baseFace, true))
+	basedoor.open = true
+	eq("a door with a player-built base on its far face keeps the rule",
+		CeroSecModules.fittingRefusal(basedoor, "contact", bench.player), "outside")
+	-- THE WINDOW AND THE CURTAIN FOLLOW THE SAME RULE, for the same reason: with
+	-- open air on both faces there is no inside, and with a room on either face
+	-- there is one.
+	local airWindow = world.put(pavement, fakeWindow(false, true))
+	airWindow.open = true
+	airWindow.opposite = yard
+	airWindow.getOppositeSquare = function() return yard end
+	eq("a window with open air on both faces asks nothing about a room",
+		CeroSecModules.fittingRefusal(airWindow, "contact", bench.player), nil)
+	local roomWindow = world.put(pavement, fakeWindow(false, true))
+	roomWindow.open = true
+	roomWindow.getOppositeSquare = function() return world.squares["10,10,0"] end
+	eq("a window with a room on its far face is refused from outside",
+		CeroSecModules.fittingRefusal(roomWindow, "contact", bench.player), "outside")
+	local airCurtain = world.put(pavement, fakeCurtain(true))
+	airCurtain.open = true
+	airCurtain.opposite = yard
+	eq("a curtain with open air on both faces asks nothing about a room",
+		CeroSecModules.fittingRefusal(airCurtain, "curtain", bench.player), nil)
+	local roomCurtain = world.put(pavement, fakeCurtain(true))
+	roomCurtain.open = true
+	roomCurtain.opposite = world.squares["10,10,0"]
+	eq("and a curtain with a room on its far face is refused from outside",
+		CeroSecModules.fittingRefusal(roomCurtain, "curtain", bench.player), "outside")
 	-- A face the world cannot give is unknown, not "no room": the rule stays on.
 	local unknown = world.put(pavement, fakeDoor(false, false, nil, true))
 	unknown.open = true
@@ -14726,8 +14759,8 @@ do
 	-- (envelopeRefusal): a gate wired from the pavement, a shop front not.
 	gate.open = true
 	check("the gate takes its module", tryFit(pavement, gate, "contact"))
-	check("and a cable to it is not refused as outside",
-		CeroSecModules.linkRefusal(gate, 10, 10, 0, bench.player) ~= "outside")
+	eq("and a cable to it is not refused at all",
+		CeroSecModules.linkRefusal(gate, 10, 10, 0, bench.player), nil)
 	shopfront.open = true
 	check("the shop front takes its module from inside",
 		(function()

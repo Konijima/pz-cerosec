@@ -1350,7 +1350,7 @@ end
 
 -- Is there a room on EITHER side of this fixture? Only then is there an inside for a
 -- survivor to be standing in, and only then is a module something a stranger could
--- unscrew from the pavement. A yard gate, a fence door, a window in a shed frame
+-- unscrew from the pavement. A yard gate, a fence door, a window of an open shed
 -- with open air on both faces has no inside at all: asking the survivor to stand in
 -- a room would grey the fitting on a fixture nobody can ever be inside of, from
 -- either side (reported in game: a fence gate whose menu said "from inside").
@@ -1370,7 +1370,10 @@ local function roomEitherSide(object)
 	return false
 end
 
--- The envelope that has an inside to be in: needsInside, and a room on one side.
+-- The envelope that has an inside to be in: needsInside, and a room on one face.
+-- Door, window and curtain alike: the reasoning is about the wall and not about
+-- the kind of hole in it, and a curtain hangs on a window, so exempting the one
+-- and not the other would be a rule that contradicts itself.
 local function insideRequired(object)
 	return needsInside(object) and roomEitherSide(object)
 end

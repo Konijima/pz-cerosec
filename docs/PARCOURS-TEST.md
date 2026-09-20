@@ -2018,8 +2018,9 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      voit qu'un battant bouger. Même essai avec la porte double (dont la
      réception est lue dans le bytecode) et, pour la comparaison, une porte de
      garage ouverte à la main par le premier client. [ ]
-232h. **Un portail de jardin n'a pas d'intérieur.** Une porte sans pièce de
-     l'un ni de l'autre côté (un portail de clôture, une porte de jardin), debout
+232h. **Un portail de jardin n'a pas d'intérieur.** Une porte, une fenêtre ou un
+     rideau sans pièce de l'un ni de l'autre côté (un portail de clôture, une
+     porte de jardin, la fenêtre d'un abri ouvert), debout
      dehors : le clic droit propose l'opérateur et la gâche et ne dit plus
      « Ça se fait de l'intérieur. » ; ils se posent, `dev` liste `doorN`
      et `lockN` (le portail ouvert : fermé, la machine refuse comme pour toute

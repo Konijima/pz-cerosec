@@ -21,10 +21,11 @@ date.
   nothing running, so `autoclose.sh` and every `@reboot` daemon were gone the
   next time a player joined. The scripts are now kept until the server next
   writes them down. A script somebody stopped still does not come back.
-- A door with open air on both sides, such as a yard gate, now takes a door
-  operator and a strike. It used to say "This has to be done from inside" on a
-  door that has no inside. A door with a room on either side still has to be
-  fitted from inside, so a front door cannot be stripped from the pavement.
+- A door, window or curtain with open air on both sides, such as a yard gate,
+  now takes a module (a door operator, a strike, a contact). It used to say
+  "This has to be done from inside" on a door that has no inside. One with a
+  room on either side still has to be fitted from inside, so a front door cannot
+  be stripped from the pavement.
 
 ## 0.5.1 - 2026-09-19
 

@@ -742,16 +742,20 @@ side is in a room; the pavement is not. An interior door has a room on both
 sides, so both sides are allowed.
 
 **A door with no room on either face is not asked at all.** A yard gate, a fence
-door, has open air on both sides, so there is no inside to be standing in and the
+door or the window of an open shed has open air on both sides, so there is no inside to be standing in and the
 rule, which is written to stop a stranger stripping a *building's* skin, has
 nothing to protect (reported in game: a fence gate whose menu said "from inside"
 and offered no side that was). `roomEitherSide` asks both faces, the fixture's
 own square and `getOppositeSquare()`, each with `isInARoom()` for the reason above,
-so a base's door keeps the rule. A face the world cannot give (an unstreamed
-chunk) is unknown and not "no room": the rule stays on, since a wrong guess here
-is the one that opens somebody's door. The state rules (`closed` and the others)
-are the door's own and are still asked of a gate. The cable asks the same question
-(`envelopeRefusal`).
+so a finished base's door keeps the rule. A face the world cannot give (an
+unstreamed chunk) is unknown and not "no room": the rule stays on, since a wrong
+guess here is the one that opens somebody's door. The window and the curtain
+follow the same rule as the door, since a curtain hangs on a window. **A known
+limit:** a base's door or window whose roof is not on, or whose region the engine has not worked out,
+reads "no room" on both faces and is exempt like a gate; on a server that
+matters, the safehouse option is what protects a claimed base. The state rules
+(`closed` and the others) are the door's own and are still asked of a gate. The
+cable asks the same question (`envelopeRefusal`).
 
 **The inside rule is the ENVELOPE's, and the envelope is three classes**, the
 door, the window and the curtain, which are what a stranger would strip to get in
