@@ -1,0 +1,13 @@
+[b]0.6.0 - Double doors, garage doors and a server that remembers[/b]
+Safe for existing saves. Nothing about a machine you have already built changes.
+
+[b]New[/b]
+[*] Double doors and garage doors take a door operator and a strike like any other door. [b]dev door0 open[/b] and [b]close[/b] move every leaf together, and [b]lock[/b] locks the whole door. It counts as one door, however many leaves it has, and its number does not change when it is worked.
+[*] A door, window or curtain with open air on both sides, such as a yard gate or a fence door, can be fitted from anywhere. It used to say "This has to be done from inside" on a door that has no inside. One with a room on either side still has to be fitted from inside, so nobody can strip a front door from the pavement.
+
+[b]Servers[/b]
+[*] A server that is started and stopped while nobody is connected (the "pause when empty" option) no longer forgets its running scripts. [b]autoclose.sh[/b] and every [b]@reboot[/b] daemon used to be gone the next time a player joined. A script somebody stopped still stays stopped.
+[*] A machine that already lost its daemon to that bug needs one [b]reboot[/b] to start it again.
+[*] New sandbox option [b]Log the mod to the server console[/b], off by default. On, the mod's own lines are written to the server console as [b]CeroSec:[/b]: every saved job that came back or was dropped when the world loaded, and every machine switched off for lack of power. Leave it on while you hunt a bug.
+
+Full notes: github.com/Konijima/pz-cerosec/blob/main/CHANGELOG.md
