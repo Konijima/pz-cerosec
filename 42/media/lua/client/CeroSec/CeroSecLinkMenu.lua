@@ -130,6 +130,11 @@ function CeroSecLinkMenu.machines(object)
 	if type(total) ~= "number" then return out end
 
 	local fx, fy, fz = square:getX(), square:getY(), square:getZ()
+	-- The square the machine's book names is the fixture's FILING square, which for a
+	-- leaf of a gate is its anchor's (CeroSecModules.placeOf); the cost of the run is
+	-- still measured from the leaf that was clicked, as the server measures it.
+	local bx, by, bz = CeroSecModules.placeOf(object)
+	if bx == nil then bx, by, bz = fx, fy, fz end
 	for i = 1, total do
 		local luaObject = system:getLuaObjectByIndex(i)
 		if type(luaObject) == "table" and type(luaObject.x) == "number" then
@@ -146,7 +151,7 @@ function CeroSecLinkMenu.machines(object)
 					host = CeroSecLinkMenu.hostOf(luaObject),
 					tiles = CeroSecModules.linkTiles(fx, fy, luaObject.x, luaObject.y),
 					wire = wire,
-					full = CeroSecOS.linkAt(book, fx, fy, fz) == nil
+					full = CeroSecOS.linkAt(book, bx, by, bz) == nil
 						and #book >= CeroSecOS.LINKS_PER_MACHINE,
 					iso = CeroSecLinkMenu.isoOf(luaObject),
 				}

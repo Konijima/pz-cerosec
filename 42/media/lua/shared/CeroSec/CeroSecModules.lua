@@ -437,10 +437,40 @@ function CeroSecModules.unlinkOn(object, x, y, z)
 		if at ~= nil then
 			local w = own[at].wire
 			table.remove(own, at)
-			if writeLinks(holders[i], own) and wire == nil then wire = w end
+			-- The SUM: a legacy gate can carry the same cable on two leaves, each
+			-- paid for, and one cut hands back every tile that was bought.
+			if writeLinks(holders[i], own) then wire = (wire or 0) + w end
 		end
 	end
 	return wire
+end
+
+-- What every cable from this fixture to that machine cost, summed over the leaves of
+-- a gate (a fixture that is no gate has the one). nil when there is none. The refund
+-- of a cut, where wireOf is the price of the one the discovery reads.
+function CeroSecModules.wireTotal(object, x, y, z)
+	if object == nil then return nil end
+	local holders = CeroSecModules.gateParts(object) or { object }
+	local total = nil
+	for i = 1, #holders do
+		local own = CeroSecModules.ownLinksOn(holders[i])
+		local at = CeroSecModules.linkIndexOf(own, x, y, z)
+		if at ~= nil then total = (total or 0) + own[at].wire end
+	end
+	return total
+end
+
+-- Where a fixture's devices and cables are FILED: the square of its anchor leaf for
+-- a gate, its own for anything else. x, y, z, or nil for an object with no square.
+-- The machine's cable book names this square, because a leaf of a map double door
+-- is taken away and made again on another square at every toggle and the anchor is
+-- the one that is not.
+function CeroSecModules.placeOf(object)
+	if object == nil then return nil end
+	local parts = CeroSecModules.gateParts(object)
+	local at = (parts and parts[1] or object):getSquare()
+	if at == nil then return nil end
+	return at:getX(), at:getY(), at:getZ()
 end
 
 -- The same two, for the ONE object and nothing else: what the engine's
@@ -714,7 +744,7 @@ end
 -- LEAVE A FIXTURE ALONE, and a table whose ids may mean something this build does not
 -- know is the last thing to write into. So "unreadable" reads as "already done",
 -- which is the safe direction for both readings of the question.
-function CeroSecModules.preFitted(object)
+local function ownPreFitted(object)
 	if object == nil then return false end
 	if type(object.hasModData) ~= "function" or not object:hasModData() then return false end
 	local data = object:getModData()
@@ -725,12 +755,28 @@ function CeroSecModules.preFitted(object)
 	return fitted[CeroSecModules.PRE_KEY] == true
 end
 
+-- For a gate: marked on ANY leaf. The modules go on the anchor whichever leaf the
+-- walk was at, so the mark goes there too (markPreFitted) and every leaf the walk
+-- reaches afterwards reads "done"; a world where only a non-anchor leaf carries the
+-- mark from before is read as done as well, which is the safe direction (see above).
+function CeroSecModules.preFitted(object)
+	local parts = CeroSecModules.gateParts(object)
+	if parts == nil then return ownPreFitted(object) end
+	for i = 1, #parts do
+		if ownPreFitted(parts[i]) then return true end
+	end
+	return false
+end
+
 -- The mark, and only the mark: the modules themselves go on through setOn, which is
 -- the one writer. The server's, like every other write into a fixture's modData.
 -- false when there is nothing there to mark, which is a fixture nothing was fitted
--- to and therefore nothing to remember.
+-- to and therefore nothing to remember. On the anchor leaf of a gate, where setOn
+-- put the modules.
 function CeroSecModules.markPreFitted(object)
 	if object == nil then return false end
+	local parts = CeroSecModules.gateParts(object)
+	if parts ~= nil then object = parts[1] end
 	local data = object:getModData()
 	if data == nil then return false end
 	local fitted = data[CeroSecModules.DATA_KEY]
@@ -807,12 +853,19 @@ function CeroSecModules.setOn(object, id, on)
 	local parts = CeroSecModules.gateParts(object)
 	if parts == nil then return CeroSecModules.setOwn(object, id, on) end
 	if on then return CeroSecModules.setOwn(parts[1], id, true) end
+	-- Off: from EVERY leaf that holds it, and HOW MANY that was is the second answer.
+	-- A world from before a gate was one device can hold the same box on several
+	-- leaves (a strike or a contact was allowed on each, and the pre-fitting walk
+	-- fitted each), and the survivor paid for each: the caller hands back one item
+	-- per box that came off, so nothing bought is lost by the merge.
+	local n = 0
 	for i = 1, #parts do
 		if CeroSecModules.ownedBy(parts[i])[id] then
 			CeroSecModules.setOwn(parts[i], id, false)
+			n = n + 1
 		end
 	end
-	return true
+	return true, n
 end
 
 --

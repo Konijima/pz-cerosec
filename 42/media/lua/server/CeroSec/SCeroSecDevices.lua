@@ -1409,6 +1409,12 @@ local function scanLinked(cell, links, found, seen, mx, my, mz)
 			else
 				local objects = square:getObjects()
 				local cabled = false
+				-- Where the entry is KEPT: its own square, or a gate's anchor square when
+				-- the cable turns out to be on a gate (a book from before a gate was filed
+				-- on its anchor names the leaf that was clicked, and the leaf may be taken
+				-- away and made again elsewhere; this rewrites the entry to the leaf that
+				-- stays).
+				local keepX, keepY, keepZ = at.x, at.y, at.z
 				if objects ~= nil then
 					for k = 0, objects:size() - 1 do
 						local object = objects:get(k)
@@ -1418,6 +1424,8 @@ local function scanLinked(cell, links, found, seen, mx, my, mz)
 						local wire = CeroSecModules.wireOf(object, mx, my, mz)
 						if wire ~= nil then
 							cabled = true
+							local px, py, pz = CeroSecModules.placeOf(object)
+							if px ~= nil then keepX, keepY, keepZ = px, py, pz end
 							local already = seen[placeKey(at.x, at.y, at.z, k)]
 							if already == nil then
 								-- true: this IS the cable, the one thing that lets a
@@ -1433,7 +1441,15 @@ local function scanLinked(cell, links, found, seen, mx, my, mz)
 				-- and so is the entry. A fixture whose MODULE came off keeps its cable
 				-- and stays on the list -- the wire is still run, and what it reaches is
 				-- a fixture with no device on it.
-				if cabled then kept[#kept + 1] = { x = at.x, y = at.y, z = at.z } end
+				if cabled then
+					local dup = false
+					for j = 1, #kept do
+						if kept[j].x == keepX and kept[j].y == keepY and kept[j].z == keepZ then
+							dup = true
+						end
+					end
+					if not dup then kept[#kept + 1] = { x = keepX, y = keepY, z = keepZ } end
+				end
 			end
 		end
 	end
@@ -2612,7 +2628,6 @@ local function act(entry, value)
 	end
 
 	local leaves = leavesOf(object)
-	local ok, why = false, "no padlock"
 	for i = 1, #leaves do
 		local leaf = leaves[i]
 		local done = false
@@ -2629,11 +2644,12 @@ local function act(entry, value)
 			done = true
 		end
 		-- The answer is the ANCHOR's, which is the first leaf: what the machine
-		-- reports is the leaf it speaks for.
-		if i == 1 then ok = done end
+		-- reports is the leaf it speaks for. A gate whose anchor takes no lock is
+		-- refused WITHOUT touching the others, so the machine never leaves a gate
+		-- half locked and then says it could not.
+		if i == 1 and not done then return false, "no padlock" end
 	end
-	if ok then return true, nil, thumpState(object) end
-	return false, why
+	return true, nil, thumpState(object)
 end
 
 --

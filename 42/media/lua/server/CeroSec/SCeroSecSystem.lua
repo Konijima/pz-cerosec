@@ -1629,12 +1629,20 @@ Commands.uninstallmodule = function(self, playerObj, x, y, z, token, args)
 	local item = inv:AddItem(module.item)
 	if item == nil then return end
 
-	if not CeroSecModules.setOn(object, module.id, false) then
+	local off, count = CeroSecModules.setOn(object, module.id, false)
+	if not off then
 		inv:Remove(item)
 		if isServer() then sendRemoveItemFromContainer(inv, item) end
 		return
 	end
 	if isServer() then sendAddItemToContainer(inv, item) end
+	-- One item per box that came off. A gate is one fixture and one device, but an
+	-- older world can hold the same box on several of its leaves, each one bought, and
+	-- the first item is handed over above (CeroSecModules.setOn).
+	for _ = 2, (count or 1) do
+		local more = inv:AddItem(module.item)
+		if more ~= nil and isServer() then sendAddItemToContainer(inv, more) end
+	end
 	-- And the same when one comes OFF, for the stronger half of the reason: a
 	-- device answered out of a cache after its hardware was unscrewed is a
 	-- machine working a door nothing is wired to any more.
@@ -1762,8 +1770,15 @@ Commands.linkmodule = function(self, playerObj, x, y, z, token, args)
 	-- ("full", CeroSecOS.LINKS_PER_MACHINE). Asked before anything is spent and
 	-- WRITTEN after both ends have taken, so there is no order in which a survivor
 	-- pays for a cable the machine has no room for.
+	-- The machine's book names the fixture's FILING square, which for a leaf of a
+	-- gate is the anchor's and not the leaf that was clicked: a leaf of a map double
+	-- door is removed and made again on another square at every toggle, and a book
+	-- that named it would lose the cable at the first swing (scanLinked drops an entry
+	-- whose square carries no cable).
+	local ax, ay, az = CeroSecModules.placeOf(object)
+	if ax == nil then ax, ay, az = x, y, z end
 	local book = CeroSecOS.linkSquares(state)
-	if CeroSecOS.linkAt(book, x, y, z) == nil
+	if CeroSecOS.linkAt(book, ax, ay, az) == nil
 			and #book >= CeroSecOS.LINKS_PER_MACHINE then
 		return
 	end
@@ -1786,7 +1801,7 @@ Commands.linkmodule = function(self, playerObj, x, y, z, token, args)
 		return
 	end
 	-- The fixture has it; now the machine, which is the end the discovery reads.
-	CeroSecOS.addLink(state, x, y, z)
+	CeroSecOS.addLink(state, ax, ay, az)
 
 	-- Both ends are written, so the machine's copy goes out to the clients: the menu
 	-- counts a machine's cables off that mirror, and so does the pickup code
@@ -1812,7 +1827,7 @@ Commands.unlinkmodule = function(self, playerObj, x, y, z, token, args)
 	-- What THIS cable cost, off the fixture -- never worked out again from the two
 	-- squares. A refund is the price that was paid, and a run that was paid for
 	-- under different arithmetic is refunded under the arithmetic it was paid under.
-	local wire = CeroSecModules.wireOf(object, mx, my, mz)
+	local wire = CeroSecModules.wireTotal(object, mx, my, mz)
 	if wire == nil then return end
 
 	local given = self:giveWire(inv, wire)
@@ -1826,6 +1841,11 @@ Commands.unlinkmodule = function(self, playerObj, x, y, z, token, args)
 	-- end, so that is the only end there is to drop.
 	if luaObject ~= nil then
 		CeroSecOS.dropLink(state, x, y, z)
+		-- And the anchor's square when the leaf that was clicked is not the anchor:
+		-- the book holds one or the other, from before or after a gate was filed on its
+		-- anchor, and neither is left behind naming a cable that is cut.
+		local ax, ay, az = CeroSecModules.placeOf(object)
+		if ax ~= nil then CeroSecOS.dropLink(state, ax, ay, az) end
 		luaObject:publishOS()
 	end
 	CeroSecDevices.invalidate()
