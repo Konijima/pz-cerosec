@@ -841,6 +841,11 @@ the whole opening, and `lock` sets every leaf, as vanilla's `ISLockDoor` does.
   another square at every toggle (`IsoDoor.toggleDoubleDoorObject`) and the leaf
   made again does **not** inherit modData. A world that already holds a strike or a
   contact on some other leaf loses nothing: the read is the union of the leaves.
+  An older world that holds a strike on a non-anchor leaf keeps working, but its
+  lock is now the gate's one `lockN`: the numbers of the lock devices of its leaves
+  merge into the anchor's. And the same box or cable found on several leaves (each
+  one was bought) is handed back in full when it is taken off or cut, one item per
+  box and the sum of every wire.
 - **The refusals, in the hand's order:** `barricaded`, then `locked`, then
   `blocked`. Barricaded asks the **anchor** leaf only, which is what vanilla does
   with the leaf that was clicked, not every leaf. Locked asks **any** leaf, and only
