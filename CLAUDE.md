@@ -148,6 +148,19 @@ that section before touching anything persisted.
   finding it through the link, and every script fails with
   `FileNotFoundException` while the Lua loads fine.
 
+## When the author says "prepare the release"
+
+Do not ask how. Open the section **"Prepare the release": who does what, in what
+order** in [docs/RELEASE.md](docs/RELEASE.md) and run it: propose the version
+number from what is under **Unreleased**, close the changelog, set the version in
+the five places that mean "now", run the suite, make the upload copy, write the
+Steam note and the item comment. Say at the end of each stage which step is the
+author's and what it is. The steps marked Claude are not waited-for: nothing on
+that list should ever need the author to remind you of it.
+
+Until then, features and fixes each keep their own manual page, parcours step and
+**Unreleased** line, and the version number is left alone.
+
 ## Commits
 
 - Small, each one a thing that works. A message that says **why**, not what the
