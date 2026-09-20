@@ -26,6 +26,14 @@ date.
   "This has to be done from inside" on a door that has no inside. One with a
   room on either side still has to be fitted from inside, so a front door cannot
   be stripped from the pavement.
+- A new sandbox option, **Log the mod to the server console**
+  (`CeroSec.ServerLog`, off by default), for a server owner who has to find out
+  why something went wrong and cannot edit the mod. On, everything the mod says
+  about itself is also written to the server console as `CeroSec:` lines: every
+  saved job that was dropped or refused when the world loaded, how many of a
+  machine's saved jobs came back, a saved book ignored because its machine was
+  off, and every machine switched off for lack of power. It is safe to leave on
+  while you hunt a bug, and turning it off changes nothing else.
 
 ## 0.5.1 - 2026-09-19
 

@@ -388,8 +388,12 @@ is selected, because those are facts about a window.
 `CeroSec.log(level, text)` names one of `CeroSec.LOG_INFO`, `LOG_WARN`,
 `LOG_ERROR`. There is one log, so it is two arities and not two functions.
 
-It does two things with a line. It **prints** it, gated on `CeroSec.DEBUG` exactly
-as it always was, and it **appends** it to a 200-line ring. The append is not
+It does two things with a line. It **prints** it, gated on `CeroSec.DEBUG` -- the
+developer's constant -- or on the sandbox option `CeroSec.ServerLog`, which is the
+server owner's way to the same lines (`CeroSec.serverLog()` reads it at each call
+and never at load, because `SandboxVars` is not there yet when the file runs and
+`tests/defs_test.lua` runs it with no game; only the value `true` turns it on). And
+it **appends** it to a 200-line ring. The append is not
 gated: the print is console noise nobody asked for, and a Log tab that needed
 `CeroSec.DEBUG` turned on first would be empty exactly when somebody opens it to
 find out what went wrong.
@@ -684,7 +688,7 @@ Four of them are worth a sentence more than the table gives:
   here the way the paper works them out; an account the catalogue did not make says
   `derived -`, because there is nothing to read off a salted hash. The lines go to the
   game's own log by `print`, unconditionally, the way the dump and the self-test do
-  (`CeroSec.log` prints only under `CeroSec.DEBUG`, and its ring is one Lua state's,
+  (`CeroSec.log` prints only under `CeroSec.DEBUG` or the `CeroSec.ServerLog` option, and its ring is one Lua state's,
   so on a dedicated server an admin's Log tab shows his client's ring: the letters
   are read in `console.txt` on a client, or in the server's log); the ASKING window's
   note, through `reply`, carries the count and says where the lines are; nothing goes

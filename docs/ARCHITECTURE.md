@@ -128,10 +128,12 @@ flooring of the two iso coordinates), `PICK_SIDE = 1`. `s` and `d` share a parit
 which is why the game's own candidates read as a staircase and why half the pairs
 in that window name no square.
 
-While `CeroSec.DEBUG` is on, every right-click leaves in the log ring the debug
-window's **Log** tab reads: the sprite and the square of everything the game handed
-over, then every candidate the mask pass weighed with its box, its raise and
-whether the mask took it. A miss in game is a line to read.
+While `CeroSec.DEBUG` is on (or the sandbox option `CeroSec.ServerLog`, which
+prints the same lines -- see [DEBUG.md](DEBUG.md)), every right-click leaves in
+the log ring the debug window's **Log** tab reads: the sprite and the square of
+everything the game handed over, then every candidate the mask pass weighed with
+its box, its raise and whether the mask took it. A miss in game is a line to
+read.
 
 ## Standing at a computer
 

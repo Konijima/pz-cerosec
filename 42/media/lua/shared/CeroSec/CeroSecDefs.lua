@@ -41,13 +41,25 @@ CeroSec.logRing = CeroSec.logRing or {}
 -- not care says -- and CeroSec.log(level, text) names one of the three levels
 -- above. Two arities and not two functions: there is one log, and a caller that
 -- has nothing to say about the level should not have to say anything.
+-- Does the log reach the console? CeroSec.DEBUG is a constant in this file, which
+-- a developer flips and a server owner cannot, so the sandbox option
+-- CeroSec.ServerLog (42/media/sandbox-options.txt) is the owner's way to the same
+-- lines. Read here, at each call, the way CeroSecContent.enabled reads its own:
+-- never at load, because SandboxVars is not there yet when this file runs and
+-- tests/defs_test.lua runs it with no game at all. Only the value `true` turns it
+-- on -- a missing group, a missing key or any other value is off.
+function CeroSec.serverLog()
+	local group = SandboxVars and SandboxVars.CeroSec
+	return type(group) == "table" and group.ServerLog == true
+end
+
 function CeroSec.log(level, text)
 	if text == nil then
 		text = level
 		level = CeroSec.LOG_INFO
 	end
 	local line = tostring(text)
-	if CeroSec.DEBUG then print("CeroSec: " .. line) end
+	if CeroSec.DEBUG or CeroSec.serverLog() then print("CeroSec: " .. line) end
 	CeroSec.ringPush(CeroSec.logRing, { level = level, text = line }, CeroSec.LOG_MAX)
 end
 

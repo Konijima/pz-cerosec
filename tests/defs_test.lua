@@ -197,6 +197,67 @@ check("newState returns a fresh table", CeroSec.newState() ~= CeroSec.newState()
 check("DEBUG off by default", CeroSec.DEBUG == false)
 CeroSec.log("this must not print")
 
+-- CeroSec.ServerLog, the sandbox option that is a server owner's way to the same
+-- lines. This file runs under plain lua5.1 with no game, so SandboxVars does not
+-- exist here at all: the first assertions below are the load-time and no-game
+-- guard, and the rest set the global the way the game's SandboxVars would be.
+do
+	local realPrint = print
+	local printed = {}
+	print = function(text) printed[#printed + 1] = text end
+	local function said(text)
+		for i = 1, #printed do
+			if printed[i] == "CeroSec: " .. text then return true end
+		end
+		return false
+	end
+	local function ringHas(text)
+		for i = #CeroSec.logRing, 1, -1 do
+			if CeroSec.logRing[i].text == text then return true end
+		end
+		return false
+	end
+	local function try(sandbox, text)
+		SandboxVars = sandbox
+		printed = {}
+		CeroSec.log(text)
+		SandboxVars = nil
+		return said(text)
+	end
+	local ok, err = pcall(function()
+		eq("no SandboxVars at all: option off", CeroSec.serverLog(), false)
+		eq("no SandboxVars at all: nothing printed", try(nil, "no game"), false)
+		check("(a) option off, DEBUG off: still in the ring", ringHas("no game"))
+		eq("SandboxVars without the group: nothing printed", try({}, "no group"), false)
+		eq("group without the key: nothing printed",
+			try({ CeroSec = {} }, "no key"), false)
+		eq("option false: nothing printed",
+			try({ CeroSec = { ServerLog = false } }, "off"), false)
+		check("(a) option false, DEBUG off: still in the ring", ringHas("off"))
+		eq("option the string \"true\": nothing printed",
+			try({ CeroSec = { ServerLog = "true" } }, "text"), false)
+		eq("option 1: nothing printed", try({ CeroSec = { ServerLog = 1 } }, "one"), false)
+		eq("the group not a table: nothing printed, no error",
+			try({ CeroSec = 5 }, "junk"), false)
+		eq("(b) option true: the line reaches print",
+			try({ CeroSec = { ServerLog = true } }, "on"), true)
+		check("(b) and is in the ring too", ringHas("on"))
+		SandboxVars = { CeroSec = { ServerLog = true } }
+		printed = {}
+		CeroSec.log(CeroSec.LOG_WARN, "levelled")
+		SandboxVars = nil
+		check("(b) a levelled line prints its text alone", said("levelled"))
+		-- DEBUG still works with the option off, which is the developer's way.
+		CeroSec.DEBUG = true
+		eq("DEBUG on, option unset: prints", try(nil, "dev"), true)
+		CeroSec.DEBUG = false
+	end)
+	print = realPrint
+	SandboxVars = nil
+	CeroSec.DEBUG = false
+	if not ok then error(err, 0) end
+end
+
 -- Screen geometry: the box test copies the picker's own comparison, left and
 -- top edges exclusive, right and bottom inclusive.
 check("point inside the box", CeroSec.pointInBox(50, 50, 0, 0, 128, 256))

@@ -19259,6 +19259,190 @@ do
 	end
 
 	--
+	-- The sandbox option CeroSec.ServerLog, and what the load now says of a book
+	--
+	-- A dedicated server loses the log ring at every restart and prints none of it,
+	-- so a job that vanished across one left no trace. With the option on, a machine
+	-- whose state carries a book says what became of it -- and one whose state
+	-- carries none says nothing, which is 600 machines in a county. The lines are
+	-- read where a server owner reads them: at print, the option ON.
+	--
+	do
+		local hadSandbox, realPrint = _G.SandboxVars, print
+		local seen
+		local function withOption(on, fn)
+			_G.SandboxVars = { CeroSec = { HardwareRequired = false,
+				PrefilledMachines = false, ServerLog = on } }
+			seen = {}
+			print = function(text) seen[#seen + 1] = tostring(text) end
+			local ok, err = pcall(fn)
+			print = realPrint
+			_G.SandboxVars = hadSandbox
+			if not ok then error(err, 0) end
+		end
+		-- The lines a load printed that are about the machine at 10,10,0.
+		local function said(needle)
+			for i = 1, #seen do
+				if string.find(seen[i], "CeroSec: the machine at 10,10,0: " .. needle,
+						1, true) then
+					return true
+				end
+			end
+			return false
+		end
+		local function anyLine()
+			for i = 1, #seen do
+				if string.find(seen[i], "CeroSec: the machine at 10,10,0", 1, true) then
+					return true
+				end
+			end
+			return false
+		end
+
+		local bench = newBench()
+		bench.login("admin")
+		bench.script("/home/admin/a.sh", "while true; do sleep 1; done\n")
+		bench.script("/home/admin/b.sh", "while true; do sleep 2; done\n")
+		bench.enter("sh /home/admin/a.sh &")
+		bench.enter("sh /home/admin/b.sh &")
+		seconds(bench, 1)
+		eq("two daemons to save", jobCount(bench), 2)
+		local good = bench.save()
+		eq("and the book holds both", #good.os.jobs.list, 2)
+
+		-- All of it back.
+		withOption(true, function()
+			local back = newBench(deepCopy(good))
+			eq("both come back", jobCount(back), 2)
+		end)
+		check("a book that came back whole says so: 2 of 2",
+			said("2 of 2 saved job(s) came back"))
+
+		-- Part of it.
+		local partial = deepCopy(good)
+		partial.os.jobs.list[2] = 5
+		withOption(true, function()
+			local back = newBench(partial)
+			eq("one comes back", jobCount(back), 1)
+		end)
+		check("a partial book says how many: 1 of 2", said("1 of 2 saved job(s) came back"))
+		check("and the job that did not still says why",
+			(function()
+				for i = 1, #seen do
+					if string.find(seen[i], "dropped a saved job", 1, true) then return true end
+				end
+				return false
+			end)())
+
+		-- None of it: the line is there before killAll, so a book that all fell is
+		-- not the same silence as no book.
+		local none = deepCopy(good)
+		none.os.jobs.list[1] = 5
+		none.os.jobs.list[2] = 5
+		withOption(true, function()
+			local back = newBench(none)
+			eq("nothing comes back", jobCount(back), 0)
+		end)
+		check("a book that all fell says 0 of 2", said("0 of 2 saved job(s) came back"))
+
+		-- A book on a machine that is off.
+		local off = deepCopy(good)
+		off.on = false
+		withOption(true, function()
+			local back = newBench(off)
+			eq("an off machine runs nothing", jobCount(back), 0)
+			eq("and the book is off its state", back.object.os.jobs, nil)
+		end)
+		check("a book on an off machine says it was ignored, and why",
+			said("a saved book of 2 job(s) ignored: the machine is off"))
+		check("and does not claim any came back", not said("saved job(s) came back"))
+
+		-- A book that is not one.
+		local junk = deepCopy(good)
+		junk.os.jobs = "junk"
+		withOption(true, function() newBench(junk) end)
+		check("a book that is not a table says so", said("a saved book was ignored"))
+		local nolist = deepCopy(good)
+		nolist.os.jobs = { list = 5 }
+		withOption(true, function() newBench(nolist) end)
+		check("a book whose list is not a table says so", said("a saved book was ignored"))
+
+		-- No book at all: silence, on a machine that is on and on one that is off.
+		local empty = newBench()
+		empty.login("admin")
+		local plain = empty.save()
+		check("the machine has a state and it carries no book",
+			plain.os ~= nil and plain.os.jobs == nil)
+		withOption(true, function()
+			local back = newBench(deepCopy(plain))
+			eq("it loads", jobCount(back), 0)
+		end)
+		eq("no book, nothing said about the machine", anyLine(), false)
+		local plainOff = deepCopy(plain)
+		plainOff.on = false
+		withOption(true, function() newBench(plainOff) end)
+		eq("no book on an off machine, nothing said either", anyLine(), false)
+
+		-- The option off: the same load prints nothing at all, and the ring has it.
+		CeroSec.logRing = {}
+		withOption(false, function() newBench(deepCopy(good)) end)
+		eq("option off: the load printed nothing", #seen, 0)
+		check("but the ring has the line",
+			(function()
+				for i = 1, #CeroSec.logRing do
+					if string.find(CeroSec.logRing[i].text,
+							"2 of 2 saved job(s) came back", 1, true) then
+						return true
+					end
+				end
+				return false
+			end)())
+
+		-- The power check that switches a machine off.
+		local dark = newBench()
+		dark.object.isLoaded = function() return true end
+		dark.object.hasPower = function() return false end
+		withOption(true, function()
+			eq("the check switched it off", dark.object:checkPower(), true)
+		end)
+		check("and says the machine lost power", (function()
+			for i = 1, #seen do
+				if seen[i] == "CeroSec: the machine at 10,10,0 lost power and was switched off" then
+					return true
+				end
+			end
+			return false
+		end)())
+		local lit = newBench()
+		lit.object.isLoaded = function() return true end
+		withOption(true, function()
+			eq("a machine with power is left alone", lit.object:checkPower(), false)
+		end)
+		eq("and says nothing", anyLine(), false)
+
+		-- The option is declared where the game reads it, off by default, and both
+		-- languages carry its two strings.
+		local handle = assert(io.open("42/media/sandbox-options.txt", "r"))
+		local options = handle:read("*a")
+		handle:close()
+		check("ServerLog is declared, boolean, default false, on the mod's page",
+			string.find(options,
+				"option CeroSec.ServerLog%s*{%s*type = boolean,%s*default = false,"
+				.. "%s*page = CeroSec,%s*translation = CeroSec_ServerLog,") ~= nil)
+		for _, lang in ipairs({ "EN", "FR" }) do
+			local h = assert(io.open(
+				"42/media/lua/shared/Translate/" .. lang .. "/Sandbox.json", "r"))
+			local strings = h:read("*a")
+			h:close()
+			check(lang .. " Sandbox.json names the option",
+				string.find(strings, '"Sandbox_CeroSec_ServerLog"', 1, true) ~= nil)
+			check(lang .. " Sandbox.json has its tooltip",
+				string.find(strings, '"Sandbox_CeroSec_ServerLog_tooltip"', 1, true) ~= nil)
+		end
+		CeroSecJobs.machines = {}
+	end
+
+	--
 	-- A computer picked up and put down is running nothing, and carries nothing
 	--
 	-- The state an ITEM brings is the one road into this machine that a CLIENT
