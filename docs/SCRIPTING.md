@@ -796,9 +796,9 @@ A server with nobody on it fires no tick (the `PauseEmpty` option), and so write
 snapshot; a book that came back at load therefore stays on the state, as copies of
 the jobs that came back, until the first snapshot or save replaces it. A server that
 is started and stopped with nobody connected loses no running job, and an `@reboot`
-daemon is not run a second time. The copy is dropped the moment the job is killed
-or the machine is switched off, at the latest at the next snapshot, so a job
-somebody stopped does not come back.
+daemon is not run a second time. Switching the machine off drops the copy at
+once; `kill` drops it at the next snapshot (or at the save, whichever comes first),
+so a job somebody stopped does not come back.
 
 What survives, and what does not. Every "no" below is one test in
 `CeroSecJobs.jobRefused`, and the word in brackets is the one it answers with, the

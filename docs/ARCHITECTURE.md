@@ -709,8 +709,9 @@ handed it at the first read of the state and `tests/window_test.lua` takes the w
 legal filesystem with a full book on it through `CeroSecOS.validate`. It is replaced
 whole by the next `writeBook` (the snapshot, or `Events.OnSave`) and cleared by
 `killAll` and by `writeBook` for a machine with nothing running, and `saveBooks`
-visits a machine that has it and no live book, so a job killed after the load is off
-the state at the next snapshot. That it is read
+visits a machine that has it and no live book. A machine switched off has it off the
+state at once (`killAll`); a job stopped with `kill` after the load is off it at the
+next snapshot or at the save, whichever comes first, and not before. That it is read
 *there and nowhere else* is what keeps a client out of it — a state also arrives from
 an item's `movableData`, which on a server is a table a client wrote, and that road
 ends in `resetForPlacement`, which switches the machine off and kills the book, and

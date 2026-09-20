@@ -17721,6 +17721,57 @@ do
 		eq("partial: so a save with no tick does not write the other",
 			#loaded.save(true).os.jobs.list, 1)
 
+		-- saveBooks visits a machine that has the loaded book on its state and NO
+		-- live book: `luaObject.os.jobs ~= nil` is what gets it there, and a walk
+		-- that looked at the live book alone would leave the copy for the next load
+		-- to run again. Drained first the way a machine really drains -- the job is
+		-- killed and no snapshot has run since -- so the copy is still there, then
+		-- the snapshot alone (no writeBook of the machine's own) has to take it off.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		CeroSecJobs.snapshotMs = _G.__now + 1000000000
+		loaded.enter("kill " .. wasId)
+		loaded.tick(60)
+		eq("drained: the live book is empty", jobCount(loaded), 0)
+		check("drained: and no snapshot has run, so the loaded copy is still on the state",
+			loaded.object.os.jobs ~= nil)
+		CeroSecJobs.snapshotMs = 0
+		loaded.tick(1)
+		check("drained: the snapshot takes the loaded copy off the state",
+			loaded.object.os.jobs == nil)
+		bytes = loaded.save(true)
+		check("drained: so a save with no event carries no book",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("drained: and it does not come back", jobCount(newBench(bytes)), 0)
+
+		-- The same with no live book table at all, which is the machine the clause
+		-- is for: the copy on the state is all there is of the book.
+		loaded = newBench(deepCopy(bytes0))
+		loaded.open()
+		loaded.object.jobs = nil
+		check("no live book: the loaded copy is on the state", loaded.object.os.jobs ~= nil)
+		CeroSecJobs.saveBooks()
+		check("no live book: saveBooks takes it off",
+			loaded.object.os.jobs == nil)
+		bytes = loaded.save(true)
+		eq("no live book: and it does not come back", jobCount(newBench(bytes)), 0)
+
+		-- A machine that is off never gets the file's book onto its state: readBook
+		-- takes it off and puts nothing back for a machine that is not running
+		-- (`if not luaObject.on`), because writeBook would not have written it and
+		-- nothing would ever clear it on a machine no scheduler holds.
+		local dark = deepCopy(bytes0)
+		dark.on = false
+		loaded = newBench(dark)
+		check("off: the file carried a book to refuse", bytes0.os.jobs ~= nil)
+		check("off: the state carries no book after the load",
+			loaded.object.os == nil or loaded.object.os.jobs == nil)
+		eq("off: and nothing is running", jobCount(loaded), 0)
+		bytes = loaded.save(true)
+		check("off: a save carries no book",
+			bytes.os == nil or bytes.os.jobs == nil)
+		eq("off: and a reload runs nothing", jobCount(newBench(bytes)), 0)
+
 		_G.isServer = hadServer
 		_G.__world = nil
 		CeroSecDevices.invalidate()
