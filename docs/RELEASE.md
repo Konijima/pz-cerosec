@@ -174,6 +174,18 @@ with what to look at on the glass.
 Said out loud, release by release, because the compatibility contract only allows
 a new sandbox option to change a world if the release notes say so plainly.
 
+### 0.6.0
+
+**Nothing in an existing world changes shape.** No state or system version
+moves. A double door or a garage door that a machine used to refuse now takes a
+module, and a door, window or curtain with no room on either face takes one
+without being fitted from inside; a fixture already fitted is untouched. The new
+sandbox option `CeroSec.ServerLog` is off by default, so a world that does not
+turn it on behaves exactly as before. A dedicated server started and stopped
+with nobody connected now keeps the running scripts that came back at load (see
+0.5.1); a daemon that an earlier build already lost needs one `reboot` on its
+machine.
+
 ### 0.5.1
 
 **A running job now survives the world being saved and loaded, at the step

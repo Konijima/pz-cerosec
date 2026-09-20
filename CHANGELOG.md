@@ -8,6 +8,16 @@ date.
 
 ## Unreleased
 
+## 0.6.0 - 2026-09-20
+
+Doors that were out of reach and a restart that no longer costs a server its
+scripts. Double doors, garage doors and yard gates now take a module like any
+other door, and a dedicated server that is started and stopped with nobody on it
+keeps every running script. Nothing here needs a new save: no state or system
+version moves, and the new sandbox option is off unless a server owner turns it
+on. A server owner whose world lost its `autoclose.sh` in an empty restart still
+needs one `reboot` on that machine to start it again.
+
 - Double doors and garage doors can now take a door operator and be opened and
   closed from `/dev` (`dev door0 open`), and locked and unlocked from `lock`
   with a strike. Each one is a single `door` and a single `lock` however many
