@@ -508,7 +508,7 @@ each bought with a level of Electricity and one gesture:
 | `CeroSec.MagneticContact` | a door **or** a window | that `doorN` or `winN`, **read-only** | 1 |
 | `CeroSec.Relay` | a light switch | `lightN`, on and off | 1 |
 | `CeroSec.ElectricStrike` | a door a lock bites on | `lockN`, lock and unlock | 2 |
-| `CeroSec.DoorOperator` | a door, not a garage or a double leaf | `doorN`, open and close | 3 |
+| `CeroSec.DoorOperator` | a door, a double door or a garage door | `doorN`, open and close | 3 |
 | `CeroSec.CurtainMotor` | a curtain, or a door with a sheet over it | `curtainN`, open and close | 2 |
 | `CeroSec.WindowOperator` | a window | `windowN`, open and close | 3 |
 | `CeroSec.ApplianceSwitch` | an oven, a microwave, a coffee machine, a washer, a dryer | `stoveN` or `washerN`, on and off | 2 |
@@ -557,10 +557,12 @@ a module that could never fit that sort of fixture at all: no curtain motor on a
 light switch. Right-click something this mod has nothing to say about and there
 is no **CeroSec hardware** entry at all.
 
-Two entries come up greyed with the reason on them, and both are about the
-fixture rather than about you: a **strike on an interior door** (a key there
-stops nobody, so the lock would be a device that lies) and an **operator on a
-garage or double door** (a machine moves one leaf and would leave the rest shut).
+One entry comes up greyed with the reason on it, and it is about the fixture
+rather than about you: a **strike on an interior door** (a key there stops
+nobody, so the lock would be a device that lies). A **double door** and a
+**garage door** are one door to the machine, however many leaves they have: one
+`doorN`, one `lockN`, an operator and a strike that go on any leaf and work the
+whole opening.
 
 **With the door open, and from inside.** A box goes on, and comes off, only
 from **inside** the building. Stand on the pavement and every entry is greyed

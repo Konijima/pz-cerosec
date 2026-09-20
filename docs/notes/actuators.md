@@ -905,20 +905,54 @@ asks them that way
 (`server/BuildingObjects/ISBuildUtil.lua:556`,
 `ISDoubleDoor.lua:315`).
 
-**The double door and the garage door are still out, for the
-reason they were out.** `ToggleDoorSilent` moves the one
-object it is called on; vanilla's own `ToggleDoor` walks
-every leaf through `forEachDoorObject`. A machine that
-opened one leaf would leave the rest shut. Nothing in this
-jar adds a silent toggle that walks the leaves, so
-`CeroSecModules.fitsOn`'s `manydoors` refusal stands as
-written.
+**The double door and the garage door are doors, and one device each.**
+An earlier printing of this section kept them out ("nothing in this jar adds
+a silent toggle that walks the leaves") and left a screen test to say whether
+calling `ToggleDoorSilent` leaf by leaf would be a door or a shudder. Both
+were the wrong question: the machine never has to walk the leaves, because
+the hand's own path ends on two public statics that walk them.
+`javap -p -c` on `zombie.iso.objects.IsoDoor`, 42.20.4:
 
-One thing a later rung could look at and this one did not:
-whether calling `ToggleDoorSilent` on **each** leaf in turn,
-found through the same two statics, is a faithful garage
-door or a door that moves in pieces. That is a behaviour
-question and needs a screen, not a `javap`.
+- `ToggleDoorActual` calls `isDoubleDoorObstructed` at offset 637 and then
+  `toggleDoubleDoor(IsoObject, boolean)` at 689; for a garage door it calls
+  `isGarageDoorObstructed` at 770 and `toggleGarageDoor(IsoObject, boolean)`
+  at 822. Both toggles are `public static`; the two obstruction tests are a
+  public static (double) and a **private** static (garage).
+- `toggleGarageDoor` walks the chain through `getGarageDoorPrev` /
+  `getGarageDoorNext` and calls `toggleGarageDoorObject` on each leaf
+  (offsets 35, 51, 84); `toggleDoubleDoor` calls `toggleDoubleDoorObject` four
+  times (123, 133, 143, 153). One call, every leaf, and the `IsoObject.sync(int)`
+  that sends the packet (garage offset 129, double 183 and 206). So the machine calls
+  `IsoDoor.toggleDoubleDoor(obj, true)` / `IsoDoor.toggleGarageDoor(obj, true)`
+  and never `ToggleDoorSilent` on a leaf of a gate.
+- **Why the boxes are on the anchor leaf.** `toggleDoubleDoorObject` ends in
+  `IsoGridSquare.RemoveTileObject` (offset 384) and makes a new object: leaves 2
+  and 3 of a map double door are removed and recreated on another square at
+  every toggle, and the recreated leaf does **not** inherit modData. Leaves 1 and
+  4, the hinge leaves, never move. A garage door's leaves are never recreated.
+  So the anchor (`CeroSecModules.gateParts`) is 1 then 4 for a double door and
+  the first of the chain for a garage door, and `installedOn` / `linksOn` read
+  every leaf while `setOn` and `link` write the anchor.
+- **The hand's refusals, in the hand's order,** are `isBarricaded` on the leaf
+  clicked (`ToggleDoorActual` asks the object it was called on and no other;
+  the machine asks the anchor), `isLockedByKey` when opening, then the obstruction test. The
+  machine keeps the order.
+- **The one approximation.** `isGarageDoorObstructed` is private and does
+  nothing unless the door is open (`isOpen` at 79): for each square it asks
+  `BaseVehicle.isIntersectingSquare` of the same vehicle twice (offsets 423 and
+  459), the square and the one across the door line. The machine rebuilds it
+  from the public `IsoGridSquare.isVehicleIntersecting()` on those two squares,
+  which asks "some vehicle" of each. It is stricter than the engine when two
+  different vehicles stand either side of the door and neither crosses it, and
+  never looser.
+- **What is not proven: the garage door on a second client.**
+  `IsoDoor.syncIsoObject(boolean, byte, UdpConnection, ByteBufferReader)`
+  reaches `toggleDoubleDoor` in its receive branch (offset 514) and has **no**
+  call to `toggleGarageDoor`. The machine calls `toggleGarageDoor(obj, true)`
+  from the server exactly as the hand's path does, so how another client sees
+  the other leaves move is whatever vanilla's own is, and no dedicated server
+  with two clients has watched it yet. It is a step of the test course, not a
+  claim of this note.
 
 ## 6. The rest, one paragraph each
 
@@ -1415,9 +1449,10 @@ Written down so that nobody reads a silence as a yes.
   modData question is settled either way (`IsoThumpable`
   keeps and saves its own table, modules-proofs.md, 1); the
   fetch is not.
-- **A garage door in leaves.** Whether calling
-  `ToggleDoorSilent` on each leaf is a door or a shudder.
-  Needs a screen.
+- **A garage door on a second client.** Section 5: the machine calls
+  `toggleGarageDoor(obj, true)` from the server like the hand's path, and
+  `syncIsoObject` has no garage receive branch. Needs a dedicated server and
+  two clients, one of them watching.
 - **The alarm clock.** Which of `syncAlarmClock()`,
   `syncAlarmClock_World()` and
   `syncAlarmClock_Player(IsoPlayer)` a clock on the ground

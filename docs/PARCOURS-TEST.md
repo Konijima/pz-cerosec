@@ -547,8 +547,8 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      malgré le cadenas, même résultat qu'un clic à la main : le cadenas ne
      tenant pas la porte. Poser plutôt une **clé** sur la porte (`lockN` à
      `locked`) : `dev doorN open` → `doorN: locked`. Enfin, une porte de
-     garage ou une porte double : elle a un `lockN` et **aucun** `doorN`, et
-     `dev door<son numéro> open` répond `dev: ...: no such device`. [ ]
+     garage ou une porte double : voir les étapes 232c à 232g, elle est
+     **une** porte à part entière (un `doorN` et un `lockN`). [ ]
 100f. **Détecteur de mouvement, le posé.** Trouver un **Motion Sensor**
      (`Base.MotionSensor`), le module électronique : il se ramasse dans le
      butin d'électronique, se démonte d'une `HomeAlarm`
@@ -1954,14 +1954,71 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      `crw-rw----`, et `echo open > /dev/doorN` ouvre la porte pour de bon. Si la
      porte est verrouillée, elle répond `doorN: locked` : c'est la serrure, pas
      le module. [ ]
-232. **La gâche, et les deux portes qui la refusent.** Sur une porte
+232. **La gâche, et la porte qui la refuse.** Sur une porte
      **intérieure** (une pièce de chaque côté), clic droit avec la gâche →
-     entrée grisée, « Cette porte n'a pas de serrure à câbler. ». Sur une porte
-     de **garage** ou une porte double, avec l'opérateur → grisée, « Un
-     ordinateur ne peut pas actionner une porte double ou de garage. ». Sur la
+     entrée grisée, « Cette porte n'a pas de serrure à câbler. ». Sur la
      porte extérieure de l'étape 230 → la gâche se pose, et `lockN` apparaît à
      côté de `doorN` : `echo unlock > /dev/lockN` déverrouille, essayer d'entrer
-     depuis dehors le confirme. [ ]
+     depuis dehors le confirme. Une porte de garage ou une porte double ne
+     fait plus partie des refus : voir 232c. [ ]
+232c. **Une porte double, un seul périphérique.** Une porte double (quatre
+     battants) et une porte de garage, de l'intérieur, chacune avec un
+     `CeroSec.DoorOperator` (Électricité 3) et une `CeroSec.ElectricStrike`
+     (Électricité 2), posés sur **n'importe quel** battant : le clic droit sur
+     un battant, puis sur un autre, propose les mêmes entrées et plus jamais
+     « Un ordinateur ne peut pas actionner une porte double ou de garage. ».
+     `dev` liste **un** `doorN` et **un** `lockN` par porte, pas un par battant.
+     Sur un battant, retirer le module → il disparaît aussi vu depuis les
+     autres battants ; le reposer sur un autre battant → **même numéro**. [ ]
+232d. **Ouvrir, fermer, verrouiller.** Pour chacune des deux portes :
+     `dev doorN open` → **tous** les battants bougent ensemble (les quatre de la
+     porte double, toute la chaîne du garage), le son est celui d'une main sur
+     la porte, `cat /dev/doorN` dit `open`. `dev doorN close` le contraire.
+     `dev lockN lock` → `lockN: locked`, et `cat /dev/doorN` dit `locked` ; à la
+     main, aucun battant ne s'ouvre. `dev doorN open` → `doorN: locked`, rien
+     ne bouge. `dev lockN unlock` → la porte s'ouvre de nouveau, à la main
+     comme au clavier. Fermée par la gâche depuis un autre battant que celui du
+     module : même résultat. [ ]
+232e. **Les refus, dans l'ordre de la main.** Barricader **le battant qui porte
+     les modules** (le battant d'ancrage : pour une porte double, un battant
+     d'extrémité, à charnière ; pour le garage, le premier de la chaîne) →
+     `dev doorN open` répond `doorN: barricaded`, rien ne bouge. Retirer les
+     planches. Verrouiller (`lockN lock`) : `doorN: locked`. Déverrouiller. Puis,
+     porte double : mettre un objet ou un arbre (mode debug) dans le passage →
+     `doorN: blocked`. Porte de garage **ouverte** : garer un véhicule **en
+     travers** de la ligne de la porte → `dev doorN close` répond
+     `doorN: blocked` et le garage reste ouvert ; retirer le véhicule → la
+     porte se ferme. Porte de garage **fermée** avec un véhicule devant :
+     `dev doorN open` fonctionne (le refus ne vaut que pour la fermeture).
+     Contre-épreuve : un véhicule à un seul côté de la porte, sans la
+     traverser, ne bloque pas la fermeture. Cas connu, à ne pas compter comme
+     un défaut : **deux** véhicules différents de part et d'autre, aucun ne
+     traversant la porte, sont refusés par la machine alors que le jeu les
+     laisserait passer (voir `docs/DEVICES.md`). Planches sur un autre battant
+     que celui d'ancrage : la machine ne les voit pas, comme la main qui n'a
+     cliqué que sur le battant d'ancrage. [ ]
+232f. **Le numéro ne bouge pas quand la porte bouge.** Sur la porte double
+     **de la carte** (celle dont les battants 2 et 3 sont supprimés puis
+     recréés par le moteur à chaque manoeuvre), noter `doorN` et `lockN`, puis
+     ouvrir et fermer la porte **cinq fois** (`dev doorN toggle`, puis à la
+     main, en alternant). Après chaque manoeuvre `dev` liste toujours les mêmes
+     `doorN` et `lockN`, l'opérateur et la gâche sont toujours posés (le clic
+     droit sur le battant recréé les montre), et `ls -l /dev` n'a pas changé.
+     Un câble tiré depuis un ordinateur jusqu'à cette porte tient aussi. Puis
+     sauvegarder, quitter, recharger : mêmes numéros. [ ]
+232g. **Sur un serveur dédié, avec un SECOND client qui regarde la porte de
+     garage. À FAIRE, non prouvé.** Serveur dédié réel, deux clients connectés
+     et proches du garage, un ordinateur avec l'opérateur posé : depuis le
+     premier client, `dev doorN open` puis `close`. Le second client, qui ne
+     touche à rien, doit voir **toute** la chaîne de battants s'ouvrir et se
+     fermer, et pas seulement le battant d'ancrage. Le serveur appelle
+     `toggleGarageDoor(obj, true)` comme le fait la main, mais `syncIsoObject`
+     de vanilla n'a pas de branche de réception pour le garage : ce que le
+     second client voit est le mécanisme du jeu, jamais vérifié à deux clients
+     sur un serveur dédié. Noter ce qui se passe, y compris un client qui ne
+     voit qu'un battant bouger. Même essai avec la porte double (dont la
+     réception est lue dans le bytecode) et, pour la comparaison, une porte de
+     garage ouverte à la main par le premier client. [ ]
 233. **La fenêtre ne prend qu'un contact, et le contact sent le châssis.** Clic
      droit sur une fenêtre avec la gâche ou l'opérateur en poche → « Ce module
      ne va pas ici. ». Avec le contact → il se pose, `winN` apparaît. Ouvrir la

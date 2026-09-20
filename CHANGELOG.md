@@ -6,6 +6,16 @@ reads. At release, `python3 tools/changelog-steam.py` prints the newest section
 in the shape Steam's Change Notes take, and the section gets its version and
 date.
 
+## Unreleased
+
+- Double doors and garage doors can now take a door operator and be opened and
+  closed from `/dev` (`dev door0 open`), and locked and unlocked from `lock`
+  with a strike. Each one is a single `door` and a single `lock` however many
+  leaves it has, all the leaves move together, and the number does not change
+  when the door is worked. A door still says `barricaded`, `locked` or
+  `blocked` the way a hand would meet them. Before, a computer refused to work
+  either kind.
+
 ## 0.5.1 - 2026-09-19
 
 - A dedicated server now keeps its running scripts across a restart. The game's
