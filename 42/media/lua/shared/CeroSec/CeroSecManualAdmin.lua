@@ -928,12 +928,12 @@ Remove gives the box back whole, and the NUMBER stays.]],
 [[With the door open, and from inside.
 
 A box goes on the building's SKIN -- a door, a window, a curtain -- only
-from INSIDE, or anybody walking past strips the hardware off your front
-door without coming in. On the pavement those entries are greyed. An
-interior door has a room on both sides and is wired from either.
+from INSIDE, or a passer-by strips the hardware off your front door
+without coming in. On the pavement those entries are greyed. An
+interior door has a room on both sides and is wired from either. A yard
+gate has no room on either side, so no inside: fit it anywhere.
 
-Nothing else asks where you stand: a porch lamp, a generator, an oven in
-the yard are fitted from where they are.
+Nothing else asks where you stand: a porch lamp, a generator, an oven.
 
 And the thing has to be at rest:
 

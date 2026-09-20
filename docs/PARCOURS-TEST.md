@@ -1979,11 +1979,12 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      ne bouge. `dev lockN unlock` → la porte s'ouvre de nouveau, à la main
      comme au clavier. Fermée par la gâche depuis un autre battant que celui du
      module : même résultat. [ ]
-232e. **Les refus, dans l'ordre de la main.** Barricader **le battant qui porte
-     les modules** (le battant d'ancrage : pour une porte double, un battant
-     d'extrémité, à charnière ; pour le garage, le premier de la chaîne) →
-     `dev doorN open` répond `doorN: barricaded`, rien ne bouge. Retirer les
-     planches. Verrouiller (`lockN lock`) : `doorN: locked`. Déverrouiller. Puis,
+232e. **Les refus, dans l'ordre de la main.** Pas de barricade ici : le jeu ne
+     permet pas de barricader une porte double ni une porte de garage à la main
+     (`IsoDoor.isBarricadeAllowed()` rend faux dès que le sprite porte
+     `DOUBLE_DOOR` ou `GARAGE_DOOR`, décalages 20 et 33), donc le refus
+     `barricaded` n'a rien à montrer sur ces deux portes. Verrouiller
+     (`lockN lock`) : `doorN: locked`. Déverrouiller. Puis,
      porte double : mettre un objet ou un arbre (mode debug) dans le passage →
      `doorN: blocked`. Porte de garage **ouverte** : garer un véhicule **en
      travers** de la ligne de la porte → `dev doorN close` répond
@@ -1994,9 +1995,7 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      traverser, ne bloque pas la fermeture. Cas connu, à ne pas compter comme
      un défaut : **deux** véhicules différents de part et d'autre, aucun ne
      traversant la porte, sont refusés par la machine alors que le jeu les
-     laisserait passer (voir `docs/DEVICES.md`). Planches sur un autre battant
-     que celui d'ancrage : la machine ne les voit pas, comme la main qui n'a
-     cliqué que sur le battant d'ancrage. [ ]
+     laisserait passer (voir `docs/DEVICES.md`). [ ]
 232f. **Le numéro ne bouge pas quand la porte bouge.** Sur la porte double
      **de la carte** (celle dont les battants 2 et 3 sont supprimés puis
      recréés par le moteur à chaque manoeuvre), noter `doorN` et `lockN`, puis
@@ -2019,6 +2018,14 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      voit qu'un battant bouger. Même essai avec la porte double (dont la
      réception est lue dans le bytecode) et, pour la comparaison, une porte de
      garage ouverte à la main par le premier client. [ ]
+232h. **Un portail de jardin n'a pas d'intérieur.** Une porte sans pièce de
+     l'un ni de l'autre côté (un portail de clôture, une porte de jardin), debout
+     dehors : le clic droit propose l'opérateur et la gâche et ne dit plus
+     « Ça se fait de l'intérieur. » ; ils se posent, `dev` liste `doorN`
+     et `lockN` (le portail ouvert : fermé, la machine refuse comme pour toute
+     porte, `closed`). Contre-épreuve : la porte d'entrée d'une maison, debout
+     sur le trottoir, reste refusée avec ce même message, et un câble tiré
+     depuis le trottoir jusqu'à elle aussi. [ ]
 233. **La fenêtre ne prend qu'un contact, et le contact sent le châssis.** Clic
      droit sur une fenêtre avec la gâche ou l'opérateur en poche → « Ce module
      ne va pas ici. ». Avec le contact → il se pose, `winN` apparaît. Ouvrir la

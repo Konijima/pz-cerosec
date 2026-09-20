@@ -1348,6 +1348,33 @@ local function needsInside(object)
 		or CeroSecModules.isCurtain(object)
 end
 
+-- Is there a room on EITHER side of this fixture? Only then is there an inside for a
+-- survivor to be standing in, and only then is a module something a stranger could
+-- unscrew from the pavement. A yard gate, a fence door, a window in a shed frame
+-- with open air on both faces has no inside at all: asking the survivor to stand in
+-- a room would grey the fitting on a fixture nobody can ever be inside of, from
+-- either side (reported in game: a fence gate whose menu said "from inside").
+--
+-- The same test as the one asked of HIS square, isInARoom() and not getRoom(),
+-- for the same reason: four walls a player put up read as a room, and the door of
+-- a base must keep the rule. The fixture's own square and its opposite one are the
+-- two faces (getOppositeSquare, as houseRefusal reads it: IsoDoor, IsoWindow,
+-- IsoThumpable and IsoCurtain all answer it). A square the world cannot give us,
+-- an unstreamed chunk, is UNKNOWN and not "no room": the rule stays on, because
+-- this is the one place where a wrong guess opens a door to a stranger.
+local function roomEitherSide(object)
+	local own = object:getSquare()
+	if own == nil or own:isInARoom() then return true end
+	local opposite = object:getOppositeSquare()
+	if opposite == nil or opposite:isInARoom() then return true end
+	return false
+end
+
+-- The envelope that has an inside to be in: needsInside, and a room on one side.
+local function insideRequired(object)
+	return needsInside(object) and roomEitherSide(object)
+end
+
 -- The state the fixture has to be in for THIS module, or nil when the module has
 -- none. A light switch is the one that asks for nothing: a relay goes behind a
 -- plate whose only state is the light it works, and a machine that would not let
@@ -1409,8 +1436,10 @@ local function envelopeRefusal(object, playerObj)
 	-- still owed its wire) has no state to protect and asks nothing here: the
 	-- comment on unlinkRefusal's own bare-fixture case still holds.
 	if not CeroSecModules.anyFitted(object) then return nil end
-	local square = playerObj:getCurrentSquare()
-	if square == nil or not square:isInARoom() then return "outside" end
+	if insideRequired(object) then
+		local square = playerObj:getCurrentSquare()
+		if square == nil or not square:isInARoom() then return "outside" end
+	end
 	local fitted = CeroSecModules.installedOn(object)
 	for i = 1, #CeroSecModules.LIST do
 		local module = CeroSecModules.LIST[i]
@@ -1433,7 +1462,7 @@ function CeroSecModules.fittingRefusal(object, id, playerObj)
 	local house = houseRefusal(object, playerObj)
 	if house ~= nil then return house end
 
-	if needsInside(object) then
+	if insideRequired(object) then
 		local square = playerObj:getCurrentSquare()
 		-- No square at all is a survivor the world cannot place, and the honest
 		-- answer for one is the refusal: nothing here is worth guessing at.

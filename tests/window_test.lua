@@ -14684,6 +14684,60 @@ do
 		CeroSecModules.fittingRefusal(gen, "genset", bench.player), nil)
 	window.open = false
 	curtain.open = false
+
+	-- A DOOR WITH NO ROOM ON EITHER SIDE has no inside to stand in: a yard gate,
+	-- open air on both faces (reported in game, a fence gate whose menu said
+	-- "from inside" and had no inside to go to). The rule is about a stranger
+	-- unscrewing a building's skin from the pavement and there is no building
+	-- here, so it is not asked. Both faces are asked, and each with isInARoom,
+	-- the test HIS square is asked with, so a base's door keeps the rule.
+	local yard = world.square(10, 8, 0, nil)
+	local gate = world.put(pavement, fakeDoor(false, false, yard, true))
+	gate.open = true
+	stand = pavement
+	eq("a yard gate, air on both faces, asks nothing about a room",
+		CeroSecModules.fittingRefusal(gate, "contact", bench.player), nil)
+	check("and takes its module from the pavement", tryFit(pavement, gate, "contact"))
+	send("uninstallmodule", pavement, gate, "contact")
+	eq("and gives it back from the pavement", fittedOn(gate, "contact"), false)
+	-- The state rule is still the door's own: a shut gate takes no strike.
+	gate.open = false
+	eq("a shut gate is still refused as closed",
+		CeroSecModules.fittingRefusal(gate, "strike", bench.player), "closed")
+	gate.open = true
+
+	-- The same door with a room on ONE face is a building's skin again, and it is
+	-- refused from the pavement whichever face the room is on.
+	local shopfront = world.put(pavement, fakeDoor(false, false, world.squares["10,10,0"], true))
+	shopfront.open = true
+	eq("a door with a room on its far face is refused from the pavement",
+		CeroSecModules.fittingRefusal(shopfront, "contact", bench.player), "outside")
+	local backdoor = world.put(world.squares["10,10,0"], fakeDoor(false, false, yard, true))
+	backdoor.open = true
+	eq("and a door with a room on its own face too",
+		CeroSecModules.fittingRefusal(backdoor, "contact", bench.player), "outside")
+	-- A face the world cannot give is unknown, not "no room": the rule stays on.
+	local unknown = world.put(pavement, fakeDoor(false, false, nil, true))
+	unknown.open = true
+	eq("a door whose far face is not loaded keeps the rule",
+		CeroSecModules.fittingRefusal(unknown, "contact", bench.player), "outside")
+
+	-- The cable asks the same question of a fixture that already carries a module
+	-- (envelopeRefusal): a gate wired from the pavement, a shop front not.
+	gate.open = true
+	check("the gate takes its module", tryFit(pavement, gate, "contact"))
+	check("and a cable to it is not refused as outside",
+		CeroSecModules.linkRefusal(gate, 10, 10, 0, bench.player) ~= "outside")
+	shopfront.open = true
+	check("the shop front takes its module from inside",
+		(function()
+			stand = world.squares["10,10,0"]
+			local ok = tryFit(pavement, shopfront, "contact")
+			stand = pavement
+			return ok
+		end)())
+	eq("and a cable to it from the pavement is refused as outside",
+		CeroSecModules.linkRefusal(shopfront, 10, 10, 0, bench.player), "outside")
 	stand = world.squares["10,10,0"]
 
 	--

@@ -741,6 +741,18 @@ of them has a room*, and he stands on one side of it or the other. The inside
 side is in a room; the pavement is not. An interior door has a room on both
 sides, so both sides are allowed.
 
+**A door with no room on either face is not asked at all.** A yard gate, a fence
+door, has open air on both sides, so there is no inside to be standing in and the
+rule, which is written to stop a stranger stripping a *building's* skin, has
+nothing to protect (reported in game: a fence gate whose menu said "from inside"
+and offered no side that was). `roomEitherSide` asks both faces, the fixture's
+own square and `getOppositeSquare()`, each with `isInARoom()` for the reason above,
+so a base's door keeps the rule. A face the world cannot give (an unstreamed
+chunk) is unknown and not "no room": the rule stays on, since a wrong guess here
+is the one that opens somebody's door. The state rules (`closed` and the others)
+are the door's own and are still asked of a gate. The cable asks the same question
+(`envelopeRefusal`).
+
 **The inside rule is the ENVELOPE's, and the envelope is three classes**, the
 door, the window and the curtain, which are what a stranger would strip to get in
 or to blind the alarm. That is what the rule was written for, and a module anybody
@@ -848,7 +860,11 @@ the whole opening, and `lock` sets every leaf, as vanilla's `ISLockDoor` does.
   box and the sum of every wire.
 - **The refusals, in the hand's order:** `barricaded`, then `locked`, then
   `blocked`. Barricaded asks the **anchor** leaf only, which is what vanilla does
-  with the leaf that was clicked, not every leaf. Locked asks **any** leaf, and only
+  with the leaf that was clicked, not every leaf. (By hand this refusal cannot
+  arise on these two kinds: `IsoDoor.isBarricadeAllowed()` returns false when the
+  sprite has `DOUBLE_DOOR` or `GARAGE_DOOR`, bytecode offsets 20 and 33 of the
+  installed jar, so the game offers no barricade on either. The check stays because
+  it costs nothing and is the engine's own first test.) Locked asks **any** leaf, and only
   when the door is being opened. Blocked is `IsoDoor.isDoubleDoorObstructed(obj)` for a double
   door, and for a garage door it is asked only when **closing an open one**: a
   vehicle standing on a leaf's square and across the door line.
