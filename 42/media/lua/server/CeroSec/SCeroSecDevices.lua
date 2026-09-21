@@ -1985,17 +1985,66 @@ end
 -- both, so it refuses in one case the engine would allow -- two DIFFERENT vehicles
 -- standing one either side of the door and neither across it -- and never the other
 -- way round. Stated in docs/DEVICES.md rather than left to be found.
+-- DIAGNOSTIC (CeroSec.ServerLog): where the SERVER thinks each driven vehicle
+-- is, and what that vehicle's own test says of a leaf's two squares --
+-- BaseVehicle.isIntersectingSquare(x, y, z), the call the game's private test
+-- makes. Every call is behind pcall: a name the Lua bridge does not expose must
+-- cost a log line and not the door.
+local function driven()
+	local out = {}
+	local ok, err = pcall(function()
+		local players = getOnlinePlayers()
+		for i = 0, players:size() - 1 do
+			local p = players:get(i)
+			local v = p:getVehicle()
+			if v ~= nil then
+				out[#out + 1] = { p = p, v = v }
+			end
+		end
+	end)
+	if not ok then CeroSec.log("garage diag: driven() failed: " .. tostring(err)) end
+	return out
+end
+
 local function garageBlocked(object)
 	if not object:IsOpen() then return false end
 	local leaves = leavesOf(object)
+	for _, d in ipairs(driven()) do
+		local ok, err = pcall(function()
+			local parts = { "vehicle at " .. string.format("%.2f,%.2f,%.2f",
+				d.v:getX(), d.v:getY(), d.v:getZ())
+				.. " driver at " .. string.format("%.2f,%.2f", d.p:getX(), d.p:getY()) }
+			for i = 1, #leaves do
+				local here = leaves[i]:getSquare()
+				local across = leaves[i]:getOppositeSquare()
+				if here ~= nil and across ~= nil then
+					parts[#parts + 1] = here:getX() .. "," .. here:getY() .. " own here="
+						.. tostring(d.v:isIntersectingSquare(here:getX(), here:getY(), here:getZ()))
+						.. " across=" .. tostring(d.v:isIntersectingSquare(
+							across:getX(), across:getY(), across:getZ()))
+				end
+			end
+			CeroSec.log("garage diag: " .. table.concat(parts, "; "))
+		end)
+		if not ok then CeroSec.log("garage diag: vehicle probe failed: " .. tostring(err)) end
+	end
+	-- DIAGNOSTIC (CeroSec.ServerLog): what the test saw, leaf by leaf. A nil
+	-- square reads as "not blocked" below, so it is named here too.
+	local seen = {}
 	for i = 1, #leaves do
 		local here = leaves[i]:getSquare()
 		local across = leaves[i]:getOppositeSquare()
-		if here ~= nil and across ~= nil
-				and here:isVehicleIntersecting() and across:isVehicleIntersecting() then
+		local h = here ~= nil and here:isVehicleIntersecting()
+		local a = across ~= nil and across:isVehicleIntersecting()
+		seen[#seen + 1] = (here ~= nil and (here:getX() .. "," .. here:getY()) or "nil-here")
+			.. " here=" .. tostring(h) .. " across="
+			.. (across == nil and "nil-square" or tostring(a))
+		if here ~= nil and across ~= nil and h and a then
+			CeroSec.log("garage close refused: " .. table.concat(seen, "; "))
 			return true
 		end
 	end
+	CeroSec.log("garage close allowed: " .. table.concat(seen, "; "))
 	return false
 end
 
