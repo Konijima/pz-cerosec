@@ -233,6 +233,7 @@ function CeroSecTerminal:new(x, y, playerObj, computer, token)
 	o.busy = false
 	o.busySince = 0
 	o.lastKeySound = 0
+	o.lastKeyNet = 0
 	o.lastKeyAt = 0
 	-- The character at the keyboard: the open-ended typing action, the height
 	-- it plays the loot animation at, a chair he owes a sit to, and -- when there
@@ -711,16 +712,66 @@ end
 
 -- One click per key. Four single keys cut out of the old long typing sample,
 -- picked at random so a held key does not sound like a machine, plus a heavier
--- one for Enter. Played the way the vanilla map screen plays its own
--- interaction sounds -- character:playSoundLocal (ISMap.lua:210,245) -- so it
--- costs no packet, is heard by the player at the keyboard, and is nothing a
--- zombie can walk towards.
+-- one for Enter.
+--
+-- WHO HEARS IT. The click always plays for the player at the keyboard, at once,
+-- from his own client. Whether anybody else hears it is a second question, and
+-- vanilla answers it with two calls that differ in exactly that:
+--
+--   IsoGameCharacter.playSoundLocal(String)  ->  emitter.playSoundImpl(name, null)
+--     (javap, offsets 0-9): this client's emitter and nothing else. What the vanilla
+--     map screen uses (ISMap.lua:210,245) and what this window used to use.
+--   IsoGameCharacter.playSound(String)       ->  emitter.playSound(name)
+--     (offsets 0-5) -> CharacterSoundEmitter.playSound (offsets 68-76) -> the
+--     `extra` FMODSoundEmitter.playSound(String), whose `parent` is the character
+--     (CharacterSoundEmitter.<init> offsets 106-114). On a client, for a parent
+--     that is an IsoMovingObject and not an invisible IsoPlayer, it sends
+--     PacketType.PlaySound with { name, 0, parent } (offsets 0-72), then plays the
+--     sound here as well (offsets 107-124; on a dedicated server it returns 0
+--     instead, and in a solo game GameClient.client is false so no packet is sent
+--     at all). The vanilla Lua that makes a survivor's own action audible to the
+--     others is this call: ISBuildAction.lua:96,217,232, ISInventoryTransferAction
+--     .lua:298-346, ISVehicleDashboard.lua:317,324.
+--
+-- The server relays it in PlaySoundPacket.processServer: to every fully connected
+-- connection except the sender's own (offsets 82-95, so the typist is never
+-- played his own click twice) whose player the object is RelevantTo within
+-- Math.max(70, GameSound.getMaxDistanceOfClips()) tiles (offsets 14-43, 121-141).
+-- On the receiving client processClient plays the name on that remote
+-- character's own emitter with playSoundImpl (offsets 23-105), so the click is
+-- heard AT the typist and is attenuated by the sound's own distanceMax (6, in
+-- sounds_cerosec.txt). Neither it nor FMODSoundEmitter refers to
+-- WorldSoundManager (grep of the javap -c dumps), so it is still nothing a zombie
+-- can walk towards.
+--
+-- WHAT THAT COSTS, and why the network gets its own, coarser throttle. The 70-tile
+-- floor above is what the packet is relayed over, not what can be heard: a click
+-- that is inaudible past six tiles is still sent to everyone within seventy. So
+-- what bounds the traffic is how often this client sends, and it is KEY_NET_MS,
+-- not the 40 ms the local click is spaced at (25 packets a second, per typist,
+-- fanned out to everybody near). Nothing on the server can bound it further: the
+-- relay is vanilla Java, isConsistent (offsets 0-22) only asks for a non-empty
+-- name, and it does not check that the sender owns the object it names. That is
+-- vanilla's door and it is open to any client that wants to send PlaySound for any
+-- sound, mod or no mod; this window adds a polite sender, not a new capability.
+-- A mod-side gate (a `typing` command, a per-player book like SCeroSecSystem
+-- :mayOpen, a sendServerCommand to the players nearby) would rate-limit an honest
+-- client that is already rate-limited here and would not stop the vanilla packet
+-- a hostile one sends instead, and it would have to send the sound to everyone but
+-- the typist by hand: GameServer.PlayWorldSound (playServerSound) has no sender
+-- skip, so he would hear his own click twice or wait a round trip for it.
 CeroSecTerminal.KEY_SOUNDS = { "CeroSecKey1", "CeroSecKey2", "CeroSecKey3", "CeroSecKey4" }
 
 -- Two clicks closer together than this are one press as far as the ear is
 -- concerned; below it they smear instead of ticking. Nothing above it is
 -- throttled: a fast typist gets a fast keyboard.
 CeroSecTerminal.KEY_MIN_MS = 40
+
+-- At most one click in this many milliseconds is sent to the other players; the
+-- ones between are heard here only. Five a second is a typist heard to be typing
+-- and a fifth of what the local rate could put on the wire. Measured from the last
+-- click that WAS sent, so the first key after a pause always is.
+CeroSecTerminal.KEY_NET_MS = 200
 
 function CeroSecTerminal:onKeystroke(sound)
 	local now = getTimestampMs()
@@ -731,7 +782,15 @@ function CeroSecTerminal:onKeystroke(sound)
 		local list = CeroSecTerminal.KEY_SOUNDS
 		sound = list[ZombRand(#list) + 1]
 	end
-	self.playerObj:playSoundLocal(sound)
+	-- Same clock as the gate above, which has already returned for a clock gone
+	-- backwards (lastKeySound is never older than lastKeyNet), so no such case
+	-- reaches here.
+	if now - self.lastKeyNet >= CeroSecTerminal.KEY_NET_MS then
+		self.lastKeyNet = now
+		self.playerObj:playSound(sound)
+	else
+		self.playerObj:playSoundLocal(sound)
+	end
 end
 
 -- Has a key been pressed in the last so many milliseconds? What the typing

@@ -35,10 +35,14 @@ module Base
        The terminal picks one of the four at random per keystroke, which is what
        keeps a held key from sounding like a machine.
 
-       Played through IsoGameCharacter.playSoundLocal, the way the vanilla map
-       screen plays its own interaction sounds (ISMap.lua:210,245;
-       ISWorldMapSymbols.lua:142 and on): heard by the player at the keyboard,
-       no packet per keystroke, and nothing a zombie can walk towards.
+       Played through IsoGameCharacter.playSound, the way vanilla plays a
+       survivor's own actions (ISBuildAction.lua:217, ISVehicleDashboard.lua:317):
+       the player at the keyboard hears it at once, and on a server the click is
+       also relayed to the players near him -- at most one in
+       CeroSecTerminal.KEY_NET_MS; the ones between go through playSoundLocal
+       and stay on his own machine. Still nothing a zombie can walk towards: no
+       world sound is made. Why it is built that way is in
+       CeroSecTerminal.lua, above KEY_SOUNDS.
 
        The clip keys are the fields of zombie.audio.GameSoundClip: file, volume,
        pitch, distanceMin, distanceMax, reverbMaxRange, reverbFactor, priority.

@@ -8,6 +8,27 @@ date.
 
 ## Unreleased
 
+- A garage door no longer closes on a car somebody is sitting in. On a server the
+  game does not know where a car it is driving really is (it remembers the place
+  where the driver got in), so a script such as `autoclose.sh` could shut the door
+  on the car -- and send it underground -- while the same script refused to close
+  it with the car standing several tiles away. The machine now works the car's
+  outline out from where the car is, so it refuses exactly when the car is in the
+  doorway and only then. Two parked cars on either side of a door, neither across
+  it, no longer keep it open either.
+- A double door or a gate opened or closed from a computer now refuses on a car
+  standing where its leaves stand or swing -- parked, or with somebody driving it --
+  the way the hand's own toggle does, instead of moving through it. A car
+  driven away from a gate no longer keeps it refused.
+- The keyboard at a terminal is now heard by the players standing near it, as it
+  was always meant to be: the clicks were played only on the machine of the
+  player at the keyboard, so nobody else ever heard somebody type. The clicks are
+  quiet, so somebody more than six tiles away still hears nothing. On a server,
+  at most one click in every fifth of a second is sent to the others -- a fast
+  typist is heard typing, not click for click -- and the typist always hears
+  every key at once. Nothing new is sent in a single-player game, and the
+  keyboard still makes no noise a zombie can follow.
+
 ## 0.6.0 - 2026-09-20
 
 Doors that were out of reach and a restart that no longer costs a server its

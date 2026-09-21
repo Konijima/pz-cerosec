@@ -693,6 +693,26 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      depuis la chaise ou si le personnage reste simplement assis face à
      l'écran sans animation superposée. [ ]
 
+119a. **Les autres entendent le clavier (deux clients, un serveur dédié).**
+     Joueur A assis devant un ordinateur allumé, terminal ouvert ; joueur B
+     debout à 3 ou 4 cases de A, dans la même pièce, sans terminal. A tape une
+     ligne de plusieurs mots → B entend des clics de clavier venant de A, et
+     Entrée plus lourd de temps en temps ; A n'entend chaque clic qu'**une
+     fois** (pas d'écho, pas de retard). B s'éloigne à plus de six cases → il
+     n'entend plus rien. Noter la distance à laquelle les clics deviennent
+     inaudibles pour B. [ ]
+119b. **Le débit est borné.** Même montage. A tient une touche enfoncée dix
+     secondes → chez A les clics restent réguliers (jamais deux collés en moins
+     de 40 ms) ; chez B ils sont plus espacés, environ cinq par seconde au
+     plus (`CeroSecTerminal.KEY_NET_MS` = 200 ms), et le serveur ne montre ni
+     ralentissement ni ligne d'erreur. Une fois A arrêté, B n'entend plus rien
+     et ce silence dure : rien ne continue tout seul. [ ]
+119c. **Les zombis n'entendent pas.** Un zombi immobile hors de vue de A mais à
+     dix cases : A tape un long moment → le zombi ne se met pas en marche vers
+     lui à cause du clavier (le clavier ne fait aucun bruit du monde). [ ]
+119d. **Partie solo inchangée.** Hors ligne, taper → mêmes clics qu'avant, et
+     rien d'autre : pas d'erreur dans `console.txt`. [ ]
+
 ## K. Mode Héberger
 
 120. Hôte allume un ordinateur → le client voit le sprite passer à l'écran
@@ -1992,10 +2012,28 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      porte se ferme. Porte de garage **fermée** avec un véhicule devant :
      `dev doorN open` fonctionne (le refus ne vaut que pour la fermeture).
      Contre-épreuve : un véhicule à un seul côté de la porte, sans la
-     traverser, ne bloque pas la fermeture. Cas connu, à ne pas compter comme
-     un défaut : **deux** véhicules différents de part et d'autre, aucun ne
-     traversant la porte, sont refusés par la machine alors que le jeu les
-     laisserait passer (voir `docs/DEVICES.md`). [ ]
+     traverser, ne bloque pas la fermeture. **Sur un serveur dédié, avec le
+     véhicule CONDUIT** (assis dedans, le moteur peut être coupé) : le garage
+     ouvert, entrer en voiture jusqu'à mi-longueur sous la porte →
+     `dev doorN close` répond `doorN: blocked` ; entrer complètement → aussi
+     `blocked` ; sortir la voiture assez loin (au-delà de la porte) et la
+     garer devant → la porte se ferme, y compris à quelques cases seulement du
+     seuil et à l'endroit où l'on est monté. Puis `autoclose.sh` : la porte ne
+     se ferme jamais sur la voiture conduite. Avec `ServerLog` en marche, les
+     lignes `garage close ...` donnent, par voiture, `game=` (le moteur) et
+     `own=` (le contour reconstruit) : pour une voiture **sans personne
+     dedans** les deux doivent être identiques. [ ]
+232e-bis. **Porte DOUBLE, voiture devant** (comme la main, dans les deux sens).
+     Porte fermée, garer une voiture sur la rangée des battants ou sur la
+     rangée devant où ils balayent (4 cases sur 2) : à la main l'ouverture est
+     refusée, et `dev doorN open` répond `doorN: blocked` aussi, la porte reste
+     fermée. Porte ouverte, même voiture : `dev doorN close` répond
+     `doorN: blocked`. Refaire **assis dans la voiture** (serveur dédié) : même
+     refus. La voiture plus loin : la porte s'ouvre et se ferme. Avec
+     Sortir de la voiture dans la boîte, la remonter et l'éloigner en
+     conduisant : la porte doit s'ouvrir (pas de refus resté collé). Avec
+     `ServerLog`, les lignes `double door close ...` ou `double door open ...` donnent les mêmes `game=`
+     et `own=` que le garage. [ ]
 232f. **Le numéro ne bouge pas quand la porte bouge.** Sur la porte double
      **de la carte** (celle dont les battants 2 et 3 sont supprimés puis
      recréés par le moteur à chaque manoeuvre), noter `doorN` et `lockN`, puis

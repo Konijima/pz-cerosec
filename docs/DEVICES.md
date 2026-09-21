@@ -870,16 +870,44 @@ the whole opening, and `lock` sets every leaf, as vanilla's `ISLockDoor` does.
   installed jar, so the game offers no barricade on either. The check stays because
   it costs nothing and is the engine's own first test.) Locked asks **any** leaf, and only
   when the door is being opened. Blocked is `IsoDoor.isDoubleDoorObstructed(obj)` for a double
-  door, and for a garage door it is asked only when **closing an open one**: a
-  vehicle standing on a leaf's square and across the door line.
-- **A known approximation, the garage door's `blocked`.** The engine's test for it,
-  `isGarageDoorObstructed`, is private, so it cannot be called; the machine's is
-  rebuilt from the public `IsoGridSquare.isVehicleIntersecting()` on the leaf's
-  square and on the square across it. That asks "some vehicle" of each square where
-  the engine asks "this vehicle" of both. It is therefore stricter than the engine
-  in one case only: two **different** vehicles standing one on either side of the
-  door, neither across it, are refused by the machine and would be allowed by the
-  engine. It never lets through what the engine refuses.
+  door **and a vehicle in the box the engine itself walks**, opening or closing, and for a
+  garage door it is asked only when **closing an open one**: a vehicle standing on a
+  leaf's square and across the door line.
+  The double door's vehicle test is **asked again by the machine**: `isDoubleDoorObstructed`
+  walks the vehicles of the chunks its box touches (`javap -c`, offsets 405-615), which
+  is what refuses the hand's toggle on a car, and the same call from the server left a
+  shut gate opening on a car in front of it, so the machine asks for itself. The box is the
+  engine's: the row of the four leaves (the two hinge leaves' squares and the two
+  between them) and the row they swing through, 4 by 2 squares. The vehicles are asked as
+  for a garage door (below).
+  The engine's own refusal is not final when a **driven** car accounts for it: its outline
+  is frozen where the driver got in, so driven back and forth over a gate it kept a
+  shut gate refused until the driver got out. If the game's answer for a driven car says
+  it stands on a tile of the box, the engine's refusal is set aside and the machine's own
+  outline for that car decides. A refusal no driven car accounts for (a wall, a tree, a
+  solid square) stays final. The price: a wall and a driven car's frozen outline on the
+  same box hide each other.
+- **The garage door's `blocked`, and the car somebody is in.** The engine's test for
+  it, `isGarageDoorObstructed`, is private, so it cannot be called; the machine's is
+  rebuilt from `BaseVehicle.isIntersectingSquare`, one vehicle at a time, as the
+  engine asks it: the **same** vehicle on the leaf's square and on the square across
+  the door line, for any leaf of the gate. (An earlier build asked "some vehicle"
+  of each square and so refused two different vehicles either side of the door; that
+  deviation is gone.) The vehicles are those of `getCell():getVehicles()` within
+  twelve tiles.
+  One vehicle is not asked that way: a car **somebody sits in**. On a dedicated
+  server its collision outline (`BaseVehicle.getPoly()`) is rebuilt only when
+  `polyDirty` is set, which nothing does while a client drives the car, so
+  `isIntersectingSquare` answers for the place where the driver got in -- a door
+  closed on the car, or refused four tiles from it. The car's transform and its
+  script are right, so its outline is built from them, as `VehiclePoly.init` builds
+  it (half the script's extents about the centre of mass, each corner through
+  `BaseVehicle.getWorldPos`), and tested against the two squares. A car it cannot
+  measure keeps the door open. If the cell's list cannot be read, the old aggregate
+  (`IsoGridSquare.isVehicleIntersecting()`) is used for the rest. With
+  `ServerLog` on, each close writes a `garage close refused|allowed:` line naming
+  every car, whether it was occupied, what the engine answered and what the outline
+  built here answered; for a car nobody is in the two must agree.
 - **Not proven: how a second client sees a garage door move.** The machine calls
   `IsoDoor.toggleGarageDoor(obj, true)` from the server exactly as the hand's path
   does, but vanilla's `IsoDoor.syncIsoObject` has no garage receive branch, so how
@@ -1097,6 +1125,18 @@ square is `RelevantTo` (offsets 69-171): a broadcast on a dedicated server and
 nothing anywhere else. `IsoGridSquare.playSound(String, boolean)` takes a free
 emitter at the square (offsets 0-36), which is what a solo game needs, one
 process, so the machine the server wrote is the machine the survivor hears.
+
+**The one sound that is not the server's: the keyboard.** The click of a key at
+a terminal is made by the *client* of the player typing, because it has to be
+heard at the keyboard with no round trip. It uses the other vanilla mechanism,
+`IsoGameCharacter.playSound(String)`, which on a client sends
+`PacketType.PlaySound` naming the character and which the server relays to the
+players near him, the sender excepted (`FMODSoundEmitter.playSound` offsets 0-72,
+`PlaySoundPacket.processServer` offsets 14-43 and 82-95). Vanilla's own relay
+cannot be rate-limited from Lua, so the client sends at most one click in
+`CeroSecTerminal.KEY_NET_MS`, and the rest go through `playSoundLocal`. The
+javap offsets and the reasoning for not building a server-side gate are in the
+comment above `CeroSecTerminal.KEY_SOUNDS`.
 
 **A refused write is mute, and so is one that changed nothing.** The call sits
 inside the branch that moved the fixture, after every guard: two `echo close` in a

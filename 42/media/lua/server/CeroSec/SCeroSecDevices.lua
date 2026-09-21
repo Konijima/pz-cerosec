@@ -1977,31 +1977,329 @@ end
 -- isObstructed: a double door asks IsoDoor.isDoubleDoorObstructed(obj) (public,
 -- the same static ToggleDoorActual calls) and a garage door asks a private static,
 -- isGarageDoorObstructed, that only looks at all when the door is OPEN, i.e. when
--- it is being closed: for every square of the door, a vehicle of that chunk that
+-- it is being closed: for every square of the door, one vehicle of that chunk that
 -- intersects the square AND the square across the door line (BaseVehicle.
--- isIntersectingSquare, javap -c offsets 415-465). Private, so it is rebuilt here
--- from the public parts: IsoGridSquare.isVehicleIntersecting() on the two squares.
--- That answers "some vehicle" for each where the engine asks "this vehicle" for
--- both, so it refuses in one case the engine would allow -- two DIFFERENT vehicles
--- standing one either side of the door and neither across it -- and never the other
--- way round. Stated in docs/DEVICES.md rather than left to be found.
+-- isIntersectingSquare, javap -c offsets 415-465). Private, so it is rebuilt below
+-- from the public parts, car by car as the engine asks it -- which also drops the
+-- old aggregate's one extra refusal (two different cars, one either side).
+--
+-- THE OUTLINE OF A CAR A CLIENT IS DRIVING IS STALE ON THE SERVER, and the engine's
+-- test reads exactly that outline. BaseVehicle.getPoly() rebuilds its cached
+-- outline only when polyDirty is set (offsets 83-89: poly.init(this, 0.0f)); on a
+-- dedicated server nothing sets it while a client drives the car -- its position
+-- arrives from the client, the outline is not marked -- and exit() is what does.
+-- So a driven car is missing from isIntersectingSquare and from
+-- IsoGridSquare.isVehicleIntersecting() WHERE IT REALLY IS, and is reported
+-- where it stood when the driver got in, up to four or five tiles away. (The
+-- hand's own closing is right because the driving client's outline is right.
+-- Proven from the server log of a driven car: getX()/getY() true, poly frozen,
+-- and getPoly():init not reachable from Lua.)
+--
+-- So for a car somebody sits in the outline is built here, from the two things the
+-- server does hold right -- its transform and its script. That is
+-- pathfind.VehiclePoly.init(vehicle, 0.0f) read in the bytecode: half the
+-- script's getExtents() x and z about getCenterOfMassOffset(), each corner
+-- through BaseVehicle.getWorldPos(offset, out) -- the two-vector form vanilla Lua
+-- itself calls (ISEnterVehicle, ISVehicleMenu) -- and the world .x and .y of the
+-- result. init passes a height (0, or half the extent's y for two corners) that only
+-- matters on a tilted car: on the level it does not move the corner in x or y,
+-- which is what a garage sits on, so it is 0 here.
+-- Every OTHER car is asked as the engine asks, BaseVehicle.isIntersectingSquare
+-- one car at a time.
+--
+-- The list of cars is getCell():getVehicles() walked as vanilla's own
+-- ISVehicleBloodUI walks it (size(), get(i - 1)). If it cannot be had, the test
+-- falls back to the aggregate it was before, plus the footprint of each occupied
+-- car, and says so in the log.
+
+-- The cars somebody is in, by vehicle id, from the players online.
+local function occupied()
+	local out = {}
+	local ok, err = pcall(function()
+		local players = getOnlinePlayers()
+		for i = 0, players:size() - 1 do
+			local v = players:get(i):getVehicle()
+			if v ~= nil then out[v:getId()] = v end
+		end
+	end)
+	if not ok then CeroSec.log("garage: online players not readable: " .. tostring(err)) end
+	return out
+end
+
+-- The four corners of a car, world x and y, or nil and why.
+local function footprint(v)
+	local ok, res = pcall(function()
+		local script = v:getScript()
+		local e = script:getExtents()
+		local c = script:getCenterOfMassOffset()
+		local hx, hz = e:x() / 2, e:z() / 2
+		local off, out = Vector3f.new(), Vector3f.new()
+		local lx = { c:x() - hx, c:x() + hx, c:x() + hx, c:x() - hx }
+		local lz = { c:z() + hz, c:z() + hz, c:z() - hz, c:z() - hz }
+		local pts = {}
+		for i = 1, 4 do
+			-- Vector3f.set(float, float, float), else a new vector built from them.
+			local set = pcall(function() off:set(lx[i], 0, lz[i]) end)
+			if not set then off = Vector3f.new(lx[i], 0, lz[i]) end
+			v:getWorldPos(off, out)
+			pts[i] = { x = out:x(), y = out:y() }
+		end
+		return pts
+	end)
+	if ok then return res end
+	return nil, tostring(res)
+end
+
+-- Do the convex quad and the square [sx, sx+1] x [sy, sy+1] overlap? Separating
+-- axes: the two of the square and the two of the quad's edges. Touching only is
+-- not overlap.
+local function quadHitsSquare(pts, sx, sy)
+	local sq = { { x = sx, y = sy }, { x = sx + 1, y = sy }, { x = sx + 1, y = sy + 1 }, { x = sx, y = sy + 1 } }
+	local axes = { { x = 1, y = 0 }, { x = 0, y = 1 } }
+	for i = 1, 2 do
+		local a, b = pts[i], pts[i + 1]
+		axes[#axes + 1] = { x = -(b.y - a.y), y = b.x - a.x }
+	end
+	for i = 1, #axes do
+		local ax = axes[i]
+		local qmin, qmax, smin, smax
+		for j = 1, 4 do
+			local q = pts[j].x * ax.x + pts[j].y * ax.y
+			local s = sq[j].x * ax.x + sq[j].y * ax.y
+			if qmin == nil or q < qmin then qmin = q end
+			if qmax == nil or q > qmax then qmax = q end
+			if smin == nil or s < smin then smin = s end
+			if smax == nil or s > smax then smax = s end
+		end
+		if qmax <= smin or smax <= qmin then return false end
+	end
+	return true
+end
+
+-- The engine's own answer for one car and one square, or nil.
+local function gameHits(v, x, y, z)
+	local ok, res = pcall(function() return v:isIntersectingSquare(x, y, z) end)
+	if ok then return res == true end
+	return nil
+end
+
+-- One car and one square by the footprint: the engine's own floor test first
+-- (BaseVehicle.isIntersectingSquare answers false for another floor).
+local function footHits(v, pts, x, y, z)
+	if math.floor(v:getZ()) ~= z then return false end
+	return quadHitsSquare(pts, x, y)
+end
+
+-- Every car within a dozen tiles of x, y: the cell's, and any occupied one the
+-- cell did not list. nil if the cell's list cannot be had.
+local NEAR = 12
+-- getCell():getVehicles() is a java.util.Set (javap: IsoCell.getVehicles()), so it has
+-- no get(i): the server log of the first build showed "tried to call nil" on
+-- exactly that. It is walked by its iterator; a list it might answer with instead
+-- (size and get) is the second try. A method the bridge does not have reads as nil
+-- from the object, which is checked first: a call of nil is caught by pcall but
+-- costs a stack trace in the log every time.
+local function listOf(all)
+	local out = {}
+	if type(all.iterator) == "function" then
+		local it = all:iterator()
+		while it:hasNext() do out[#out + 1] = it:next() end
+		return out
+	end
+	if type(all.get) == "function" then
+		for i = 0, all:size() - 1 do out[#out + 1] = all:get(i) end
+		return out
+	end
+	error("neither iterator nor get on the cell's vehicles")
+end
+
+local function carsNear(x, y, occ)
+	local list, seen = {}, {}
+	local ok, err = pcall(function()
+		local all = listOf(getCell():getVehicles())
+		for i = 1, #all do
+			local v = all[i]
+			seen[v:getId()] = true
+			if math.abs(v:getX() - x) <= NEAR and math.abs(v:getY() - y) <= NEAR then
+				list[#list + 1] = v
+			end
+		end
+	end)
+	if not ok then
+		CeroSec.log("garage: the cell's vehicles are not readable: " .. tostring(err))
+		return nil
+	end
+	for id, v in pairs(occ) do
+		if not seen[id] and math.abs(v:getX() - x) <= NEAR and math.abs(v:getY() - y) <= NEAR then
+			list[#list + 1] = v
+		end
+	end
+	return list
+end
+
+-- Is a car in the way of these squares? Each is { here = square } and, for a garage
+-- door, an `across` too: the engine's rule there is one car on BOTH; for a square
+-- without one, a car on it at all is in the way.
+local function carsInTheWay(squares, label, verb)
+	if #squares == 0 then return false end
+	local occ = occupied()
+	local cars = carsNear(squares[1].here:getX(), squares[1].here:getY(), occ)
+	local said = {}
+	local refused = false
+	if cars == nil then
+		-- The cell's list is out of reach: the aggregate for whatever nobody is in,
+		-- and the footprint for whatever somebody is.
+		for _, s in ipairs(squares) do
+			if s.here:isVehicleIntersecting() and (s.across == nil or s.across:isVehicleIntersecting()) then
+				refused = true
+				said[#said + 1] = "aggregate " .. s.here:getX() .. "," .. s.here:getY()
+			end
+		end
+		cars = {}
+		for _, v in pairs(occ) do cars[#cars + 1] = v end
+	end
+	for _, v in ipairs(cars) do
+		local pts, why
+		if occ[v:getId()] then pts, why = footprint(v) end
+		local line = string.format("car %s at %.1f,%.1f%s:", tostring(v:getId()), v:getX(), v:getY(),
+			occ[v:getId()] and " (occupied)" or "")
+		if occ[v:getId()] and pts == nil then
+			-- Somebody is in it and it cannot be measured: the door stays open, for
+			-- a closed door on a car is worse than an open one.
+			refused = true
+			line = line .. " footprint failed: " .. tostring(why)
+		end
+		for _, s in ipairs(squares) do
+			local hx, hy, hz = s.here:getX(), s.here:getY(), s.here:getZ()
+			local ax, ay
+			if s.across ~= nil then ax, ay = s.across:getX(), s.across:getY() end
+			local gH, gA = gameHits(v, hx, hy, hz), nil
+			if ax ~= nil then gA = gameHits(v, ax, ay, hz) end
+			local mH, mA
+			if pts ~= nil or not occ[v:getId()] then
+				-- Undriven cars are measured too: the game's answer is true there and
+				-- the two must agree, which the log lets a reader check.
+				pts = pts or footprint(v)
+				if pts ~= nil then
+					mH = footHits(v, pts, hx, hy, hz)
+					if ax ~= nil then mA = footHits(v, pts, ax, ay, hz) end
+				end
+			end
+			local hit
+			if occ[v:getId()] then
+				hit = mH and (ax == nil or mA)
+			else
+				hit = (gH == nil and mH or gH) and (ax == nil or (gA == nil and mA or gA))
+			end
+			line = line .. string.format(" %.0f,%.0f game=%s/%s own=%s/%s%s", hx, hy,
+				tostring(gH), tostring(gA), tostring(mH), tostring(mA), hit and " HIT" or "")
+			if hit then refused = true end
+		end
+		said[#said + 1] = line
+	end
+	CeroSec.log(label .. " " .. (verb or "close") .. " " .. (refused and "refused" or "allowed") .. ": " .. table.concat(said, "; "))
+	return refused
+end
+
 local function garageBlocked(object)
 	if not object:IsOpen() then return false end
 	local leaves = leavesOf(object)
+	local squares = {}
 	for i = 1, #leaves do
 		local here = leaves[i]:getSquare()
 		local across = leaves[i]:getOppositeSquare()
-		if here ~= nil and across ~= nil
-				and here:isVehicleIntersecting() and across:isVehicleIntersecting() then
+		if here ~= nil and across ~= nil then
+			squares[#squares + 1] = { here = here, across = across }
+		end
+	end
+	return carsInTheWay(squares, "garage")
+end
+
+-- THE DOUBLE DOOR, AND A CAR IN ITS WAY. The hand's toggle refuses on a car
+-- (isDoubleDoorObstructed, javap -c: offsets 405-615 walk the vehicles of the chunks
+-- the box touches and ask BaseVehicle.isIntersectingSquare of every tile of it), and
+-- the same call from the server does not: the door opens and closes on a car through
+-- the computer that the hand is refused on (seen on the test server, a car in front of
+-- a shut gate). So the machine asks it itself, of the very box the engine walks: the
+-- row the four leaves stand on when shut, and the row beside it they swing through
+-- (north: 4 wide, y and y+1; west: 2 wide, x and x+1; offsets 240-243 and 321-327),
+-- opening or closing alike, with the car somebody sits in measured from where it is.
+--
+-- The four leaves' row runs between the hinge leaves, which never move
+-- (CeroSecModules.gateParts), so the row is the hinge leaves' two squares and the two
+-- between them. With a hinge leaf missing, the leaves that are there are what is known.
+local function doubleLine(object)
+	local one, four = IsoDoor.getDoubleDoorObject(object, 1), IsoDoor.getDoubleDoorObject(object, 4)
+	local squares = {}
+	if one ~= nil and four ~= nil then
+		local a, b = one:getSquare(), four:getSquare()
+		local dx, dy = b:getX() - a:getX(), b:getY() - a:getY()
+		if a ~= nil and b ~= nil and (dx == 0 or dy == 0) and math.abs(dx + dy) == 3 then
+			local sx, sy = dx / 3, dy / 3
+			for k = 0, 3 do
+				local q = getCell():getGridSquare(a:getX() + sx * k, a:getY() + sy * k, a:getZ())
+				if q ~= nil then squares[#squares + 1] = { here = q } end
+				-- The row they swing through: +y of a row along x (north), +x of a
+				-- row along y (west).
+				local w = getCell():getGridSquare(a:getX() + sx * k + (sy ~= 0 and 1 or 0),
+					a:getY() + sy * k + (sx ~= 0 and 1 or 0), a:getZ())
+				if w ~= nil then squares[#squares + 1] = { here = w } end
+			end
+			return squares
+		end
+	end
+	local leaves = leavesOf(object)
+	for i = 1, #leaves do
+		local q = leaves[i]:getSquare()
+		if q ~= nil then squares[#squares + 1] = { here = q } end
+	end
+	return squares
+end
+
+local function doubleBlocked(object)
+	local line = doubleLine(object)
+	if IsoDoor.isDoubleDoorObstructed(object) then
+		-- The engine's test walks the vehicles too, and a car somebody drives has its
+		-- outline frozen where the driver got in: driven back and forth over a gate,
+		-- it keeps a shut gate refused (and an open one allowed) until the driver
+		-- gets out, which the server log showed with the car a dozen tiles away. So a
+		-- refusal that a DRIVEN car's own answer accounts for -- one of them says it
+		-- stands on a tile of the box -- is not taken as it stands: the machine's
+		-- outline for that car decides below. A refusal nothing accounts for is a wall,
+		-- a tree, a solid square: the engine's, and final. (Declared in docs/DEVICES.md:
+		-- a wall AND a driven car's frozen outline on the box hide each other.)
+		local accounted = false
+		for _, v in pairs(occupied()) do
+			for _, s in ipairs(line) do
+				if gameHits(v, s.here:getX(), s.here:getY(), s.here:getZ()) then accounted = true end
+			end
+		end
+		if accounted then
+			CeroSec.log("double door: the engine's refusal is a driven car's frozen outline; its own outline decides")
+		else
+			-- Which leaf was asked and where the four stand, so a refusal that the hand
+			-- does not make can be told from the engine's own (ServerLog).
+			local ok, text = pcall(function()
+				local out = { "asked leaf " .. tostring(IsoDoor.getDoubleDoorIndex(object)) .. " at "
+					.. object:getSquare():getX() .. "," .. object:getSquare():getY() .. " open="
+					.. tostring(object:IsOpen()) }
+				for i = 1, 4 do
+					local leaf = IsoDoor.getDoubleDoorObject(object, i)
+					out[#out + 1] = i .. "=" .. (leaf == nil and "none" or (leaf:getSquare():getX() .. ","
+						.. leaf:getSquare():getY() .. " open=" .. tostring(leaf:IsOpen())))
+				end
+				return table.concat(out, "; ")
+			end)
+			CeroSec.log("double door: the engine's own test refuses: " .. (ok and text or tostring(text)))
 			return true
 		end
 	end
-	return false
+	return carsInTheWay(line, "double door", object:IsOpen() and "close" or "open")
 end
 
 local function blocked(object)
 	local kind = CeroSecModules.gateKind(object)
-	if kind == "double" then return IsoDoor.isDoubleDoorObstructed(object) end
+	if kind == "double" then return doubleBlocked(object) end
 	if kind == "garage" then return garageBlocked(object) end
 	return object:isObstructed()
 end
