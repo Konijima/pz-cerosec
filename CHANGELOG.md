@@ -8,6 +8,15 @@ date.
 
 ## Unreleased
 
+## 0.6.1 - 2026-09-21
+
+Doors that close on cars and a keyboard nobody else could hear. A garage door, a
+double door or a gate worked from a computer now refuses on a car in its way the
+way the hand's own switch does, including a car somebody is driving, and the
+keyboard at a terminal is heard by the players standing near it. Nothing here
+needs a new save: no state or system version moves and no sandbox option is
+added.
+
 - A garage door no longer closes on a car somebody is sitting in. On a server the
   game does not know where a car it is driving really is (it remembers the place
   where the driver got in), so a script such as `autoclose.sh` could shut the door

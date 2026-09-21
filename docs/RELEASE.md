@@ -174,6 +174,16 @@ with what to look at on the glass.
 Said out loud, release by release, because the compatibility contract only allows
 a new sandbox option to change a world if the release notes say so plainly.
 
+### 0.6.1
+
+**Nothing in an existing world changes shape.** No state or system version
+moves and no sandbox option is added. A garage door, a double door or a gate
+worked from a computer now refuses on a car in its way, as the hand does, so a
+script that used to close one on a car (`autoclose.sh`) now finds it refused. A
+car nobody is in is measured as before and a car somebody drives is measured
+from where it is. The keyboard at a terminal is now heard by the players near
+it; nothing is written to the save for that.
+
 ### 0.6.0
 
 **Nothing in an existing world changes shape.** No state or system version
