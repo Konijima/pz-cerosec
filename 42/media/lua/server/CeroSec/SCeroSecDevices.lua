@@ -2249,7 +2249,23 @@ local function doubleLine(object)
 end
 
 local function doubleBlocked(object)
-	if IsoDoor.isDoubleDoorObstructed(object) then return true end
+	if IsoDoor.isDoubleDoorObstructed(object) then
+		-- Which leaf was asked and where the four stand, so a refusal that the hand
+		-- does not make can be told from the engine's own (ServerLog).
+		local ok, text = pcall(function()
+			local out = { "asked leaf " .. tostring(IsoDoor.getDoubleDoorIndex(object)) .. " at "
+				.. object:getSquare():getX() .. "," .. object:getSquare():getY() .. " open="
+				.. tostring(object:IsOpen()) }
+			for i = 1, 4 do
+				local leaf = IsoDoor.getDoubleDoorObject(object, i)
+				out[#out + 1] = i .. "=" .. (leaf == nil and "none" or (leaf:getSquare():getX() .. ","
+					.. leaf:getSquare():getY() .. " open=" .. tostring(leaf:IsOpen())))
+			end
+			return table.concat(out, "; ")
+		end)
+		CeroSec.log("double door: the engine's own test refuses: " .. (ok and text or tostring(text)))
+		return true
+	end
 	if not object:IsOpen() then return false end
 	return carsInTheWay(doubleLine(object), "double door")
 end
