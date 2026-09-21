@@ -2014,11 +2014,44 @@ local function garageBlocked(object)
 			local parts = { "vehicle at " .. string.format("%.2f,%.2f,%.2f",
 				d.v:getX(), d.v:getY(), d.v:getZ())
 				.. " driver at " .. string.format("%.2f,%.2f", d.p:getX(), d.p:getY()) }
+			-- The outline the game tests against, its corners, and what else the
+			-- server holds: each behind its own pcall, a name that is not exposed
+			-- costs its own field and not the rest.
+			local function try(label, fn)
+				local ok2, val = pcall(fn)
+				parts[#parts + 1] = label .. "=" .. (ok2 and tostring(val) or "n/a")
+			end
+			try("angles", function()
+				return string.format("%.1f,%.1f,%.1f", d.v:getAngleX(), d.v:getAngleY(), d.v:getAngleZ())
+			end)
+			try("extents", function()
+				local e = d.v:getScript():getExtents()
+				return string.format("%.2f,%.2f,%.2f", e:x(), e:y(), e:z())
+			end)
+			try("poly", function()
+				local q = d.v:getPoly()
+				return string.format("(%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f)",
+					q.x1, q.y1, q.x2, q.y2, q.x3, q.y3, q.x4, q.y4)
+			end)
+			try("driverDir", function()
+				local f = d.p:getForwardDirection()
+				return string.format("%.2f,%.2f", f:getX(), f:getY())
+			end)
+			-- EXPERIMENT: rebuild the outline exactly as BaseVehicle.getPoly does
+			-- when the outline is marked dirty (offsets 83-89: poly.init(this,
+			-- 0.0f)), then ask the same question again. Only on a driven vehicle,
+			-- and it writes nothing but that vehicle's own cached outline.
+			try("rebuilt", function()
+				d.v:getPoly():init(d.v, 0)
+				local q = d.v:getPoly()
+				return string.format("(%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f)",
+					q.x1, q.y1, q.x2, q.y2, q.x3, q.y3, q.x4, q.y4)
+			end)
 			for i = 1, #leaves do
 				local here = leaves[i]:getSquare()
 				local across = leaves[i]:getOppositeSquare()
 				if here ~= nil and across ~= nil then
-					parts[#parts + 1] = here:getX() .. "," .. here:getY() .. " own here="
+					parts[#parts + 1] = here:getX() .. "," .. here:getY() .. " own(after rebuild) here="
 						.. tostring(d.v:isIntersectingSquare(here:getX(), here:getY(), here:getZ()))
 						.. " across=" .. tostring(d.v:isIntersectingSquare(
 							across:getX(), across:getY(), across:getZ()))
