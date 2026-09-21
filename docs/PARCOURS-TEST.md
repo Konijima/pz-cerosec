@@ -2012,10 +2012,17 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      porte se ferme. Porte de garage **fermée** avec un véhicule devant :
      `dev doorN open` fonctionne (le refus ne vaut que pour la fermeture).
      Contre-épreuve : un véhicule à un seul côté de la porte, sans la
-     traverser, ne bloque pas la fermeture. Cas connu, à ne pas compter comme
-     un défaut : **deux** véhicules différents de part et d'autre, aucun ne
-     traversant la porte, sont refusés par la machine alors que le jeu les
-     laisserait passer (voir `docs/DEVICES.md`). [ ]
+     traverser, ne bloque pas la fermeture. **Sur un serveur dédié, avec le
+     véhicule CONDUIT** (assis dedans, le moteur peut être coupé) : le garage
+     ouvert, entrer en voiture jusqu'à mi-longueur sous la porte →
+     `dev doorN close` répond `doorN: blocked` ; entrer complètement → aussi
+     `blocked` ; sortir la voiture assez loin (au-delà de la porte) et la
+     garer devant → la porte se ferme, y compris à quelques cases seulement du
+     seuil et à l'endroit où l'on est monté. Puis `autoclose.sh` : la porte ne
+     se ferme jamais sur la voiture conduite. Avec `ServerLog` en marche, les
+     lignes `garage close ...` donnent, par voiture, `game=` (le moteur) et
+     `own=` (le contour reconstruit) : pour une voiture **sans personne
+     dedans** les deux doivent être identiques. [ ]
 232f. **Le numéro ne bouge pas quand la porte bouge.** Sur la porte double
      **de la carte** (celle dont les battants 2 et 3 sont supprimés puis
      recréés par le moteur à chaque manoeuvre), noter `doorN` et `lockN`, puis

@@ -8,6 +8,14 @@ date.
 
 ## Unreleased
 
+- A garage door no longer closes on a car somebody is sitting in. On a server the
+  game does not know where a car it is driving really is (it remembers the place
+  where the driver got in), so a script such as `autoclose.sh` could shut the door
+  on the car -- and send it underground -- while the same script refused to close
+  it with the car standing several tiles away. The machine now works the car's
+  outline out from where the car is, so it refuses exactly when the car is in the
+  doorway and only then. Two parked cars on either side of a door, neither across
+  it, no longer keep it open either.
 - Other players now hear you type. The keyboard clicks at a terminal used to be
   played only on the machine of the player at the keyboard; now the players
   standing near hear them too. The clicks are quiet, so somebody more than six

@@ -5313,6 +5313,168 @@ do
 			leaves[4]:getOppositeSquare().vehicle = false
 			typed(bench, "dev door0 close")
 			check(tag .. "clear, it closes", bench.painted("door0: closed"))
+			--
+			-- THE CAR SOMEBODY IS IN. On a dedicated server the outline of a car a
+			-- client drives is frozen where it stood when the driver got in
+			-- (BaseVehicle.getPoly rebuilds only when polyDirty is set), so the
+			-- engine's isIntersectingSquare answers for the WRONG place; the true
+			-- place is what getX/getY and the script's extents give. The fake car
+			-- keeps the two apart: `seenAt` is where its outline is, x and y where
+			-- it is. The oracle that decides what is true is a dense sampling of the
+			-- car's rectangle, which shares nothing with the separating-axis test
+			-- under test.
+			--
+			local realVector, realPlayers = _G.Vector3f, _G.getOnlinePlayers
+			_G.Vector3f = { new = function(x, y, z)
+				local v = { vx = x or 0, vy = y or 0, vz = z or 0 }
+				v.x = function(s) return s.vx end
+				v.y = function(s) return s.vy end
+				v.z = function(s) return s.vz end
+				v.set = function(s, a, b, c) s.vx, s.vy, s.vz = a, b, c end
+				return v
+			end }
+			local WIDTH, LENGTH = 1.6, 4.8
+			local function covers(cx, cy, theta, sx, sy)
+				for i = 0, 32 do
+					for j = 0, 96 do
+						local lx, lz = -WIDTH / 2 + WIDTH * (i + 0.5) / 33, -LENGTH / 2 + LENGTH * (j + 0.5) / 97
+						local wx = cx + lx * math.cos(theta) - lz * math.sin(theta)
+						local wy = cy + lx * math.sin(theta) + lz * math.cos(theta)
+						if wx > sx and wx < sx + 1 and wy > sy and wy < sy + 1 then return true end
+					end
+				end
+				return false
+			end
+			local function fakeCar(id, x, y, z, theta, seenAt)
+				local car = { id = id, x = x, y = y, z = z, theta = theta, seenAt = seenAt or { x, y } }
+				car.getId = function() return id end
+				car.getX = function() return car.x end
+				car.getY = function() return car.y end
+				car.getZ = function() return car.z end
+				car.getScript = function() return {
+					getExtents = function() return { x = function() return WIDTH end,
+						y = function() return 1.2 end, z = function() return LENGTH end } end,
+					getCenterOfMassOffset = function() return { x = function() return 0 end,
+						y = function() return 0 end, z = function() return 0 end } end,
+				} end
+				car.getWorldPos = function(_, off, out)
+					if car.noPos then error("no such method") end
+					out.vx = car.x + off.vx * math.cos(car.theta) - off.vz * math.sin(car.theta)
+					out.vy = car.y + off.vx * math.sin(car.theta) + off.vz * math.cos(car.theta)
+					out.vz = car.z
+					return out
+				end
+				-- The engine's own answer: from the outline it HAS, and false for
+				-- another floor (PZMath.fastfloor(getZ()) ~= z, offsets 0-8).
+				car.isIntersectingSquare = function(_, sx, sy, sz)
+					if math.floor(car.z) ~= sz then return false end
+					return covers(car.seenAt[1], car.seenAt[2], car.theta, sx, sy)
+				end
+				return car
+			end
+			local function withCars(cars, sitting)
+				world.getVehicles = function()
+					return { size = function() return #cars end, get = function(_, i) return cars[i + 1] end }
+				end
+				_G.getOnlinePlayers = function()
+					return { size = function() return #sitting end,
+						get = function(_, i) return { getVehicle = function() return sitting[i + 1] end } end }
+				end
+			end
+			local function closeWith(cars, sitting)
+				withCars(cars, sitting)
+				for i = 1, #leaves do leaves[i].open = true end
+				typed(bench, "dev door0 close")
+				-- The screen keeps the lines above, so the leaves are what is read.
+				return allOpen(leaves) == #leaves
+			end
+			-- What is true of a car, for every square of the door.
+			local function truth(car)
+				for i = 1, #COORDS do
+					local sx, sy = COORDS[i][1], COORDS[i][2]
+					if covers(car.x, car.y, car.theta, sx, sy) and covers(car.x, car.y, car.theta, sx, sy - 1) then
+						return true
+					end
+				end
+				return false
+			end
+			-- Cars laid across the doorway (door squares are x 11..14 at y 10, the
+			-- squares across at y 9).
+			local across = fakeCar(1, 12.5, 9.9, 0, 0, { 12.5, 2 })
+			eq(tag .. "the fake car straddles the line", truth(across), true)
+			eq(tag .. "occupied, straddling: the frozen outline says nothing, the door is blocked",
+				closeWith({ across }, { across }), true)
+			eq(tag .. "nothing toggled", #toggled(), 0)
+			eq(tag .. "and it stays open", allOpen(leaves), 4)
+
+			-- The mirror: outline frozen AT the door, the car really parked away.
+			local away = fakeCar(2, 12.5, 15.5, 0, 0, { 12.5, 9.9 })
+			eq(tag .. "the fake car is away", truth(away), false)
+			eq(tag .. "occupied, away, outline frozen at the door: it closes",
+				closeWith({ away }, { away }), false)
+			eq(tag .. "shut", allOpen(leaves), 0)
+
+			-- Half across: on the inner side only.
+			local inner = fakeCar(3, 12.5, 12.7, 0, 0, { 12.5, 12.7 })
+			eq(tag .. "the fake car is on one side", truth(inner), false)
+			eq(tag .. "occupied, on one side of the line: it closes", closeWith({ inner }, { inner }), false)
+
+			-- Another floor: the engine's own floor test, not ours to forget.
+			local upstairs = fakeCar(4, 12.5, 9.9, 1, 0, { 12.5, 2 })
+			eq(tag .. "occupied, on the floor above: it closes", closeWith({ upstairs }, { upstairs }), false)
+
+			-- Turned: a car across the doorway lengthwise, then askew.
+			local turned = fakeCar(5, 12.5, 9.95, 0, math.pi / 2, { 0, 0 })
+			eq(tag .. "the fake car lies along the line", truth(turned), true)
+			eq(tag .. "occupied, turned a quarter, across the line: blocked",
+				closeWith({ turned }, { turned }), true)
+
+			-- Nobody in it: the engine's answer stands, and per car.
+			local parked = fakeCar(6, 12.5, 9.9, 0, 0)
+			eq(tag .. "a parked car across the line blocks", closeWith({ parked }, {}), true)
+			local left, right = fakeCar(7, 12.5, 7.5, 0, 0), fakeCar(8, 12.5, 12.6, 0, 0)
+			eq(tag .. "two parked cars, one each side, neither across: it closes",
+				closeWith({ left, right }, {}), false)
+			local far = fakeCar(9, 40.5, 9.9, 0, 0)
+			eq(tag .. "a car far away is not asked", closeWith({ far }, {}), false)
+
+			-- The cell's list out of reach: the footprint still decides for a car
+			-- somebody is in, and a car nobody is in cannot hide from the aggregate.
+			world.getVehicles = nil
+			_G.getOnlinePlayers = function()
+				return { size = function() return 1 end,
+					get = function() return { getVehicle = function() return across end } end }
+			end
+			for i = 1, #leaves do leaves[i].open = true end
+			typed(bench, "dev door0 close")
+			eq(tag .. "no cell list: an occupied car across the line still blocks", allOpen(leaves), 4)
+
+			-- Somebody is in a car that cannot be measured: the door stays open.
+			across.noPos = true
+			withCars({ across }, { across })
+			for i = 1, #leaves do leaves[i].open = true end
+			typed(bench, "dev door0 close")
+			eq(tag .. "an occupied car that cannot be measured keeps the door open", allOpen(leaves), 4)
+			across.noPos = false
+
+			-- Sweep: cars of every place and heading, occupied, with the outline
+			-- frozen somewhere else. What the door does is what the sampling says.
+			local seed = 12345
+			local function rnd() seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 end
+			local wrong = 0
+			for n = 1, 40 do
+				local car = fakeCar(100 + n, 10 + rnd() * 6, 6 + rnd() * 7, 0, rnd() * math.pi * 2, { 30, 30 })
+				local said = closeWith({ car }, { car })
+				if said ~= truth(car) then
+					wrong = wrong + 1
+					print(string.format("garage sweep: car %d at %.2f,%.2f turned %.2f: blocked=%s, truth %s",
+						n, car.x, car.y, car.theta, tostring(said), tostring(truth(car))))
+				end
+			end
+			eq(tag .. "forty cars at every angle: the door agrees with the sampling", wrong, 0)
+			_G.Vector3f, _G.getOnlinePlayers = realVector, realPlayers
+			world.getVehicles = nil
+			for i = 1, #leaves do leaves[i].open = false end
 		end
 		noSilent(tag .. "refusals", leaves)
 

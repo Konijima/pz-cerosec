@@ -872,14 +872,27 @@ the whole opening, and `lock` sets every leaf, as vanilla's `ISLockDoor` does.
   when the door is being opened. Blocked is `IsoDoor.isDoubleDoorObstructed(obj)` for a double
   door, and for a garage door it is asked only when **closing an open one**: a
   vehicle standing on a leaf's square and across the door line.
-- **A known approximation, the garage door's `blocked`.** The engine's test for it,
-  `isGarageDoorObstructed`, is private, so it cannot be called; the machine's is
-  rebuilt from the public `IsoGridSquare.isVehicleIntersecting()` on the leaf's
-  square and on the square across it. That asks "some vehicle" of each square where
-  the engine asks "this vehicle" of both. It is therefore stricter than the engine
-  in one case only: two **different** vehicles standing one on either side of the
-  door, neither across it, are refused by the machine and would be allowed by the
-  engine. It never lets through what the engine refuses.
+- **The garage door's `blocked`, and the car somebody is in.** The engine's test for
+  it, `isGarageDoorObstructed`, is private, so it cannot be called; the machine's is
+  rebuilt from `BaseVehicle.isIntersectingSquare`, one vehicle at a time, as the
+  engine asks it: the **same** vehicle on the leaf's square and on the square across
+  the door line, for any leaf of the gate. (An earlier build asked "some vehicle"
+  of each square and so refused two different vehicles either side of the door; that
+  deviation is gone.) The vehicles are those of `getCell():getVehicles()` within
+  twelve tiles.
+  One vehicle is not asked that way: a car **somebody sits in**. On a dedicated
+  server its collision outline (`BaseVehicle.getPoly()`) is rebuilt only when
+  `polyDirty` is set, which nothing does while a client drives the car, so
+  `isIntersectingSquare` answers for the place where the driver got in -- a door
+  closed on the car, or refused four tiles from it. The car's transform and its
+  script are right, so its outline is built from them, as `VehiclePoly.init` builds
+  it (half the script's extents about the centre of mass, each corner through
+  `BaseVehicle.getWorldPos`), and tested against the two squares. A car it cannot
+  measure keeps the door open. If the cell's list cannot be read, the old aggregate
+  (`IsoGridSquare.isVehicleIntersecting()`) is used for the rest. With
+  `ServerLog` on, each close writes a `garage close refused|allowed:` line naming
+  every car, whether it was occupied, what the engine answered and what the outline
+  built here answered; for a car nobody is in the two must agree.
 - **Not proven: how a second client sees a garage door move.** The machine calls
   `IsoDoor.toggleGarageDoor(obj, true)` from the server exactly as the hand's path
   does, but vanilla's `IsoDoor.syncIsoObject` has no garage receive branch, so how
