@@ -2093,12 +2093,32 @@ end
 -- Every car within a dozen tiles of x, y: the cell's, and any occupied one the
 -- cell did not list. nil if the cell's list cannot be had.
 local NEAR = 12
+-- getCell():getVehicles() is a java.util.Set (javap: IsoCell.getVehicles()), so it has
+-- no get(i): the server log of the first build showed "tried to call nil" on
+-- exactly that. It is walked by its iterator; a list it might answer with instead
+-- (size and get) is the second try. A method the bridge does not have reads as nil
+-- from the object, which is checked first: a call of nil is caught by pcall but
+-- costs a stack trace in the log every time.
+local function listOf(all)
+	local out = {}
+	if type(all.iterator) == "function" then
+		local it = all:iterator()
+		while it:hasNext() do out[#out + 1] = it:next() end
+		return out
+	end
+	if type(all.get) == "function" then
+		for i = 0, all:size() - 1 do out[#out + 1] = all:get(i) end
+		return out
+	end
+	error("neither iterator nor get on the cell's vehicles")
+end
+
 local function carsNear(x, y, occ)
 	local list, seen = {}, {}
 	local ok, err = pcall(function()
-		local all = getCell():getVehicles()
-		for i = 1, all:size() do
-			local v = all:get(i - 1)
+		local all = listOf(getCell():getVehicles())
+		for i = 1, #all do
+			local v = all[i]
 			seen[v:getId()] = true
 			if math.abs(v:getX() - x) <= NEAR and math.abs(v:getY() - y) <= NEAR then
 				list[#list + 1] = v

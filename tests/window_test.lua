@@ -5373,8 +5373,15 @@ do
 				return car
 			end
 			local function withCars(cars, sitting)
+				-- A java.util.Set, as IsoCell.getVehicles() is: a size and an iterator,
+				-- and no get(i). The first build called get and the server said nil.
 				world.getVehicles = function()
-					return { size = function() return #cars end, get = function(_, i) return cars[i + 1] end }
+					return { size = function() return #cars end,
+						iterator = function()
+							local at = 0
+							return { hasNext = function() return at < #cars end,
+								next = function() at = at + 1; return cars[at] end }
+						end }
 				end
 				_G.getOnlinePlayers = function()
 					return { size = function() return #sitting end,
