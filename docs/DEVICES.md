@@ -870,15 +870,16 @@ the whole opening, and `lock` sets every leaf, as vanilla's `ISLockDoor` does.
   installed jar, so the game offers no barricade on either. The check stays because
   it costs nothing and is the engine's own first test.) Locked asks **any** leaf, and only
   when the door is being opened. Blocked is `IsoDoor.isDoubleDoorObstructed(obj)` for a double
-  door **and, when closing an open one, a vehicle on any of the four squares the
-  closed leaves stand on**, and for a garage door it is asked only when **closing an
-  open one**: a vehicle standing on a leaf's square and across the door line.
-  The double door's vehicle test is **the machine's own, not the engine's**:
-  `isDoubleDoorObstructed` reads solid squares, trees and walls between the leaves
-  and never a vehicle (`javap -c`, `hasSomething4x4`), and the hand's toggle does not
-  ask either. It is there for the reason the garage door's is: a leaf closed on a car.
-  The row is the two hinge leaves' squares and the two between them, the vehicles are
-  asked as for a garage door (below), and opening is never refused for a vehicle.
+  door **and a vehicle in the box the engine itself walks**, opening or closing, and for a
+  garage door it is asked only when **closing an open one**: a vehicle standing on a
+  leaf's square and across the door line.
+  The double door's vehicle test is **asked again by the machine**: `isDoubleDoorObstructed`
+  walks the vehicles of the chunks its box touches (`javap -c`, offsets 405-615), which
+  is what refuses the hand's toggle on a car, and the same call from the server left a
+  shut gate opening on a car in front of it, so the machine asks for itself. The box is the
+  engine's: the row of the four leaves (the two hinge leaves' squares and the two
+  between them) and the row they swing through, 4 by 2 squares. The vehicles are asked as
+  for a garage door (below).
 - **The garage door's `blocked`, and the car somebody is in.** The engine's test for
   it, `isGarageDoorObstructed`, is private, so it cannot be called; the machine's is
   rebuilt from `BaseVehicle.isIntersectingSquare`, one vehicle at a time, as the

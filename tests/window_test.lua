@@ -5366,11 +5366,11 @@ do
 			typed(bench, "dev door0 close")
 
 			--
-			-- A CAR ON THE LINE. Not the engine's rule (isDoubleDoorObstructed asks about
-			-- solid squares and walls and never a vehicle, and neither does the hand's
-			-- toggle), the machine's own: closing is refused with a car on any of the four
-			-- squares the closed leaves stand on -- the row of the hinge leaves and the two
-			-- between them -- and the car somebody sits in is measured from where it is.
+			-- A CAR IN THE WAY. The hand is refused on a car and the server's call of the
+			-- same test is not, so the machine asks of its own, of the box the engine
+			-- walks: refused, opening or closing, with a car on any of the eight squares
+			-- (the row of the leaves and the row they swing through), and the car
+			-- somebody sits in is measured from where it is.
 			--
 			local rig = carRig(world, leaves, bench)
 			local onLine = function(car)
@@ -5393,14 +5393,35 @@ do
 			eq(tag .. "occupied, away, outline frozen on the line: it closes",
 				rig.closeWith({ away }, { away }), false)
 			for i = 1, #leaves do leaves[i].open = true end
-			local beside = rig.fakeCar(4, 12.5, 13.5, 0, 0)
+			local beside = rig.fakeCar(4, 12.5, 15.5, 0, 0)
 			eq(tag .. "a parked car beside the line: it closes", rig.closeWith({ beside }, {}), false)
 			for i = 1, #leaves do leaves[i].open = true end
 			eq(tag .. "and with no car at all", rig.closeWith({}, {}), false)
-			-- Shut, it opens whatever is on the line: the leaves swing away from it.
+			-- Shut, it is the same box: the leaves swing through the row in front too,
+			-- and a car there refuses the opening, as it refuses the hand's.
+			for i = 1, #leaves do leaves[i].open = false end
 			rig.withCars({ stale }, { stale })
 			typed(bench, "dev door0 open")
-			eq(tag .. "a shut door opens under a car", allOpen(leaves), 4)
+			eq(tag .. "a shut door does not open on an occupied car on the line", allOpen(leaves), 0)
+			check(tag .. "and says blocked", bench.painted("door0: blocked"))
+			local parkedLine = rig.fakeCar(6, 12.5, 10.5, 0, 0)
+			rig.withCars({ parkedLine }, {})
+			typed(bench, "dev door0 open")
+			eq(tag .. "a parked car on the line: opening is refused", allOpen(leaves), 0)
+			for x = 11, 14 do world.square(x, 11, 0, nil) end
+			local front = rig.fakeCar(7, 12.5, 12.0, 0, math.pi / 2)
+			eq(tag .. "the fake car is off the line", onLine(front), false)
+			eq(tag .. "and in the swing row", rig.covers(front.x, front.y, front.theta, 12, 11), true)
+			rig.withCars({ front }, {})
+			typed(bench, "dev door0 open")
+			eq(tag .. "a parked car in the swing row only: opening is refused", allOpen(leaves), 0)
+			for i = 1, #leaves do leaves[i].open = true end
+			typed(bench, "dev door0 close")
+			eq(tag .. "and so is closing", allOpen(leaves), 4)
+			for i = 1, #leaves do leaves[i].open = false end
+			rig.withCars({ beside }, {})
+			typed(bench, "dev door0 open")
+			eq(tag .. "a car beside the box: a shut door opens", allOpen(leaves), 4)
 			rig.restore()
 			typed(bench, "dev door0 close")
 		else

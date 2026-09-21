@@ -2140,7 +2140,7 @@ end
 -- Is a car in the way of these squares? Each is { here = square } and, for a garage
 -- door, an `across` too: the engine's rule there is one car on BOTH; for a square
 -- without one, a car on it at all is in the way.
-local function carsInTheWay(squares, label)
+local function carsInTheWay(squares, label, verb)
 	if #squares == 0 then return false end
 	local occ = occupied()
 	local cars = carsNear(squares[1].here:getX(), squares[1].here:getY(), occ)
@@ -2197,7 +2197,7 @@ local function carsInTheWay(squares, label)
 		end
 		said[#said + 1] = line
 	end
-	CeroSec.log(label .. " close " .. (refused and "refused" or "allowed") .. ": " .. table.concat(said, "; "))
+	CeroSec.log(label .. " " .. (verb or "close") .. " " .. (refused and "refused" or "allowed") .. ": " .. table.concat(said, "; "))
 	return refused
 end
 
@@ -2215,14 +2215,17 @@ local function garageBlocked(object)
 	return carsInTheWay(squares, "garage")
 end
 
--- THE DOUBLE DOOR, AND A CAR ON ITS LINE. Not the engine's rule: isDoubleDoorObstructed
--- (javap -c) reads solid squares, trees and walls between the leaves and never asks
--- about a vehicle, and neither does the hand's toggle. A closed leaf on a car is the
--- same trouble the garage door's test exists for, so the machine refuses it too:
--- closing, with a car on any of the four squares the closed leaves stand on. Declared
--- in docs/DEVICES.md.
+-- THE DOUBLE DOOR, AND A CAR IN ITS WAY. The hand's toggle refuses on a car
+-- (isDoubleDoorObstructed, javap -c: offsets 405-615 walk the vehicles of the chunks
+-- the box touches and ask BaseVehicle.isIntersectingSquare of every tile of it), and
+-- the same call from the server does not: the door opens and closes on a car through
+-- the computer that the hand is refused on (seen on the test server, a car in front of
+-- a shut gate). So the machine asks it itself, of the very box the engine walks: the
+-- row the four leaves stand on when shut, and the row beside it they swing through
+-- (north: 4 wide, y and y+1; west: 2 wide, x and x+1; offsets 240-243 and 321-327),
+-- opening or closing alike, with the car somebody sits in measured from where it is.
 --
--- The closed leaves stand in a row of four between the hinge leaves, which never move
+-- The four leaves' row runs between the hinge leaves, which never move
 -- (CeroSecModules.gateParts), so the row is the hinge leaves' two squares and the two
 -- between them. With a hinge leaf missing, the leaves that are there are what is known.
 local function doubleLine(object)
@@ -2236,6 +2239,11 @@ local function doubleLine(object)
 			for k = 0, 3 do
 				local q = getCell():getGridSquare(a:getX() + sx * k, a:getY() + sy * k, a:getZ())
 				if q ~= nil then squares[#squares + 1] = { here = q } end
+				-- The row they swing through: +y of a row along x (north), +x of a
+				-- row along y (west).
+				local w = getCell():getGridSquare(a:getX() + sx * k + (sy ~= 0 and 1 or 0),
+					a:getY() + sy * k + (sx ~= 0 and 1 or 0), a:getZ())
+				if w ~= nil then squares[#squares + 1] = { here = w } end
 			end
 			return squares
 		end
@@ -2266,8 +2274,7 @@ local function doubleBlocked(object)
 		CeroSec.log("double door: the engine's own test refuses: " .. (ok and text or tostring(text)))
 		return true
 	end
-	if not object:IsOpen() then return false end
-	return carsInTheWay(doubleLine(object), "double door")
+	return carsInTheWay(doubleLine(object), "double door", object:IsOpen() and "close" or "open")
 end
 
 local function blocked(object)
