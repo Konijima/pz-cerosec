@@ -20,14 +20,14 @@ date.
   standing where its leaves stand or swing -- parked, or with somebody driving it --
   the way the hand's own toggle does, instead of moving through it. A car
   driven away from a gate no longer keeps it refused.
-- Other players now hear you type. The keyboard clicks at a terminal used to be
-  played only on the machine of the player at the keyboard; now the players
-  standing near hear them too. The clicks are quiet, so somebody more than six
-  tiles away still hears nothing. On a server, at most one click in every fifth
-  of a second is sent to the others -- a fast typist is heard typing, not click
-  for click -- and the typist always hears every key at once. Nothing new is
-  sent in a single-player game, and the keyboard still makes no noise a zombie
-  can follow.
+- The keyboard at a terminal is now heard by the players standing near it, as it
+  was always meant to be: the clicks were played only on the machine of the
+  player at the keyboard, so nobody else ever heard somebody type. The clicks are
+  quiet, so somebody more than six tiles away still hears nothing. On a server,
+  at most one click in every fifth of a second is sent to the others -- a fast
+  typist is heard typing, not click for click -- and the typist always hears
+  every key at once. Nothing new is sent in a single-player game, and the
+  keyboard still makes no noise a zombie can follow.
 
 ## 0.6.0 - 2026-09-20
 
