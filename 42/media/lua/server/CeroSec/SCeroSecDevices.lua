@@ -2037,11 +2037,21 @@ local function garageBlocked(object)
 				local f = d.p:getForwardDirection()
 				return string.format("%.2f,%.2f", f:getX(), f:getY())
 			end)
+			-- EXPERIMENT: rebuild the outline exactly as BaseVehicle.getPoly does
+			-- when the outline is marked dirty (offsets 83-89: poly.init(this,
+			-- 0.0f)), then ask the same question again. Only on a driven vehicle,
+			-- and it writes nothing but that vehicle's own cached outline.
+			try("rebuilt", function()
+				d.v:getPoly():init(d.v, 0)
+				local q = d.v:getPoly()
+				return string.format("(%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f)",
+					q.x1, q.y1, q.x2, q.y2, q.x3, q.y3, q.x4, q.y4)
+			end)
 			for i = 1, #leaves do
 				local here = leaves[i]:getSquare()
 				local across = leaves[i]:getOppositeSquare()
 				if here ~= nil and across ~= nil then
-					parts[#parts + 1] = here:getX() .. "," .. here:getY() .. " own here="
+					parts[#parts + 1] = here:getX() .. "," .. here:getY() .. " own(after rebuild) here="
 						.. tostring(d.v:isIntersectingSquare(here:getX(), here:getY(), here:getZ()))
 						.. " across=" .. tostring(d.v:isIntersectingSquare(
 							across:getX(), across:getY(), across:getZ()))
