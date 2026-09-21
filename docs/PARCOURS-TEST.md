@@ -2030,6 +2030,8 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      fermée. Porte ouverte, même voiture : `dev doorN close` répond
      `doorN: blocked`. Refaire **assis dans la voiture** (serveur dédié) : même
      refus. La voiture plus loin : la porte s'ouvre et se ferme. Avec
+     Sortir de la voiture dans la boîte, la remonter et l'éloigner en
+     conduisant : la porte doit s'ouvrir (pas de refus resté collé). Avec
      `ServerLog`, les lignes `double door close ...` ou `double door open ...` donnent les mêmes `game=`
      et `own=` que le garage. [ ]
 232f. **Le numéro ne bouge pas quand la porte bouge.** Sur la porte double

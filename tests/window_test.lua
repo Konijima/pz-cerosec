@@ -5422,6 +5422,30 @@ do
 			rig.withCars({ beside }, {})
 			typed(bench, "dev door0 open")
 			eq(tag .. "a car beside the box: a shut door opens", allOpen(leaves), 4)
+			--
+			-- THE ENGINE'S REFUSAL AND A DRIVEN CAR. The engine's own test walks the
+			-- vehicles and a driven car's outline is frozen where the driver got in: a
+			-- shut gate stayed refused for a car driven away until the driver got out.
+			-- The engine is fixed to refuse (leaves.obstructed), the car says which.
+			--
+			local function tryOpen(cars, sitting)
+				for i = 1, #leaves do leaves[i].open = false end
+				rig.withCars(cars, sitting)
+				leaves.obstructed = true
+				typed(bench, "dev door0 open")
+				leaves.obstructed = false
+				return allOpen(leaves) == 4
+			end
+			local frozen = rig.fakeCar(20, 12.5, 25.5, 0, 0, { 12.5, 10.5 })
+			eq(tag .. "engine refuses, driven car frozen on the box but really away: it opens",
+				tryOpen({ frozen }, { frozen }), true)
+			local really = rig.fakeCar(21, 12.5, 10.5, 0, 0, { 12.5, 10.5 })
+			eq(tag .. "engine refuses, driven car really on the box: refused", tryOpen({ really }, { really }), false)
+			local elsewhere = rig.fakeCar(22, 12.5, 25.5, 0, 0, { 30, 30 })
+			eq(tag .. "engine refuses, nothing accounts for it (a wall): refused",
+				tryOpen({ elsewhere }, { elsewhere }), false)
+			local parkedFar = rig.fakeCar(23, 12.5, 25.5, 0, 0)
+			eq(tag .. "engine refuses, nobody driving: refused", tryOpen({ parkedFar }, {}), false)
 			rig.restore()
 			typed(bench, "dev door0 close")
 		else

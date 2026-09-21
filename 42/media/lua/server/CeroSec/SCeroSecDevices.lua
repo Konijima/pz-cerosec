@@ -2257,24 +2257,44 @@ local function doubleLine(object)
 end
 
 local function doubleBlocked(object)
+	local line = doubleLine(object)
 	if IsoDoor.isDoubleDoorObstructed(object) then
-		-- Which leaf was asked and where the four stand, so a refusal that the hand
-		-- does not make can be told from the engine's own (ServerLog).
-		local ok, text = pcall(function()
-			local out = { "asked leaf " .. tostring(IsoDoor.getDoubleDoorIndex(object)) .. " at "
-				.. object:getSquare():getX() .. "," .. object:getSquare():getY() .. " open="
-				.. tostring(object:IsOpen()) }
-			for i = 1, 4 do
-				local leaf = IsoDoor.getDoubleDoorObject(object, i)
-				out[#out + 1] = i .. "=" .. (leaf == nil and "none" or (leaf:getSquare():getX() .. ","
-					.. leaf:getSquare():getY() .. " open=" .. tostring(leaf:IsOpen())))
+		-- The engine's test walks the vehicles too, and a car somebody drives has its
+		-- outline frozen where the driver got in: driven back and forth over a gate,
+		-- it keeps a shut gate refused (and an open one allowed) until the driver
+		-- gets out, which the server log showed with the car a dozen tiles away. So a
+		-- refusal that a DRIVEN car's own answer accounts for -- one of them says it
+		-- stands on a tile of the box -- is not taken as it stands: the machine's
+		-- outline for that car decides below. A refusal nothing accounts for is a wall,
+		-- a tree, a solid square: the engine's, and final. (Declared in docs/DEVICES.md:
+		-- a wall AND a driven car's frozen outline on the box hide each other.)
+		local accounted = false
+		for _, v in pairs(occupied()) do
+			for _, s in ipairs(line) do
+				if gameHits(v, s.here:getX(), s.here:getY(), s.here:getZ()) then accounted = true end
 			end
-			return table.concat(out, "; ")
-		end)
-		CeroSec.log("double door: the engine's own test refuses: " .. (ok and text or tostring(text)))
-		return true
+		end
+		if accounted then
+			CeroSec.log("double door: the engine's refusal is a driven car's frozen outline; its own outline decides")
+		else
+			-- Which leaf was asked and where the four stand, so a refusal that the hand
+			-- does not make can be told from the engine's own (ServerLog).
+			local ok, text = pcall(function()
+				local out = { "asked leaf " .. tostring(IsoDoor.getDoubleDoorIndex(object)) .. " at "
+					.. object:getSquare():getX() .. "," .. object:getSquare():getY() .. " open="
+					.. tostring(object:IsOpen()) }
+				for i = 1, 4 do
+					local leaf = IsoDoor.getDoubleDoorObject(object, i)
+					out[#out + 1] = i .. "=" .. (leaf == nil and "none" or (leaf:getSquare():getX() .. ","
+						.. leaf:getSquare():getY() .. " open=" .. tostring(leaf:IsOpen())))
+				end
+				return table.concat(out, "; ")
+			end)
+			CeroSec.log("double door: the engine's own test refuses: " .. (ok and text or tostring(text)))
+			return true
+		end
 	end
-	return carsInTheWay(doubleLine(object), "double door", object:IsOpen() and "close" or "open")
+	return carsInTheWay(line, "double door", object:IsOpen() and "close" or "open")
 end
 
 local function blocked(object)

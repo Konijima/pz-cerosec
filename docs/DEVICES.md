@@ -880,6 +880,13 @@ the whole opening, and `lock` sets every leaf, as vanilla's `ISLockDoor` does.
   engine's: the row of the four leaves (the two hinge leaves' squares and the two
   between them) and the row they swing through, 4 by 2 squares. The vehicles are asked as
   for a garage door (below).
+  The engine's own refusal is not final when a **driven** car accounts for it: its outline
+  is frozen where the driver got in, so driven back and forth over a gate it kept a
+  shut gate refused until the driver got out. If the game's answer for a driven car says
+  it stands on a tile of the box, the engine's refusal is set aside and the machine's own
+  outline for that car decides. A refusal no driven car accounts for (a wall, a tree, a
+  solid square) stays final. The price: a wall and a driven car's frozen outline on the
+  same box hide each other.
 - **The garage door's `blocked`, and the car somebody is in.** The engine's test for
   it, `isGarageDoorObstructed`, is private, so it cannot be called; the machine's is
   rebuilt from `BaseVehicle.isIntersectingSquare`, one vehicle at a time, as the

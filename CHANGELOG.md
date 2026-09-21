@@ -18,7 +18,8 @@ date.
   it, no longer keep it open either.
 - A double door or a gate opened or closed from a computer now refuses on a car
   standing where its leaves stand or swing -- parked, or with somebody driving it --
-  the way the hand's own toggle does, instead of moving through it.
+  the way the hand's own toggle does, instead of moving through it. A car
+  driven away from a gate no longer keeps it refused.
 - Other players now hear you type. The keyboard clicks at a terminal used to be
   played only on the machine of the player at the keyboard; now the players
   standing near hear them too. The clicks are quiet, so somebody more than six
