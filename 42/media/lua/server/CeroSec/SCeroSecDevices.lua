@@ -2137,17 +2137,10 @@ local function carsNear(x, y, occ)
 	return list
 end
 
-local function garageBlocked(object)
-	if not object:IsOpen() then return false end
-	local leaves = leavesOf(object)
-	local squares = {}
-	for i = 1, #leaves do
-		local here = leaves[i]:getSquare()
-		local across = leaves[i]:getOppositeSquare()
-		if here ~= nil and across ~= nil then
-			squares[#squares + 1] = { here = here, across = across }
-		end
-	end
+-- Is a car in the way of these squares? Each is { here = square } and, for a garage
+-- door, an `across` too: the engine's rule there is one car on BOTH; for a square
+-- without one, a car on it at all is in the way.
+local function carsInTheWay(squares, label)
 	if #squares == 0 then return false end
 	local occ = occupied()
 	local cars = carsNear(squares[1].here:getX(), squares[1].here:getY(), occ)
@@ -2157,7 +2150,7 @@ local function garageBlocked(object)
 		-- The cell's list is out of reach: the aggregate for whatever nobody is in,
 		-- and the footprint for whatever somebody is.
 		for _, s in ipairs(squares) do
-			if s.here:isVehicleIntersecting() and s.across:isVehicleIntersecting() then
+			if s.here:isVehicleIntersecting() and (s.across == nil or s.across:isVehicleIntersecting()) then
 				refused = true
 				said[#said + 1] = "aggregate " .. s.here:getX() .. "," .. s.here:getY()
 			end
@@ -2178,32 +2171,92 @@ local function garageBlocked(object)
 		end
 		for _, s in ipairs(squares) do
 			local hx, hy, hz = s.here:getX(), s.here:getY(), s.here:getZ()
-			local ax, ay = s.across:getX(), s.across:getY()
-			local gH, gA = gameHits(v, hx, hy, hz), gameHits(v, ax, ay, hz)
+			local ax, ay
+			if s.across ~= nil then ax, ay = s.across:getX(), s.across:getY() end
+			local gH, gA = gameHits(v, hx, hy, hz), nil
+			if ax ~= nil then gA = gameHits(v, ax, ay, hz) end
 			local mH, mA
 			if pts ~= nil or not occ[v:getId()] then
 				-- Undriven cars are measured too: the game's answer is true there and
 				-- the two must agree, which the log lets a reader check.
 				pts = pts or footprint(v)
 				if pts ~= nil then
-					mH, mA = footHits(v, pts, hx, hy, hz), footHits(v, pts, ax, ay, hz)
+					mH = footHits(v, pts, hx, hy, hz)
+					if ax ~= nil then mA = footHits(v, pts, ax, ay, hz) end
 				end
 			end
 			local hit
-			if occ[v:getId()] then hit = mH and mA else hit = (gH == nil and mH or gH) and (gA == nil and mA or gA) end
+			if occ[v:getId()] then
+				hit = mH and (ax == nil or mA)
+			else
+				hit = (gH == nil and mH or gH) and (ax == nil or (gA == nil and mA or gA))
+			end
 			line = line .. string.format(" %.0f,%.0f game=%s/%s own=%s/%s%s", hx, hy,
 				tostring(gH), tostring(gA), tostring(mH), tostring(mA), hit and " HIT" or "")
 			if hit then refused = true end
 		end
 		said[#said + 1] = line
 	end
-	CeroSec.log("garage close " .. (refused and "refused" or "allowed") .. ": " .. table.concat(said, "; "))
+	CeroSec.log(label .. " close " .. (refused and "refused" or "allowed") .. ": " .. table.concat(said, "; "))
 	return refused
+end
+
+local function garageBlocked(object)
+	if not object:IsOpen() then return false end
+	local leaves = leavesOf(object)
+	local squares = {}
+	for i = 1, #leaves do
+		local here = leaves[i]:getSquare()
+		local across = leaves[i]:getOppositeSquare()
+		if here ~= nil and across ~= nil then
+			squares[#squares + 1] = { here = here, across = across }
+		end
+	end
+	return carsInTheWay(squares, "garage")
+end
+
+-- THE DOUBLE DOOR, AND A CAR ON ITS LINE. Not the engine's rule: isDoubleDoorObstructed
+-- (javap -c) reads solid squares, trees and walls between the leaves and never asks
+-- about a vehicle, and neither does the hand's toggle. A closed leaf on a car is the
+-- same trouble the garage door's test exists for, so the machine refuses it too:
+-- closing, with a car on any of the four squares the closed leaves stand on. Declared
+-- in docs/DEVICES.md.
+--
+-- The closed leaves stand in a row of four between the hinge leaves, which never move
+-- (CeroSecModules.gateParts), so the row is the hinge leaves' two squares and the two
+-- between them. With a hinge leaf missing, the leaves that are there are what is known.
+local function doubleLine(object)
+	local one, four = IsoDoor.getDoubleDoorObject(object, 1), IsoDoor.getDoubleDoorObject(object, 4)
+	local squares = {}
+	if one ~= nil and four ~= nil then
+		local a, b = one:getSquare(), four:getSquare()
+		local dx, dy = b:getX() - a:getX(), b:getY() - a:getY()
+		if a ~= nil and b ~= nil and (dx == 0 or dy == 0) and math.abs(dx + dy) == 3 then
+			local sx, sy = dx / 3, dy / 3
+			for k = 0, 3 do
+				local q = getCell():getGridSquare(a:getX() + sx * k, a:getY() + sy * k, a:getZ())
+				if q ~= nil then squares[#squares + 1] = { here = q } end
+			end
+			return squares
+		end
+	end
+	local leaves = leavesOf(object)
+	for i = 1, #leaves do
+		local q = leaves[i]:getSquare()
+		if q ~= nil then squares[#squares + 1] = { here = q } end
+	end
+	return squares
+end
+
+local function doubleBlocked(object)
+	if IsoDoor.isDoubleDoorObstructed(object) then return true end
+	if not object:IsOpen() then return false end
+	return carsInTheWay(doubleLine(object), "double door")
 end
 
 local function blocked(object)
 	local kind = CeroSecModules.gateKind(object)
-	if kind == "double" then return IsoDoor.isDoubleDoorObstructed(object) end
+	if kind == "double" then return doubleBlocked(object) end
 	if kind == "garage" then return garageBlocked(object) end
 	return object:isObstructed()
 end

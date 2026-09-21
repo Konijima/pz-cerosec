@@ -16,6 +16,9 @@ date.
   outline out from where the car is, so it refuses exactly when the car is in the
   doorway and only then. Two parked cars on either side of a door, neither across
   it, no longer keep it open either.
+- A double door or a gate now refuses to close on a car standing where its leaves
+  would stand -- parked, or with somebody driving it -- instead of shutting on it.
+  Opening it is never refused for a car.
 - Other players now hear you type. The keyboard clicks at a terminal used to be
   played only on the machine of the player at the keyboard; now the players
   standing near hear them too. The clicks are quiet, so somebody more than six

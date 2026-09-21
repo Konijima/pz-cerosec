@@ -3107,6 +3107,8 @@ function FakeWorld.new()
 		sq.getX = function() return x end
 		sq.getY = function() return y end
 		sq.getZ = function() return z end
+		-- No vehicle anywhere unless a bench says so (the engine has the method on every square).
+		sq.isVehicleIntersecting = function() return false end
 		sq.getRoom = function() return room end
 		-- Inside, which is what the fitting rules ask of the square a survivor is
 		-- standing on. The engine's isInARoom() is `getRoom() != null ||
@@ -5166,6 +5168,88 @@ do
 		eq(what .. ": ToggleDoorSilent never moved a leaf", n, 0)
 	end
 
+	-- Fake cars for a gate's bench: see the comment on the garage door's own use of
+	-- them. The rig puts the fakes on the globals and `restore` takes them off.
+	local function carRig(world, leaves, bench)
+		local realVector, realPlayers = _G.Vector3f, _G.getOnlinePlayers
+		_G.Vector3f = { new = function(x, y, z)
+			local v = { vx = x or 0, vy = y or 0, vz = z or 0 }
+			v.x = function(s) return s.vx end
+			v.y = function(s) return s.vy end
+			v.z = function(s) return s.vz end
+			v.set = function(s, a, b, c) s.vx, s.vy, s.vz = a, b, c end
+			return v
+		end }
+		local WIDTH, LENGTH = 1.6, 4.8
+		local function covers(cx, cy, theta, sx, sy)
+			for i = 0, 32 do
+				for j = 0, 96 do
+					local lx, lz = -WIDTH / 2 + WIDTH * (i + 0.5) / 33, -LENGTH / 2 + LENGTH * (j + 0.5) / 97
+					local wx = cx + lx * math.cos(theta) - lz * math.sin(theta)
+					local wy = cy + lx * math.sin(theta) + lz * math.cos(theta)
+					if wx > sx and wx < sx + 1 and wy > sy and wy < sy + 1 then return true end
+				end
+			end
+			return false
+		end
+		local function fakeCar(id, x, y, z, theta, seenAt)
+			local car = { id = id, x = x, y = y, z = z, theta = theta, seenAt = seenAt or { x, y } }
+			car.getId = function() return id end
+			car.getX = function() return car.x end
+			car.getY = function() return car.y end
+			car.getZ = function() return car.z end
+			car.getScript = function() return {
+				getExtents = function() return { x = function() return WIDTH end,
+					y = function() return 1.2 end, z = function() return LENGTH end } end,
+				getCenterOfMassOffset = function() return { x = function() return 0 end,
+					y = function() return 0 end, z = function() return 0 end } end,
+			} end
+			car.getWorldPos = function(_, off, out)
+				if car.noPos then error("no such method") end
+				out.vx = car.x + off.vx * math.cos(car.theta) - off.vz * math.sin(car.theta)
+				out.vy = car.y + off.vx * math.sin(car.theta) + off.vz * math.cos(car.theta)
+				out.vz = car.z
+				return out
+			end
+			-- The engine's own answer: from the outline it HAS, and false for
+			-- another floor (PZMath.fastfloor(getZ()) ~= z, offsets 0-8).
+			car.isIntersectingSquare = function(_, sx, sy, sz)
+				if math.floor(car.z) ~= sz then return false end
+				return covers(car.seenAt[1], car.seenAt[2], car.theta, sx, sy)
+			end
+			return car
+		end
+		local function withCars(cars, sitting)
+			-- A java.util.Set, as IsoCell.getVehicles() is: a size and an iterator,
+			-- and no get(i). The first build called get and the server said nil.
+			world.getVehicles = function()
+				return { size = function() return #cars end,
+					iterator = function()
+						local at = 0
+						return { hasNext = function() return at < #cars end,
+							next = function() at = at + 1; return cars[at] end }
+					end }
+			end
+			_G.getOnlinePlayers = function()
+				return { size = function() return #sitting end,
+					get = function(_, i) return { getVehicle = function() return sitting[i + 1] end } end }
+			end
+		end
+		local function closeWith(cars, sitting)
+			withCars(cars, sitting)
+			for i = 1, #leaves do leaves[i].open = true end
+			typed(bench, "dev door0 close")
+			-- The screen keeps the lines above, so the leaves are what is read.
+			return allOpen(leaves) == #leaves
+		end
+		local rig = { fakeCar = fakeCar, covers = covers, withCars = withCars, closeWith = closeWith }
+		rig.restore = function()
+			_G.Vector3f, _G.getOnlinePlayers = realVector, realPlayers
+			world.getVehicles = nil
+		end
+		return rig
+	end
+
 	for _, kind in ipairs(names) do
 		local tag = kind .. " door: "
 
@@ -5280,6 +5364,45 @@ do
 			typed(bench, "dev door0 open")
 			check(tag .. "and once it is clear it opens", bench.painted("door0: open"))
 			typed(bench, "dev door0 close")
+
+			--
+			-- A CAR ON THE LINE. Not the engine's rule (isDoubleDoorObstructed asks about
+			-- solid squares and walls and never a vehicle, and neither does the hand's
+			-- toggle), the machine's own: closing is refused with a car on any of the four
+			-- squares the closed leaves stand on -- the row of the hinge leaves and the two
+			-- between them -- and the car somebody sits in is measured from where it is.
+			--
+			local rig = carRig(world, leaves, bench)
+			local onLine = function(car)
+				for i = 1, #COORDS do
+					if rig.covers(car.x, car.y, car.theta, COORDS[i][1], COORDS[i][2]) then return true end
+				end
+				return false
+			end
+			local stale = rig.fakeCar(1, 12.5, 10.5, 0, 0, { 12.5, 2 })
+			eq(tag .. "the fake car stands on the line", onLine(stale), true)
+			eq(tag .. "occupied, on the line, outline frozen elsewhere: closing is refused",
+				rig.closeWith({ stale }, { stale }), true)
+			eq(tag .. "nothing toggled", #toggled(), 0)
+			local one = rig.fakeCar(2, 14.5, 10.5, 0, 0)
+			eq(tag .. "a parked car on the last square only: refused", rig.closeWith({ one }, {}), true)
+			-- Only the two squares between the hinge leaves.
+			local mid = rig.fakeCar(5, 13.0, 10.5, 0, 0)
+			eq(tag .. "a parked car on the middle squares only: refused", rig.closeWith({ mid }, {}), true)
+			local away = rig.fakeCar(3, 12.5, 15.5, 0, 0, { 12.5, 10.5 })
+			eq(tag .. "occupied, away, outline frozen on the line: it closes",
+				rig.closeWith({ away }, { away }), false)
+			for i = 1, #leaves do leaves[i].open = true end
+			local beside = rig.fakeCar(4, 12.5, 13.5, 0, 0)
+			eq(tag .. "a parked car beside the line: it closes", rig.closeWith({ beside }, {}), false)
+			for i = 1, #leaves do leaves[i].open = true end
+			eq(tag .. "and with no car at all", rig.closeWith({}, {}), false)
+			-- Shut, it opens whatever is on the line: the leaves swing away from it.
+			rig.withCars({ stale }, { stale })
+			typed(bench, "dev door0 open")
+			eq(tag .. "a shut door opens under a car", allOpen(leaves), 4)
+			rig.restore()
+			typed(bench, "dev door0 close")
 		else
 			-- A garage door is blocked only when it is OPEN and a vehicle is on a
 			-- leaf's square AND across it. The double door's flag means nothing here.
@@ -5324,77 +5447,8 @@ do
 			-- car's rectangle, which shares nothing with the separating-axis test
 			-- under test.
 			--
-			local realVector, realPlayers = _G.Vector3f, _G.getOnlinePlayers
-			_G.Vector3f = { new = function(x, y, z)
-				local v = { vx = x or 0, vy = y or 0, vz = z or 0 }
-				v.x = function(s) return s.vx end
-				v.y = function(s) return s.vy end
-				v.z = function(s) return s.vz end
-				v.set = function(s, a, b, c) s.vx, s.vy, s.vz = a, b, c end
-				return v
-			end }
-			local WIDTH, LENGTH = 1.6, 4.8
-			local function covers(cx, cy, theta, sx, sy)
-				for i = 0, 32 do
-					for j = 0, 96 do
-						local lx, lz = -WIDTH / 2 + WIDTH * (i + 0.5) / 33, -LENGTH / 2 + LENGTH * (j + 0.5) / 97
-						local wx = cx + lx * math.cos(theta) - lz * math.sin(theta)
-						local wy = cy + lx * math.sin(theta) + lz * math.cos(theta)
-						if wx > sx and wx < sx + 1 and wy > sy and wy < sy + 1 then return true end
-					end
-				end
-				return false
-			end
-			local function fakeCar(id, x, y, z, theta, seenAt)
-				local car = { id = id, x = x, y = y, z = z, theta = theta, seenAt = seenAt or { x, y } }
-				car.getId = function() return id end
-				car.getX = function() return car.x end
-				car.getY = function() return car.y end
-				car.getZ = function() return car.z end
-				car.getScript = function() return {
-					getExtents = function() return { x = function() return WIDTH end,
-						y = function() return 1.2 end, z = function() return LENGTH end } end,
-					getCenterOfMassOffset = function() return { x = function() return 0 end,
-						y = function() return 0 end, z = function() return 0 end } end,
-				} end
-				car.getWorldPos = function(_, off, out)
-					if car.noPos then error("no such method") end
-					out.vx = car.x + off.vx * math.cos(car.theta) - off.vz * math.sin(car.theta)
-					out.vy = car.y + off.vx * math.sin(car.theta) + off.vz * math.cos(car.theta)
-					out.vz = car.z
-					return out
-				end
-				-- The engine's own answer: from the outline it HAS, and false for
-				-- another floor (PZMath.fastfloor(getZ()) ~= z, offsets 0-8).
-				car.isIntersectingSquare = function(_, sx, sy, sz)
-					if math.floor(car.z) ~= sz then return false end
-					return covers(car.seenAt[1], car.seenAt[2], car.theta, sx, sy)
-				end
-				return car
-			end
-			local function withCars(cars, sitting)
-				-- A java.util.Set, as IsoCell.getVehicles() is: a size and an iterator,
-				-- and no get(i). The first build called get and the server said nil.
-				world.getVehicles = function()
-					return { size = function() return #cars end,
-						iterator = function()
-							local at = 0
-							return { hasNext = function() return at < #cars end,
-								next = function() at = at + 1; return cars[at] end }
-						end }
-				end
-				_G.getOnlinePlayers = function()
-					return { size = function() return #sitting end,
-						get = function(_, i) return { getVehicle = function() return sitting[i + 1] end } end }
-				end
-			end
-			local function closeWith(cars, sitting)
-				withCars(cars, sitting)
-				for i = 1, #leaves do leaves[i].open = true end
-				typed(bench, "dev door0 close")
-				-- The screen keeps the lines above, so the leaves are what is read.
-				return allOpen(leaves) == #leaves
-			end
+			local rig = carRig(world, leaves, bench)
+			local fakeCar, covers, withCars, closeWith = rig.fakeCar, rig.covers, rig.withCars, rig.closeWith
 			-- What is true of a car, for every square of the door.
 			local function truth(car)
 				for i = 1, #COORDS do
@@ -5479,8 +5533,7 @@ do
 				end
 			end
 			eq(tag .. "forty cars at every angle: the door agrees with the sampling", wrong, 0)
-			_G.Vector3f, _G.getOnlinePlayers = realVector, realPlayers
-			world.getVehicles = nil
+			rig.restore()
 			for i = 1, #leaves do leaves[i].open = false end
 		end
 		noSilent(tag .. "refusals", leaves)

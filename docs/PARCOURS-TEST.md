@@ -2023,6 +2023,15 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      lignes `garage close ...` donnent, par voiture, `game=` (le moteur) et
      `own=` (le contour reconstruit) : pour une voiture **sans personne
      dedans** les deux doivent être identiques. [ ]
+232e-bis. **Porte DOUBLE ouverte, voiture sur la ligne** (règle de la machine, pas du
+     jeu : la main ne demande rien). Une porte double ouverte, garer une
+     voiture sur l'une des quatre cases où les battants fermés se tiendraient
+     (les deux cases des charnières et les deux du milieu) → `dev doorN close`
+     répond `doorN: blocked` et la porte reste ouverte. Refaire **assis dans
+     la voiture** (serveur dédié) : même refus. La voiture à côté de la ligne
+     ou plus loin : la porte se ferme. Porte fermée : `dev doorN open`
+     fonctionne quoi qu'il y ait dessus. Avec `ServerLog`, les lignes
+     `double door close ...` donnent les mêmes `game=` et `own=` que le garage. [ ]
 232f. **Le numéro ne bouge pas quand la porte bouge.** Sur la porte double
      **de la carte** (celle dont les battants 2 et 3 sont supprimés puis
      recréés par le moteur à chaque manoeuvre), noter `doorN` et `lockN`, puis
