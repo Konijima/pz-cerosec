@@ -851,6 +851,7 @@ local function newBench(saved)
 		getOnlineID = function() return -1 end,
 		isDead = function() return false end,
 		playSoundLocal = function() end,
+		playSound = function() end,
 		getCurrentSquare = function() return { getZ = function() return 0 end } end,
 		getX = function() return 10.5 end,
 		getY = function() return 10.5 end,
@@ -7852,6 +7853,7 @@ local function newNet()
 		getOnlineID = function() return -1 end,
 		isDead = function() return false end,
 		playSoundLocal = function() end,
+		playSound = function() end,
 		getCurrentSquare = function() return { getZ = function() return 0 end } end,
 		getX = function() return 10.5 end,
 		getY = function() return 10.5 end,
@@ -24771,6 +24773,7 @@ do
 				getOnlineID = function() return -1 end,
 				isDead = function() return false end,
 				playSoundLocal = function() end,
+				playSound = function() end,
 				-- His real square, because the fitting rules ask it whether he is
 				-- inside (CeroSecModules.fittingRefusal): he is standing on the
 				-- shop floor, which is a room of this building.
@@ -26706,6 +26709,64 @@ do
 	local field = CeroSecSensors.fieldOf(world.squares["12,12,0"], 2)
 	eq("a head in a base keeps the whole range square", #field, 5 * 5)
 	_G.__world = nil
+end
+
+--
+-- The typing sound: heard at the keyboard at once, and sent to the other players
+-- at a coarser rate (CeroSecTerminal.KEY_NET_MS). What is proved is the RATE at
+-- which each of the two vanilla calls is made -- playSound, which on a client is
+-- the PlaySound packet, and playSoundLocal, which is this machine only -- and
+-- that a solo game, where playSound sends nothing, is made no different. That the
+-- packet reaches a second client and plays there is not something a headless
+-- bench can say; it is the step in docs/PARCOURS-TEST.md.
+--
+do
+	local bench = newBench()
+	local window = bench.window
+	local sent, local_ = {}, {}
+	bench.player.playSound = function(_, name) sent[#sent + 1] = name end
+	bench.player.playSoundLocal = function(_, name) local_[#local_ + 1] = name end
+
+	local function reset() sent, local_ = {}, {} end
+	local net, gap = CeroSecTerminal.KEY_NET_MS, CeroSecTerminal.KEY_MIN_MS
+
+	-- Twenty keys, 50 ms apart -- a fast typist. All twenty are heard at the
+	-- keyboard; the others are sent one in KEY_NET_MS: keys at 0, 200, 400, 600
+	-- and 800 ms, which is five packets and not twenty.
+	_G.__now = _G.__now + 10000
+	reset()
+	for _ = 1, 20 do
+		window:onKeystroke()
+		_G.__now = _G.__now + 50
+	end
+	eq("every key is heard at the keyboard", #sent + #local_, 20)
+	eq("one in KEY_NET_MS goes to the other players", #sent, 5)
+
+	-- A held key: 10 ms apart for a second. The local rate is KEY_MIN_MS's and the
+	-- network rate is still KEY_NET_MS's, whatever the client is fed.
+	_G.__now = _G.__now + 10000
+	reset()
+	for _ = 1, 100 do
+		window:onKeystroke()
+		_G.__now = _G.__now + 10
+	end
+	eq("a held key is clicked at KEY_MIN_MS at the keyboard",
+		#sent + #local_, math.ceil(1000 / gap))
+	eq("and sent at KEY_NET_MS whatever the local rate", #sent, math.ceil(1000 / net))
+
+	-- After a pause the first key is sent: the gap is counted from the last
+	-- packet, not from the last key.
+	_G.__now = _G.__now + 10000
+	reset()
+	window:onKeystroke()
+	eq("the first key after a pause is sent", #sent, 1)
+	eq("and is not also played a second time", #local_, 0)
+
+	-- Enter is the same rule and keeps its own name on the wire.
+	_G.__now = _G.__now + 10000
+	reset()
+	window:onKeystroke("CeroSecKeyEnter")
+	eq("Enter is sent under its own name", sent[1], "CeroSecKeyEnter")
 end
 
 print("window_test: " .. count .. " checks passed")

@@ -95,6 +95,18 @@ server's own doing and comes through no packet. Both bounds are walked on the wi
 `tests/hostile_test.lua` (26c and 26d) and in `tests/window_test.lua`, against five
 thousand packets from one client.
 
+### The typing sound is the one packet this mod cannot bound
+
+Keystrokes are audible to the players near a terminal. That is the vanilla
+`PlaySound` packet (`character:playSound`), not one of ours, so there is no door of
+the mod's own to rate-limit it at: the server relays it in Java, checks only that
+the name is not empty (`PlaySoundPacket.isConsistent`), and does not check that the
+sender owns the character it names. The only bound is the honest client's own: at
+most one such packet per `CeroSecTerminal.KEY_NET_MS` (200 ms), five a second. A
+modified client can send that same packet for any sound in the game whether this
+mod is installed or not, so this adds no capability; but it is the one place where
+"a client is bounded at the door" is not true, and a server owner should know it.
+
 ## Remote sessions: a password every time
 
 Neither the telephone nor the radio consults a trust file, ever: `/etc/hosts.equiv`

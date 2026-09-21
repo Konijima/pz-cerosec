@@ -693,6 +693,26 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      depuis la chaise ou si le personnage reste simplement assis face à
      l'écran sans animation superposée. [ ]
 
+119a. **Les autres entendent le clavier (deux clients, un serveur dédié).**
+     Joueur A assis devant un ordinateur allumé, terminal ouvert ; joueur B
+     debout à 3 ou 4 cases de A, dans la même pièce, sans terminal. A tape une
+     ligne de plusieurs mots → B entend des clics de clavier venant de A, et
+     Entrée plus lourd de temps en temps ; A n'entend chaque clic qu'**une
+     fois** (pas d'écho, pas de retard). B s'éloigne à plus de six cases → il
+     n'entend plus rien. Noter la distance à laquelle les clics deviennent
+     inaudibles pour B. [ ]
+119b. **Le débit est borné.** Même montage. A tient une touche enfoncée dix
+     secondes → chez A les clics restent réguliers (jamais deux collés en moins
+     de 40 ms) ; chez B ils sont plus espacés, environ cinq par seconde au
+     plus (`CeroSecTerminal.KEY_NET_MS` = 200 ms), et le serveur ne montre ni
+     ralentissement ni ligne d'erreur. Une fois A arrêté, B n'entend plus rien
+     et ce silence dure : rien ne continue tout seul. [ ]
+119c. **Les zombis n'entendent pas.** Un zombi immobile hors de vue de A mais à
+     dix cases : A tape un long moment → le zombi ne se met pas en marche vers
+     lui à cause du clavier (le clavier ne fait aucun bruit du monde). [ ]
+119d. **Partie solo inchangée.** Hors ligne, taper → mêmes clics qu'avant, et
+     rien d'autre : pas d'erreur dans `console.txt`. [ ]
+
 ## K. Mode Héberger
 
 120. Hôte allume un ordinateur → le client voit le sprite passer à l'écran

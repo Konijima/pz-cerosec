@@ -1098,6 +1098,18 @@ nothing anywhere else. `IsoGridSquare.playSound(String, boolean)` takes a free
 emitter at the square (offsets 0-36), which is what a solo game needs, one
 process, so the machine the server wrote is the machine the survivor hears.
 
+**The one sound that is not the server's: the keyboard.** The click of a key at
+a terminal is made by the *client* of the player typing, because it has to be
+heard at the keyboard with no round trip. It uses the other vanilla mechanism,
+`IsoGameCharacter.playSound(String)`, which on a client sends
+`PacketType.PlaySound` naming the character and which the server relays to the
+players near him, the sender excepted (`FMODSoundEmitter.playSound` offsets 0-72,
+`PlaySoundPacket.processServer` offsets 14-43 and 82-95). Vanilla's own relay
+cannot be rate-limited from Lua, so the client sends at most one click in
+`CeroSecTerminal.KEY_NET_MS`, and the rest go through `playSoundLocal`. The
+javap offsets and the reasoning for not building a server-side gate are in the
+comment above `CeroSecTerminal.KEY_SOUNDS`.
+
 **A refused write is mute, and so is one that changed nothing.** The call sits
 inside the branch that moved the fixture, after every guard: two `echo close` in a
 row are one shut door and one sound, `curtain0: barricaded` is silent, and the
