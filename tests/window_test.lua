@@ -8957,15 +8957,15 @@ do
 	eq("the glass is the survivor's", net.here.console.remote, nil)
 
 	-- 3. Inside a substitution, which is a subshell whose output is a pipe: there
-	-- is nowhere for a session to go. The refusal lands IN the substitution,
-	-- because this machine has one channel and a capture catches what a command
-	-- says whether it went right or wrong (CeroSecOSVM, errLine) -- the same
-	-- answer `$(ls /nope)` gives. What matters is the line it did not take.
+	-- is nowhere for a session to go. The refusal is an ERROR, and a $( ) catches
+	-- the standard output only (sh(1)), so it reaches the glass and the word is
+	-- empty -- the same answer `$(ls /nope)` gives (CeroSecOSVM, outLine). What
+	-- matters is the line it did not take.
 	net.forget()
 	net.enter("x=$(rlogin gate); echo [$x]")
 	net.tick(6)
-	check("a substitution gets the same answer",
-		net.heard("[rlogin: not a terminal]"))
+	check("a substitution gets the same answer, on the glass",
+		net.heard("rlogin: not a terminal") and net.heard("[]"))
 	eq("and takes no line", CeroSecOS.ptyCount(net.gate.ptys), 0)
 	eq("the glass is the survivor's", net.here.console.remote, nil)
 
@@ -11156,8 +11156,8 @@ do
 		net.heard("cu: not a terminal"))
 	net.enter("x=$(cu " .. telOf(net.far) .. "); echo [$x]")
 	net.tick(3)
-	check("and so does one inside a substitution",
-		net.heard("[cu: not a terminal]"))
+	check("and so does one inside a substitution, on the glass and not in x",
+		net.heard("cu: not a terminal") and net.heard("[]"))
 end
 
 -- 2400 baud: a call is four lines a second and the machine at the far end is as

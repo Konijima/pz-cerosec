@@ -933,13 +933,84 @@ do
 	ok(state, admin, 'echo ">" > arrow.txt', {})        -- a quoted > is data
 	ok(state, admin, "cat arrow.txt", { ">" })
 
-	-- A failing command writes nothing: errors behave like stderr.
+	-- A failing command writes nothing: errors behave like stderr. But the
+	-- shell opened the file BEFORE the command ran, as every sh does, so it is
+	-- there and empty -- and so it is for a command that does not exist.
 	bad(state, admin, "cat /nope > out.txt", "cat: /nope: no such file")
-	bad(state, admin, "cat out.txt", "cat: out.txt: no such file")
+	ok(state, admin, "cat out.txt", {})
+	eq("the failed command's target was made",
+		state.fs.children.home.children.admin.children["out.txt"].type, "file")
+	bad(state, admin, "nosuchcmd > out2.txt", "nosuchcmd: command not found")
+	ok(state, admin, "cat out2.txt", {})
 
 	-- A redirect the user may not perform reports against the target.
 	bad(state, admin, "echo hi > /etc/x", "echo: /etc/x: permission denied")
 	bad(state, admin, "echo hi > /etc", "echo: /etc: is a directory")
+
+	-- The shell opens what ">" names BEFORE the command runs, which is sh(1)'s
+	-- order: a target it cannot open is a command that never ran at all.
+	local home = state.fs.children.home.children.admin.children
+	ok(state, admin, "echo keep > keep.txt", {})
+	bad(state, admin, "rm keep.txt > /etc/x", "rm: /etc/x: permission denied")
+	ok(state, admin, "cat keep.txt", { "keep" })
+	bad(state, admin, "touch zz > /etc/hosts", "touch: /etc/hosts: permission denied")
+	eq("a refused redirect ran nothing", home["zz"], nil)
+
+	-- 2>, 2>&1 and >&2 (sh(1) of 4.4BSD: "[n]>word", "[n]>&digit").
+	ok(state, admin, "cat keep.txt 2>/dev/null", { "keep" })
+	expect(state, admin, "cat nosuch 2>/dev/null", false, {})
+	expect(state, admin, "cat nosuch 2>err.txt", false, {})
+	ok(state, admin, "cat err.txt", { "cat: nosuch: no such file" })
+	expect(state, admin, "cat nosuch > both.txt 2>&1", false, {})
+	ok(state, admin, "cat both.txt", { "cat: nosuch: no such file" })
+	-- Left to right: `2>&1 > f` sends the errors where the output WAS.
+	expect(state, admin, "cat nosuch 2>&1 > was.txt", false, { "cat: nosuch: no such file" })
+	ok(state, admin, "cat was.txt", {})
+	ok(state, admin, "echo hi > hi.txt 2>&1", {})
+	ok(state, admin, "cat hi.txt", { "hi" })
+	ok(state, admin, "cat nosuch 2>&1 | wc -l", { "     1" })
+	ok(state, admin, "echo a2>a2.txt", {})
+	ok(state, admin, "cat a2.txt", { "a2" })
+	expect(state, admin, "cd /nope 2>/dev/null", false, {})
+	-- And one of the walker's own builtins, whose refusal is printed by the VM.
+	expect(state, admin, "history -x 2>/dev/null", false, {})
+	expect(state, admin, "history -x 2>hist.txt", false, {})
+	ok(state, admin, "cat hist.txt", { "history: usage: history [-c]" })
+	-- A $( ) catches the standard output and nothing else.
+	ok(state, admin, 'x=$(cat nosuch); echo "[$x]"', { "cat: nosuch: no such file", "[]" })
+	ok(state, admin, 'x=$(cat nosuch 2>&1); echo "[$x]"', { "[cat: nosuch: no such file]" })
+	ok(state, admin, 'x=$(echo boom >&2); echo "[$x]"', { "boom", "[]" })
+	-- One per descriptor, and only the two this machine has.
+	bad(state, admin, "echo a > b > c", "sh: syntax error: bad redirect")
+	bad(state, admin, "cat nosuch 2>x 2>y", "sh: syntax error: bad redirect")
+	bad(state, admin, "echo x >&3", "sh: syntax error: bad redirect")
+	-- A function's and a script's `2>` is the whole of it, like their ">".
+	ok(state, admin, "g() { cat nosuch; echo in-g; }", {})
+	ok(state, admin, "g 2>/dev/null", { "in-g" })
+	ok(state, admin, "g > g.txt 2>&1", {})
+	ok(state, admin, "cat g.txt", { "cat: nosuch: no such file", "in-g" })
+	ok(state, admin, "g 2>&1 > g2.txt", { "cat: nosuch: no such file" })
+	ok(state, admin, "cat g2.txt", { "in-g" })
+	ok(state, admin, "echo 'cat nosuch; echo s-out' > s.sh", {})
+	ok(state, admin, "sh s.sh 2>s.err", { "s-out" })
+	ok(state, admin, "cat s.err", { "cat: nosuch: no such file" })
+	-- A command that half failed hands back ONE list: all of it is the errors'
+	-- (the declared deviation, CeroSecOS.DEVIATIONS "stderr").
+	expect(state, admin, "cat keep.txt nosuch > half.txt", false,
+		{ "keep", "cat: nosuch: no such file" })
+	ok(state, admin, "cat half.txt", {})
+	expect(state, admin, "cat keep.txt nosuch 2>/dev/null", false, {})
+	-- Except a command that SAYS its lines are output though it failed: grep -c
+	-- that counted nothing writes "0" to the standard output and exits 1.
+	ok(state, admin, 'x=$(grep -c zzz keep.txt); echo "[$x]"', { "[0]" })
+	expect(state, admin, "grep -c zzz keep.txt > c.txt", false, {})
+	ok(state, admin, "cat c.txt", { "0" })
+	ok(state, admin, "grep -c zzz keep.txt | wc -l", { "     1" })
+	-- The dot's own refusals are errors too.
+	expect(state, admin, ". nosuch.sh 2>/dev/null", false, {})
+	local _, dotLines = exec(state, admin, 'x=$(. nosuch.sh); echo "[$x]"')
+	eq("a dot's refusal reached the glass", #dotLines, 2)
+	eq("and not the word", dotLines[2], "[]")
 end
 
 --
@@ -1521,8 +1592,10 @@ do
 	-- Through the shell, the refusal reads like every other error.
 	bad(state, admin, 'echo "' .. string.char(1) .. '" > dirty.txt',
 		"echo: dirty.txt: invalid characters")
+	-- The shell opened the target before echo ran, so it is there -- EMPTY: the
+	-- write was what was refused, and nothing dirty ever reached the disk.
 	eq("no dirty file exists",
-		state.fs.children.home.children.admin.children["dirty.txt"], nil)
+		state.fs.children.home.children.admin.children["dirty.txt"].data, "")
 
 	-- The escape table cannot manufacture one: \1 is a backslash escape that
 	-- yields the character "1", not the byte 1.
@@ -5744,7 +5817,10 @@ do
 	local r4 = runAt(state, session, "dev window close > /root/half", env)
 	eq("the boarded window failed the line", r4.ok, false)
 	eq("and said so on the screen", #r4.lines, 3)
-	badAt(state, session, "cat /root/half", "cat: /root/half: no such file", env)
+	-- The file is there, because the shell opened it before the command ran,
+	-- and EMPTY, because a command that half failed hands the whole of what it
+	-- said to the errors (docs/SCRIPTING.md).
+	okAt(state, session, "cat /root/half", {}, env)
 end
 
 --
@@ -9523,6 +9599,15 @@ do
 	check("the accounts file is longer than a screen line",
 		#CeroSecOS.splitLines(passwd)[1] > CeroSecOS.COLS)
 
+	-- `2>` waits for the answer the same way: the error the command gives once it
+	-- runs goes into the file, and nothing reaches the screen but the question.
+	local se = typed(state, admin, "sudo cat /nosuch 2>serr.txt", { "" })
+	eq("sudo 2> was asked for a password", se.asked[1], "[sudo] password for admin: ")
+	eq("its error went into the file", contents(state, "/home/admin/serr.txt"),
+		"cat: /nosuch: no such file")
+	eq("and not onto the screen", #se.out, 0)
+	eq("and the status is the command's", se.status, 1)
+
 	-- The whole of it, and not a word of it on the screen.
 	local copy = typed(state, admin, "sudo cat /etc/passwd > copie.txt", { "" })
 	eq("the password was asked for", copy.asked[1], "[sudo] password for admin: ")
@@ -12374,6 +12459,10 @@ do
 		true)
 	badAt(state, admin, "echo x > /home/admin/gate/more",
 		"echo: /home/admin/gate/more: disk full")
+	-- The open came first and an empty file fits a full disk; the WRITE was
+	-- refused. Taken away again so the listings below are the ones they were.
+	okAt(state, admin, "cat /home/admin/gate/more", {})
+	okAt(state, admin, "rm /home/admin/gate/more", {})
 	okAt(state, admin, "echo x > /home/admin/fine", {})
 	okAt(state, rootSession, "rm /home/admin/gate/big", {})
 

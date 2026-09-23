@@ -389,14 +389,38 @@ local function tokenize(text, depth)
 				tokens[#tokens + 1] = { t = "op", v = "|", line = line }
 				i = i + 1
 			end
-		elseif c == ">" then
+		elseif c == ">" or ((c == "1" or c == "2") and string.sub(text, i + 1, i + 1) == ">") then
+			-- A digit is a file descriptor only where a word would START and only
+			-- when ">" follows it at once: `2>err` is the standard error, `a2>f` is
+			-- the word a2 and `echo 2 > f` prints a 2. sh(1) of 4.4BSD and ksh(1)
+			-- both read it that way. Only 1 and 2: this machine has no other
+			-- descriptor to name, so `3>f` stays the word 3, as it was.
+			local fd = 1
+			if c == "2" then fd = 2 end
+			if c ~= ">" then i = i + 1 end
 			local append = false
+			local dup = nil
 			i = i + 1
 			if string.sub(text, i, i) == ">" then
 				append = true
 				i = i + 1
+			elseif string.sub(text, i, i) == "&" then
+				-- ">&1" and ">&2": the descriptor made a copy of the other one, sh(1)'s
+				-- "<&digit / >&digit" duplication. Any other word after ">&" names a
+				-- descriptor this machine does not have.
+				local d = string.sub(text, i + 1, i + 1)
+				local after = string.sub(text, i + 2, i + 2)
+				local ends = after == "" or after == " " or after == "\t" or after == "\r"
+					or after == "\n" or after == ";" or after == "&" or after == "|"
+					or after == ">" or after == "<"
+				if (d ~= "1" and d ~= "2") or not ends then
+					return nil, "syntax error: bad redirect", line
+				end
+				dup = 1
+				if d == "2" then dup = 2 end
+				i = i + 2
 			end
-			tokens[#tokens + 1] = { t = "redir", append = append, line = line }
+			tokens[#tokens + 1] = { t = "redir", append = append, fd = fd, dup = dup, line = line }
 		elseif c == "<" then
 			return nil, "syntax error: unexpected '<'", line
 		else
@@ -598,7 +622,14 @@ local function wordAt(P)
 end
 
 local function parseSimple(P)
-	local words, redirect = {}, nil
+	local words, redirect, errRedirect = {}, nil, nil
+	-- Where each descriptor ends up, worked out in the order the line names them,
+	-- which is sh(1)'s rule and the whole difference between `> f 2>&1` (both
+	-- into f) and `2>&1 > f` (errors where the output WAS, the output into f).
+	-- "1" and "2" are the ones the command was started with, "w" the file ">"
+	-- names and "e" the file "2>" names.
+	local fds = { "1", "2" }
+	local seen = {}
 	local line = peek(P).line
 	while true do
 		local t = peek(P)
@@ -611,21 +642,35 @@ local function parseSimple(P)
 			words[#words + 1] = t.parts
 			P.i = P.i + 1
 		elseif t.t == "redir" then
-			if redirect ~= nil then
+			-- One redirect per descriptor: a second one is a line that says two
+			-- things about the same place, and this machine does not guess which.
+			local fd = t.fd or 1
+			if seen[fd] then
 				return nil, "syntax error: bad redirect", t.line
 			end
+			seen[fd] = true
 			P.i = P.i + 1
-			local target = wordAt(P)
-			if target == nil then
-				return nil, "syntax error: missing redirect target", t.line
+			if t.dup ~= nil then
+				fds[fd] = fds[t.dup]
+			else
+				local target = wordAt(P)
+				if target == nil then
+					return nil, "syntax error: missing redirect target", t.line
+				end
+				P.i = P.i + 1
+				if fd == 2 then
+					errRedirect = { word = target.parts, append = t.append }
+					fds[2] = "e"
+				else
+					redirect = { word = target.parts, append = t.append }
+					fds[1] = "w"
+				end
 			end
-			P.i = P.i + 1
-			redirect = { word = target.parts, append = t.append }
 		else
 			break
 		end
 	end
-	if #words == 0 and redirect == nil then
+	if #words == 0 and not seen[1] and not seen[2] then
 		local t = peek(P)
 		return nil, "syntax error: unexpected " .. describe(t), t.line
 	end
@@ -651,7 +696,15 @@ local function parseSimple(P)
 		words = rest
 	end
 
-	return { k = "cmd", line = line, words = words, assigns = assigns, redirect = redirect }
+	local node = { k = "cmd", line = line, words = words, assigns = assigns, redirect = redirect }
+	-- Only a line that named a descriptor carries these, so every node a plain
+	-- `>` makes is the node it always was.
+	if seen[2] or fds[1] ~= (redirect ~= nil and "w" or "1") then
+		node.errRedirect = errRedirect
+		node.out = fds[1]
+		node.err = fds[2]
+	end
+	return node
 end
 
 local function parseIf(P, depth)

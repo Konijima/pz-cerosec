@@ -242,6 +242,24 @@ rule: yours, or root's.
 more reads a LINE where the real one reads a key, because this screen has
 one typing line and Enter sends it. read -n 1 is the same.]],
 
+[[What is not Unix here: errors.
+
+A real command writes what it has to say down two streams: its output,
+and its errors, which stderr is the name of. 2> picks the second one
+out, and this machine has 2>, 2>&1 and >&2, doing what you remember.
+The difference is inside the command. One here hands back what it said
+as one stream and not two, so a command that half fails -- cat on a
+good file and a missing one -- has its good lines mixed in with the
+complaint, and the shell cannot tell them apart. It takes the whole
+answer for errors: none of it goes into the file > named, and 2> takes
+all of it.
+
+  admin@ksp-04-11:~$ cat notes nosuch 2>/dev/null
+  admin@ksp-04-11:~$
+
+A real Unix would have printed notes there. When you want the good
+ones kept, name the files one command at a time.]],
+
 [[What is not Unix here, and the end of the list.
 
 cu -l opens a LINE instead of dialling a number, which is cu's own flag --
@@ -2019,8 +2037,8 @@ that it is locked and exactly where.
 [[Typing that the shell could not make sense of. Nothing runs at all.
 
   syntax error: bad redirect
-      two redirects on one command; a command sends its
-      output to one file, not to two
+      two > or two 2> on one command, or a >& that is
+      not >&1 or >&2
   syntax error: missing redirect target
       a greater-than sign with no file name after it
   syntax error: unterminated quote

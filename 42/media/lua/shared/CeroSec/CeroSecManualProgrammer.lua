@@ -1302,11 +1302,31 @@ command's work and not its noise:
 That line asks "is kate in the log?" and says nothing at all while
 asking. The answer is in $?, which is what an if wants.
 
-One command sends its output to one file. Two redirects on a line, or none
+One command sends its output to one file. Two > on a line, or none
 after the sign, and nothing runs:
 
   admin@ksp-04-11:~$ echo x > a > b
   sh: syntax error: bad redirect]],
+
+[[Errors, and where they go.
+
+What a failed command says is not its output. It reaches the glass when
+> points at a file, when a pipe is waiting, even inside a catch:
+x=$(cat nosuch) says so on the screen and leaves x empty. 2> sends the
+errors to a file of their own; 2>&1 sends them where the output goes:
+
+  admin@ksp-04-11:~$ cat nosuch 2>/dev/null
+  admin@ksp-04-11:~$ cat nosuch > log 2>&1
+  admin@ksp-04-11:~$ cat log
+  cat: nosuch: no such file
+
+Order counts, left to right: 2>&1 > log sends the errors where the output
+WAS, the glass, and only the output into log. >&2 is the other way round,
+and it is how a script complains: echo "no such user" >&2.
+
+The file is opened before the command runs. If it cannot be, nothing runs:
+rm notes > /etc/x is refused and notes is still there. And cat nosuch >
+out still leaves out behind, empty, the way every Unix does.]],
 
 [[Two more on redirects, and one on the wire.
 
@@ -2333,7 +2353,7 @@ own name and line -- broken.sh: line 3: -- a typed line with sh: alone.
       a $( ) in a $( ), an unclosed ${ or $(( , or
       braces round something that is not a name
   syntax error: bad redirect
-      two redirects on one command
+      two > or two 2> on one command, or a bad >&
   syntax error: missing redirect target
       a > or >> with no file after it
   syntax error: missing '{'

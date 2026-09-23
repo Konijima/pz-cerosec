@@ -1915,7 +1915,9 @@ CeroSecContent.SCRIPTS["genwatch.sh"] = {
 		"n=$1",
 		"if [ -z \"$n\" ]; then n=10; fi",
 		"F=/var/tmp/genwatch.said",
-		"s=$(cat /dev/gen0)",
+		-- 2>/dev/null: a $( ) catches the standard output only, and with no gen0
+		-- cat's own complaint would reach the glass ahead of the line below.
+		"s=$(cat /dev/gen0 2>/dev/null)",
 		"f=$(echo $s | cut -d' ' -f3)",
 		"case \"$f\" in",
 		"\"\" | *[!0-9]*)",

@@ -240,8 +240,15 @@ would become a second file the first time somebody picked the computer up.
 **`/dev/null`** reads as nothing at all and swallows anything written to it, so
 `sh nightly.sh > /dev/null` throws output away. It is a device, `rm`, `mv`, `cp`
 and `edit` all answer `is a device`, it is mode `666`, and it costs the disk
-nothing however much goes into it. Only *output* goes there: this machine has no
-`2>`, and errors always reach the glass.
+nothing however much goes into it. `>` sends it the output; errors are the
+other stream and `2>` sends those: `cat nosuch 2>/dev/null` says nothing, `cat
+nosuch > log 2>&1` puts the error in `log`, and `echo oops >&2` sends a line to
+where errors go. A `$( )` catches the output only, so `x=$(cat nosuch)` shows the
+error on the glass and leaves `x` empty. The shell opens the file before the
+command runs: if it cannot, the command does not run at all (`rm notes > /etc/x`
+keeps `notes`), and `cat nosuch > out` still leaves an empty `out`. One thing is not
+Unix: a command that half fails (`cat notes nosuch`) hands back its output and its
+error as one stream, so all of it counts as the error.
 
 **`/var/tmp`** is the one directory anybody may write in (`drwxrwxrwx`) and the one
 where only the owner of a file, or root, may delete it or rename it out again.

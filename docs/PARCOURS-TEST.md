@@ -3589,6 +3589,29 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      pour `$( )` : `` echo `echo \`echo hi\` ` ``, `` echo `echo $(echo hi)` `` et
      `` echo $(echo `echo hi`) `` répondent tous `sh: syntax error: bad substitution`. [ ]
 
+339q. **La redirection s'ouvre avant la commande.** En `admin`, dans `~` :
+     `echo garde > notes`, puis `rm notes > /etc/x` → `rm: /etc/x: permission
+     denied`, et `cat notes` répond toujours `garde` : la commande n'a pas
+     tourné. `touch zz > /etc/hosts` → refusé, et `ls zz` → `no such file`.
+     `cat nosuch > out` → l'erreur à l'écran, et `ls -l out` montre un fichier
+     vide ; `nosuchcmd > out2` laisse aussi un `out2` vide. [ ]
+
+339r. **`2>`, `2>&1` et `>&2`.** `cat notes 2>/dev/null` → `garde`, et rien
+     d'autre (plus de `cat: 2: no such file`). `cat nosuch 2>/dev/null` → rien
+     du tout. `cat nosuch 2>err`, puis `cat err` → `cat: nosuch: no such file`.
+     `cat nosuch > log 2>&1` → rien à l'écran, et `cat log` montre l'erreur ;
+     `cat nosuch 2>&1 > log2` → l'erreur à l'écran, `log2` vide (l'ordre
+     compte). `cat nosuch 2>&1 | wc -l` → `1`. `echo a > b > c` et
+     `cat x 2>y 2>z` → `sh: syntax error: bad redirect`. Et le seul écart
+     déclaré : `cat notes nosuch 2>/dev/null` ne montre rien, pas même
+     `garde` (une commande qui échoue à moitié rend un seul flot) ; la page
+     *What is not Unix here: errors* du volume 1 le dit. [ ]
+
+339s. **`$( )` n'attrape plus les erreurs.** `x=$(cat nosuch); echo "[$x]"` →
+     `cat: nosuch: no such file` à l'écran, puis `[]`.
+     `x=$(cat nosuch 2>&1); echo "[$x]"` → `[cat: nosuch: no such file]`.
+     `x=$(echo oups >&2); echo "[$x]"` → `oups`, puis `[]`. [ ]
+
 ## AI. Les outils de l'admin et du testeur (fenêtre de débogage, 2e rangée)
 
 Huit boutons de plus sur la fenêtre de débogage, sur une **deuxième rangée** sous la

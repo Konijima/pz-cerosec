@@ -8,6 +8,16 @@ date.
 
 ## Unreleased
 
+- A command whose redirect is refused no longer runs. `rm notes > /etc/x`
+  used to say "permission denied" and delete `notes` anyway; now the shell
+  opens the file first, like a real one, and nothing happens. The other side
+  of it: `cat nosuch > out` now leaves an empty `out` behind, as on any Unix.
+- `2>` works: `cat nosuch 2>/dev/null` says nothing, `2>errors` keeps the
+  errors in a file, `> log 2>&1` puts both in one, and `echo oops >&2` sends
+  a line where errors go. `cat f 2>/dev/null` no longer looks for a file
+  named `2`.
+- `$( )` no longer catches error text. `x=$(cat nosuch)` shows the error on
+  the screen and leaves `x` empty; write `x=$(cat nosuch 2>&1)` to catch it.
 - A computer that's already on now opens with a left click, same as the
   menu's Use computer.
 - The editor no longer refuses a line wider than the screen. It wraps onto the

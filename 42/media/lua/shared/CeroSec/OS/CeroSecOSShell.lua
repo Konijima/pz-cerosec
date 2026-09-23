@@ -953,6 +953,15 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "login", world = true,
 		phrase = "was never logged out",
 		why = "a machine found at a prompt is one wtmp says nobody logged out of" },
+	-- Not a command either: the SHELL's two streams. A command on this machine
+	-- hands back one list of lines and a flag, so one that half failed -- `cat
+	-- good nosuch` -- has its output and its error in the same list and nothing to
+	-- tell them apart. The whole of it is taken for the errors: out of what ">"
+	-- named, into what "2>" did (CeroSecOSVM's runSimple). A real cat writes the
+	-- good file down fd 1 and the complaint down fd 2.
+	{ name = "stderr", world = true,
+		phrase = "one stream and not two",
+		why = "a command that half failed hands back output and errors in one list" },
 	-- And the second name that is GONE: `call CALLSIGN` was this machine's own
 	-- command for the radio until SYSTEM_VERSION 17. No Unix had one -- a TNC was
 	-- a box on a serial line -- and a player who used it last week will type it.
@@ -2626,7 +2635,14 @@ commands.grep = function(state, session, args, env, stdin, sh)
 			if not input.eof then return true, {} end
 			out[1] = tostring(carry.hits)
 		end
-		if not carry.found then return false, out end
+		if not carry.found then
+			-- Exit 1, and the count still on the standard OUTPUT: grep(1) writes
+			-- "0" there under -c and says it found nothing by its status alone.
+			-- Told to the shell (runSimple), which would take the lines of a command
+			-- that failed for its errors otherwise, and `$(grep -c x f)` would be "".
+			if type(sh) == "table" then sh.outOnFail = true end
+			return false, out
+		end
 		return true, out
 	end
 	if #files == 0 then return usage("grep") end
@@ -2670,7 +2686,12 @@ commands.grep = function(state, session, args, env, stdin, sh)
 	-- grep answers "did you find anything". Nothing found is a refusal even
 	-- when every file was read without trouble -- and a -c that counted nothing
 	-- is nothing found, however many zeroes it printed.
-	if not found then return false, out end
+	-- Only when every file was read: a missing one puts its refusal in the same
+	-- list, and a list with both in it is the errors' (the "stderr" deviation).
+	if not found then
+		if okAll and type(sh) == "table" then sh.outOnFail = true end
+		return false, out
+	end
 	return okAll, out
 end
 
@@ -6124,10 +6145,10 @@ end
 
 -- OPENING what ">" named, with nothing to put in it yet. A shell opens the
 -- target before the command runs -- that is why `cat nosuch > f` leaves an
--- empty f behind on a real machine -- and this is the one place on this one
--- where that matters: a command that has to ASK something (sudo) has not
--- written a byte and will not until the answer comes back, so the file is made
--- here and written when it does.
+-- empty f behind on a real machine -- and so does this one: CeroSecOSVM's
+-- runSimple opens every ">" and "2>" here before it looks the command up, and
+-- a target that cannot be opened is a command that never runs (`rm f >
+-- /etc/hosts` leaves f alone). Every write after it appends.
 --
 -- A device is not opened. It has no contents to truncate, only a state to be
 -- put into, and putting it into one is what the write itself does.
@@ -6321,6 +6342,9 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	-- the same road `walked` takes and for the same reason -- the budget has to see
 	-- work a table lookup does not account for (see CeroSecOS.BRE_STEPS_PER).
 	if type(sh) == "table" and type(inner.cost) == "number" then sh.cost = inner.cost end
+	-- And a command that failed and says the lines it hands back are its OUTPUT all
+	-- the same (grep, having found nothing): the shell routes them, the status is 1.
+	if type(sh) == "table" and inner.outOnFail == true then sh.outOnFail = true end
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on

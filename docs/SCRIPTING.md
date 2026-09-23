@@ -265,8 +265,10 @@ A loop over a whole kind of device has a command of its own:
 `dev window`'s order, and the line fails if any one of them refused (the
 [`dev` page](PLAYERS.md) has the grammar). The loop is still what a script wants
 when it needs the answers device by device, because a command that half failed
-keeps its output on the screen and out of a redirect, the way every other command
-on this machine does:
+hands back its output and its errors as one list, and the shell takes the whole of
+it for errors: it stays on the screen and out of a `>` (or goes into a `2>`), the
+way every other command's does on this machine. That is a declared deviation
+(`stderr` in `CeroSecOS.DEVIATIONS`, Volume 1's *What is not Unix here*):
 
     for d in $(ls /dev | grep ^window); do
       echo close > /dev/$d
@@ -697,9 +699,10 @@ kept on the frame (`f.rd.carry`) exactly as a pipe reader's carry is. That is wh
 keeps the invariant every `jobStep` call is held to, *a pass may go over its budget
 by at most one command*, with a sweep of five hundred files behind it: it trickles
 at a command a turn, printing as it goes, and `-exec … +` (64 names to a command) is
-the form POSIX gives you for doing it in one. A resumed command's redirect appends
-from the second turn on, through the same door a stage's does, so `find … -exec cat
-{} \; > all.txt` does not truncate the file it is filling.
+the form POSIX gives you for doing it in one. A resumed command's redirect was
+opened once, before its first turn, and every turn's write appends, through the
+same door a stage's does, so `find … -exec cat {} \; > all.txt` does not truncate
+the file it is filling.
 
 `tar` takes another turn the same way, and for the same reason measured: a member
 is a file read or a file written, twenty of them in one call cost 0.9 ms against
@@ -720,6 +723,43 @@ walk once a target is hung on the front, so no path through there fails to end.
 `/etc/passwd` should be reads as no passwd at all, which the boot check calls a
 machine with no operating system and the BIOS repairs.
 
+
+## Redirects are opened first, and the second stream
+
+**The shell opens what `>` and `2>` name before the command runs**, which is
+sh(1)'s order: fork, open the redirections, then exec. `runSimple` calls
+`CeroSecOS.openRedirect` on both right after the glob stage, before a function, a
+builtin or `PATH` is even looked at. A target that cannot be opened is a command
+that never runs (`rm f > /etc/hosts` refuses and `f` is still there, `touch zz >
+/etc/hosts` makes nothing), and one that can is there, created or emptied, whatever
+happens next: `cat nosuch > out` and `nosuchcmd > out` both leave an empty `out`.
+Every write after the open appends, so a pipe reader or a command that asks for
+another turn (`f.opened` marks the frame) never empties what it already wrote. A
+command that has not finished (a question, the editor, a script handed back, an
+`rsh` gone to wait) writes nothing yet and carries the opened target to where its
+lines land, as it did before.
+
+**`2>file`, `2>>file`, `2>&1`, `>&2` and `1>`** are sh(1)'s `[n]>word` and
+`[n]>&digit`, for the two descriptors this machine has. A digit is a descriptor only
+where a word would start and only with `>` right after it (`a2>f` is the word `a2`);
+`3>f` is still the word `3`. One redirect per descriptor, or `syntax error: bad
+redirect`, and so is a `>&` that is not `>&1` or `>&2`. They are read left to right:
+`> f 2>&1` puts both in `f`, `2>&1 > f` puts the errors where the output *was*.
+
+The engine still has one list per command, so the second stream is a **sink**
+(`job.errRd`, `routeErr` in CeroSecOSVM): a file (buffered and flushed like
+`job.rdto`), or the standard output as it was when `2>&1` was read (the captures
+under a depth and the `rdto` of that moment). A simple command's sink lives for the
+call; a function's, a script's and a dot's ride the frame (`hadErd`, `oldErd`) and
+close onto `rdDone` like `rdto`. A stage with no sink of its own hands its errors up
+`errTo`, so `f 2>/dev/null` silences a pipeline inside `f`. A `sudo` question and an
+`rsh` carry theirs (`contErd`, `dialErd`) to the answer.
+
+A command that failed hands back its lines as its errors, with one exception a
+command declares itself: `sh.outOnFail`, which grep sets when it read every file
+and found nothing. grep(1) writes `-c`'s `0` to the standard output and exits 1,
+so the lines are routed as output and the status stays 1: `$(grep -c x f)` is `0`,
+and `grep -c x f > n` writes it.
 
 ## Underneath: the step machine, the job, and the scheduler
 
@@ -885,7 +925,10 @@ them, so the answer would run the command with nothing on its input.
 `outLine` is the one door output goes through, and it now has three: a capture, a
 pipe, or the screen. `errLine` is the other half, a stage's *refusals* go to the
 screen and not down the pipe, which is the rule `>` already had ("output goes to the
-file only when the command succeeded").
+file only when the command succeeded"). Nor into a capture: `$( )` substitutes the
+standard output only, so `x=$(cat nosuch)` prints the error and leaves `x` empty.
+Where an error goes instead of the screen is `2>`'s business (`routeErr`, see
+*Redirects are opened first* above).
 
 A command that reads a pipe is handed a reader as a fifth argument
 (`fn(state, session, args, env, stdin)`), and is **run again** until its input is
