@@ -121,6 +121,20 @@ passé réellement, même quand ça correspond au texte attendu.
 13. "Use computer" lancé de loin sur un ordinateur allumé → marche jusqu'au
     carré devant l'écran, tourne, joue l'animation, puis seulement la fenêtre
     s'ouvre. [ ]
+13b. **Le clic gauche.** Ordinateur allumé, clic gauche directement sur le
+    moniteur (sans passer par le menu) → même marche, même animation, la
+    fenêtre s'ouvre, exactement comme l'étape 13. Sur un ordinateur ÉTEINT, le
+    même clic gauche ne fait rien de plus qu'avant ce changement (pas de
+    fenêtre, pas de marche) -- seul "Turn on computer" reste au menu, comme
+    aujourd'hui. Sur un objet quelconque qui n'est pas un ordinateur CeroSec,
+    le clic gauche se comporte exactement comme avant (porte, caisse,
+    interrupteur...). Si Computer Mod est installé et fait tourner ce bureau,
+    le clic gauche dessus ne l'affecte pas non plus. Et **dès le chargement**
+    de la partie, sans avoir ouvert aucun menu avant : le tout premier clic
+    gauche sur un ordinateur allumé ouvre déjà la fenêtre (le crochet se pose
+    au démarrage de la partie, après les fichiers `server` du jeu, et non au
+    chargement du mod, où le gestionnaire de clics du jeu n'existe pas
+    encore). Revenir au menu principal, recharger la sauvegarde : pareil. [ ]
 14. Les cinq lignes du BIOS s'écrivent en environ deux secondes, puis la
     bannière `CeroSec OS 1.0 -- unauthorized access is prohibited.`, puis
     `login:`. [ ]

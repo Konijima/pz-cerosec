@@ -20,6 +20,13 @@ The suites, in the order they run:
   a **double** of that mod, not the mod itself, so what it proves is the decision
   and the wire between our two client files -- never that the game behaves. The
   step that decides is in `docs/PARCOURS-TEST.md`, section AR.
+- `leftclick_test.lua` — the left-click shortcut onto "Use computer": the
+  wrapper on `ISObjectClickHandler.doClickSpecificObject`, against a double of
+  that vanilla dispatcher. Proves the wrapper is idempotent, that it queues
+  `onUse` for an ON computer and nothing else, and that an OFF computer, a
+  non-computer object and a Computer-Mod-owned desktop all fall through to the
+  original dispatcher untouched. Never that the game hands the dispatcher the
+  object it did — only a game can show that.
 - `window_test.lua` — the window wired to the machine end to end: type a line, get
   an answer on the glass, and a script's output, question and `^C` through it.
 - `window_test.lua` also holds the network bench: three real machines on one real

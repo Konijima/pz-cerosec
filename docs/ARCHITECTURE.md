@@ -135,6 +135,23 @@ everything the game handed over, then every candidate the mask pass weighed with
 its box, its raise and whether the mask took it. A miss in game is a line to
 read.
 
+## The left click that skips the menu
+
+A left click on a computer that is already **on** does what the menu's "Use
+computer" does, directly: `CeroSecContextMenu.hookLeftClick` wraps vanilla's
+`ISObjectClickHandler.doClickSpecificObject`, the single function
+`onObjectLeftMouseButtonDown` calls with the one object it already picked
+(`ISObjectClickHandler.lua:333-364`). `CeroSecContextMenu.leftClick` checks the
+clicked object's sprite the same way `findComputer` and the menu do -- a
+CeroSec computer, switched on, not a desktop the Computer Mod owns (the same
+`ownerOf(...) == "computermod"` guard `OnFillWorldObjectContextMenu` applies)
+-- and on a match calls `CeroSecContextMenu.onUse` and answers `true`, which is
+how vanilla's own dispatcher is told the click is handled and skips the
+generic click that follows (a door relies on the same `true`). An off computer,
+or anything that is not a CeroSec computer, is untouched: `leftClick` answers
+`false` and vanilla's own ladder and fallback run exactly as before this
+wrapper existed.
+
 ## Standing at a computer
 
 `CeroSecReach.lua` answers where the player has to be: the **front square** is the

@@ -16,6 +16,7 @@ lua5.1 tests/manual_test.lua
 lua5.1 tests/terminal_test.lua
 lua5.1 tests/window_test.lua
 lua5.1 tests/compat_computermod_test.lua
+lua5.1 tests/leftclick_test.lua
 lua5.1 tests/hostile_test.lua
 lua5.1 tests/manual_ui_test.lua
 lua5.1 tests/debug_ui_test.lua

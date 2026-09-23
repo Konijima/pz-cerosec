@@ -21866,7 +21866,8 @@ do
 	local menuChunk, menuErr = loadfile(menuPath)
 	if not menuChunk then error("cannot load " .. menuPath .. ": " .. tostring(menuErr)) end
 	local realEvents = _G.Events
-	_G.Events = { OnFillWorldObjectContextMenu = { Add = function() end } }
+	_G.Events = { OnFillWorldObjectContextMenu = { Add = function() end },
+		OnGameStart = { Add = function() end } }
 	menuChunk()
 	_G.Events = realEvents
 

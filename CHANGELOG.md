@@ -8,6 +8,8 @@ date.
 
 ## Unreleased
 
+- A computer that's already on now opens with a left click, same as the
+  menu's Use computer.
 - The editor no longer refuses a line wider than the screen. It wraps onto the
   row below and scrolls to follow you, like a real terminal, instead of
   stopping your typing dead at the sixtieth character.
