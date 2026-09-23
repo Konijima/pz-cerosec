@@ -1618,14 +1618,19 @@ function CeroSecTerminal:drawEditor(left, top)
 	local lines = CeroSec.editLines(text)
 	local gutter = CeroSec.editGutterWidth(#lines)
 	local cols = CeroSec.COLS - gutter - 1
-	local rows = CeroSec.editRows(text, cols)
 
+	-- One offset for the rows, the cursor and the screen alike: a cursor past
+	-- the right edge adds the empty row it stands on (CeroSec.editPastEdge),
+	-- and editTop has to scroll against the rows that are drawn. No cursor,
+	-- no offset, and so no extra row.
+	local offset = nil
 	local row, col = 1, 0
 	if mine then
-		local offset = self.entry:getCursorPos() or 0
+		offset = self.entry:getCursorPos() or 0
 		if self.editAsk then offset = self.editPrev and self.editPrev.pos or 0 end
 		row, col = CeroSec.editScreenCursor(text, offset, cols)
 	end
+	local rows = CeroSec.editRows(text, cols, offset)
 	self.editTopRow = CeroSec.editTop(self.editTopRow, row, #rows, CeroSec.EDIT_ROWS)
 
 	local flag = nil
@@ -1636,7 +1641,7 @@ function CeroSecTerminal:drawEditor(left, top)
 	end
 
 	local screen = CeroSec.editScreen(text, self.editTopRow, self.edit.path, flag,
-		self:editMessageLine())
+		self:editMessageLine(), offset)
 
 	self:drawBar(screen[1], left, top)
 	for i = 2, 1 + CeroSec.EDIT_ROWS do
@@ -1651,12 +1656,9 @@ function CeroSecTerminal:drawEditor(left, top)
 	-- character it covers repainted over it: in the screen's own colour while
 	-- the block is lit, in the text's while it is dark, so a cursor in the
 	-- middle of a line neither hides what it is on nor eats it for half a
-	-- second. Column 60 is the one place it lies -- a full screen row has
-	-- nowhere to put the cursor after its last character -- and it sits on
-	-- that character instead, the deferred-autowrap convention a real
-	-- terminal uses at its own right margin.
+	-- second. col is always on the screen: a cursor after the last character
+	-- of a full row is at column 0 of the row below it (editScreenCursor).
 	local cell = col
-	if cell > cols - 1 then cell = cols - 1 end
 	local screenLine = rows[row] and rows[row].text or ""
 	local span, under, width = CeroSec.cursorSpan("", screenLine, cell, advance)
 	-- Shifted right past the gutter and its separating space, in cells, so the

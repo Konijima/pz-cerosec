@@ -476,12 +476,30 @@ end
 -- click happens (ISObjectClickHandler.lua:362-364, the same short-circuit a
 -- vanilla door's own doClickDoor relies on).
 --
--- playerNum is not used: doClickDoor's own CancelAction(playerNum, true)
--- interrupts whatever the player was doing before it queues the door, but the
--- menu's "Use computer" queues behind the current action without cancelling
--- anything, and a left click is only a shortcut onto that same entry -- not a
--- reason for it to behave differently from the menu it stands in for.
+-- playerNum is not used, and no CancelAction either: the menu's "Use
+-- computer" already drops what the player was doing -- walkToFront clears
+-- his ISTimedActionQueue before it queues the walk (CeroSecReach.walkToFront,
+-- as luautils.walkAdj does) -- and a left click is only a shortcut onto that
+-- same entry, not a reason for it to behave differently from the menu it
+-- stands in for. That clear is also why every refusal below has to come
+-- BEFORE onUse: a click that should have meant nothing would otherwise cost
+-- the player the action he was in the middle of.
 function CeroSecContextMenu.leftClick(object, playerNum, playerObj)
+	-- This runs in FRONT of vanilla's dispatcher, so its own guards have not
+	-- run yet. The same five, in the same order, with the same conditions
+	-- (ISObjectClickHandler.lua:196-205): paused, no player or a dead one, no
+	-- current square, aiming, ignoring the context key. Each is a fall-through
+	-- to the original, which then refuses the click itself.
+	local speed = UIManager.getSpeedControls()
+	if speed and speed:getCurrentGameSpeed() == 0 then return false end
+	if not playerObj or playerObj:isDead() then return false end
+	if not playerObj:getCurrentSquare() then return false end
+	if playerObj:isAiming() then return false end
+	if playerObj:isIgnoreContextKey() then return false end
+	-- The menu offers nothing to a player in a vehicle
+	-- (OnFillWorldObjectContextMenu above), so neither does the click.
+	if playerObj:getVehicle() then return false end
+
 	if object == nil or object.getSpriteName == nil then return false end
 	local sprite = object:getSpriteName()
 	if not CeroSec.isComputerSprite(sprite) then return false end
@@ -497,7 +515,15 @@ function CeroSecContextMenu.leftClick(object, playerNum, playerObj)
 		return false
 	end
 
+	-- Where the menu greys "Use computer" out, the click does not act either,
+	-- for the same two reasons in the same order: out of reach, then no
+	-- square in front to stand on. The second is the one walkToFront would
+	-- refuse on its own, but by then the click would already be counted as
+	-- handled; falling through keeps its vanilla meaning instead.
 	local height = CeroSecReach.height(object)
+	if height == "high" then return false end
+	if not CeroSecReach.canStandInFront(playerObj, object) then return false end
+
 	CeroSecContextMenu.onUse(nil, object, playerObj, height)
 	return true
 end

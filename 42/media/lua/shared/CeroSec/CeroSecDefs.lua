@@ -1500,38 +1500,58 @@ function CeroSec.editWrap(line, cols)
 	return out
 end
 
+-- The buffer line whose cursor has run off the right edge, or nil: the
+-- cursor is at the end of a non-empty line whose length is a whole number of
+-- screen rows, so the gap after its last character is column cols of its
+-- last segment -- one cell past the screen. A terminal in insert mode moves
+-- such a cursor to the start of the row below, the way the VT100's
+-- auto-wrap margin sends the next character there; editRows opens that row
+-- for it (an empty continuation, so its gutter is blank) and editScreenCursor
+-- puts the cursor on it. No offset, no extra row: the fold itself is still
+-- editWrap's, where a line exactly cols long is one row.
+function CeroSec.editPastEdge(text, offset, cols)
+	if type(offset) ~= "number" then return nil end
+	if type(cols) ~= "number" or cols < 1 then cols = 1 end
+	local bufRow, bufCol = CeroSec.editCursor(text, offset)
+	local line = CeroSec.editLines(text)[bufRow]
+	if #line > 0 and #line % cols == 0 and bufCol == #line then return bufRow end
+	return nil
+end
+
 -- Every buffer line, folded and flattened into one ordered list of screen
 -- rows: { text = <segment>, line = <buffer line it came from, 1-based>,
 -- seg = <this segment's 1-based index within that buffer line> }. seg == 1
 -- is the segment's first screen row -- the one editScreen puts a line number
 -- on, the way vi's `number` option numbers a wrapped line once, not per row.
 -- What editScreen and the cursor both walk instead of the raw buffer lines.
-function CeroSec.editRows(text, cols)
+-- offset is the cursor, optional: given, and past the edge (editPastEdge),
+-- its line gets one more, empty, segment for the cursor to stand on.
+function CeroSec.editRows(text, cols, offset)
 	local lines = CeroSec.editLines(text)
+	local edge = CeroSec.editPastEdge(text, offset, cols)
 	local out = {}
 	for i = 1, #lines do
 		local segs = CeroSec.editWrap(lines[i], cols)
 		for j = 1, #segs do
 			out[#out + 1] = { text = segs[j], line = i, seg = j }
 		end
+		if i == edge then
+			out[#out + 1] = { text = "", line = i, seg = #segs + 1 }
+		end
 	end
 	return out
 end
 
--- Where an offset lands on the flattened screen grid: the screen row,
--- 1-based into editRows, and the column within that wrapped segment, 0-based,
--- which may equal cols itself -- the same phantom-last-column the bare buffer
--- line already uses, now per wrapped segment instead of per buffer line.
+-- Where an offset lands on the grid editRows(text, cols, offset) draws: the
+-- screen row, 1-based into those rows, and the column within that segment,
+-- 0-based and always below cols. A cursor past the edge is at column 0 of the
+-- extra row editRows opened for it, never at column cols of the row above:
+-- that cell is not on the screen.
 function CeroSec.editScreenCursor(text, offset, cols)
 	local bufRow, bufCol = CeroSec.editCursor(text, offset)
 	local lines = CeroSec.editLines(text)
 	local segIndex = math.floor(bufCol / cols)
 	local colInSeg = bufCol % cols
-	local numSegs = #CeroSec.editWrap(lines[bufRow], cols)
-	if segIndex >= numSegs then
-		segIndex = numSegs - 1
-		colInSeg = cols
-	end
 	local screenRow = segIndex + 1
 	for i = 1, bufRow - 1 do
 		screenRow = screenRow + #CeroSec.editWrap(lines[i], cols)
@@ -1603,11 +1623,14 @@ end
 -- from a genuinely new line, which is the reason this exists. The gutter
 -- eats into the fixed 60-column width rather than adding to it, so the wrap
 -- width handed to editRows is COLS minus the gutter minus that one space.
-function CeroSec.editScreen(text, top, path, flag, message)
+--
+-- offset, optional, is the cursor: the same one handed to editScreenCursor,
+-- so a cursor past the edge has the empty row it stands on drawn here too.
+function CeroSec.editScreen(text, top, path, flag, message, offset)
 	local lines = CeroSec.editLines(text)
 	local gutter = CeroSec.editGutterWidth(#lines)
 	local cols = CeroSec.COLS - gutter - 1
-	local rows = CeroSec.editRows(text, cols)
+	local rows = CeroSec.editRows(text, cols, offset)
 	local out = { CeroSec.editTitle(path, flag) }
 	for i = 0, CeroSec.EDIT_ROWS - 1 do
 		local row = rows[top + i]

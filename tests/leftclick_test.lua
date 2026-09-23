@@ -50,10 +50,37 @@ _G.getMouseX = function() return 0 end
 _G.getMouseY = function() return 0 end
 _G.JoypadState = { players = {} }
 
+-- The reach answers the menu greys "Use computer" on, set per case.
+local reach = { height = "low", stand = true }
 CeroSecReach = {}
-function CeroSecReach.height() return "low" end
+function CeroSecReach.height() return reach.height end
+function CeroSecReach.canStandInFront() return reach.stand end
 
+-- vanilla's pause test reads the speed controls
+-- (ISObjectClickHandler.lua:196); 1 is a running game, 0 paused.
+local gameSpeed = 1
+_G.UIManager = {
+	getSpeedControls = function()
+		return { getCurrentGameSpeed = function() return gameSpeed end }
+	end,
+}
+
+-- The player, with every state doClickSpecificObject's guards read.
+local state = {}
 local player = {}
+function player:isDead() return state.dead end
+function player:getCurrentSquare() return state.square end
+function player:isAiming() return state.aiming end
+function player:isIgnoreContextKey() return state.ignoreKey end
+function player:getVehicle() return state.vehicle end
+local function resetState()
+	state = { dead = false, square = {}, aiming = false, ignoreKey = false,
+		vehicle = nil }
+	gameSpeed = 1
+	reach.height = "low"
+	reach.stand = true
+end
+resetState()
 
 local function load(path)
 	local chunk, err = loadfile(path)
@@ -126,6 +153,7 @@ local function reset()
 	useCalls = 0
 	lastUseArgs = nil
 	originalCalls = 0
+	resetState()
 end
 
 --
@@ -212,5 +240,71 @@ eq("computermod: falls through to the original dispatcher", originalCalls, 1)
 eq("computermod: the original's own answer passes through unchanged",
 	result, "VANILLA_FALLTHROUGH")
 _G.CeroSecCompatComputerMod = nil
+
+--
+-- 6) Every guard vanilla's own dispatcher opens with
+--    (ISObjectClickHandler.lua:196-205), the vehicle the menu refuses, the
+--    height it greys out and a front square nobody can stand on: each one
+--    leaves the click to the original, and onUse -- whose walk clears the
+--    action queue -- never runs.
+--
+-- Red when any one guard is dropped from leftClick: that case queues onUse
+-- and answers true instead of the original's own answer.
+--
+local refusals = {
+	{ "paused", function() gameSpeed = 0 end },
+	{ "dead", function() state.dead = true end },
+	{ "no current square", function() state.square = nil end },
+	{ "aiming", function() state.aiming = true end },
+	{ "ignoring the context key", function() state.ignoreKey = true end },
+	{ "in a vehicle", function() state.vehicle = {} end },
+	{ "out of reach (high)", function() reach.height = "high" end },
+	{ "cannot stand in front", function() reach.stand = false end },
+}
+for _, case in ipairs(refusals) do
+	reset()
+	case[2]()
+	result = ISObjectClickHandler.doClickSpecificObject(newComputer(ON), 0, player)
+	eq(case[1] .. ": onUse is never called", useCalls, 0)
+	eq(case[1] .. ": falls through to the original dispatcher", originalCalls, 1)
+	eq(case[1] .. ": the original's own answer passes through unchanged",
+		result, "VANILLA_FALLTHROUGH")
+end
+
+-- No player at all is vanilla's first half of the dead test: refused
+-- before anything is asked of him.
+reset()
+result = ISObjectClickHandler.doClickSpecificObject(newComputer(ON), 0, nil)
+eq("no player: onUse is never called", useCalls, 0)
+eq("no player: falls through", result, "VANILLA_FALLTHROUGH")
+
+-- And the same case with none of them set still acts, so the refusals above
+-- are the guards and not a click that never worked.
+reset()
+result = ISObjectClickHandler.doClickSpecificObject(newComputer(ON), 0, player)
+eq("control: onUse is called", useCalls, 1)
+eq("control: handled", result, true)
+
+--
+-- 7) ISCeroSecUseAction:isValid holds the menu's height line too: an action
+--    queued for a machine out of reach is invalid, one at desk height is not.
+--
+-- Red when the height test is dropped from isValid.
+--
+_G.ISBaseTimedAction = {
+	derive = function(self, name) local t = {}; t.__index = t; return t end,
+}
+load("42/media/lua/client/CeroSec/ISCeroSecUseAction.lua")
+local front = {}
+CeroSecReach.frontSquare = function() return front end
+CeroSecReach.standingSquare = function() return front end
+local machine = newComputer(ON)
+function machine:getSquare() return {} end
+local function action(height)
+	return setmetatable({ object = machine, character = player, height = height },
+		ISCeroSecUseAction)
+end
+eq("use action: valid at desk height", action("mid"):isValid(), true)
+eq("use action: invalid out of reach", action("high"):isValid(), false)
 
 print("leftclick_test: " .. count .. " checks passed")

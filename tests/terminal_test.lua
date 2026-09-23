@@ -730,14 +730,20 @@ do
 	eq("offset cols is the start of the second segment", screenRow, 2)
 	eq("at column 0 of it", col, 0)
 
-	-- The phantom last column, now per wrapped segment: an offset that sits
-	-- exactly at the end of the line, on a segment boundary (three full
-	-- sixty-character segments, offset 180 is an exact multiple of 60),
-	-- pins to the last real segment rather than opening a phantom fourth
-	-- one that editWrap never produced.
+	-- The end of a line that is a whole number of rows long: column cols of
+	-- the last segment is one cell past the screen, so the cursor is at the
+	-- start of the row below -- the empty row editRows opens for it when it
+	-- is handed the same offset (editPastEdge), and only then.
 	screenRow, col = CeroSec.editScreenCursor(long, #long, COLS)
-	eq("the end of a wrapped line is on its last real segment", screenRow, 3)
-	eq("and it is the phantom last column of that segment", col, COLS)
+	eq("the end of a full wrapped line is the row below it", screenRow, 4)
+	eq("at column 0 of it, never column cols", col, 0)
+	eq("that row is drawn for the cursor", #CeroSec.editRows(long, COLS, #long), 4)
+	eq("and it is empty", CeroSec.editRows(long, COLS, #long)[4].text, "")
+	eq("a continuation of the same line, so its gutter is blank",
+		CeroSec.editRows(long, COLS, #long)[4].seg, 4)
+	eq("without the cursor there is no such row", #CeroSec.editRows(long, COLS), 3)
+	eq("nor with the cursor elsewhere on the line",
+		#CeroSec.editRows(long, COLS, #long - 1), 3)
 
 	-- An offset mid-way through the last segment is not clamped.
 	screenRow, col = CeroSec.editScreenCursor(long, #long - 1, COLS)
@@ -753,6 +759,46 @@ do
 	screenRow, col = CeroSec.editScreenCursor(multi, #multi, COLS)
 	eq("and its own end is offset by everything before it", screenRow, 4)
 	eq("at its own, unwrapped, end column", col, 3)
+
+	-- The editor's own width with a three-digit gutter, the one the review
+	-- caught: a line exactly as wide as the text area, cursor after it.
+	local W = COLS - CeroSec.editGutterWidth(1) - 1
+	local full = string.rep("x", W)
+	screenRow, col = CeroSec.editScreenCursor(full, W, W)
+	eq("exact width, cursor at the end: the row below", screenRow, 2)
+	eq("exact width, cursor at the end: column 0", col, 0)
+	local shown = CeroSec.editScreen(full, 1, "/a.txt", nil, nil, W)
+	eq("exact width: the text row is drawn whole",
+		shown[2], "  1 " .. full)
+	eq("exact width: the cursor's row is drawn, gutter blank", shown[3],
+		string.rep(" ", CeroSec.editGutterWidth(1) + 1))
+	eq("without the cursor, no such row",
+		CeroSec.editScreen(full, 1, "/a.txt", nil, nil)[3], "")
+
+	-- Backspace across the fold: one character shorter, the extra row goes
+	-- and the cursor is right after the last character, on the one row.
+	local less = string.rep("x", W - 1)
+	screenRow, col = CeroSec.editScreenCursor(less, W - 1, W)
+	eq("one short: the cursor is back on row 1", screenRow, 1)
+	eq("one short: after the last character", col, W - 1)
+	eq("one short: no extra row", #CeroSec.editRows(less, W, W - 1), 1)
+
+	-- The cursor mid-way along an exact-width line opens nothing.
+	eq("exact width, cursor inside: one row", #CeroSec.editRows(full, W, 3), 1)
+	-- An empty line is never past the edge.
+	eq("empty line: no extra row", #CeroSec.editRows("", W, 0), 1)
+	eq("empty line: row 1", (CeroSec.editScreenCursor("", 0, W)), 1)
+
+	-- The next buffer line moves down only while the cursor is past the edge.
+	local two = full .. "\nb"
+	eq("two lines, cursor past the edge: line 2 is on row 3",
+		CeroSec.editRows(two, W, W)[3].line, 2)
+	eq("two lines, cursor past the edge: row 2 is the empty one",
+		CeroSec.editRows(two, W, W)[2].text, "")
+	eq("two lines, cursor on line 2: line 2 is on row 2",
+		CeroSec.editRows(two, W, #two)[2].line, 2)
+	screenRow, col = CeroSec.editScreenCursor(two, #two, W)
+	eq("two lines, cursor on line 2: row 2", screenRow, 2)
 end
 
 --
