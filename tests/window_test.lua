@@ -21058,6 +21058,13 @@ end
 do
 	local bench = newBench()
 	bench.login("admin")
+	-- A square, so CeroSecDebug.premises has something to say: newBench's own
+	-- object stands nowhere (getSquare returns nil, "the chunk is away"), which
+	-- is right for every other bench in this file and wrong for only this one.
+	bench.object.getSquare = function()
+		return { getBuilding = function() return nil end,
+			getRoom = function() return nil end }
+	end
 	local said = {}
 	local realPrint = print
 	print = function(text) said[#said + 1] = tostring(text) end
@@ -21078,6 +21085,15 @@ do
 		if string.find(said[i], "os.fs", 1, true) then named = true end
 	end
 	check("the filesystem is in it", named)
+
+	-- The premises lines go out AHEAD of the state walk, so a report about
+	-- "wrong /dev" has them even when the state alone saturates the cap.
+	local whereAt = nil
+	for i = 1, #said do
+		if string.find(said[i], "building:", 1, true) then whereAt = i end
+	end
+	check("the building line is in it, and near the top", whereAt ~= nil
+		and whereAt <= 5)
 end
 
 --
