@@ -663,7 +663,7 @@ CeroSecOS.COMMAND_INFO = {
 		usage = "at HH:MM | at -l | at -r <job>..." },
 	atq      = { desc = "list the jobs waiting to run", usage = "atq" },
 	atrm     = { desc = "take a waiting job out of the queue", usage = "atrm <job>..." },
-	cat      = { desc = "print a file", usage = "cat [file]..." },
+	cat      = { desc = "print a file", usage = "cat [-n] [file]..." },
 	-- The five words the SHELL is, and so the five with no file in /bin: a
 	-- program cannot move the shell that ran it, and cannot own its jobs either
 	-- (see CeroSecOS.isShellWord, and the note above CeroSecOS.BUILTINS).
@@ -743,7 +743,7 @@ CeroSecOS.COMMAND_INFO = {
 	-- Symbolic only, and the usage line says so: see the note above
 	-- CeroSecOS.newLink for why this machine has no hard links.
 	ln       = { desc = "make a symbolic link", usage = "ln -s <target> <name>" },
-	ls       = { desc = "list a directory", usage = "ls [-1laACF] [path]" },
+	ls       = { desc = "list a directory", usage = "ls [-1laACF] [path]..." },
 	-- Berkeley Mail's two halves under one name, which is what mail(1) is: no
 	-- recipient is reading your own box, and a recipient is sending. The body
 	-- comes from the standard input either way -- a pipe, or the terminal until a
@@ -1266,69 +1266,12 @@ end
 -- Either way can be asked for outright: -1 is one per line and -C is columns,
 -- the later of the two winning, exactly as -a and -A already do here. -l is one
 -- per line by its nature and neither flag has anything to say about it.
-commands.ls = function(state, session, args, env, stdin, sh)
-	-- Flags are letters, so "-lF", "-Fl" and "-l -F" are the same line. A bare
-	-- "-" is not a flag and never was: it is a name, and a name is what the
-	-- error about it should be about.
-	local long, classify, path = false, false, nil
-	-- -a is everything, the two directory entries included; -A is everything
-	-- except those two. The later of the two wins, which is how a real ls reads
-	-- a line that carries both.
-	local dots, hiddenToo = false, false
-	-- nil until the line says: a line that says neither is answered by whether
-	-- there is a screen there.
-	local columns = nil
-	for i = 2, #args do
-		local a = args[i]
-		if string.sub(a, 1, 1) == "-" and a ~= "-" then
-			for c = 2, #a do
-				local flag = string.sub(a, c, c)
-				if flag == "l" then
-					long = true
-				elseif flag == "F" then
-					classify = true
-				elseif flag == "a" then
-					dots, hiddenToo = true, true
-				elseif flag == "A" then
-					dots, hiddenToo = false, true
-				elseif flag == "1" then
-					columns = false
-				elseif flag == "C" then
-					columns = true
-				else
-					return fail("ls", a, "unknown option")
-				end
-			end
-		elseif path == nil then
-			path = a
-		else
-			return usage("ls")
-		end
+-- One directory's listing, as lines, before any columns are made of them.
+-- nil plus the refusal when it cannot be read.
+local function lsDir(state, session, node, shown, o)
+	if not CeroSecOS.can(state, session, node, "r") then
+		return nil, "ls: " .. shown .. ": permission denied"
 	end
-
-	local shown = path
-	if shown == nil then shown = "." end
-	-- A link NAMED on the line is followed, so `ls linkdir` lists the directory it
-	-- points at. -l and -F are the two flags that ask about the link ITSELF --
-	-- POSIX says so, and it is what they are for: one draws the arrow, the other
-	-- marks the at-sign. The children of a directory are never followed at all.
-	local node, reason = CeroSecOS.getNode(state, session, path, long or classify)
-	if node == nil then return fail("ls", shown, reason) end
-
-	if node.type ~= "dir" then
-		local name = baseName(session, path) or shown
-		-- A device that is not there is not listed inside /dev either, so
-		-- naming it straight gets the same answer a listing gives.
-		if node.dead then return fail("ls", shown, "no such file") end
-		if long then
-			if CeroSecOS.isDev(node) then return true, { CeroSecOS.devLine(node) } end
-			if CeroSecOS.isLink(node) then return true, { linkLine(node, name) } end
-			return true, { longLine(node, name) }
-		end
-		if classify and CeroSecOS.isLink(node) then name = name .. "@" end
-		return true, { CeroSecOS.truncate(name, CeroSecOS.COLS) }
-	end
-	if not CeroSecOS.can(state, session, node, "r") then return fail("ls", shown, "permission denied") end
 
 	-- One array of what is being listed, so the long form and the columns are
 	-- looking at the same thing. "." and ".." are not children of anything --
@@ -1336,12 +1279,12 @@ commands.ls = function(state, session, args, env, stdin, sh)
 	-- here rather than found by walking, and they sort first because "." is
 	-- ahead of every letter in the character order childNames sorts by.
 	local entries = {}
-	if dots then
+	if o.dots then
 		entries[#entries + 1] = { name = ".", node = node }
 		local up = CeroSecOS.getNode(state, session, shown .. "/..")
 		if up ~= nil then entries[#entries + 1] = { name = "..", node = up } end
 	end
-	local names = CeroSecOS.listedNames(node, hiddenToo)
+	local names = CeroSecOS.listedNames(node, o.hiddenToo)
 	for i = 1, #names do
 		entries[#entries + 1] = { name = names[i], node = node.children[names[i]] }
 	end
@@ -1350,12 +1293,12 @@ commands.ls = function(state, session, args, env, stdin, sh)
 	for i = 1, #entries do
 		local child = entries[i].node
 		local label = entries[i].name
-		if classify and child.type == "dir" then label = label .. "/" end
+		if o.classify and child.type == "dir" then label = label .. "/" end
 		-- A link wears "@", the way it has since 4.2BSD: it is not a directory and
 		-- it is not an ordinary file, and which of the two it POINTS at is not
 		-- something a one-character mark should be asked to say.
-		if classify and CeroSecOS.isLink(child) then label = label .. "@" end
-		if long then
+		if o.classify and CeroSecOS.isLink(child) then label = label .. "@" end
+		if o.long then
 			-- A device has no size and no date; what stands in those columns is
 			-- what it is and what it is doing (CeroSecOS.devLine).
 			if CeroSecOS.isDev(child) then
@@ -1369,12 +1312,127 @@ commands.ls = function(state, session, args, env, stdin, sh)
 			out[#out + 1] = label
 		end
 	end
-	if long then return true, out end
+	return out
+end
+
+-- ls [-lFaA1C] [path]... -- as many operands as the line holds. 4.4BSD ls.c and
+-- the System V one both answer in the same order: the names that could not be
+-- found, then every operand that is not a directory, as ONE group and printed
+-- as it was typed (`ls /etc/passwd` is /etc/passwd, not passwd), then each
+-- directory's contents, under its own name and a colon when there was more
+-- than one operand to tell apart, a blank line between. Each group in the
+-- character order childNames sorts a listing by.
+commands.ls = function(state, session, args, env, stdin, sh)
+	-- Flags are letters, so "-lF", "-Fl" and "-l -F" are the same line. A bare
+	-- "-" is not a flag and never was: it is a name, and a name is what the
+	-- error about it should be about.
+	-- -a is everything, the two directory entries included; -A is everything
+	-- except those two. The later of the two wins, which is how a real ls reads
+	-- a line that carries both.
+	local o = { long = false, classify = false, dots = false, hiddenToo = false }
+	local paths = {}
+	-- nil until the line says: a line that says neither is answered by whether
+	-- there is a screen there.
+	local columns = nil
+	for i = 2, #args do
+		local a = args[i]
+		if string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				local flag = string.sub(a, c, c)
+				if flag == "l" then
+					o.long = true
+				elseif flag == "F" then
+					o.classify = true
+				elseif flag == "a" then
+					o.dots, o.hiddenToo = true, true
+				elseif flag == "A" then
+					o.dots, o.hiddenToo = false, true
+				elseif flag == "1" then
+					columns = false
+				elseif flag == "C" then
+					columns = true
+				else
+					return fail("ls", a, "unknown option")
+				end
+			end
+		else
+			paths[#paths + 1] = a
+		end
+	end
 	-- Columns when there is somebody to read them, one name a line when there is
 	-- not -- unless the line said which, in which case it said which.
 	if columns == nil then columns = shTty(sh) end
-	if not columns then return true, out end
-	return true, CeroSecOS.columnize(out, CeroSecOS.COLS)
+	local function shape(lines)
+		if o.long or not columns then return lines end
+		return CeroSecOS.columnize(lines, CeroSecOS.COLS)
+	end
+
+	local many = #paths > 1
+	if #paths == 0 then paths[1] = false end
+	local errs, files, dirs = {}, {}, {}
+	for i = 1, #paths do
+		local path = paths[i] or nil
+		local shown = path or "."
+		-- A link NAMED on the line is followed, so `ls linkdir` lists the directory
+		-- it points at. -l and -F are the two flags that ask about the link ITSELF
+		-- -- POSIX says so, and it is what they are for: one draws the arrow, the
+		-- other marks the at-sign. The children of a directory are never followed.
+		local node, reason = CeroSecOS.getNode(state, session, path, o.long or o.classify)
+		-- A device that is not there is not listed inside /dev either, so naming
+		-- it straight gets the same answer a listing gives.
+		if node ~= nil and node.type ~= "dir" and node.dead then
+			node, reason = nil, "no such file"
+		end
+		if node == nil then
+			errs[#errs + 1] = "ls: " .. shown .. ": " .. reason
+		elseif node.type ~= "dir" then
+			files[#files + 1] = { name = shown, node = node }
+		else
+			dirs[#dirs + 1] = { name = shown, node = node }
+		end
+	end
+	local function byName(x, y) return x.name < y.name end
+	table.sort(errs)
+	table.sort(files, byName)
+	table.sort(dirs, byName)
+
+	local out, ok = {}, #errs == 0
+	for i = 1, #errs do out[#out + 1] = errs[i] end
+	local group = {}
+	for i = 1, #files do
+		local node, name = files[i].node, files[i].name
+		if o.long then
+			if CeroSecOS.isDev(node) then
+				group[#group + 1] = CeroSecOS.devLine(node)
+			elseif CeroSecOS.isLink(node) then
+				group[#group + 1] = linkLine(node, name)
+			else
+				group[#group + 1] = longLine(node, name)
+			end
+		else
+			if o.classify and CeroSecOS.isLink(node) then name = name .. "@" end
+			group[#group + 1] = CeroSecOS.truncate(name, CeroSecOS.COLS)
+		end
+	end
+	local said = #files > 0
+	group = shape(group)
+	for i = 1, #group do out[#out + 1] = group[i] end
+	for i = 1, #dirs do
+		local lines, refusal = lsDir(state, session, dirs[i].node, dirs[i].name, o)
+		if lines == nil then
+			ok = false
+			out[#out + 1] = refusal
+		else
+			if many then
+				if said then out[#out + 1] = "" end
+				out[#out + 1] = dirs[i].name .. ":"
+			end
+			lines = shape(lines)
+			for k = 1, #lines do out[#out + 1] = lines[k] end
+			said = true
+		end
+	end
+	return ok, out
 end
 
 -- Is this path a name inside /dev? Creating one is refused, and the refusal
@@ -1423,51 +1481,109 @@ commands.touch = function(state, session, args, env)
 	return true, {}
 end
 
+-- cat [-n] [file]... -- and "-" among the files is the standard input, read
+-- at that place in the line (POSIX.2 cat; 4.4BSD cat.c's `if (*argv == "-")
+-- fp = stdin`), so `echo head | cat - body` puts the pipe's line on top. -n is
+-- cat.c's: every output line numbered, "%6d\t", the count running on across
+-- every file of the line.
+--
+-- The pipe may arrive over several turns (CeroSecOS.stdinOf), so where the
+-- line has got to is kept in `carry`: which operand is next, the count, and
+-- whether one failed. A file before the "-" is printed once, on the first
+-- turn, and the ones after it on the turn the pipe ends. With no pipe at all
+-- "-" reads end of file straight away, as a background job's and a cron
+-- line's input already does.
 commands.cat = function(state, session, args, env, stdin)
-	-- With no file, the pipe: `grep on /dev/null | cat` is cat copying its
-	-- standard input, which is the whole of what cat has ever done.
-	local input = stdinOf(stdin, operands(args))
-	if input ~= nil then
-		local out = {}
-		for i = 1, #input.lines do out[#out + 1] = input.lines[i] end
-		return true, out
-	end
-	if #args < 2 then return usage("cat") end
-	local out, ok = {}, true
+	local number, paths = false, {}
 	for i = 2, #args do
-		local p = args[i]
-		local node, reason = CeroSecOS.getNode(state, session, p)
-		if node == nil then
-			ok = false
-			out[#out + 1] = "cat: " .. p .. ": " .. reason
-		elseif CeroSecOS.isDev(node) then
-			-- A device answers with its state, and refuses in its OWN name:
-			-- what a player is being told about is the light switch, not the
-			-- command he reached it with.
-			local text, refusal = CeroSecOS.devRead(state, session, node)
-			if text == nil then
-				ok = false
-				out[#out + 1] = refusal
-			else
-				-- Through splitLines like a file's contents, which is what makes
-				-- `cat /dev/null` print NOTHING rather than one empty line: a
-				-- device that reads empty has no lines in it, the same way an empty
-				-- file has none.
-				local said = CeroSecOS.splitLines(text)
-				for j = 1, #said do out[#out + 1] = said[j] end
+		local a = args[i]
+		-- Only before the first operand, and never "-", which is a name for
+		-- the standard input and not a flag.
+		if #paths == 0 and a ~= "-" and string.sub(a, 1, 1) == "-" then
+			for c = 2, #a do
+				if string.sub(a, c, c) ~= "n" then return fail("cat", a, "unknown option") end
 			end
-		elseif node.type ~= "file" then
-			ok = false
-			out[#out + 1] = "cat: " .. p .. ": is a directory"
-		elseif not CeroSecOS.can(state, session, node, "r") then
-			ok = false
-			out[#out + 1] = "cat: " .. p .. ": permission denied"
+			number = true
 		else
-			local lines = CeroSecOS.splitLines(node.data)
-			for j = 1, #lines do out[#out + 1] = lines[j] end
+			paths[#paths + 1] = a
 		end
 	end
-	return ok, out
+	-- With no file, the pipe: `grep on /dev/null | cat` is cat copying its
+	-- standard input, which is the whole of what cat has ever done.
+	if #paths == 0 then
+		if type(stdin) ~= "table" then return usage("cat") end
+		paths[1] = "-"
+	end
+	local reads = false
+	for i = 1, #paths do
+		if paths[i] == "-" then reads = true end
+	end
+	local input, carry = nil, {}
+	if reads and type(stdin) == "table" then
+		input = stdin
+		input.want = true
+		if type(input.carry) == "table" then carry = input.carry end
+	end
+	if carry.pos == nil then carry.pos = 1 end
+	if carry.n == nil then carry.n = 0 end
+
+	local out = {}
+	local function put(line)
+		if number then
+			carry.n = carry.n + 1
+			local num = tostring(carry.n)
+			if #num < 6 then num = string.rep(" ", 6 - #num) .. num end
+			line = num .. "\t" .. line
+		end
+		out[#out + 1] = line
+	end
+	while carry.pos <= #paths do
+		local p = paths[carry.pos]
+		if p == "-" then
+			-- A second "-" finds the pipe already at its end, as cat.c's second
+			-- read of stdin does.
+			if input ~= nil and not carry.drained then
+				for j = 1, #input.lines do put(input.lines[j]) end
+				-- Not at the end of the pipe yet: the rest of the line waits
+				-- for the turn that is.
+				if not input.eof then return not carry.bad, out end
+				carry.drained = true
+			end
+		else
+			local node, reason = CeroSecOS.getNode(state, session, p)
+			if node == nil then
+				carry.bad = true
+				out[#out + 1] = "cat: " .. p .. ": " .. reason
+			elseif CeroSecOS.isDev(node) then
+				-- A device answers with its state, and refuses in its OWN name:
+				-- what a player is being told about is the light switch, not the
+				-- command he reached it with.
+				local text, refusal = CeroSecOS.devRead(state, session, node)
+				if text == nil then
+					carry.bad = true
+					out[#out + 1] = refusal
+				else
+					-- Through splitLines like a file's contents, which is what makes
+					-- `cat /dev/null` print NOTHING rather than one empty line: a
+					-- device that reads empty has no lines in it, the same way an
+					-- empty file has none.
+					local said = CeroSecOS.splitLines(text)
+					for j = 1, #said do put(said[j]) end
+				end
+			elseif node.type ~= "file" then
+				carry.bad = true
+				out[#out + 1] = "cat: " .. p .. ": is a directory"
+			elseif not CeroSecOS.can(state, session, node, "r") then
+				carry.bad = true
+				out[#out + 1] = "cat: " .. p .. ": permission denied"
+			else
+				local lines = CeroSecOS.splitLines(node.data)
+				for j = 1, #lines do put(lines[j]) end
+			end
+		end
+		carry.pos = carry.pos + 1
+	end
+	return not carry.bad, out
 end
 
 --
@@ -1922,6 +2038,29 @@ local function cpOne(state, session, src, dst, dstIsDir, recursive, env)
 			or CeroSecOS.resolve(session, target)
 		if CeroSecOS.isInside(targetPhys, srcPhys) then
 			return "cp: " .. target .. ": invalid destination"
+		end
+	end
+
+	-- A target that is already there. 4.4BSD cp.c (copy_file): an existing file
+	-- is opened O_WRONLY|O_TRUNC and written over, so its owner and its mode are
+	-- the ones it had -- only -p would change them, and there is no -p here. The
+	-- write is setData's, which asks for w on the FILE and holds the size, the
+	-- printable rule and the disk to theirs. Asked of the paths the walk really
+	-- takes, so a link or a ".." cannot hide that the two names are one file:
+	-- cp.c refuses that ("are identical (not copied)"), and so does this.
+	-- A device is left to the create below and its "read-only", as it always
+	-- was: a copy onto one would be a write that went round devWrite.
+	local tnode, _, _, tphys = CeroSecOS.getNode(state, session, target)
+	if tnode ~= nil and not CeroSecOS.isDev(tnode) then
+		local sphys = select(4, CeroSecOS.getNode(state, session, src)) or srcAbs
+		if tphys ~= nil and tphys == sphys then return "cp: " .. src .. ": are identical" end
+		if tnode.type == "file" then
+			-- cp.c again: "cannot overwrite non-directory with directory".
+			if node.type ~= "file" then return "cp: " .. target .. ": not a directory" end
+			local done, wreason =
+				CeroSecOS.setData(state, session, target, node.data or "", CeroSecOS.clockOf(env))
+			if done == nil then return "cp: " .. target .. ": " .. wreason end
+			return nil
 		end
 	end
 
@@ -6201,7 +6340,7 @@ end
 -- CeroSecOSVM.lua) -- which is what a machine saved before this build means.
 -- funcs is the console's own table of function SOURCES and travels by reference for
 -- the same reason: `greet() { ...; }` on one line is still there on the next.
-function CeroSecOS.promptJob(state, session, line, vars, status, name, exported, funcs)
+function CeroSecOS.promptJob(state, session, line, vars, status, name, exported, funcs, lastBg)
 	if type(state) ~= "table" or state.fs == nil then return nil, "no filesystem" end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return nil, "not logged in"
@@ -6221,7 +6360,7 @@ function CeroSecOS.promptJob(state, session, line, vars, status, name, exported,
 	if name ~= nil then cmd = name end
 	local job = CeroSecOS.newJob({
 		prog = prog, name = name or "sh", cmd = cmd, session = session,
-		vars = vars, status = status, exported = exported, funcs = funcs,
+		vars = vars, status = status, exported = exported, funcs = funcs, lastBg = lastBg,
 	})
 	-- What makes it the PROMPT's job rather than a script's: `cd` moves the
 	-- console, `exit` logs out instead of ending the script, `edit` may open on
@@ -6260,6 +6399,16 @@ function CeroSecOS.expandTilde(state, session, args, redirect)
 	end
 end
 
+-- The status of a command that could not be run, by the reason it could not.
+-- POSIX.2 (2.8.2, "Exit Status for Commands") and the ksh88 manual: a command
+-- not found is 127, one found and not executable is 126 -- the numbers every
+-- sh since has given, and what a script tests $? against to tell "it ran and
+-- failed" from "there was nothing to run".
+function CeroSecOS.notRunStatus(reason)
+	if reason == "permission denied" then return 126 end
+	return 127
+end
+
 function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	-- All THREE of them, because the table handed to the command below is built
 	-- fresh here and anything not read out of the caller's is a fact the command
@@ -6292,6 +6441,22 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 		for i = 2, #args do rest[#rest + 1] = args[i] end
 		local ok, lines, control, data = CeroSecOS.startScript(state, session, name, name,
 			rest, table.concat(args, " "), env, true)
+		-- A path that is not there is 127 and one that is there and cannot be run
+		-- -- no x, or a directory -- is 126, the same two numbers a bare name gets
+		-- (CeroSecOS.notRunStatus). Told apart by the reason readScript ends its
+		-- line with, compared as plain text: the line holds the typed path.
+		if not ok and control == nil and type(sh) == "table" and type(lines) == "table"
+				and #lines == 1 and type(lines[1]) == "string" then
+			local said = lines[1]
+			local function endsWith(tail)
+				return #said >= #tail and string.sub(said, #said - #tail + 1) == tail
+			end
+			if endsWith(": no such file") then
+				sh.status = 127
+			elseif endsWith(": permission denied") or endsWith(": is a directory") then
+				sh.status = 126
+			end
+		end
 		return ok, lines, control, data
 	end
 
@@ -6300,8 +6465,14 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	-- cannot move the shell that ran it -- so there is nothing on any PATH that
 	-- could answer for one, and `help` is the word a machine with nothing left in
 	-- /bin still answers.
+	-- Every "could not run" below tells the caller its status through `sh`
+	-- (CeroSecOS.notRunStatus); a caller that handed no table wants none.
+	local function notRun(reason)
+		if type(sh) == "table" then sh.status = CeroSecOS.notRunStatus(reason) end
+		return false, CeroSecOS.fit({ name .. ": " .. reason })
+	end
 	if CeroSecOS.BUILTINS[name] then
-		if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
+		if fn == nil then return notRun("command not found") end
 	else
 		local found, refusal, walked, link =
 			CeroSecOS.lookupPath(state, session, name, path)
@@ -6309,7 +6480,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 		-- walker charges it, and a caller that gave no table is a caller that is
 		-- not charging anything either.
 		if type(sh) == "table" then sh.walked = walked end
-		if found == nil then return false, CeroSecOS.fit({ name .. ": " .. refusal }) end
+		if found == nil then return notRun(refusal) end
 		-- WHICH file answered decides what runs. One in /bin is the machine's own
 		-- executable and the engine is what is behind it -- a file there with no
 		-- command behind it is not a command, exactly as it never was. Anything
@@ -6324,7 +6495,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 				rest, table.concat(args, " "), env, true)
 			return ok, lines, control, data
 		end
-		if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
+		if fn == nil then return notRun("command not found") end
 	end
 
 	local inner = { path = path, tty = tty, keys = keys }

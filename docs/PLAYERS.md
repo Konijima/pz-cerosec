@@ -88,17 +88,17 @@ Commands:
 
 | command | does |
 | --- | --- |
-| `ls [-1laACF] [path]` | list a directory; columns when a person is reading, one name per line when anything else is (a pipe, a `$( )`, a file), `-1` and `-C` force either; `-l` adds owner, group, size and date, `-F` marks directories with `/` and links with `@`, `-a` shows hidden names plus `.` and `..`, `-A` shows hidden names without them |
+| `ls [-1laACF] [path]...` | list a directory; columns when a person is reading, one name per line when anything else is (a pipe, a `$( )`, a file), `-1` and `-C` force either; `-l` adds owner, group, size and date, `-F` marks directories with `/` and links with `@`, `-a` shows hidden names plus `.` and `..`, `-A` shows hidden names without them |
 | `cd [dir]` | change directory (home if no argument) |
 | `pwd` | print the working directory |
-| `cat <file>...` | print a file |
+| `cat [-n] [file]...` | print files; `-` among them is the pipe, `-n` numbers the lines |
 | `edit <file>` | open the file in the editor |
 | `touch <file>` | create an empty file, or move an existing one's date to now |
 | `mkdir <dir>` | create a directory |
 | `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
 | `mv <src> <dst>` | move or rename; a destination that exists is replaced (the directory's `w`, not the destination's mode, is what decides), an existing directory is moved *into*, and one that is not empty answers `directory not empty` |
 | `ln -s <target> <name>` | make a symbolic link; there are no hard links here, so the `-s` is not optional, `ln a b` answers `ln: usage: ln -s <target> <name>` and makes nothing. It is a **declared deviation**: a 1993 `ln` with no flag made a second name for one file |
-| `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
+| `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r`; onto a file that is already there it writes over it and keeps that file's owner and mode |
 | `chmod <mode> <path>` | set permissions: three octal digits, or letters applied to the mode it already wears, `u+x`, `go-w`, `a=r`, `ug+rw,o-rwx` |
 | `chown <user> <path>` | change the owner |
 | `chgrp <group> <path>` | change the group (owner or root; the group must exist) |

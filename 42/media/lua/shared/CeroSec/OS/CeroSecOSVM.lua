@@ -738,6 +738,8 @@ function CeroSecOS.newJob(opts)
 		name = opts.name or "sh",
 		cmd = opts.cmd or opts.name or "sh",
 		bg = opts.bg and true or false,
+		-- $!: the id of the last job an `&` in this shell started, or nil.
+		lastBg = type(opts.lastBg) == "number" and opts.lastBg or nil,
 		prog = opts.prog,
 		args = args,
 		vars = vars,
@@ -986,6 +988,7 @@ local function arithUnit(job, s, i)
 		if nx == "#" then return #job.args, i + 2 end
 		if nx == "?" then return math.floor(job.status), i + 2 end
 		if nx == "$" then return math.floor(job.id), i + 2 end
+		if nx == "!" then return argNumber(job.lastBg ~= nil and tostring(job.lastBg) or ""), i + 2 end
 		if nx == "{" then
 			local j = i + 2
 			local name = ""
@@ -1153,6 +1156,13 @@ local function expandStep(job, state, ex, env)
 				text = tostring(job.status)
 			elseif part.t == "job" then
 				text = tostring(job.id)
+			elseif part.t == "star" then
+				-- One string. Quoted it is one field; bare it is split like any
+				-- other expansion, below.
+				text = table.concat(job.args, " ")
+			elseif part.t == "bang" then
+				-- Empty until an `&` has started something, as in any sh.
+				if job.lastBg ~= nil then text = tostring(job.lastBg) else text = "" end
 			elseif part.t == "arith" then
 				-- The expansions in POSIX.2's order: command substitution first, the
 				-- sum afterwards. A sum with no $( ) in it has no `parts` and is read
@@ -1190,13 +1200,15 @@ local function expandStep(job, state, ex, env)
 				if v == nil then return nil, err end
 				text = v
 			elseif part.t == "all" then
-				-- $@ is one field per argument, quoted or not: it is the one
-				-- expansion that is a list and not a string. Each field globs
-				-- exactly as any other unquoted expansion does, unless "$@"
-				-- was itself quoted.
+				-- "$@" is one field per argument: it is the one expansion that
+				-- is a list and not a string. A bare $@ is $*'s string, split on
+				-- blanks like every other unquoted expansion (POSIX.2 2.5.2), so
+				-- an argument with a blank in it becomes two words there.
 				local allGlob = (not part.q) and (not ex.nosplit)
 				local allMc = allGlob and "g" or "l"
+				if allGlob then addSplit(ex, table.concat(job.args, " "), true) end
 				for a = 1, #job.args do
+					if allGlob then break end
 					if a > 1 then closeField(ex) end
 					ex.buf = ex.buf .. job.args[a]
 					ex.mask = ex.mask .. string.rep(allMc, #job.args[a])
@@ -1631,32 +1643,108 @@ end
 builtins["break"] = function(job, args) return loopSignal(job, args, "break") end
 builtins["continue"] = function(job, args) return loopSignal(job, args, "continue") end
 
+-- read's fields. POSIX.2 read and the ksh88 manual page: the line is split on
+-- blanks, the first word goes to the first name, the second to the second, and
+-- the LAST name gets whatever is left of the line, blanks inside it and all --
+-- which is what makes `read cmd rest` the way to take a line apart. Names with
+-- no word left for them are set empty. Leading and trailing blanks are dropped.
+--
+-- Without -r a backslash is the escape it is everywhere else in sh: it is taken
+-- away and the character behind it is kept as it stands, so `a\ b` is one word.
+-- -r keeps every backslash as typed. A backslash at the very end of a line asks
+-- a real read for the next line; this console hands over one line and nothing
+-- after it (the `more` entry of CeroSecOS.DEVIATIONS), so it is dropped.
+--
+-- A character loop and never a pattern: the line is the player's.
+local function readFields(line, raw, count)
+	local chars, prot = {}, {}
+	local i, n = 1, #line
+	while i <= n do
+		local c = string.sub(line, i, i)
+		if c == "\\" and not raw then
+			if i < n then
+				chars[#chars + 1] = string.sub(line, i + 1, i + 1)
+				prot[#prot + 1] = true
+			end
+			i = i + 2
+		else
+			chars[#chars + 1] = c
+			prot[#prot + 1] = false
+			i = i + 1
+		end
+	end
+	local function blank(k) return not prot[k] and (chars[k] == " " or chars[k] == "\t") end
+	local fields, k, total = {}, 1, #chars
+	for f = 1, count do
+		while k <= total and blank(k) do k = k + 1 end
+		local last = total
+		if f < count then
+			last = k
+			while last <= total and not blank(last) do last = last + 1 end
+			last = last - 1
+		else
+			while last >= k and blank(last) do last = last - 1 end
+		end
+		local word = {}
+		for j = k, last do word[#word + 1] = chars[j] end
+		fields[f] = table.concat(word)
+		k = last + 1
+	end
+	return fields
+end
+
+-- Every name, set from one line, from each of the three places a line reaches
+-- read: the pipe, end of file, and the answer typed at the question.
+local function assignFields(job, names, line, raw)
+	local fields = readFields(line, raw, #names)
+	for i = 1, #names do
+		local reason = setVar(job, names[i], fields[i])
+		if reason ~= nil then return reason end
+	end
+	return nil
+end
+
 -- read: the continuation every interactive script is built on. The job stops
 -- where it stands, the console puts the question up, and the next line typed
 -- comes back through CeroSecOS.jobInput.
 builtins.read = function(job, args, state, env)
-	local prompt, mask, one, name = "", false, false, nil
+	local prompt, mask, count, raw, names = "", false, nil, false, {}
 	local i = 2
 	while i <= #args do
 		local a = args[i]
-		if a == "-p" then
+		if #names > 0 then
+			names[#names + 1] = a
+			i = i + 1
+		elseif a == "-p" then
 			prompt = args[i + 1] or ""
 			i = i + 2
 		elseif a == "-s" then
 			mask = true
 			i = i + 1
+		elseif a == "-r" then
+			raw = true
+			i = i + 1
 		elseif a == "-n" then
-			if args[i + 1] ~= "1" then return nil, "read: only -n 1" end
-			one = true
+			-- -n N: the first N characters of the answer. A count that is not a
+			-- whole number above nought is ksh's "bad number".
+			local want = args[i + 1] or ""
+			count = tonumber(want)
+			if count == nil or count < 1 or count ~= math.floor(count)
+					or string.find(want, "^[0-9]+$") == nil then
+				return nil, "read: " .. want .. ": bad number"
+			end
 			i = i + 2
 		elseif string.sub(a, 1, 1) == "-" and #a > 1 then
 			return nil, "read: " .. a .. ": unknown option"
 		else
-			name = a
+			names[#names + 1] = a
 			i = i + 1
 		end
 	end
-	if name == nil or not CeroSecOS.isVarName(name) then return nil, "read: not a name" end
+	if #names == 0 then return nil, "read: not a name" end
+	for k = 1, #names do
+		if not CeroSecOS.isVarName(names[k]) then return nil, "read: not a name" end
+	end
 
 	-- A stage of a pipeline reads the PIPE, because that is what its standard
 	-- input is. It is also a subshell, and its variables die with it -- which is
@@ -1668,12 +1756,13 @@ builtins.read = function(job, args, state, env)
 			local line = table.remove(buf.lines, 1)
 			buf.bytes = buf.bytes - #line - 1
 			if buf.bytes < 0 then buf.bytes = 0 end
-			local reason = setVar(job, name, line)
+			if count ~= nil then line = string.sub(line, 1, count) end
+			local reason = assignFields(job, names, line, raw)
 			if reason ~= nil then return nil, reason end
 			return 0
 		end
 		if buf.eof then
-			local reason = setVar(job, name, "")
+			local reason = assignFields(job, names, "", raw)
 			if reason ~= nil then return nil, reason end
 			return 1
 		end
@@ -1690,24 +1779,35 @@ builtins.read = function(job, args, state, env)
 	-- of file, the way a real one reading a closed input does, and say so with
 	-- their status rather than hanging forever where nobody can see it.
 	if job.bg or job.inPipe then
-		local reason = setVar(job, name, "")
+		local reason = assignFields(job, names, "", raw)
 		if reason ~= nil then return nil, reason end
 		return 1
 	end
 
 	flushPartial(job)
-	job.ask = { var = name, text = prompt, mask = mask, one = one }
+	job.ask = { names = names, text = prompt, mask = mask, count = count, raw = raw }
 	job.state = "waiting"
 	return 0
 end
 
+-- sleep is a program on a real machine (/bin/sleep, 4.4BSD sleep.c), so what
+-- it cannot do it says and answers with a status -- 1, sleep.c's usage exit --
+-- and the script that ran it goes on to its next line, as it would anywhere.
 builtins.sleep = function(job, args, state, env)
 	local n = tonumber(args[2] or "")
-	if n == nil or n < 0 then return nil, "sleep: invalid interval" end
+	if n == nil or n < 0 then
+		flushPartial(job)
+		outLine(job, "sleep: invalid interval")
+		return 1
+	end
 	local now = CeroSecOS.nowMsOf(env)
 	-- A machine with no clock cannot sleep; it says so rather than sleeping
 	-- forever or not at all.
-	if now == nil then return nil, "sleep: no clock" end
+	if now == nil then
+		flushPartial(job)
+		outLine(job, "sleep: no clock")
+		return 1
+	end
 	job.wakeMs = now + math.floor(n * 1000)
 	job.state = "sleeping"
 	return 0
@@ -1716,25 +1816,23 @@ end
 -- The expression, judged. Shared by the builtin below and by /bin's own door
 -- into it (`sudo test -f /root/notes`), so there is one evaluator and one set
 -- of refusals.
--- true/false, or nil plus the line to print and whether it is FATAL. A bracket
--- with no other half is a mistake in the script and stops it; an expression
--- that cannot be judged is a status of two and the script goes on. The two
--- answers were already different before this evaluator was shared, and the
--- difference is the third return rather than two call sites that each remember.
+-- true/false, or nil plus the line to print. test and [ are a program on a real
+-- machine (/bin/test, /bin/[ -- 4.4BSD test.c), and a program that cannot judge
+-- its expression prints why and exits 2: a missing ']' included, which test.c
+-- reports through the same syntax() as every other malformed expression. The
+-- script that ran it goes on.
 function CeroSecOS.evalTest(state, session, args)
 	local hi = #args
 	if args[1] == "[" then
-		if args[hi] ~= "]" then return nil, "test: missing ']'", true end
+		if args[hi] ~= "]" then return nil, "test: missing ']'" end
 		hi = hi - 1
 	end
-	local v, err = testExpr(state, session, args, 2, hi)
-	return v, err, false
+	return testExpr(state, session, args, 2, hi)
 end
 
 builtins.test = function(job, args, state)
-	local v, err, fatal = CeroSecOS.evalTest(state, job.session, args)
+	local v, err = CeroSecOS.evalTest(state, job.session, args)
 	if v == nil then
-		if fatal then return nil, err end
 		flushPartial(job)
 		outLine(job, err)
 		return 2
@@ -2463,7 +2561,10 @@ local function runSimple(state, job, f, env)
 		local body, reason = funcBody(job, name)
 		if body == nil then
 			errLines(job, CeroSecOS.fit({ name .. ": " .. tostring(reason) }))
+			-- A function with no body left is a name nothing answers to: 127, as
+			-- for any command not found (see CeroSecOS.notRunStatus).
 			job.status = 1
+			if reason == "not a function" then job.status = CeroSecOS.notRunStatus("command not found") end
 			return 1
 		end
 		-- The redirect on the call is the FUNCTION's, the way it is a script's: one
@@ -2513,7 +2614,7 @@ local function runSimple(state, job, f, env)
 		if type(walked) == "number" and walked > 1 then builtinWalk = walked - 1 end
 		if refusal ~= nil then
 			errLines(job, CeroSecOS.fit({ name .. ": " .. refusal }))
-			job.status = 1
+			job.status = CeroSecOS.notRunStatus(refusal)
 			return 1 + builtinWalk
 		end
 	end
@@ -2689,7 +2790,9 @@ local function runSimple(state, job, f, env)
 		end
 	end
 	if toErr then errLines(job, lines) end
-	if ok then job.status = 0 else job.status = 1 end
+	-- A command that could not be RUN at all -- not found, or found and not
+	-- executable -- says so with its own status (sh.status, set by runArgs).
+	if ok then job.status = 0 else job.status = sh.status or 1 end
 
 	-- A command that hands back a JOB -- `sh a.sh`, `./a.sh`, a name on PATH that
 	-- turned out to be a script -- has printed nothing and never will: what the
@@ -3937,8 +4040,15 @@ function CeroSecOS.jobInput(state, job, text, env)
 	job.ask = nil
 	job.state = "running"
 	local value = text
+	if ask.count ~= nil then value = string.sub(text, 1, ask.count) end
+	-- A question asked before read took several names (a job saved waiting on
+	-- one) still carries the one name it had.
+	local names = ask.names
+	if names == nil then names = { ask.var } end
 	if ask.one then value = string.sub(text, 1, 1) end
-	local reason = setVar(job, ask.var, value)
+	-- And read the line as it stood, which is what it did then.
+	local raw = ask.raw == true or ask.names == nil
+	local reason = assignFields(job, names, value, raw)
 	if reason ~= nil then
 		jobError(job, reason)
 		return true

@@ -37,7 +37,7 @@
 --   { t = "lit",    s = "notes",  q = true  }   plain text, never split
 --   { t = "var",    name = "N",   q = false }   $N or ${N}
 --   { t = "arg",    n = 1,        q = false }   $1..$9, $0
---   { t = "count"|"all"|"status"|"job",   q }   $# $@ $? $$
+--   { t = "count"|"all"|"star"|"status"|"job"|"bang", q }   $# $@ $* $? $$ $!
 --   { t = "sub",    prog = <program>,     q }   $(command)
 --   { t = "arith",  expr = "1 + $x",      q }   $((expression))
 --
@@ -328,6 +328,11 @@ local function readDollar(text, i, quoted, depth)
 	end
 	if c == "#" then return { t = "count", q = quoted }, i + 2 end
 	if c == "@" then return { t = "all", q = quoted }, i + 2 end
+	-- $* is every argument as one string, joined by a blank; $! is the process
+	-- number of the last job an `&` started. Both are in the Bourne shell's
+	-- sh(1) of Version 7 and in POSIX.2's list of special parameters.
+	if c == "*" then return { t = "star", q = quoted }, i + 2 end
+	if c == "!" then return { t = "bang", q = quoted }, i + 2 end
 	if c == "?" then return { t = "status", q = quoted }, i + 2 end
 	if c == "$" then return { t = "job", q = quoted }, i + 2 end
 

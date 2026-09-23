@@ -4585,6 +4585,28 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      contient `CeroSec: the machine at x,y,z lost power and was switched off`.
      Rétablir le courant ne produit aucune ligne de ce genre. [ ]
 
+## Shell : read, cp, ls, cat, test, $?, $* et $!
+
+448. **read coupe la ligne.** Script `read x y` puis `echo "[$x][$y]"`, répondre
+     `a b c` : `[a][b c]`. Avec `read -n 2 x`, répondre `oui` : `ou`. [ ]
+449. **cp écrase.** `echo neuf > p`, `echo vieux > q`, `chmod 600 q`,
+     `cp p q` : `cat q` dit `neuf` et `ls -l q` montre toujours `-rw-------`.
+     `cp p p` dit `cp: p: are identical`. [ ]
+450. **ls prend plusieurs noms.** `ls /etc/passwd` affiche `/etc/passwd`.
+     Faire `mkdir a` et `mkdir b`, puis `ls a b` : `a:` puis `b:`, séparés
+     d'une ligne vide. [ ]
+451. **cat - et cat -n.** `echo haut | cat - p` affiche `haut` puis `neuf`.
+     `cat -n p` affiche `     1` puis une tabulation et `neuf`. [ ]
+452. **[ et sleep ne tuent plus le script.** Script `[ 1 -eq 1` puis
+     `echo suite $?` : `test: missing ']'` puis `suite 2`. Même chose avec
+     `sleep abc` : `sleep: invalid interval` puis `suite 1`. [ ]
+453. **127 et 126.** `nosuchcmd; echo $?` affiche `127`. Un fichier sans x
+     lancé par `./fichier` puis `echo $?` affiche `126`. `false; echo $?`
+     affiche toujours `1`. [ ]
+454. **$* et $!.** Script `for i in $*; do echo [$i]; done` lancé avec
+     `"a b" c` : `[a]`, `[b]`, `[c]`. `sleep 5 &` puis `echo $!` affiche le
+     numéro du travail que `jobs` montre. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

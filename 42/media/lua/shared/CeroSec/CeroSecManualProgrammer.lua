@@ -509,6 +509,25 @@ the answer, because a one-character answer leaves the cursor where it is.
 While a script is waiting like this, the prompt is not yours. Escape is
 the ^C that takes the question away and the script with it.]],
 
+[[read with more than one name.
+
+Give read several names and it cuts the line into words: the first word
+to the first name, the next word to the next name, and the whole rest of
+the line to the last one. A name with no word left for it is empty.
+
+  admin@ksp-04-11:~$ cat split.sh
+  read cmd rest
+  echo "$cmd / $rest"
+  admin@ksp-04-11:~$ sh split.sh
+  cp a b
+  cp / a b
+
+A backslash keeps the blank behind it inside the word, and goes away
+itself. read -r keeps every backslash just as it was typed.
+
+read -n 3 keeps the first three characters of the line and drops the
+rest. It still waits for Enter: this screen has one typing line.]],
+
 [[printf, for when echo is not tidy enough.
 
 echo prints its words with a space between them and a new line at the end,
@@ -581,8 +600,11 @@ The spaces inside those brackets are not optional and they are not style.
 The bracket is a command, exactly like ls, and a command has to be a word
 of its own. The closing bracket is an argument it insists on:
 
-  admin@ksp-04-11:~$ [ 3 -lt 4
-  sh: test: missing ']'
+  admin@ksp-04-11:~$ [ 3 -lt 4 ; echo $?
+  test: missing ']'
+  2
+
+Two, not one: the question could not be asked. A script goes on.
 
 Try both. Then try man [ and read its usage line, which is real.]],
 
@@ -2298,9 +2320,11 @@ may be.]],
   $1 .. $9        the words handed to this script
   $0              the script's own name
   $#              how many words were handed over
-  $@              all of them
+  $@              all of them; "$@" one word each
+  $*              all of them as one string
   $?              the number the last command finished on
   $$              this job's number
+  $!              the last & job's number
   $(command)      what the command printed, as a word
   $((2 + 3))      arithmetic: + - * / % and brackets
 
@@ -2308,7 +2332,9 @@ Assignment is NAME=value with no blanks near the equals sign.
 
 Quoting: double quotes hold a word together and let a dollar sign work;
 single quotes let nothing through; a backslash takes the meaning off one
-character. A pound sign starts a comment.
+character. A pound sign starts a comment.]],
+
+[[The shell's own words.
 
 Thirteen words the shell runs itself, with no file in /bin needed:
 
@@ -2396,21 +2422,22 @@ line is named and the script ends there.
   ambiguous redirect
       the name after > came out as two words, or none
   sort: input too large
-      sort and uniq must see all their input before
-      they answer, so they hold a hundred lines and
-      four kilobytes of it and no more
+      sort and uniq hold all their input first: a
+      hundred lines, four kilobytes, no more
   test: integer expected
       -eq and its five friends, handed something that
       is not a number
-  test: unknown operator, missing ']', argument
-      expected
+  test: unknown operator
+  test: missing ']'
+  test: argument expected
   read: not a name
+  read: <n>: bad number
   sleep: invalid interval
   sleep: no clock
+      test's exit 2, sleep's 1; the script goes on
   edit: not a terminal
-      also su:, passwd:, sudo: and rlogin:; all
-      five want a pair of hands, and a cron line, an
-      ampersand and a pipeline stage have none]],
+      also su:, passwd:, sudo:, rlogin:; a cron
+      line, an & and a pipe stage have no hands]],
 
 [[What the machine says about jobs. No script signs these, because they
 are not a script's to say.
@@ -2433,24 +2460,24 @@ are not a script's to say.
 And the ones about finding a program at all:
 
   <name>: command not found
-      nothing on PATH answers to it
+      nothing on PATH answers; $? is 127
   ./thing: permission denied
-      it is there and it has no x on it for you
+      it has no x on it for you; $? is 126
   too many PATH entries
       PATH may name eight directories
   type: <name>: not found
   sh: usage: sh <file> [args]
   sh: !<n>: event not found
 
-The shapes of the words this volume leans on, which no card in Volumes 1
-and 2 carries:
+The shapes of the words this volume leans on, which no other card
+carries:
 
   sh <file> [args]        test <expression>
   [ <expression> ]        wait [id]...
   printf <format> [arg...]    true    false]],
 
-[[The reasons off the disk, each wearing the command's name and the path
-first: cat: notes: no such file.
+[[The reasons off the disk, each after the command's name and the path:
+cat: notes: no such file.
 
   no such file          is a directory
   not a directory       permission denied
@@ -2458,7 +2485,8 @@ first: cat: notes: no such file.
   path too deep         directory not empty
   file too large        directory full
   file exists   invalid name   is a device
-  disk full     /dev: read-only
+  disk full     are identical
+  /dev: read-only
 
 A device answers in its OWN name and no command's:
 

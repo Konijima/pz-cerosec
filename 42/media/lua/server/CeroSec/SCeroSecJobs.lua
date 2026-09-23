@@ -165,7 +165,9 @@ function CeroSecJobs.startPrompt(system, luaObject, console, line, name)
 	-- that has defined none.
 	if type(console.shfuncs) ~= "table" then console.shfuncs = {} end
 	local job, refusal = CeroSecOS.promptJob(state, system:sessionOf(console), line,
-		console.shvars, console.status, name, console.shexport, console.shfuncs)
+		console.shvars, console.status, name, console.shexport, console.shfuncs,
+		-- $!, kept on the console the way $? is (see where the status is).
+		tonumber(console.lastBg))
 	if job == nil then return nil, refusal end
 	return enrol(system, luaObject, console, job, false)
 end
@@ -877,6 +879,8 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 			if screen ~= nil then
 				made = CeroSecJobs.start(system, luaObject, screen, order, true)
 			end
+			-- $! in the shell that wrote the `&`.
+			if made ~= nil then job.lastBg = made.id end
 			if made == nil then
 				-- Said by the job that asked, so it drains at the same rate its
 				-- own output does: a loop full of refusals is as quiet as a
@@ -1074,6 +1078,7 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 				-- The status the prompt comes back with, kept on the console the
 				-- way a shell keeps $?.
 				screen.status = job.status
+				screen.lastBg = job.lastBg
 				if screen.prompt ~= nil and type(screen.prompt.cont) == "table"
 						and screen.prompt.cont.cmd == "job" then
 					screen.prompt = nil

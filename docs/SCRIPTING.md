@@ -224,8 +224,14 @@ typing its name alone. `/bin` is first, so nothing installed can shadow a shippe
 command.
 
 The language is the one you already know from a 1993 `/bin/sh`, cut to what fits on
-a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$?`,
-`$$`; single and double quotes and backslash (inside double quotes a backslash
+a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$*`, `$?`,
+`$$`, `$!` (`"$@"` is one field per argument, `"$*"` one field in all, and bare
+`$@`/`$*` are split on blanks like any unquoted expansion; `$!` is the id of the
+last job an `&` started, empty until one has; there is no IFS); `read` with
+several names (a word each, the rest of the line to the last; `-r` keeps
+backslashes, `-n N` keeps N characters); a command not found sets `$?` to 127
+and one found but not executable to 126; `test`/`[` and `sleep` are programs, so
+their errors print, set `$?` (2 and 1) and the script goes on; single and double quotes and backslash (inside double quotes a backslash
 is special only before `$`, `` ` ``, `"`, `\` and a newline, and is kept before
 anything else, as sh(1) and POSIX.2 say: `"a\.c"` is `a\.c`, and the shell makes no
 `\n` -- printf reads its own escapes, echo reads none); `#` comments; `;`, `&&`, `||` and a

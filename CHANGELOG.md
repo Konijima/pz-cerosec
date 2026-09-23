@@ -8,6 +8,21 @@ date.
 
 ## Unreleased
 
+- `read` takes several names: `read cmd rest` puts the first word in `cmd` and
+  the rest of the line in `rest`. `read -r` keeps backslashes as typed, and
+  `read -n 3` keeps three characters instead of only one.
+- `cp` onto a file that's already there now writes over it, like a real cp,
+  and the file keeps its owner and mode. `cp f f` says "are identical".
+- `ls` takes several names at once, and `ls /etc/passwd` now prints
+  `/etc/passwd` as typed.
+- `cat -` reads the pipe among files (`echo top | cat - notes`), and `cat -n`
+  numbers the lines.
+- A `[` missing its `]`, or `sleep abc`, no longer stops a script: the error is
+  printed, `$?` is 2 (or 1 for sleep), and the script carries on.
+- `$?` after "command not found" is now 127, and 126 for a file you may not
+  run, so a script can tell "failed" from "wasn't there".
+- `$*` and `$!` work, and a bare `$@` splits its words like `$*`.
+
 - A command whose redirect is refused no longer runs. `rm notes > /etc/x`
   used to say "permission denied" and delete `notes` anyway; now the shell
   opens the file first, like a real one, and nothing happens. The other side

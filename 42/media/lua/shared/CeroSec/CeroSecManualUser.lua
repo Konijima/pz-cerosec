@@ -399,11 +399,11 @@ Try it.
 
   admin@ksp-04-11:~$ man ls
   ls - list a directory
-  usage: ls [-1laACF] [path]
+  usage: ls [-1laACF] [path]...
 
 That "usage:" line is worth learning to read. ls is the word you type.
-Square brackets mean optional. So ls on its own is legal, ls -l is legal,
-and ls -l /etc is legal. Chapter 12 of this volume is nothing but a page
+Square brackets mean optional, and dots mean as many as you like. So ls
+on its own is legal, ls -l is legal, and ls -l /etc /home is legal. Chapter 12 of this volume is nothing but a page
 of those lines, for the day you need one fast.]],
 
 [[Three keys that save your fingers.
@@ -1848,8 +1848,8 @@ Getting about, and looking.
 
   pwd
   cd [dir]
-  ls [-1laACF] [path]
-  cat [file]...
+  ls [-1laACF] [path]...
+  cat [-n] [file]...
   df
 
 The floppy drive.
@@ -1978,13 +1978,13 @@ what it actually means.
       you may not read, write or step into it
   file exists
       something is already at that name
+  are identical
+      cp was handed one file under two names
   directory not empty
-      mv was asked to write a directory over one that
-      has something in it
+      mv onto a directory with something in it
 
-Classic mistake. Reading the first word and the last word and skipping the
-middle one. The middle piece is the only part that tells you which file the
-machine is actually complaining about.]],
+Classic mistake: skipping the middle piece. It is the only part that tells
+you which file the machine is actually complaining about.]],
 
 [[Names and paths.
 
