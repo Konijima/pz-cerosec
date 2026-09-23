@@ -576,7 +576,20 @@ do
 	ok(state, admin, "echo", { "" })
 	ok(state, admin, 'echo "a  b"', { "a  b" })
 	ok(state, admin, 'echo "a \\"q\\" b"', { 'a "q" b' })
-	ok(state, admin, 'echo "a\\nb"', { "a", "b" })
+	-- Inside double quotes the backslash is special only before $ ` " \
+	-- and newline (sh(1) of 4.4BSD, POSIX.2 2.2.3); before anything else
+	-- it stays. The shell makes no \n: echo prints it, printf reads it.
+	ok(state, admin, 'echo "a\\nb"', { "a\\nb" })
+	ok(state, admin, 'printf "a\\nb\\n"', { "a", "b" })
+	ok(state, admin, 'echo "a\\.c"', { "a\\.c" })
+	ok(state, admin, 'echo "C:\\dos"', { "C:\\dos" })
+	ok(state, admin, 'echo "a\\"b"', { 'a"b' })
+	ok(state, admin, 'echo "a\\\\b"', { "a\\b" })
+	ok(state, admin, 'echo "\\$HOME"', { "$HOME" })
+	ok(state, admin, 'echo "a\\`b"', { "a`b" })
+	ok(state, admin, 'echo "a\\\nb"', { "ab" })
+	bad(state, admin, 'echo "a\\"', "sh: syntax error: unterminated quote")
+	ok(state, admin, "echo 'a\\nb' 'a\\.c' 'a\\\\b'", { "a\\nb a\\.c a\\\\b" })
 	ok(state, admin, "cat /etc/motd", { CeroSecOS.MOTD })
 	-- An empty or missing motd greets nobody: the built-in line only seeds a
 	-- fresh disk, it never speaks for a file root emptied on purpose.
@@ -653,7 +666,7 @@ do
 	ok(state, admin, "touch notes.txt", {})
 	ok(state, admin, "cat notes.txt", {})           -- an empty file prints nothing
 	ok(state, admin, "touch notes.txt", {})         -- touching twice is fine
-	ok(state, admin, 'echo "one\\ntwo" > notes.txt', {})
+	ok(state, admin, 'printf "one\\ntwo\\n" > notes.txt', {})
 	ok(state, admin, "cat notes.txt", { "one", "two" })
 	ok(state, admin, "cp notes.txt copy.txt", {})
 	ok(state, admin, "cat copy.txt", { "one", "two" })
@@ -1597,16 +1610,17 @@ do
 	eq("no dirty file exists",
 		state.fs.children.home.children.admin.children["dirty.txt"].data, "")
 
-	-- The escape table cannot manufacture one: \1 is a backslash escape that
-	-- yields the character "1", not the byte 1.
-	ok(state, admin, 'echo "\\1"', { "1" })
+	-- No escape can manufacture one: inside double quotes \1 is the two
+	-- characters \ and 1, and printf knows \n \t \\ and no octal \ddd.
+	ok(state, admin, 'echo "\\1"', { "\\1" })
 	ok(state, admin, 'echo "\\1" > tame.txt', {})
-	ok(state, admin, "cat tame.txt", { "1" })
-	eq("the file holds the digit, not the byte",
-		state.fs.children.home.children.admin.children["tame.txt"].data, "1")
+	ok(state, admin, "cat tame.txt", { "\\1" })
+	eq("the file holds backslash and digit, not the byte",
+		state.fs.children.home.children.admin.children["tame.txt"].data, "\\1")
+	ok(state, admin, 'printf "\\1"', { "\\1" })
 
-	-- Newline and tab still go in and come back out.
-	ok(state, admin, 'echo "a\\nb\\tc" > good.txt', {})
+	-- Newline and tab still go in, through printf, and come back out.
+	ok(state, admin, 'printf "a\\nb\\tc\\n" > good.txt', {})
 	ok(state, admin, "cat good.txt", { "a", "b\tc" })
 
 	-- So cat can never produce a control, whatever a file holds.
@@ -3672,6 +3686,8 @@ do
 	okAt(state, admin, 'echo "a.b\naxb" > dots.txt', {})
 	okAt(state, admin, "grep a.b dots.txt", { "a.b", "axb" })
 	okAt(state, admin, "grep 'a\\.b' dots.txt", { "a.b" })
+	-- Double quotes keep a backslash before a full stop, so grep gets it.
+	okAt(state, admin, 'grep "a\\.b" dots.txt', { "a.b" })
 	okAt(state, admin, "grep 'a[.]b' dots.txt", { "a.b" })
 	-- Two files, so the name goes in front.
 	okAt(state, admin, "cp a.txt b.txt", {})
@@ -8373,6 +8389,12 @@ do
 	completes(state, admin, "cat $x", nil)
 	completes(state, admin, "cat no\\t", nil)
 	completes(state, admin, "echo $((1+no", nil)
+	-- Inside double quotes a backslash before anything but $ ` " \ is
+	-- kept, as the tokenizer keeps it: "q\.x" names q\.x, never q.x.
+	put("q.x")
+	completes(state, admin, "cat \"q\\.", nil)
+	completes(state, admin, "cat \"q.", "q.x\" ", 6)
+	state.fs.children.home.children.admin.children["q.x"] = nil
 
 	--
 	-- Where a command begins. Word one, and after each separator.

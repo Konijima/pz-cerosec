@@ -470,9 +470,21 @@ local function tokenize(text, depth)
 							if nx == "" then
 								return nil, "syntax error: unterminated quote", startLine
 							end
-							if nx == "n" then addLit(parts, "\n", true, false)
-							elseif nx == "t" then addLit(parts, "\t", true, false)
-							else addLit(parts, nx, true, false) end
+							-- sh(1) of 4.4BSD and ksh88, and POSIX.2 2.2.3:
+							-- within double quotes the backslash keeps its
+							-- meaning only before $ ` " \ and newline. A
+							-- backslash-newline is removed, both characters;
+							-- before anything else the backslash stays, so
+							-- "a\.c" is a\.c and "C:\dos" is C:\dos. The
+							-- shell makes no \n or \t: printf(1) does that
+							-- to its own format, echo here does not.
+							if nx == "\n" then
+								line = line + 1
+							elseif nx == "$" or nx == "`" or nx == "\"" or nx == "\\" then
+								addLit(parts, nx, true, false)
+							else
+								addLit(parts, "\\" .. nx, true, false)
+							end
 							i = i + 2
 						elseif q == "$" then
 							-- readDollar answers part + the index past it, or

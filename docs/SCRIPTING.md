@@ -225,7 +225,10 @@ command.
 
 The language is the one you already know from a 1993 `/bin/sh`, cut to what fits on
 a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$?`,
-`$$`; single and double quotes and backslash; `#` comments; `;`, `&&`, `||` and a
+`$$`; single and double quotes and backslash (inside double quotes a backslash
+is special only before `$`, `` ` ``, `"`, `\` and a newline, and is kept before
+anything else, as sh(1) and POSIX.2 say: `"a\.c"` is `a\.c`, and the shell makes no
+`\n` -- printf reads its own escapes, echo reads none); `#` comments; `;`, `&&`, `||` and a
 trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
 `continue`, `exit`, `return`; `name() { list; }`; `case word in pattern) … ;; esac` with `|` between
 alternatives, the shell's own globs (`*`, `?`, `[…]`) in the patterns and `*)` as the

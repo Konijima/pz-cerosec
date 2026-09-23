@@ -18,6 +18,13 @@ date.
   named `2`.
 - `$( )` no longer catches error text. `x=$(cat nosuch)` shows the error on
   the screen and leaves `x` empty; write `x=$(cat nosuch 2>&1)` to catch it.
+- A backslash inside double quotes now stays put unless it's in front of `$`,
+  a backquote, `"` or another backslash, as on a real sh. `grep "a\.c"` now
+  finds `a.c` and no longer `abc`, and `echo "C:\dos"` prints `C:\dos`. The
+  shell no longer turns `\n` into a new line or `\t` into a tab: that is
+  printf's job, and `printf "a\nb\n"` works as before. A script you already
+  saved that used `echo "a\nb"` now prints the two characters `\n`; change
+  it to `printf "a\nb\n"`.
 - A computer that's already on now opens with a left click, same as the
   menu's Use computer.
 - The editor no longer refuses a line wider than the screen. It wraps onto the

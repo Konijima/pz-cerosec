@@ -1099,7 +1099,7 @@ match.]],
   $        the end of the line, written last
 
 A backslash takes the meaning off any, so a\.b is a full stop. Quote a
-pattern: the shell would eat the star otherwise.
+pattern: the shell would eat the star and the backslash otherwise.
 
   admin@ksp-04-11:~$ grep -c '^From ' mbox
   7

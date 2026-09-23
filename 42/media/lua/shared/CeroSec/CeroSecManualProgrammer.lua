@@ -295,6 +295,10 @@ is how you get a space into a word without quoting the lot:
   admin@ksp-04-11:~$ echo a\ b
   a b
 
+Inside double quotes a backslash works only before $ ` " another
+backslash, or the end of a line, which it joins to the next. Before
+anything else it stays: "C:\dos" is C:\dos.
+
 Leave a quote open and nothing runs at all -- not the good half of the
 line, nothing:
 
@@ -514,7 +518,7 @@ on the same line instead.
 printf takes a shape first and the things to put in it after. A percent
 sign and a letter is a hole: %s for a word, %d for a whole number, %% for
 a real percent sign. A backslash and a letter is a key you cannot type in
-the middle of a word: \n a new line, \t a tab.
+a word: \n a new line, \t a tab, \\ a backslash; echo reads none.
 
   admin@ksp-04-11:~$ printf "%s is %d years old\n" hda 4
   hda is 4 years old

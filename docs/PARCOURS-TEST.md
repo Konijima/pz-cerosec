@@ -3612,6 +3612,13 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `x=$(cat nosuch 2>&1); echo "[$x]"` → `[cat: nosuch: no such file]`.
      `x=$(echo oups >&2); echo "[$x]"` → `oups`, puis `[]`. [ ]
 
+339t. **La barre oblique inverse entre guillemets doubles.** `echo "a\nb"` →
+     une seule ligne, `a\nb`, telle quelle. `printf "a\nb\n"` → deux lignes,
+     `a` puis `b` : c'est printf qui lit `\n`, pas le shell. `echo "C:\dos"` →
+     `C:\dos`. `echo "\$HOME"` → `$HOME`, et `echo "a\"b"` → `a"b`.
+     `printf "a.c\nabc\n" > pts`, puis `grep "a\.c" pts` → `a.c` seulement,
+     sans `abc`. [ ]
+
 ## AI. Les outils de l'admin et du testeur (fenêtre de débogage, 2e rangée)
 
 Huit boutons de plus sur la fenêtre de débogage, sur une **deuxième rangée** sous la
