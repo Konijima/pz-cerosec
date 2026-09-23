@@ -729,15 +729,15 @@ Try it. Open a file, type one word, press Escape, and read the question.
 Then press Escape again to come back. Knowing you can back out of that
 question is worth more than knowing either answer.]],
 
-[[Three ceilings the message line will tell you about.
+[[Two ceilings the message line will tell you about.
 
-A line stops at sixty characters, because the screen is sixty characters
-wide. Keep typing and the machine simply stops taking letters and says
-
-  Line too long: 60 characters
-
-Backspace until it is shorter, or press Enter and carry on below. Nothing
-was lost; the keystrokes were refused, not eaten.
+A line wraps past fifty-six characters: the screen is sixty wide and the
+line numbers down the left take four. Keep typing and the line folds onto
+the row below, the way a real terminal wraps a long line instead of losing
+what runs past its edge. Nothing is refused and nothing is lost; scroll
+down to see the rest of a line that outgrew the seventeen rows on the
+glass. The row's line number, at the left, is blank on the fold, so it is
+never mistaken for a new line.
 
 The file stops at 4096 bytes, the ceiling from chapter 3, and says
 
@@ -1919,7 +1919,7 @@ Is the machine busy, and who is on it.
 The numbers, all in one place.
 
 Screen: 60 columns wide, 20 rows tall. The editor gets 17 of those rows to
-write in, and a line stops at 60 characters. The typing line takes 240
+write in, and a line wraps past 56 characters. The typing line takes 240
 characters.
 
 One file: 4096 bytes.
@@ -2100,8 +2100,6 @@ prompt.
       not an error: what Tab prints when it worked
   Save modified buffer? (y/n)
       Escape with unsaved work; Escape again backs out
-  Line too long: 60 characters
-      the screen is 60 wide; Backspace or press Enter
   Buffer full: 4096 bytes
       the file's own ceiling
   Buffer full: 2000 typed characters

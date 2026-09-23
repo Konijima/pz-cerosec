@@ -609,6 +609,14 @@ function CeroSec.padRight(s, width)
 	return s .. string.rep(" ", width - #s)
 end
 
+-- Pad on the left to width (never cuts; callers truncate first). The same
+-- pair as CeroSecOS.padLeft, named again here for the reason at the top of
+-- this block.
+function CeroSec.padLeft(s, width)
+	if #s >= width then return s end
+	return string.rep(" ", width - #s) .. s
+end
+
 --
 -- Rings
 --
@@ -1415,10 +1423,10 @@ end
 -- Seventeen rows of text between the two bars, and one message line under them.
 CeroSec.EDIT_ROWS = 17
 
--- A line is a screen line: the editor wraps nothing, so it refuses the 61st
--- character rather than fold it. The buffer ceiling is the file ceiling
--- (CeroSecOS.MAX_FILE_BYTES); os_test pins the two together.
-CeroSec.EDIT_MAX_LINE = 60
+-- A buffer line longer than the screen wraps onto continuation screen rows,
+-- the way vi's default `wrap` (not `nowrap`) and a VT100's auto-wrap margin
+-- both fold a long line rather than refuse it. The buffer ceiling is the file
+-- ceiling (CeroSecOS.MAX_FILE_BYTES); os_test pins the two together.
 CeroSec.EDIT_MAX_BYTES = 4096
 
 -- What the vanilla text box lets a player *type* into it before it stops
@@ -1472,6 +1480,65 @@ function CeroSec.editCursor(text, offset)
 	end
 end
 
+-- One buffer line, folded to screen width: an array of one or more segments,
+-- each at most cols characters, the way a VT100's auto-wrap margin or vi's
+-- default `wrap` folds a long line rather than losing what runs past the
+-- edge. An empty line is one empty segment -- a row has to be drawn somewhere
+-- -- and a line exactly cols long is one full segment, not a trailing empty
+-- one after it (integer segment math already gives that; #line == 0 is the
+-- one case it has to be told about by hand).
+function CeroSec.editWrap(line, cols)
+	if type(line) ~= "string" then line = "" end
+	if type(cols) ~= "number" or cols < 1 then cols = 1 end
+	if #line == 0 then return { "" } end
+	local out = {}
+	local start = 1
+	while start <= #line do
+		out[#out + 1] = string.sub(line, start, start + cols - 1)
+		start = start + cols
+	end
+	return out
+end
+
+-- Every buffer line, folded and flattened into one ordered list of screen
+-- rows: { text = <segment>, line = <buffer line it came from, 1-based>,
+-- seg = <this segment's 1-based index within that buffer line> }. seg == 1
+-- is the segment's first screen row -- the one editScreen puts a line number
+-- on, the way vi's `number` option numbers a wrapped line once, not per row.
+-- What editScreen and the cursor both walk instead of the raw buffer lines.
+function CeroSec.editRows(text, cols)
+	local lines = CeroSec.editLines(text)
+	local out = {}
+	for i = 1, #lines do
+		local segs = CeroSec.editWrap(lines[i], cols)
+		for j = 1, #segs do
+			out[#out + 1] = { text = segs[j], line = i, seg = j }
+		end
+	end
+	return out
+end
+
+-- Where an offset lands on the flattened screen grid: the screen row,
+-- 1-based into editRows, and the column within that wrapped segment, 0-based,
+-- which may equal cols itself -- the same phantom-last-column the bare buffer
+-- line already uses, now per wrapped segment instead of per buffer line.
+function CeroSec.editScreenCursor(text, offset, cols)
+	local bufRow, bufCol = CeroSec.editCursor(text, offset)
+	local lines = CeroSec.editLines(text)
+	local segIndex = math.floor(bufCol / cols)
+	local colInSeg = bufCol % cols
+	local numSegs = #CeroSec.editWrap(lines[bufRow], cols)
+	if segIndex >= numSegs then
+		segIndex = numSegs - 1
+		colInSeg = cols
+	end
+	local screenRow = segIndex + 1
+	for i = 1, bufRow - 1 do
+		screenRow = screenRow + #CeroSec.editWrap(lines[i], cols)
+	end
+	return screenRow, colInSeg
+end
+
 -- The first row shown, so the cursor row is always one of the seventeen. Given
 -- the row it was on, so a screen that need not move does not move.
 function CeroSec.editTop(top, row, count, rows)
@@ -1485,6 +1552,19 @@ function CeroSec.editTop(top, row, count, rows)
 	if top > most then top = most end
 	if top < 1 then top = 1 end
 	return top
+end
+
+-- The width of the line-number gutter: vi's `numberwidth` grows to fit the
+-- highest line number the buffer can show (`:help numberwidth`), three
+-- columns minimum. EDIT_MAX_BYTES caps the buffer near 4096 bytes, so a
+-- pathological all-blank-lines file tops out around 4096 lines -- four
+-- digits -- but nothing shipped in this mod comes remotely close; this only
+-- has to be right if it ever did.
+function CeroSec.editGutterWidth(lineCount)
+	if type(lineCount) ~= "number" or lineCount < 1 then lineCount = 1 end
+	local digits = #tostring(math.floor(lineCount))
+	if digits < 3 then return 3 end
+	return digits
 end
 
 -- The top bar: what is being edited, and the one thing worth knowing about it.
@@ -1515,39 +1595,47 @@ end
 -- differently. rows 1 and 19 are the inverted bars, 2..18 the buffer, 20 the
 -- message. A row of the buffer that is not there is drawn empty, the way a
 -- terminal editor leaves the bottom of a short file blank.
+--
+-- The 17 buffer rows carry a left gutter, exactly like vi's `:set number`:
+-- right-aligned digits and a separating space, the number shown only on a
+-- wrapped line's first screen row (row.seg == 1) and blank on every
+-- continuation row after it. That is what tells a wrap continuation apart
+-- from a genuinely new line, which is the reason this exists. The gutter
+-- eats into the fixed 60-column width rather than adding to it, so the wrap
+-- width handed to editRows is COLS minus the gutter minus that one space.
 function CeroSec.editScreen(text, top, path, flag, message)
 	local lines = CeroSec.editLines(text)
+	local gutter = CeroSec.editGutterWidth(#lines)
+	local cols = CeroSec.COLS - gutter - 1
+	local rows = CeroSec.editRows(text, cols)
 	local out = { CeroSec.editTitle(path, flag) }
 	for i = 0, CeroSec.EDIT_ROWS - 1 do
-		local line = lines[top + i]
-		if line == nil then line = "" end
-		out[#out + 1] = CeroSec.truncate(line, CeroSec.COLS)
+		local row = rows[top + i]
+		local full = ""
+		if row then
+			local prefix
+			if row.seg == 1 then
+				prefix = CeroSec.padLeft(tostring(row.line), gutter) .. " "
+			else
+				prefix = string.rep(" ", gutter + 1)
+			end
+			full = prefix .. row.text
+		end
+		out[#out + 1] = CeroSec.truncate(full, CeroSec.COLS)
 	end
 	out[#out + 1] = CeroSec.editKeys()
 	out[#out + 1] = CeroSec.editMessage(message)
 	return out
 end
 
--- How far this text is from being something the editor may hold: bytes over the
--- ceiling, plus characters over the width on every row that is too wide. Zero
--- means it is fine.
---
--- This exists because "refuse anything that breaks a rule" is a trap. The shell
--- can put a 70 character line in a file (writeFile has no width rule -- the
--- width is the screen's, not the filesystem's), and an editor that undoes every
--- keystroke on such a buffer undoes the BACKSPACES too: the file becomes
--- impossible to fix from the editor that opened it. So a keystroke is refused
--- only when it does not make things better, and deleting always does.
+-- How far this text is from being something the editor may hold: bytes over
+-- the ceiling, plus one for every control character. Zero means it is fine.
+-- A long line is no longer part of this -- it wraps onto continuation screen
+-- rows instead of being refused, so length alone never makes a buffer bad.
 function CeroSec.editBadness(text)
 	if type(text) ~= "string" then return CeroSec.EDIT_MAX_BYTES * 2 end
 	local badness = 0
 	if #text > CeroSec.EDIT_MAX_BYTES then badness = #text - CeroSec.EDIT_MAX_BYTES end
-	local lines = CeroSec.editLines(text)
-	for i = 1, #lines do
-		if #lines[i] > CeroSec.EDIT_MAX_LINE then
-			badness = badness + #lines[i] - CeroSec.EDIT_MAX_LINE
-		end
-	end
 	for i = 1, #text do
 		local b = string.byte(text, i)
 		if b < 32 and b ~= 10 and b ~= 9 then badness = badness + 1 end
@@ -1555,7 +1643,7 @@ function CeroSec.editBadness(text)
 	return badness
 end
 
--- Is this text something the editor may hold? The two ceilings and the
+-- Is this text something the editor may hold? The byte ceiling and the
 -- printable rule, in the terminal's own words, so a refusal happens under the
 -- fingers and not four seconds later at the save. Returns nil plus the line to
 -- show when it is not.
@@ -1563,12 +1651,6 @@ function CeroSec.editRefusal(text)
 	if type(text) ~= "string" then return "Cannot edit: not text" end
 	if #text > CeroSec.EDIT_MAX_BYTES then
 		return "Buffer full: " .. CeroSec.EDIT_MAX_BYTES .. " bytes"
-	end
-	local lines = CeroSec.editLines(text)
-	for i = 1, #lines do
-		if #lines[i] > CeroSec.EDIT_MAX_LINE then
-			return "Line too long: " .. CeroSec.EDIT_MAX_LINE .. " characters"
-		end
 	end
 	for i = 1, #text do
 		local b = string.byte(text, i)

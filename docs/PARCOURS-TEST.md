@@ -223,9 +223,12 @@ passé réellement, même quand ça correspond au texte attendu.
 48. `root`, `chmod 000 /etc/motd`, puis `admin`, `edit /etc/motd` →
     `edit: /etc/motd: permission denied` à l'invite, aucun éditeur ne s'ouvre.
     Remettre `chmod 644 /etc/motd`. [ ]
-49. Tenir une touche jusqu'à soixante caractères sur une ligne → rien de plus
-    n'apparaît, `Line too long: 60 characters` en bas ; Backspace fait encore
-    reculer le compte et fait disparaître le message une fois sous soixante. [ ]
+49. Tenir une touche au-delà de soixante caractères sur une ligne → rien n'est
+    refusé, la ligne se replie sur la rangée d'en dessous comme un vrai
+    terminal ; Backspace continue de fonctionner normalement, sans message
+    d'erreur. Le numéro de ligne, à gauche, ne réapparaît pas sur la rangée
+    de repli (elle reste vierge) — c'est ce qui distingue un repli d'une
+    vraie nouvelle ligne, exactement comme `:set number` sous vi. [ ]
 50. Coller (Ctrl+V) plus de 2000 caractères dans le tampon → l'arrêt se fait à
     2000, `Buffer full: 2000 typed characters` en bas. [ ]
 51. Avec `[modified]` affiché, s'éloigner du carré devant l'écran (la fenêtre se

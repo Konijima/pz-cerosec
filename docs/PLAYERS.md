@@ -253,9 +253,13 @@ quota exemptions are.
 `edit` turns the screen into a small editor: Tab saves, Esc leaves, and asks
 `Save modified buffer? (y/n)` first when there is something unsaved. Those two are
 the only keys the game hands a focused text box, which is why they are the two the
-key bar names. A file is capped at 4096 bytes and a line at 60 characters; the game's own text
-box stops accepting new keystrokes at 2000 characters typed in one sitting, though a
-bigger file still opens and still saves.
+key bar names. A line wider than the sixty-column screen wraps onto the row below,
+the way a real terminal folds a long line rather than losing it, and a file is
+capped at 4096 bytes; the game's own text box stops accepting new keystrokes at
+2000 characters typed in one sitting, though a bigger file still opens and still
+saves. A line-number gutter runs down the left of the buffer, `:set number`
+fashion: the number shows only on a wrapped line's first screen row, blank
+underneath it, so a folded row is never mistaken for a new one.
 
 `passwd` asks for the old password (skipped for root), the new one, and a retype.
 Putting text in a file is `echo text > file`, a redirection, the way it has

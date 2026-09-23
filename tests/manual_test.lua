@@ -899,8 +899,12 @@ do
 	states("the screen", "Screen: " .. CeroSecOS.COLS .. " columns wide, "
 		.. CeroSec.ROWS .. " rows tall")
 	states("the editor's rows", "gets " .. CeroSec.EDIT_ROWS .. " of those rows")
+	-- The WRAP width and not the screen's: the line-number gutter takes its
+	-- columns out of COLS, plus the one space after it (CeroSec.editScreen).
+	-- editGutterWidth(1) is the gutter of every file this mod ships.
 	states("the editor's line width",
-		"a line stops at " .. CeroSec.EDIT_MAX_LINE .. " characters")
+		"a line wraps past " .. (CeroSec.COLS - CeroSec.editGutterWidth(1) - 1)
+			.. " characters")
 	states("the typing line", "typing line takes " .. CeroSec.INPUT_MAX .. " characters")
 	states("one file's ceiling", "One file: " .. CeroSecOS.MAX_FILE_BYTES .. " bytes.")
 	states("the drive", "The drive: " .. CeroSecOS.DISK_BYTES .. " bytes and "

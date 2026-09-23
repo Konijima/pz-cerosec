@@ -2215,7 +2215,6 @@ do
 	defs()
 	eq("the editor's byte ceiling is the file ceiling",
 		CeroSec.EDIT_MAX_BYTES, CeroSecOS.MAX_FILE_BYTES)
-	eq("the editor's line width is the screen width", CeroSec.EDIT_MAX_LINE, CeroSecOS.COLS)
 	eq("the screen is as wide as the core thinks", CeroSec.COLS, CeroSecOS.COLS)
 	-- And as tall. The core learned the height when it got a PAGER: `more` fills a
 	-- screenful, and a core that thought the glass was twenty-four rows deep would

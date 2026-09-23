@@ -8,6 +8,13 @@ date.
 
 ## Unreleased
 
+- The editor no longer refuses a line wider than the screen. It wraps onto the
+  row below and scrolls to follow you, like a real terminal, instead of
+  stopping your typing dead at the sixtieth character.
+- The editor now shows a line number down the left of every row, like `vi
+  -- :set number`. A wrapped row's number stays blank, so it can't be
+  mistaken for a new line.
+
 ## 0.6.1 - 2026-09-21
 
 Doors that close on cars and a keyboard nobody else could hear. A garage door, a

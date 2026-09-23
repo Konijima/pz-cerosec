@@ -1611,15 +1611,20 @@ function CeroSecTerminal:drawEditor(left, top)
 	local colors = CeroSec.COLORS
 	local mine = self:editing()
 	local text = self:bufferText()
+	-- Same gutter/cols math as CeroSec.editScreen, from the same text, so the
+	-- wrap this reads the cursor against can never drift from what is drawn.
 	local lines = CeroSec.editLines(text)
+	local gutter = CeroSec.editGutterWidth(#lines)
+	local cols = CeroSec.COLS - gutter - 1
+	local rows = CeroSec.editRows(text, cols)
 
 	local row, col = 1, 0
 	if mine then
 		local offset = self.entry:getCursorPos() or 0
 		if self.editAsk then offset = self.editPrev and self.editPrev.pos or 0 end
-		row, col = CeroSec.editCursor(text, offset)
+		row, col = CeroSec.editScreenCursor(text, offset, cols)
 	end
-	self.editTopRow = CeroSec.editTop(self.editTopRow, row, #lines, CeroSec.EDIT_ROWS)
+	self.editTopRow = CeroSec.editTop(self.editTopRow, row, #rows, CeroSec.EDIT_ROWS)
 
 	local flag = nil
 	if self.edit.readonly then
@@ -1644,13 +1649,18 @@ function CeroSecTerminal:drawEditor(left, top)
 	-- character it covers repainted over it: in the screen's own colour while
 	-- the block is lit, in the text's while it is dark, so a cursor in the
 	-- middle of a line neither hides what it is on nor eats it for half a
-	-- second. Column 60 is the one place it lies -- a full line has nowhere to
-	-- put the cursor after its last character -- and it sits on that character
-	-- instead.
+	-- second. Column 60 is the one place it lies -- a full screen row has
+	-- nowhere to put the cursor after its last character -- and it sits on
+	-- that character instead, the deferred-autowrap convention a real
+	-- terminal uses at its own right margin.
 	local cell = col
-	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
-	local span, under, width = CeroSec.cursorSpan("", lines[row] or "", cell, advance)
-	local x = left + span
+	if cell > cols - 1 then cell = cols - 1 end
+	local screenLine = rows[row] and rows[row].text or ""
+	local span, under, width = CeroSec.cursorSpan("", screenLine, cell, advance)
+	-- Shifted right past the gutter and its separating space, in cells, so the
+	-- block lands on the same buffer character the gutter-prefixed row shows
+	-- it under.
+	local x = left + (gutter + 1) * CELL_W + span
 	local y = top + (row - self.editTopRow + 1) * CELL_H
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen

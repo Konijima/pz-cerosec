@@ -266,10 +266,15 @@ the vanilla text box parked off the glass; everything you see is drawn by the wi
     directory`. Put the mode back (`chmod 644`).
 63. **/root as root.** As `root`, `edit /root/secret.txt`, type something, Tab.
     Saved, and `ls -l /root` shows it owned by `root`.
-64. **The 60 character line.** Hold a key until the line is full. At the 61st
-    character nothing more appears and the bottom row says `Line too long: 60
-    characters`. Enter still works, so the next line starts empty and takes 60 of
-    its own. Backspace still works.
+64. **The 60 character line.** Hold a key past the sixtieth character: nothing is
+    refused, the line keeps growing and wraps onto the row below, exactly like a
+    real terminal's auto-wrap margin. Keep going past what the seventeen visible
+    rows can show and the view scrolls to follow the cursor. Enter still starts a
+    new line, and Backspace still works, unwrapping a character at a time. A
+    line number sits in a gutter at the left of every visible row; the wrapped
+    row's gutter is blank, not a repeated or incremented number — that is what
+    tells it apart from Enter having started a real new line, exactly like
+    vi's `:set number`.
 65. **The buffer ceiling.** Fill the buffer past 2000 characters (paste is the
     quick way: Ctrl+V pastes into the box). Typing stops at 2000 and the bottom
     row says `Buffer full: 2000 typed characters` — that is the game's own text
@@ -309,11 +314,12 @@ the vanilla text box parked off the glass; everything you see is drawn by the wi
 
 73b. **A file the shell made too wide.** As `admin`, `write wide.txt "` + 70
      `a`s + `"` (or `echo` a 70-character string into it). `edit wide.txt`: it
-     opens, the row is on the glass cut to sixty, and the message line says
-     `Line too long: 60 characters`. Now press **Backspace** ten times: each one
-     **works** — the message stays until the row fits and then goes away, and
-     Tab saves. Typing a character while it is still too long does nothing. An
-     editor that refused the backspaces could never fix the file it opened.
+     opens and the row folds onto a second screen row instead of being cut —
+     no refusal, no message. Backspace still works normally, and so does typing
+     more; Tab saves either way. A row from disk wider than the screen is no
+     longer a special case the editor has to recover from. Its number shows
+     once, on the first screen row of the two; the folded row underneath has
+     a blank gutter.
 73c. **The owner walks off while you watch.** Two players, one computer. A runs
      `edit notes.txt`; B opens his window and sees the editor with `Another user
      is editing`. A **walks away**. Within a minute (the sweep) B's screen stops
