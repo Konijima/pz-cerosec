@@ -78,19 +78,30 @@ and a command whose redirect is refused no longer runs.
   saved that used `echo "a\nb"` now prints the two characters `\n`; change
   it to `printf "a\nb\n"`.
 - `read` takes several names: `read cmd rest` puts the first word in `cmd` and
-  the rest of the line in `rest`. `read -r` keeps backslashes as typed, and
-  `read -n 3` keeps three characters instead of only one.
+  the rest of the line in `rest`. Plain `read` now takes a backslash away and
+  keeps the character after it, as a real sh does (`a\ b` is one word, `a b`);
+  `read -r` keeps backslashes as typed. `read -n 3` keeps three characters
+  instead of only one, and reading from a pipe it leaves the rest of the line
+  for the next `read`, as bash does.
 - `cp` onto a file that's already there now writes over it, like a real cp,
   and the file keeps its owner and mode. `cp f f` says "are identical".
 - `ls` takes several names at once, and `ls /etc/passwd` now prints
   `/etc/passwd` as typed.
-- `cat -` reads the pipe among files (`echo top | cat - notes`), and `cat -n`
-  numbers the lines.
+- `cat -` reads the pipe among files (`echo top | cat - notes`), `cat -n`
+  numbers the lines, and `--` ends the options.
 - A `[` missing its `]`, or `sleep abc`, no longer stops a script: the error is
-  printed, `$?` is 2 (or 1 for sleep), and the script carries on.
+  printed, `$?` is 2 (or 1 for sleep), and the script carries on. Their
+  errors go where errors go: `2>/dev/null` hides them, and they no longer
+  land in a `> file`, a `$( )` or down a pipe.
 - `$?` after "command not found" is now 127, and 126 for a file you may not
   run, so a script can tell "failed" from "wasn't there".
-- `$*` and `$!` work, and a bare `$@` splits its words like `$*`.
+- `$*` and `$!` work, and a bare `$@` splits its words like `$*`. `x=$@` and
+  `x="$@"` with two arguments or more no longer break the script: `x` gets
+  them joined by a space. A new login starts with an empty `$!`.
+- A file a function or script wrote through `>` or `2>` is complete for the
+  very next command: `f > out; wc -l out` no longer counts short.
+- A script left running by 0.6.x in the middle of a command writing to a file
+  goes on adding to that file under 0.7.0 instead of emptying it again.
 - The manual's "What is not Unix here" pages are now the complete list, and
   checked both ways against the machine: every difference from a 1993 Unix
   that is kept is on them, and nothing on them is untrue. New are the file

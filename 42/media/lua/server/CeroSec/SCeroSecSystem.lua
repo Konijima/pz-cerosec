@@ -1975,6 +1975,9 @@ function SCeroSecSystem:beginSession(state, console, session)
 	-- And no functions: a function belongs to the shell it was told about.
 	console.shfuncs = {}
 	console.status = nil
+	-- Nor a $!: the last background job was the last shell's, and a new
+	-- one has started none.
+	console.lastBg = nil
 	-- When, and on which line: what `who` prints and what `last` reads
 	-- back out of /var/log/wtmp. The console's own line is "console" --
 	-- the survivor is at the keyboard -- and a pty's is its own name,

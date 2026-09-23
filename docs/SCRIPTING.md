@@ -226,10 +226,13 @@ command.
 The language is the one you already know from a 1993 `/bin/sh`, cut to what fits on
 a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$*`, `$?`,
 `$$`, `$!` (`"$@"` is one field per argument, `"$*"` one field in all, and bare
-`$@`/`$*` are split on blanks like any unquoted expansion; `$!` is the id of the
-last job an `&` started, empty until one has; there is no IFS); `read` with
-several names (a word each, the rest of the line to the last; `-r` keeps
-backslashes, `-n N` keeps N characters); a command not found sets `$?` to 127
+`$@`/`$*` are split on blanks like any unquoted expansion; where nothing is split,
+`x=$@`, `x="$@"` and `case "$@" in`, `$@` is one word joined by blanks as in dash and
+bash; `$!` is the id of the last job an `&` started, empty until one has, and a new
+login starts with none; there is no IFS); `read` with several names (a word each, the
+rest of the line to the last; `-r` keeps backslashes, `-n N` keeps N characters, and
+from a pipe leaves the rest of the line, newline included, to the next read as bash
+does); a command not found sets `$?` to 127
 and one found but not executable to 126; `test`/`[` and `sleep` are programs, so
 their errors print, set `$?` (2 and 1) and the script goes on; single and double quotes and backslash (inside double quotes a backslash
 is special only before `$`, `` ` ``, `"`, `\` and a newline, and is kept before
@@ -671,7 +674,11 @@ the three that were already there: `tty` is false through it, so `ls` inside the
 script prints one name a line; a **refusal** is not output and goes to the screen, as
 `ls /nope > f` already does; the line goes over whole, unwrapped, because a file is
 not sixty columns; and the lines wait in a buffer the **pass** writes, because
-`outLine` is handed a job and a write needs a filesystem and a clock. The buffer
+`outLine` is handed a job and a write needs a filesystem and a clock. When the call
+that owns the redirect is over, what is left of its buffer (`rdDone`) is written
+before the next step (`flushDone` at the top of `stepOnce`), so `f > o; wc -l o` and
+`f 2> e; wc -l e` count every line even when both run in one pass, as they would
+after a real sh closed the file. The buffer
 meets the screen's own forty-line limiter, a redirected script puts nothing in
 `job.out`, so without that the limiter that bounds every other flood would never
 fire, but the runaway clock is *not* stopped while it waits: nothing is holding the

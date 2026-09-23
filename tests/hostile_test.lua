@@ -852,6 +852,65 @@ do
 end
 
 --
+-- 8c2. The same flood, through BOTH descriptors of every command.
+--
+-- `g > o 2> e` in a loop: every call opens two files (runSimple, before g runs)
+-- and, when g is over, writes two (popFrame's queue, emptied before the next step
+-- by flushDone). So a command is two opens and two writes on top of what 8c pays,
+-- and the budget, the flat cost and the chunk ceiling must hold all the same --
+-- the invariants every step call is checked against above, and the chunk
+-- measured here as 8c measures it.
+--
+do
+	local machine, state, console = newMachine()
+	local LINES = 100
+	put(state, "/home/admin/lines", string.rep("y\n", LINES - 1) .. "y")
+	put(state, "/home/admin/both.sh",
+		"g() { cat /home/admin/lines; cat /home/admin/nosuch; }\n" ..
+		"while true; do g > o 2> e; done\n")
+
+	local realOpen, realWrite = CeroSecOS.openRedirect, CeroSecOS.writeRedirect
+	local opens, writes, worstChunk = {}, {}, 0
+	CeroSecOS.openRedirect = function(st, session, who, target, env)
+		opens[target.path] = (opens[target.path] or 0) + 1
+		return realOpen(st, session, who, target, env)
+	end
+	CeroSecOS.writeRedirect = function(st, session, who, redirect, text, env)
+		writes[redirect.path] = (writes[redirect.path] or 0) + 1
+		local n = 1
+		for _ in string.gmatch(text, "\n") do n = n + 1 end
+		if n > worstChunk then worstChunk = n end
+		return realWrite(st, session, who, redirect, text, env)
+	end
+
+	typeLine(system, machine, state, console, "sh both.sh")
+	local result = drive(machine, PASSES)
+	CeroSecOS.openRedirect, CeroSecOS.writeRedirect = realOpen, realWrite
+
+	flat("both descriptors", result)
+	timely("both descriptors", result)
+	note("both descriptors", result)
+	local o, e = opens["o"] or 0, opens["e"] or 0
+	check("the loop opened both files, many times (" .. o .. ", " .. e .. ")",
+		o > 10 and e > 10)
+	-- One open of each per call: the second descriptor is opened with the
+	-- first, never once per line or once per turn of the call.
+	check("and once each per call (" .. o .. ", " .. e .. ")", o - e >= 0 and o - e <= 1)
+	check("both files were written (" .. tostring(writes["o"]) .. ", " ..
+		tostring(writes["e"]) .. ")", (writes["o"] or 0) > 0 and (writes["e"] or 0) > 0)
+	-- A call writes its error file once, when it is over: never more writes
+	-- than opens, whatever the loop does.
+	check("the error file was written no more often than it was opened (" ..
+		tostring(writes["e"]) .. " of " .. e .. ")", (writes["e"] or 0) <= e)
+	check("no write carried more than the ceiling and one command (" ..
+		worstChunk .. " lines)", worstChunk <= CeroSecOS.JOB_OUT_MAX + LINES)
+	eq("and it is still running, on nothing but the budget",
+		CeroSecJobs.foreground(machine, console) ~= nil, true)
+	report[#report + 1] = string.format("  %-22s %d+%d opens, %d+%d writes",
+		"`> o 2> e` loop", o, e, writes["o"] or 0, writes["e"] or 0)
+end
+
+--
 -- 8d. A `case` of forty patterns, in a loop (debts 2).
 --
 -- A case of forty alternatives does forty comparisons every time round, and each
@@ -4200,6 +4259,27 @@ do
 	CeroSecDevices.invalidate()
 	_G.instanceof = hadInstanceof
 	_G.__world, _G.__now, _G.SandboxVars = hadWorld, hadNow, hadSandbox
+end
+
+--
+-- A login is a new shell, and $! is the last one's (SCeroSecSystem:beginSession
+-- at the console, CeroSecNet.logIn down a line). Here because this file is the
+-- one that loads both.
+--
+do
+	local _, state, console = newMachine()
+	console.lastBg = 7
+	console.status = 3
+	SCeroSecSystem.beginSession(SCeroSecSystem, state, console,
+		{ user = "admin", cwd = "/home/admin" })
+	eq("a login at the glass forgets the last shell's $!", console.lastBg, nil)
+	eq("as it forgets its $?", console.status, nil)
+	local far = CeroSec.newConsole()
+	far.lastBg = 9
+	CeroSecNet.logIn(nil, { mirrorOS = function() end }, state,
+		{ console = far, quiet = true, line = "ttyp0" },
+		{ name = "admin", home = "/home/admin" }, nil)
+	eq("and so does one down a line", far.lastBg, nil)
 end
 
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",

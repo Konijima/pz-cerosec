@@ -2592,6 +2592,9 @@ function CeroSecNet.logIn(system, object, far, pty, account, now)
 	console.shexport = CeroSecOS.loginExported()
 	console.shfuncs = {}
 	console.status = nil
+	-- Nor a $!: the last background job was the last shell's, and a new
+	-- one has started none.
+	console.lastBg = nil
 	console.loginAt = now or 0
 	-- No greeting on an rsh (pty.quiet): rshd prints none of it, login prints all
 	-- three, and an rsh is not a login. It matters more than the flavour of it --

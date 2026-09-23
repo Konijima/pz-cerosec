@@ -1614,12 +1614,15 @@ end
 -- "-" reads end of file straight away, as a background job's and a cron
 -- line's input already does.
 commands.cat = function(state, session, args, env, stdin)
-	local number, paths = false, {}
+	local number, paths, ended = false, {}, false
 	for i = 2, #args do
 		local a = args[i]
 		-- Only before the first operand, and never "-", which is a name for
-		-- the standard input and not a flag.
-		if #paths == 0 and a ~= "-" and string.sub(a, 1, 1) == "-" then
+		-- the standard input and not a flag. "--" ends them, as getopt(3)
+		-- ends them for cat.c: `cat -- -n` reads -n as a file's name.
+		if #paths == 0 and not ended and a == "--" then
+			ended = true
+		elseif #paths == 0 and not ended and a ~= "-" and string.sub(a, 1, 1) == "-" then
 			for c = 2, #a do
 				if string.sub(a, c, c) ~= "n" then return fail("cat", a, "unknown option") end
 			end
@@ -2167,7 +2170,9 @@ local function cpOne(state, session, src, dst, dstIsDir, recursive, env)
 	-- write is setData's, which asks for w on the FILE and holds the size, the
 	-- printable rule and the disk to theirs. Asked of the paths the walk really
 	-- takes, so a link or a ".." cannot hide that the two names are one file:
-	-- cp.c refuses that ("are identical (not copied)"), and so does this.
+	-- cp.c refuses that ("%s and %s are identical (not copied)."), and so does
+	-- this, in the one shape every refusal here has -- "cp: name: are
+	-- identical", the declared "refusal" deviation (CeroSecOS.DEVIATIONS).
 	-- A device is left to the create below and its "read-only", as it always
 	-- was: a copy onto one would be a write that went round devWrite.
 	local tnode, _, _, tphys = CeroSecOS.getNode(state, session, target)
@@ -2175,7 +2180,9 @@ local function cpOne(state, session, src, dst, dstIsDir, recursive, env)
 		local sphys = select(4, CeroSecOS.getNode(state, session, src)) or srcAbs
 		if tphys ~= nil and tphys == sphys then return "cp: " .. src .. ": are identical" end
 		if tnode.type == "file" then
-			-- cp.c again: "cannot overwrite non-directory with directory".
+			-- cp.c again: a directory onto a file is `errno = ENOTDIR;
+			-- err(1, "%s", to.p_path)` in 4.4BSD-Lite2's copy(), so the
+			-- target's name and "not a directory".
 			if node.type ~= "file" then return "cp: " .. target .. ": not a directory" end
 			local done, wreason =
 				CeroSecOS.setData(state, session, target, node.data or "", CeroSecOS.clockOf(env))

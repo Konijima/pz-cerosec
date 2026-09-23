@@ -135,6 +135,19 @@ passé réellement, même quand ça correspond au texte attendu.
     au démarrage de la partie, après les fichiers `server` du jeu, et non au
     chargement du mod, où le gestionnaire de clics du jeu n'existe pas
     encore). Revenir au menu principal, recharger la sauvegarde : pareil. [ ]
+13c. **Le clic gauche ne prend pas le pas sur le jeu.** Viser une arme sur un
+    zombie devant un ordinateur allumé, clic gauche sur l'écran : le tir part
+    et la file d'actions n'est pas vidée, le joueur ne marche pas vers le
+    bureau. Même chose en pause. Dans une voiture, le clic gauche sur un
+    ordinateur ne fait rien de CeroSec. Sur un ordinateur posé trop haut (le
+    menu grise "Use computer"), le clic gauche n'ouvre rien non plus. Si le
+    joueur ne peut pas se tenir devant l'écran, le clic garde son sens
+    habituel au lieu de disparaître. [ ]
+13d. **L'éditeur au bord de la ligne.** Dans `edit`, taper une ligne jusqu'à
+    la dernière colonne de la rangée (56 avec le numéro de ligne à trois
+    chiffres) : le curseur passe sur la rangée suivante, numéro blanc, et
+    non plus sur le dernier caractère. Retour arrière : il revient juste
+    après le dernier caractère. [ ]
 14. Les cinq lignes du BIOS s'écrivent en environ deux secondes, puis la
     bannière `CeroSec OS 1.0 -- unauthorized access is prohibited.`, puis
     `login:`. [ ]
@@ -4606,19 +4619,36 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 454. **$* et $!.** Script `for i in $*; do echo [$i]; done` lancé avec
      `"a b" c` : `[a]`, `[b]`, `[c]`. `sleep 5 &` puis `echo $!` affiche le
      numéro du travail que `jobs` montre. [ ]
+455. **Les plaintes de sleep et de [ vont sur la sortie d'erreur.**
+     `sleep abc 2>/dev/null; echo $?` n'affiche que `1`. `sleep abc > f`
+     affiche `sleep: invalid interval` à l'écran et `cat f` n'affiche rien.
+     `x=$(sleep abc); echo "[$x]"` affiche la plainte puis `[]`.
+     `[ 1 -eq x ] | wc -l` affiche la plainte puis `0`. [ ]
+456. **x=$@ ne casse plus le script.** Script `x=$@` puis `echo "[$x]"`,
+     lancé avec `a b` : `[a b]`. Avec `y="$@"` à la place : pareil. Sans
+     argument : `[]`. Le script va jusqu'au bout, sans message d'erreur. [ ]
+457. **read -n dans un tuyau garde le reste.** `printf "abcdef\nxy\n" |
+     while read -n 2 a; do echo "[$a]"; done` affiche `[ab]`, `[cd]`, `[ef]`,
+     `[]`, `[xy]`, `[]` (comme bash). [ ]
+458. **Un fichier redirigé est complet pour la commande suivante.**
+     `h() { i=0; while [ $i -lt 100 ]; do echo o; i=$((i+1)); done; }`, puis
+     `h > o; wc -l o` : `100 o`. Même chose avec une fonction qui fait
+     `cat nosuch` cent fois et `2> e; wc -l e`. Se déconnecter après
+     `sleep 5 &`, se reconnecter : `echo "[$!]"` affiche `[]`. `cat -- p`
+     affiche `neuf`. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
 
-455. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les
+459. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les
      pages *What is not Unix here* jusqu'à « That is the whole list. » Il y en a
      maintenant dix, dont *errors, continued*, *files and the shell*, *read,
      history, and who you are* et *what is missing*. [ ]
-456. **Trois affirmations, vérifiées à l'écran.** `echo a > p` puis `wc -c p` :
+460. **Trois affirmations, vérifiées à l'écran.** `echo a > p` puis `wc -c p` :
      `1`, pas `2` (pas de saut de ligne après la dernière ligne). `IFS=:`,
      `x=a:b`, puis `for i in $x; do echo $i; done` : une seule ligne `a:b`
      (IFS n'est pas lu). `set` : `set: command not found`. Si l'une de ces
      réponses a changé, la page ment : le noter au rapport. [ ]
-457. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
+461. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
      `grep: [z-a]: bad range`, et la ligne figure au volume 1, annexe,
      *Commands the machine could not run*. Connecté en admin,
      `passwd root` : `passwd: permission denied`, dans *Logging in, and your

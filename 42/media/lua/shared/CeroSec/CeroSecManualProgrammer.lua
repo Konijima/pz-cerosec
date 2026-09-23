@@ -525,8 +525,9 @@ the line to the last one. A name with no word left for it is empty.
 A backslash keeps the blank behind it inside the word, and goes away
 itself. read -r keeps every backslash just as it was typed.
 
-read -n 3 keeps the first three characters of the line and drops the
-rest. It still waits for Enter: this screen has one typing line.]],
+read -n 3 keeps the first three characters of what you type and drops
+the rest. It still waits for Enter: this screen has one typing line. From
+a pipe, the rest of the line waits for the next read.]],
 
 [[printf, for when echo is not tidy enough.
 

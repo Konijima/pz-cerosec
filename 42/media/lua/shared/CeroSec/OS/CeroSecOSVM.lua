@@ -885,9 +885,11 @@ local function popFrame(job)
 			job.fprog = f.oldFprog
 		end
 		-- And the file the shell had opened for it is closed: what the script wrote
-		-- and nobody has written yet goes on the queue the pass empties, IN ORDER,
-		-- before the target changes back -- flushing it here is not possible, because
-		-- popFrame has no filesystem and no clock to write with.
+		-- and nobody has written yet goes on a queue, IN ORDER, before the target
+		-- changes back -- flushing it here is not possible, because popFrame has no
+		-- filesystem and no clock to write with. The queue is emptied before the
+		-- next step (flushDone, at the top of stepOnce), so the command after this
+		-- one finds the file whole, as it does after a real sh closed it.
 		if f.hadRdto then
 			-- The row it was part way through goes in the FILE, like the rest of what
 			-- it wrote: the redirect is closed here, and a partial flushed afterwards
@@ -1204,11 +1206,23 @@ local function expandStep(job, state, ex, env)
 				-- is a list and not a string. A bare $@ is $*'s string, split on
 				-- blanks like every other unquoted expansion (POSIX.2 2.5.2), so
 				-- an argument with a blank in it becomes two words there.
+				--
+				-- Where nothing is split -- the right of `x=`, a case subject or
+				-- pattern -- it is ONE field, the arguments joined by a blank as
+				-- $* is: `x=$@` and `x="$@"` with a and b set x to "a b" in dash
+				-- and bash alike, and `case "$@" in "a b")` matches. As a list
+				-- it made the assignment two words, the second with no "=" in
+				-- it, and runSimple's setVar fell over on it.
 				local allGlob = (not part.q) and (not ex.nosplit)
 				local allMc = allGlob and "g" or "l"
-				if allGlob then addSplit(ex, table.concat(job.args, " "), true) end
+				if ex.nosplit then
+					local joined = table.concat(job.args, " ")
+					ex.buf = ex.buf .. joined
+					ex.mask = ex.mask .. string.rep("l", #joined)
+					ex.open = true
+				elseif allGlob then addSplit(ex, table.concat(job.args, " "), true) end
 				for a = 1, #job.args do
-					if allGlob then break end
+					if allGlob or ex.nosplit then break end
 					if a > 1 then closeField(ex) end
 					ex.buf = ex.buf .. job.args[a]
 					ex.mask = ex.mask .. string.rep(allMc, #job.args[a])
@@ -1753,10 +1767,21 @@ builtins.read = function(job, args, state, env)
 	if job.stdinBuf ~= nil then
 		local buf = job.stdinBuf
 		if #buf.lines > 0 then
-			local line = table.remove(buf.lines, 1)
-			buf.bytes = buf.bytes - #line - 1
+			local line = buf.lines[1]
+			-- -n N on a stream takes N characters and leaves the rest where it
+			-- was, for the next read: `printf 'abcdef\nxy\n' | while read -n 2 a`
+			-- gives ab, cd, ef, an empty one, xy and an empty one under bash, the
+			-- empty ones being the newline itself, left behind by a read that had
+			-- already taken its N. A shorter line is taken whole, newline too.
+			if count ~= nil and #line >= count then
+				buf.lines[1] = string.sub(line, count + 1)
+				buf.bytes = buf.bytes - count
+				line = string.sub(line, 1, count)
+			else
+				table.remove(buf.lines, 1)
+				buf.bytes = buf.bytes - #line - 1
+			end
 			if buf.bytes < 0 then buf.bytes = 0 end
-			if count ~= nil then line = string.sub(line, 1, count) end
 			local reason = assignFields(job, names, line, raw)
 			if reason ~= nil then return nil, reason end
 			return 0
@@ -1793,19 +1818,20 @@ end
 -- sleep is a program on a real machine (/bin/sleep, 4.4BSD sleep.c), so what
 -- it cannot do it says and answers with a status -- 1, sleep.c's usage exit --
 -- and the script that ran it goes on to its next line, as it would anywhere.
+-- It says so on the standard ERROR, where sleep.c's usage() prints:
+-- `sleep abc > f` leaves f empty, `x=$(sleep abc)` leaves x empty, and
+-- `2>/dev/null` hushes it.
 builtins.sleep = function(job, args, state, env)
 	local n = tonumber(args[2] or "")
 	if n == nil or n < 0 then
-		flushPartial(job)
-		outLine(job, "sleep: invalid interval")
+		errLines(job, { "sleep: invalid interval" })
 		return 1
 	end
 	local now = CeroSecOS.nowMsOf(env)
 	-- A machine with no clock cannot sleep; it says so rather than sleeping
 	-- forever or not at all.
 	if now == nil then
-		flushPartial(job)
-		outLine(job, "sleep: no clock")
+		errLines(job, { "sleep: no clock" })
 		return 1
 	end
 	job.wakeMs = now + math.floor(n * 1000)
@@ -1820,7 +1846,8 @@ end
 -- machine (/bin/test, /bin/[ -- 4.4BSD test.c), and a program that cannot judge
 -- its expression prints why and exits 2: a missing ']' included, which test.c
 -- reports through the same syntax() as every other malformed expression. The
--- script that ran it goes on.
+-- script that ran it goes on. Why is on the standard error, where test.c's
+-- err() writes it: `[ 1 -eq x ] | wc -l` counts nought, `2>/dev/null` hushes it.
 function CeroSecOS.evalTest(state, session, args)
 	local hi = #args
 	if args[1] == "[" then
@@ -1833,8 +1860,7 @@ end
 builtins.test = function(job, args, state)
 	local v, err = CeroSecOS.evalTest(state, job.session, args)
 	if v == nil then
-		flushPartial(job)
-		outLine(job, err)
+		errLines(job, { err })
 		return 2
 	end
 	if v then return 0 end
@@ -2501,6 +2527,12 @@ local function runSimple(state, job, f, env)
 	-- Once per command: a pipe reader, or a command that asked for another turn,
 	-- comes back through this frame, and must not empty what it has already
 	-- written. f.opened is the frame's own and nothing else reads it.
+	--
+	-- A job saved by 0.6 has no f.opened: its frame said the same thing with
+	-- f.rd.wrote, set once the target had been emptied and written. A frame
+	-- that carries it is one whose file is open already, so the first turn
+	-- under this build adds to it rather than emptying what that job wrote.
+	if not f.opened and f.rd ~= nil and f.rd.wrote == true then f.opened = true end
 	if not f.opened and (redirect ~= nil or errTarget ~= nil) then
 		f.opened = true
 		local targets = { redirect, errTarget }
@@ -2895,7 +2927,7 @@ end
 -- of shells hanging off one of them.
 --
 
-local stepOnce, handleSignal
+local stepOnce, handleSignal, flushDone
 
 -- One pipe. lines is what is in it, eof says the stage on the left has
 -- finished, closed says the stage on the right will read no more.
@@ -3335,6 +3367,9 @@ stepOnce = function(state, job, env)
 	-- Written on every turn and for a STAGE as well as for a job, so it is never
 	-- last pass's job and never the pipeline instead of the shell in it.
 	if type(env) == "table" then env.job = job end
+	-- What a call that is over wrote goes on the disk before anything else
+	-- runs, so the next command reads the file whole (flushDone).
+	if job.rdDone ~= nil and not flushDone(state, job, env) then return 0 end
 	local frames = job.frames
 	local f = frames[#frames]
 	if f == nil then
@@ -3795,15 +3830,33 @@ local function flushOne(state, job, to, env)
 	return false
 end
 
+-- The files of calls that are OVER (popFrame's rdDone), written now. Called
+-- before every step as well as at the end of the pass: `h > o; wc -l o` ran
+-- wc on the same pass h ended, before the last of h's lines had reached the
+-- disk, and counted 80 of 100. A closed file is a whole file. Only these: the
+-- redirect still open keeps its buffer to the end of the pass, so a pass makes
+-- the same writes it did and only WHEN moves. false when a write was refused,
+-- and the job is over then, as jobFlush has always ended it.
+flushDone = function(state, job, env)
+	local done = job.rdDone
+	if done == nil then return true end
+	job.rdDone = nil
+	local good = true
+	for i = 1, #done do
+		if not flushOne(state, job, done[i], env) then good = false end
+	end
+	if not good and not CeroSecOS.jobIsOver(job) then
+		job.rdto = nil
+		job.errRd = nil
+		job.status = 1
+		finish(job, "done")
+	end
+	return good
+end
+
 local function jobFlush(state, job, env)
 	local bad = false
-	local done = job.rdDone
-	if done ~= nil then
-		job.rdDone = nil
-		for i = 1, #done do
-			if not flushOne(state, job, done[i], env) then bad = true end
-		end
-	end
+	if not flushDone(state, job, env) then bad = true end
 	if job.rdto ~= nil then
 		if not flushOne(state, job, job.rdto, env) then bad = true end
 	end

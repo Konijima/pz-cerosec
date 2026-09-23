@@ -6943,6 +6943,125 @@ do
 end
 
 --
+-- 27b. Pre-release review, 0.7.0: streams, "$@" where nothing splits, a 0.6
+-- frame, read -n on a stream, a closed redirect read back at once, cat --.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local function data(path)
+		local node = CeroSecOS.getNode(state, admin, path)
+		if node == nil then return nil end
+		return node.data
+	end
+
+	-- sleep's and test's complaints are on the standard ERROR, where sleep.c's
+	-- usage() and test.c's err() write them: not in the file, not in the word,
+	-- not down the pipe, and gone under 2>/dev/null.
+	expect(state, admin, "sleep abc > s.txt", false, { "sleep: invalid interval" })
+	eq("sleep's complaint is not in the file", data("/home/admin/s.txt"), "")
+	ok(state, admin, 'x=$(sleep abc); echo "[$x]"', { "sleep: invalid interval", "[]" })
+	ok(state, admin, "sleep abc 2>/dev/null; echo $?", { "1" })
+	expect(state, admin, "sleep abc 2>se.txt", false, {})
+	eq("and it is in the file 2> named", data("/home/admin/se.txt"), "sleep: invalid interval")
+	ok(state, admin, "[ 1 -eq x ] 2>/dev/null; echo $?", { "2" })
+	ok(state, admin, "[ 1 -eq x ] | wc -l", { "test: integer expected", "     0" })
+	ok(state, admin, "test 1 -eq x > t.txt; echo $?", { "test: integer expected", "2" })
+	eq("test's complaint is not in the file", data("/home/admin/t.txt"), "")
+	ok(state, admin, 'x=$([ 1 -eq 1); echo "[$x]"', { "test: missing ']'", "[]" })
+	-- No clock: the same stream.
+	local _, noClock = exec(state, admin, "sleep 1 > nc.txt")
+	eq("no clock is said on the glass", noClock[1], "sleep: no clock")
+	eq("and not into the file", data("/home/admin/nc.txt"), "")
+
+	-- $@ where nothing is split is ONE word, joined by a blank as $* is: dash
+	-- and bash both set x to "a b" for `x=$@` and `x="$@"` with a and b.
+	local shapes = { { {}, "[]" }, { { "a" }, "[a]" }, { { "a", "b" }, "[a b]" },
+		{ { "a", "b c" }, "[a b c]" } }
+	for i = 1, #shapes do
+		local args, want = shapes[i][1], shapes[i][2]
+		local run = runScript(state, admin,
+			'x=$@\necho "[$x]"\ny="$@"\necho "[$y]"', args)
+		eq("x=$@ with " .. #args .. " arguments", run.out[1], want)
+		eq('x="$@" with ' .. #args .. " arguments", run.out[2], want)
+		eq("and the script ran to its end (" .. #args .. ")", run.job.state, "done")
+	end
+	local run = runScript(state, admin,
+		'case "$@" in "a b") echo joined;; *) echo apart;; esac\n' ..
+		'case "a b" in "$@") echo pattern;; *) echo nope;; esac', { "a", "b" })
+	eq('case "$@" is one word', run.out[1], "joined")
+	eq('and so is a pattern "$@"', run.out[2], "pattern")
+
+	-- read -n N on a stream leaves the rest for the next read, newline too:
+	-- bash gives [ab][cd][ef][][xy][] for this very line.
+	run = runScript(state, admin,
+		'printf "abcdef\\nxy\\n" | while read -n 2 a; do echo "[$a]"; done')
+	eq("read -n 2 walks the stream two at a time", table.concat(run.out),
+		"[ab][cd][ef][][xy][]")
+	run = runScript(state, admin, 'printf "abcde\\nxy\\n" | while read -n 2 a; do read b; echo "[$a][$b]"; done')
+	eq("and a plain read after it gets the rest of the line", table.concat(run.out),
+		"[ab][cde][xy][]")
+
+	-- A redirect is closed when its command is over, and the next command
+	-- reads it whole -- the same pass or not.
+	ok(state, admin, "h() { i=0; while [ $i -lt 100 ]; do echo o; i=$((i+1)); done; }", {})
+	ok(state, admin, "h > o.txt; wc -l o.txt", { "   100 o.txt" })
+	ok(state, admin, "f() { i=0; while [ $i -lt 100 ]; do cat nosuch; i=$((i+1)); done; }", {})
+	ok(state, admin, "f 2> e.txt; wc -l e.txt", { "   100 e.txt" })
+
+	-- cat ends its options at "--", as getopt(3) ends them for cat.c.
+	-- (A name may not begin with "-" on this disk, so the flag after it is
+	-- only ever a name that is not there.)
+	ok(state, admin, "echo dash > dn", {})
+	ok(state, admin, "cat -- dn", { "dash" })
+	bad(state, admin, "cat -- -n", "cat: -n: no such file")
+	bad(state, admin, "cat -n -- -z", "cat: -z: no such file")
+
+	-- A job saved by 0.6 in the middle of a command whose `>` it had already
+	-- emptied and written: its frame says so with rd.wrote and has no `opened`.
+	-- The first turn under this build must add to the file, not empty it again.
+	local job = CeroSecOS.promptJob(state, admin,
+		'i=0; while [ $i -lt 150 ]; do echo l$i; i=$((i+1)); done | cat > old.txt',
+		admin.shvars, nil, nil, nil, admin.shfuncs)
+	local env = { now = 740000000, nowMs = 1000, jobs = {} }
+	local function oldShape(frames)
+		local n = 0
+		for i = 1, #frames do
+			local f = frames[i]
+			if f.opened and f.rd ~= nil and f.rd.wrote == true then
+				f.opened = nil
+				n = n + 1
+			end
+			if f.stages ~= nil then
+				for k = 1, #f.stages do n = n + oldShape(f.stages[k].frames) end
+			end
+		end
+		return n
+	end
+	local made, passes = 0, 0
+	while made == 0 and passes < 200 and not CeroSecOS.jobIsOver(job) do
+		passes = passes + 1
+		CeroSecOS.jobStep(state, job, env, 40)
+		job.out = {}
+		made = oldShape(job.frames)
+	end
+	check("a frame of the 0.6 shape was made mid-command", made > 0)
+	local before = data("/home/admin/old.txt") or ""
+	check("with lines already in its file", #before > 0)
+	while not CeroSecOS.jobIsOver(job) and passes < 400 do
+		passes = passes + 1
+		CeroSecOS.jobStep(state, job, env, 40)
+		job.out = {}
+	end
+	local text = data("/home/admin/old.txt") or ""
+	eq("the file kept what the 0.6 turn wrote", string.sub(text, 1, #before), before)
+	local lines = 0
+	for _ in string.gmatch(text .. "\n", "\n") do lines = lines + 1 end
+	eq("and holds every line", lines, 150)
+end
+
+--
 -- 28. Scripts: what may be run, and by whom
 --
 
