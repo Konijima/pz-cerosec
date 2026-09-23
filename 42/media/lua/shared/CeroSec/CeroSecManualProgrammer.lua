@@ -2351,7 +2351,8 @@ what this machine can do.]],
       put one or more names in the environment, with a
       value or with the one they already have. With no
       name at all it lists what is in it, one a line,
-      in the shape you would type back
+      in the shape you would type back; a word that
+      is not a name is export: not a name
   env
       the environment as it will be handed over,
       NAME=value, one a line, sorted
@@ -2439,10 +2440,11 @@ line is named and the script ends there.
       also su:, passwd:, sudo:, rlogin:; a cron
       line, an & and a pipe stage have no hands]],
 
-[[What the machine says about jobs. No script signs these, because they
-are not a script's to say.
+[[What the machine says about jobs. No script signs these: they are
+not a script's to say.
 
   sh: too many jobs
+  wait: too many jobs
       a fifth job; four is the ceiling
   kill: <id>: no such job
   fg: no current job

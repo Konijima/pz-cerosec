@@ -859,53 +859,68 @@ CeroSecOS.COMMAND_INFO = {
 -- that instead. A sentence is what a reader needs anyway; a word is what a command
 -- needs.
 --
--- ANY entry may carry a `phrase` and one that does is held to it, which is how a
+-- Two more kinds: `shell` is a word of the shell (CeroSecOS.SHELL_BUILTINS)
+-- rather than a file, and `absent` is a name a 1993 Unix had and this one has
+-- NOT -- no command, no shell word, never retired.
+--
+-- EVERY entry carries a `phrase`, and is held to it, which is how a
 -- declaration is kept from being a word on a page that says nothing about it. It
 -- has to fit on ONE line of the page: the pages are wrapped prose and the bench
 -- looks for the phrase literally, so a sentence broken across two lines is a
--- sentence it will not find.
+-- sentence it will not find. And the phrase is what the bench reads the page
+-- BACK by: a paragraph of the page that holds no entry's phrase is a
+-- declaration this list does not have, and goes red (tests/manual_test.lua).
+-- Several entries may share one phrase when one sentence declares them all.
 --
 CeroSecOS.DEVIATIONS = {
 	-- Not a Unix command at all. `man -k` and `apropos` are what a real one had,
 	-- and both want a whatis database this machine has no room for; what is here
 	-- instead is a listing of /bin, which is why a machine whose /bin has been cut
 	-- down has a shorter help and one with no /bin cannot describe itself.
-	{ name = "help", why = "no Unix had it; it lists /bin, and man -k wants a database" },
+	{ name = "help", phrase = "help is not a Unix command",
+		why = "no Unix had it; it lists /bin, and man -k wants a database" },
 	-- The world, which no Unix of any year had: doors, lights, locks and windows
 	-- are under /dev and `dev` is the everyday face of them. Everything it does
 	-- goes through the same two calls `cat /dev/light0` and `echo off >
 	-- /dev/light0` reach, so it adds a table to read and no power.
-	{ name = "dev", why = "the building is not something a 1993 Unix had to work" },
+	{ name = "dev", phrase = "dev is not one either",
+		why = "the building is not something a 1993 Unix had to work" },
 	-- CeroSec Systems' own: crypt(3) was the library call and nothing in /bin
 	-- wrapped it. It was called `hash` until SYSTEM_VERSION 16, which was not a
 	-- name any Unix would have used.
-	{ name = "mkpasswd", why = "no 1993 tool hashed a string you chose" },
+	{ name = "mkpasswd", phrase = "mkpasswd is ours",
+		why = "no 1993 tool hashed a string you chose" },
 	-- A screen editor under a name 4.3BSD gave to a LINE editor: the real edit(1)
 	-- is ex in its friendly mode, one line at a time. This one is a full-screen
 	-- buffer with Tab to save and Escape to leave, because a line editor on a
 	-- glass a survivor is standing at would be cruelty. vi is what it should be
 	-- called and vi is four thousand lines of C.
-	{ name = "edit", why = "a screen editor under 4.3BSD's name for a line editor" },
+	{ name = "edit", phrase = "edit is a SCREEN editor",
+		why = "a screen editor under 4.3BSD's name for a line editor" },
 	-- Real for the year and still not part of Unix: sudo was Bob Coggeshall and
 	-- Cliff Spencer's, 1980, passed around by hand and installed by an
 	-- administrator who wanted it. So it is on this machine the way it was on a
 	-- real one -- an add-on, with /etc/sudoers deciding -- and not as something
 	-- the system shipped.
-	{ name = "sudo", why = "an add-on of the era, not part of any Unix" },
+	{ name = "sudo", phrase = "sudo is real for the year",
+		why = "an add-on of the era, not part of any Unix" },
 	-- The jobs belong to the MACHINE and not to the shell that typed them: one
 	-- book per computer, four to a computer, and `jobs` lists every background job
 	-- on it whoever started it. On a real Unix a job is a process group the shell
 	-- owns. Kept on purpose -- it is what lets a survivor pick up what the last
 	-- one left running -- and said plainly instead (see commands.jobs).
-	{ name = "jobs", why = "the jobs are the machine's, not the shell's" },
+	{ name = "jobs", phrase = "jobs lists the background jobs on the MACHINE",
+		why = "the jobs are the machine's, not the shell's" },
 	-- And the one name that is GONE: `hash` was renamed to mkpasswd, and the page
 	-- has to say so, because a player who used it last week will type it.
-	{ name = "hash", gone = true, why = "renamed mkpasswd at SYSTEM_VERSION 16" },
+	{ name = "hash", gone = true, phrase = "It was called hash on this machine",
+		why = "renamed mkpasswd at SYSTEM_VERSION 16" },
 	-- The pager's keys. more(1) reads the KEY you press; this console has one
 	-- input line and Enter is what sends it, so Space is a space and then Enter.
 	-- The console's deviation rather than the pager's, and `read -n 1` has had the
 	-- same shape since it was written.
-	{ name = "more", why = "its keys need Enter behind them: the console reads a line" },
+	{ name = "more", phrase = "more and read -n want Enter",
+		why = "its keys need Enter behind them: the console reads a line" },
 	-- The radio's serial line, and the box's own first line. `cu -l line` is
 	-- cu(1)'s own flag and the TNC-2 command set behind it is the TNC-2's, so the
 	-- two things this machine made up are: the line is a CHARACTER DEVICE naming a
@@ -913,7 +928,8 @@ CeroSecOS.DEVIATIONS = {
 	-- /etc/remote, which this machine has not got; and the banner the box prints
 	-- when the line opens, a real TNC-2 having printed whatever its vendor's
 	-- firmware printed.
-	{ name = "cu", why = "-l names /dev/radio0, and the TNC's banner line is ours" },
+	{ name = "cu", phrase = "cu -l opens a LINE instead of dialling",
+		why = "-l names /dev/radio0, and the TNC's banner line is ours" },
 	-- The CONTAINER a tar makes, and nothing else about tar: the three keys, the one
 	-- modifier, what a member carries and who may put an owner back are all tar's
 	-- own. But a real archive is 512-byte blocks with a 512-byte header in front of
@@ -965,8 +981,112 @@ CeroSecOS.DEVIATIONS = {
 	-- And the second name that is GONE: `call CALLSIGN` was this machine's own
 	-- command for the radio until SYSTEM_VERSION 17. No Unix had one -- a TNC was
 	-- a box on a serial line -- and a player who used it last week will type it.
-	{ name = "call", gone = true,
+	{ name = "call", gone = true, phrase = "There was a call CALLSIGN command here",
 		why = "the TNC is driven with cu -l /dev/radio0 since SYSTEM_VERSION 17" },
+	-- Two cuts the sixty columns make: 4.4BSD's uptime prints "load averages:"
+	-- and its w prints the weekday a login began.
+	{ name = "uptime", phrase = "uptime says \"load\" where 4.4BSD says",
+		why = "sixty columns: \"load\" for \"load averages:\"" },
+	{ name = "w", phrase = "prints the clock where a real one prints a weekday",
+		why = "sixty columns: the clock where a weekday was" },
+
+	-- What the machine's WORDING is, where it is not 1993's. Kept rather than
+	-- unified: the strings are pinned in all three volumes and in the
+	-- self-test's vectors, and each one says plainly what went wrong.
+	--
+	-- 4.4BSD's commands printed strerror(3): "No such file or directory". This
+	-- machine's are lower case and short; the capitalised ones are 4.4BSD's
+	-- own words -- the floppy's "Device busy", mail's, the network's
+	-- (CeroSecOSNet's reasons) and "Operation not permitted" -- and the
+	-- editor's bottom line is the editor's.
+	{ name = "refusal", world = true,
+		phrase = "A refusal here is lower case and cut short",
+		why = "no such file where strerror said No such file or directory" },
+	-- The V7 sh and ksh88 said "X: not found"; "command not found" is bash's.
+	{ name = "sh", phrase = "sh said only not found",
+		why = "command not found is bash's wording, not sh's" },
+	-- getopt(3), 4.3BSD: "illegal option -- z", then the usage line.
+	{ name = "getopt", world = true, phrase = "unknown option, where getopt said",
+		why = "the engine's one word for a flag it does not know" },
+	-- The Bourne shell's "syntax error: `fi' unexpected", and an open quote
+	-- is a line it waits for (PS2); this parser refuses the line.
+	{ name = "syntax", world = true,
+		phrase = "The syntax errors are this shell's own sentences",
+		why = "the parser's own wording, and an open quote is refused" },
+	-- su and passwd said "Sorry" on 4.4BSD and SVR4; "authentication
+	-- failure" is Linux-PAM's.
+	{ name = "su", phrase = "4.4BSD and System V said Sorry",
+		why = "authentication failure is later Linux wording" },
+
+	-- The FILES and the SHELL. A file's text is stored as its lines joined
+	-- by "\n" with nothing after the last one (CeroSecOS.splitLines is the
+	-- reader), so `echo a > p` is one byte, and `>>` starts a line of its own.
+	{ name = "newline", world = true,
+		phrase = "A file keeps no newline after its last line",
+		why = "the text is its lines joined; nothing follows the last" },
+	-- Field splitting is blanks, tabs and newlines (CeroSecOSVM's readFields
+	-- and the word expander); IFS is an ordinary name.
+	{ name = "IFS", world = true, phrase = "IFS is not read",
+		why = "field splitting is blank, tab and newline only" },
+	-- One > (or >>) and one 2> per command, and < is refused by the lexer
+	-- (CeroSecOSScript: "unexpected '<'"). sh took any number of each.
+	{ name = "redirect", world = true,
+		phrase = "One > and one 2> to a command, and no <",
+		why = "a command has one output, one error and no input redirect" },
+	-- ${name} is the only brace form; System V sh's :- := :? :+ and ksh88's
+	-- # are refused as a bad substitution.
+	{ name = "braces", world = true, phrase = "${x:-y}, ${#x} and the rest",
+		why = "${name} is the only form inside braces" },
+	-- read's flags are bash's (2.0 for -n): in ksh88 -p read from the
+	-- co-process and -s saved the line to the history file.
+	{ name = "read", shell = true, phrase = "read -p, read -s and read -n",
+		why = "-p prompts, -s hides, -n counts: bash's, not ksh88's" },
+	-- ksh88 had fc and r; !! and !n are csh's, and history -c is bash's.
+	{ name = "history", shell = true, phrase = "!!, !n and history -c are csh's",
+		why = "csh's and bash's history words, not sh's or ksh88's" },
+
+	-- ACCOUNTS. /etc/passwd is name:hash:home:flag, root's, mode 600
+	-- (CeroSecOS.passwdLine); a 1993 one was seven fields at mode 644 with the
+	-- hash in master.passwd (4.4BSD) or /etc/shadow (SVR4).
+	{ name = "shadow", world = true, phrase = "/etc/passwd has four fields",
+		why = "four fields and the hash, at mode 600: no uids to hide behind" },
+	-- There are no numeric ids to print.
+	{ name = "id", phrase = "id prints uid=admin flag=user",
+		why = "names and a flag, because there are no numbers" },
+	-- SCeroSecSystem:promptFor hands consolePrompt isAdmin(): the admin FLAG,
+	-- where sh gave "#" to uid 0 alone.
+	{ name = "prompt", world = true,
+		phrase = "Any account with the admin flag gets the # prompt",
+		why = "the flag, not uid 0, earns the #" },
+
+	-- What is not HERE. ls /bin is the whole list of programs, and the page
+	-- says so; these are named because a script reaches for them first.
+	-- `absent` marks a name that is neither a command, a word of the shell
+	-- nor a retired one.
+	{ name = "set", absent = true, phrase = "set, unset, exec and trap are not in this shell",
+		why = "variables are NAME=value and nothing more" },
+	{ name = "unset", absent = true, phrase = "set, unset, exec and trap are not in this shell",
+		why = "a variable is emptied with NAME=" },
+	{ name = "exec", absent = true, phrase = "set, unset, exec and trap are not in this shell",
+		why = "a job cannot replace its shell" },
+	{ name = "trap", absent = true, phrase = "set, unset, exec and trap are not in this shell",
+		why = "there are no signals to catch" },
+	{ name = "rmdir", absent = true, phrase = "rmdir, expr and uname are not on the disk",
+		why = "rm -r takes a directory" },
+	{ name = "expr", absent = true, phrase = "rmdir, expr and uname are not on the disk",
+		why = "$(( )) does the sums" },
+	{ name = "uname", absent = true, phrase = "rmdir, expr and uname are not on the disk",
+		why = "hostname names the machine" },
+	-- And flags that are not here on commands that are.
+	{ name = "rm", phrase = "rm has no -f",
+		why = "rm -f is an unknown option" },
+	{ name = "kill", phrase = "kill takes no signal",
+		why = "there are no signals: kill ends a job" },
+	{ name = "tail", phrase = "tail +N is not here",
+		why = "tail -n N and tail -N are the forms" },
+	-- CeroSecOS.printfText knows %s, %d and %% and copies anything else.
+	{ name = "printf", phrase = "prints anything else as it stands",
+		why = "no width, no precision, no %x or %f" },
 }
 
 --

@@ -16899,4 +16899,43 @@ do
 		backq.job.steps, dollar.job.steps)
 end
 
+--
+-- 53. What Volume 1's "What is not Unix here" pages declare, held to the engine.
+-- manual_test holds the pages to CeroSecOS.DEVIATIONS in both directions; this
+-- holds the declarations to what the machine really does, so a deviation that
+-- is later FIXED goes red here and takes its page and its entry with it.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	-- No newline after the last line: one byte, and >> starts a line.
+	ok(state, admin, "echo a > p", {})
+	ok(state, admin, "wc -c p", { "     1 p" })
+	ok(state, admin, "echo -n x > f", {})
+	ok(state, admin, "echo y >> f", {})
+	ok(state, admin, "cat f", { "x", "y" })
+	-- IFS is an ordinary name.
+	ok(state, admin, "IFS=:; x=a:b; for i in $x; do echo $i; done", { "a:b" })
+	-- One > per command, and no <.
+	bad(state, admin, "echo a > q > r", "sh: syntax error: bad redirect")
+	bad(state, admin, "cat < p", "sh: syntax error: unexpected '<'")
+	-- ${name} and nothing else inside braces.
+	bad(state, admin, "x=; echo ${x:-y}", "sh: syntax error: bad substitution")
+	bad(state, admin, "x=abc; echo ${#x}", "sh: syntax error: bad substitution")
+	-- The wording.
+	bad(state, admin, "nosuch", "nosuch: command not found")
+	bad(state, admin, "ls -z", "ls: -z: unknown option")
+	bad(state, admin, "cat nosuch", "cat: nosuch: no such file")
+	-- id has names and a flag.
+	ok(state, admin, "id", { "uid=admin flag=user groups=admin,sudo,users" })
+	-- What is absent, and the flags that are.
+	for _, name in ipairs({ "set", "unset", "exec", "trap", "rmdir", "expr", "uname" }) do
+		bad(state, admin, name .. " x", name .. ": command not found")
+	end
+	bad(state, admin, "rm -f p", "rm: -f: unknown option")
+	bad(state, admin, "kill -9 %1", "kill: usage: " .. CeroSecOS.commandUsage("kill"))
+	bad(state, admin, "tail +2 p", "tail: usage: " .. CeroSecOS.commandUsage("tail"))
+	ok(state, admin, "printf '%5.2f|%d|%s\\n' 5 6", { "%5.2f|5|6" })
+end
+
 print("os_test: " .. count .. " assertions passed")

@@ -256,9 +256,12 @@ second one, `$(( $(echo $(date)) ))` is still `bad substitution`. A catch inside
 sum meets the **word's** ceiling, at the write, exactly as one inside a word does;
 what comes back and is not a number is nought, the rule an empty variable already
 follows. A `$(( ))` inside a `$(( ))` is not read (write the brackets plainly
-instead); and `echo [-n]`,
-`printf`, `read`, `sleep`
-and `shift` as builtins that work even on a machine whose `/bin` has been emptied.
+instead); `read` and `shift`, which are the shell's own words; and `echo [-n]`,
+`printf` and `sleep`, which the engine runs itself but which are still found
+through `/bin` first, as `ls` is -- so on a machine whose `/bin` has been emptied
+`echo` is `command not found`, and what still answers is the shell's own words
+(`. break cd continue export exit fg history jobs read shift type wait`) and
+`help`, which says the system is damaged.
 
     #!/bin/sh
     for d in light0 light1 light2; do

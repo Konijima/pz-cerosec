@@ -189,6 +189,13 @@ The suites, in the order they run:
   all — the machine found still logged in — and is held to the literal `phrase` it
   carries rather than to its name, because its name is a word the page already uses
   for something else and would be green on a page that never mentioned it.
+  Every entry now carries a `phrase`, and the page is read BACK by them: each prose
+  paragraph up to "That is the whole list." (with the screens under it) must hold
+  one, bar the titles and a named handful of framing sentences — so a declaration
+  on the page with no entry is red too. `shell` entries must be words of the shell
+  and `absent` ones must be nowhere on the machine. The error appendix is also held
+  to every refusal the VM, the parser and the shell `return` directly, not only to
+  what passes through `fail()`.
 - `hostile_test.lua` — the one that matters to a server owner: an endless loop, a
   script that runs itself, a doubling string, an output flood, a hundred background
   jobs and a substitution bomb, each driven through the real scheduler for a
@@ -255,8 +262,12 @@ The suites, in the order they run:
   `CeroSecSelfTestVectors.lua`. Not a suite: a two-line check that the numbers the
   in-game self-test weighs the game against are this build's and not last week's.
   The fix for a red is to run the generator, never to edit the table.
-- `kahlua-check.sh` — `luac5.1 -p` on every shipped file, plus a grep of the OS core
-  for constructs the game's Kahlua cannot run.
+- `kahlua-check.sh` — `luac5.1 -p` on every shipped file, a grep of every shipped
+  file for constructs the game's Kahlua cannot run (`goto`, `//`, `string.pack`,
+  `table.unpack`, `\z`, the bit library, `%b`, the loaders), a stricter grep of
+  the OS core (no `require`, `io`, `os`, metatables, unfloored `tostring`), and
+  `pattern-check.lua`: every pattern argument that is not a literal or a plain
+  find, named on an allow-list with its reason or red.
 - `kahlua-run.sh` — every shipped file actually loaded on the real Kahlua, out of the
   game's own jar. See below.
 

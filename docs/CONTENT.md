@@ -1094,6 +1094,11 @@ root's crontab or through `at`.
 they are the part worth reading. Each was measured on the engine before anything
 was written on top of it:
 
+(Measured then, and several are not true any more: functions and `case` exist,
+`sh prog > file` now catches the script's output, and `grep` reads a basic regular
+expression. The list stays as the record of why the programs are shaped the way
+they are.)
+
 - **No functions and no `case`.** So the menu is a ladder of `elif` on one
   variable, and the pager — eight lines — is written out **twice**, in `read.sh`
   and in `board.sh`'s stead. A shared pager would have to be a program the other

@@ -22,6 +22,15 @@ date.
 - `$?` after "command not found" is now 127, and 126 for a file you may not
   run, so a script can tell "failed" from "wasn't there".
 - `$*` and `$!` work, and a bare `$@` splits its words like `$*`.
+- The manual's "What is not Unix here" pages are now the complete list, and
+  checked both ways against the machine: every difference from a 1993 Unix
+  that is kept is on them, and nothing on them is untrue. New are the file
+  that ends without a newline (`echo a > p` is one byte), `IFS` not being
+  read, `read -p/-s/-n` and `!!` being later shells' words, the passwd file,
+  the `#` prompt, the error wording, and the commands and flags that are not
+  here (`set`, `rmdir`, `rm -f`, `kill -9`, `tail +N`, printf widths). The
+  error appendix also gained grep's pattern errors, `passwd: permission
+  denied`, `export: not a name` and `wait: too many jobs`.
 
 - A command whose redirect is refused no longer runs. `rm notes > /etc/x`
   used to say "permission denied" and delete `notes` anyway; now the shell

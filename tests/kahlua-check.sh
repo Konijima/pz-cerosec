@@ -15,6 +15,12 @@
 # CeroSec/ ahead of shared/CeroSec/OS/) and by loadfile in the benches, so a
 # `require` or a setmetatable in it is a load-time failure nothing else catches.
 CORE="42/media/lua/shared/CeroSec/OS 42/media/lua/shared/CeroSec/CeroSecContent.lua"
+# And every file that ships, for the rules that are about KAHLUA rather than
+# about the core: a construct the VM has not got is a load failure in a
+# client file as surely as in the core.
+ALL="42/media/lua"
+# Which of the two the next forbid reads.
+WHERE=$CORE
 status=0
 
 echo "== luac5.1 -p on every Lua file"
@@ -37,7 +43,7 @@ done
 # ERRORS (status 2) is a failure of the check, not a pass.
 forbid() {
 	# shellcheck disable=SC2086
-	hits=$(grep -rnE "$1" $CORE 2>&1)
+	hits=$(grep -rnE "$1" $WHERE 2>&1)
 	rc=$?
 	if [ "$rc" -gt 1 ]; then
 		echo "  FAIL $2: the search itself failed"
@@ -57,7 +63,7 @@ forbid() {
 # the same line without a lookahead, and grep -E has none.
 forbid_unless() {
 	# shellcheck disable=SC2086
-	hits=$(grep -rnE "$1" $CORE 2>&1)
+	hits=$(grep -rnE "$1" $WHERE 2>&1)
 	rc=$?
 	if [ "$rc" -gt 1 ]; then
 		echo "  FAIL $3: the search itself failed"
@@ -75,21 +81,35 @@ forbid_unless() {
 	fi
 }
 
-echo "== forbidden constructs in $CORE"
+# A hit on a line that is nothing but a comment is prose, not code: the
+# javap listings quoted beside a claim carry "//" and the word "load".
+COMMENT='^[^:]+:[0-9]+:[[:space:]]*--'
+
+WHERE=$ALL
+echo "== what Kahlua has not got, in $ALL"
 forbid '::[A-Za-z_]+::' 'goto label'
 forbid '(^|[^A-Za-z_])goto[ 	]' 'goto'
-forbid '//' 'integer division'
+forbid_unless '//' "$COMMENT" 'integer division'
 forbid 'string\.(pack|unpack)' 'string.pack/unpack'
 forbid 'table\.unpack' 'table.unpack'
+forbid '\\z' 'the \z escape'
+# The bit library: bit.band, bit32.bor, and a local taken off either.
+forbid_unless '(^|[^A-Za-z_.])bit(32)?\.[a-z]' "$COMMENT" 'the bit library'
+# %b, the balanced-match class. The one "%b" that is allowed is not a
+# pattern at all: it is strftime's month in a format CeroSecOS.formatTime
+# reads itself (the self-test's vector of it).
+forbid_unless '%b' 'formatTime\(' 'the %b pattern class'
+forbid_unless '(^|[^A-Za-z_.])(load|loadstring|dofile|loadfile)[ 	]*\(' "$COMMENT" 'runtime code loading'
+forbid '(^|[^A-Za-z_.])(getfenv|setfenv)[ 	]*\(' 'environment juggling'
+
+WHERE=$CORE
+echo "== what the core must never contain, in $CORE"
 forbid '(^|[^A-Za-z_.])coroutine\.' 'coroutine'
 forbid '(^|[^A-Za-z_.])require[ 	]*[("'"'"']' 'require'
 forbid '(^|[^A-Za-z_.])io\.' 'the io library'
 forbid '(^|[^A-Za-z_.])os\.' 'the os library'
 forbid '(^|[^A-Za-z_.])setmetatable[ 	]*\(' 'setmetatable'
 forbid '(^|[^A-Za-z_.])newproxy' 'newproxy'
-forbid '(^|[^A-Za-z_.])(load|loadstring|dofile|loadfile)[ 	]*\(' 'runtime code loading'
-forbid '\\z' 'the \z escape'
-forbid '(^|[^A-Za-z_.])(getfenv|setfenv)[ 	]*\(' 'environment juggling'
 # Kahlua renders a non-integer double the Java way -- tostring(1e15) is "1.0E15"
 # there and "1e+15" under lua5.1, tostring(1/3) is "0.3333333333333333" and
 # "0.33333333333333" -- and there is no fixing that in the mod, so the engine
@@ -98,6 +118,12 @@ forbid '(^|[^A-Za-z_.])(getfenv|setfenv)[ 	]*\(' 'environment juggling'
 # answer, and is why every one we have is allowed. (The other half of the same
 # rule, the "%" operator, is not greppable: see docs/TESTING.md.)
 forbid_unless 'tostring\([^)]*[*/]' 'math\.floor' 'unfloored arithmetic inside tostring()'
+
+# No player string reaches a pattern: a lexer, not a grep (see its head).
+echo "== pattern arguments in $ALL"
+if ! lua5.1 tests/pattern-check.lua; then
+	status=1
+fi
 
 if [ "$status" -ne 0 ]; then
 	echo "kahlua-check: FAILED"

@@ -239,8 +239,8 @@ running, and whoever sits down next sees them. Kept on purpose: it is what
 lets you pick up what the last survivor left. Stopping one is Unix's own
 rule: yours, or root's.
 
-more reads a LINE where the real one reads a key, because this screen has
-one typing line and Enter sends it. read -n 1 is the same.]],
+more and read -n want Enter where real ones read a key: this screen has
+one typing line.]],
 
 [[What is not Unix here: errors.
 
@@ -259,6 +259,78 @@ all of it.
 
 A real Unix would have printed notes there. When you want the good
 ones kept, name the files one command at a time.]],
+
+[[What is not Unix here: errors, continued.
+
+A refusal here is lower case and cut short: no such file, where 4.4BSD
+said No such file or directory. The ones in capitals are 4.4BSD's own
+words: the floppy's Device busy, mail's, the network's, and Operation
+not permitted. The editor's bottom line is the editor's own.
+
+A name nothing on PATH answers is <name>: command not found, which is
+bash's wording; sh said only not found.
+
+A flag a command does not know is unknown option, where getopt said
+illegal option -- z and printed the usage line after it.
+
+The syntax errors are this shell's own sentences: sh said `fi'
+unexpected where this one says unexpected 'fi', and a quote left open
+is refused here where sh waited for the rest on the next line.
+
+A wrong password to su, passwd or sudo is authentication failure, which
+is later Linux wording: 4.4BSD and System V said Sorry.]],
+
+[[What is not Unix here: files and the shell.
+
+A file keeps no newline after its last line. echo a > p makes a file of
+one byte where a real one makes two, so wc -c counts one short; and
+echo -n x > f then echo y >> f is two lines here, not xy.
+
+IFS is not read: a line is cut into words at blanks, tabs and newlines,
+whatever IFS holds.
+
+One > and one 2> to a command, and no < at all: a second > is a bad
+redirect, and < is refused. Hand a file to a command by naming it, or
+with cat file | command.
+
+${x:-y}, ${#x} and the rest of sh's and ksh's forms inside braces are
+not here: ${x} is the whole of it, and anything else is a bad
+substitution.]],
+
+[[What is not Unix here: read, history, and who you are.
+
+read -p, read -s and read -n are taught here, and they are bash's: a
+prompt, a hidden answer, N characters. In ksh88 -p read from a
+co-process and -s saved the line in the history. And a backslash ending
+a line read joins nothing.
+
+!!, !n and history -c are csh's and bash's; ksh88 had fc and r. Here !!
+and !n work only when they are the whole line.
+
+/etc/passwd has four fields, the hash one of them, and is mode 600. A
+1993 one was mode 644 with seven fields, and the hash lived in
+master.passwd or shadow. And id prints uid=admin flag=user: there are no
+numbers behind a name.
+
+Any account with the admin flag gets the # prompt. A real sh gave # to
+uid 0 alone.]],
+
+[[What is not Unix here: what is missing.
+
+ls /bin is the whole list of what this machine can run, and a program a
+real Unix had and this one has not is simply not in it. A few are named
+here because a script reaches for them first.
+
+set, unset, exec and trap are not in this shell: a variable is set with
+NAME=value and emptied with NAME=, and nothing else touches it.
+
+rmdir, expr and uname are not on the disk. rm -r takes a directory,
+$(( )) does sums, and hostname names the machine.
+
+rm has no -f, and kill takes no signal: kill %1 is the whole of it, and
+kill -9 %1 is a usage error. tail +N is not here; tail -n N is. printf
+knows %s, %d and %%, and prints anything else as it stands: %5.2f comes
+out as %5.2f.]],
 
 [[What is not Unix here, and the end of the list.
 
@@ -299,9 +371,9 @@ and nothing on the wire answers for mail. rsh <host> mail <user> is how a
 message crosses it.]],
 
 [[And two shapes are cut rather than changed. A line here is sixty columns,
-so uptime says "load" where 4.4BSD says "load averages:", and w prints the
-clock where a real one prints a weekday. Every other cut in the book is
-named beside the command it belongs to.
+so uptime says "load" where 4.4BSD says "load averages:", and w
+prints the clock where a real one prints a weekday. Every other cut in
+the book is named beside the command it belongs to.
 
 And one FILE FORMAT is ours: what tar makes. A real archive is 512-byte
 blocks with a header in front of every member, which on a four-kilobyte
@@ -2032,7 +2104,12 @@ that it is locked and exactly where.
   man: <name>: no manual entry
       no command of that name
   sh: sleep: no clock
-      the machine has no clock to count from]],
+      the machine has no clock to count from
+  grep: <pattern>: bad range
+  grep: <pattern>: unmatched [
+  grep: <pattern>: trailing backslash
+  grep: <pattern>: expression too long
+      a pattern grep cannot read]],
 
 [[Typing that the shell could not make sense of. Nothing runs at all.
 
@@ -2076,6 +2153,8 @@ The three new filters, from chapter 7.
       the new one was typed two different ways
   passwd: password too long
   passwd: no such user
+  passwd: permission denied
+      another account's, which only root may change
   su: authentication failure
       one wrong answer; there is no second try
   su: too many levels

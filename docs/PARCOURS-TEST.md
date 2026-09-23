@@ -4607,6 +4607,23 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `"a b" c` : `[a]`, `[b]`, `[c]`. `sleep 5 &` puis `echo $!` affiche le
      numéro du travail que `jobs` montre. [ ]
 
+## Le manuel dit tout ce qui n'est pas Unix
+
+455. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les
+     pages *What is not Unix here* jusqu'à « That is the whole list. » Il y en a
+     maintenant dix, dont *errors, continued*, *files and the shell*, *read,
+     history, and who you are* et *what is missing*. [ ]
+456. **Trois affirmations, vérifiées à l'écran.** `echo a > p` puis `wc -c p` :
+     `1`, pas `2` (pas de saut de ligne après la dernière ligne). `IFS=:`,
+     `x=a:b`, puis `for i in $x; do echo $i; done` : une seule ligne `a:b`
+     (IFS n'est pas lu). `set` : `set: command not found`. Si l'une de ces
+     réponses a changé, la page ment : le noter au rapport. [ ]
+457. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
+     `grep: [z-a]: bad range`, et la ligne figure au volume 1, annexe,
+     *Commands the machine could not run*. Connecté en admin,
+     `passwd root` : `passwd: permission denied`, dans *Logging in, and your
+     account*. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |
