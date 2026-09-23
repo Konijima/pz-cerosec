@@ -174,6 +174,22 @@ with what to look at on the glass.
 Said out loud, release by release, because the compatibility contract only allows
 a new sandbox option to change a world if the release notes say so plainly.
 
+### 0.7.0
+
+**Nothing in an existing world changes shape.** No state or system version
+moves. `system.auto[...].later` is a new optional list, written only when an
+automated shop is first loaded with `CeroSec.RequireWiring` on; a world without
+it reads as before. The three new sandbox options default to the old behaviour:
+`CeroSec.RequireWiring` off, `CeroSec.FreeWiring` off, `CeroSec.LinkRange` 30,
+the reach a cable always had. A basement under a house is now a free cable
+row, a left click on a lit computer opens it, and the editor wraps a wide line.
+The shell is where a saved script can notice: `echo "a\nb"` now prints the two
+characters `\n` (use `printf`), `cp` onto an existing file overwrites it, a
+`[` or `sleep` error no longer ends the script, a refused redirect no longer
+runs its command, `$( )` no longer captures error text, and `$?` is 127 after
+"command not found" and 126 after a refusal. `2>` now works where it used to
+be an argument.
+
 ### 0.6.1
 
 **Nothing in an existing world changes shape.** No state or system version

@@ -8,47 +8,17 @@ date.
 
 ## Unreleased
 
-- `read` takes several names: `read cmd rest` puts the first word in `cmd` and
-  the rest of the line in `rest`. `read -r` keeps backslashes as typed, and
-  `read -n 3` keeps three characters instead of only one.
-- `cp` onto a file that's already there now writes over it, like a real cp,
-  and the file keeps its owner and mode. `cp f f` says "are identical".
-- `ls` takes several names at once, and `ls /etc/passwd` now prints
-  `/etc/passwd` as typed.
-- `cat -` reads the pipe among files (`echo top | cat - notes`), and `cat -n`
-  numbers the lines.
-- A `[` missing its `]`, or `sleep abc`, no longer stops a script: the error is
-  printed, `$?` is 2 (or 1 for sleep), and the script carries on.
-- `$?` after "command not found" is now 127, and 126 for a file you may not
-  run, so a script can tell "failed" from "wasn't there".
-- `$*` and `$!` work, and a bare `$@` splits its words like `$*`.
-- The manual's "What is not Unix here" pages are now the complete list, and
-  checked both ways against the machine: every difference from a 1993 Unix
-  that is kept is on them, and nothing on them is untrue. New are the file
-  that ends without a newline (`echo a > p` is one byte), `IFS` not being
-  read, `read -p/-s/-n` and `!!` being later shells' words, the passwd file,
-  the `#` prompt, the error wording, and the commands and flags that are not
-  here (`set`, `rmdir`, `rm -f`, `kill -9`, `tail +N`, printf widths). The
-  error appendix also gained grep's pattern errors, `passwd: permission
-  denied`, `export: not a name` and `wait: too many jobs`.
+## 0.7.0 - 2026-09-23
 
-- A command whose redirect is refused no longer runs. `rm notes > /etc/x`
-  used to say "permission denied" and delete `notes` anyway; now the shell
-  opens the file first, like a real one, and nothing happens. The other side
-  of it: `cat nosuch > out` now leaves an empty `out` behind, as on any Unix.
-- `2>` works: `cat nosuch 2>/dev/null` says nothing, `2>errors` keeps the
-  errors in a file, `> log 2>&1` puts both in one, and `echo oops >&2` sends
-  a line where errors go. `cat f 2>/dev/null` no longer looks for a file
-  named `2`.
-- `$( )` no longer catches error text. `x=$(cat nosuch)` shows the error on
-  the screen and leaves `x` empty; write `x=$(cat nosuch 2>&1)` to catch it.
-- A backslash inside double quotes now stays put unless it's in front of `$`,
-  a backquote, `"` or another backslash, as on a real sh. `grep "a\.c"` now
-  finds `a.c` and no longer `abc`, and `echo "C:\dos"` prints `C:\dos`. The
-  shell no longer turns `\n` into a new line or `\t` into a tab: that is
-  printf's job, and `printf "a\nb\n"` works as before. A script you already
-  saved that used `echo "a\nb"` now prints the two characters `\n`; change
-  it to `printf "a\nb\n"`.
+A computer that opens with a left click, an editor that no longer stops at the
+edge of the screen, three new cabling options for servers, and a shell that behaves
+much more like the real one. Nothing here needs a new save: no state or system
+version moves, and every new option is off, or set to the reach a cable always had,
+until a server owner changes it. What a world you already have can notice is in the
+shell: a script you saved that used `echo "a\nb"` now prints the two characters
+`\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
+and a command whose redirect is refused no longer runs.
+
 - A computer that's already on now opens with a left click, same as the
   menu's Use computer.
 - The editor no longer refuses a line wider than the screen. It wraps onto the
@@ -90,6 +60,46 @@ date.
   to cover more of a building off fewer machines, or lower it to spread
   computers out. Lowering it never strips a cable already run: only a new
   one feels the change.
+- A command whose redirect is refused no longer runs. `rm notes > /etc/x`
+  used to say "permission denied" and delete `notes` anyway; now the shell
+  opens the file first, like a real one, and nothing happens. The other side
+  of it: `cat nosuch > out` now leaves an empty `out` behind, as on any Unix.
+- `2>` works: `cat nosuch 2>/dev/null` says nothing, `2>errors` keeps the
+  errors in a file, `> log 2>&1` puts both in one, and `echo oops >&2` sends
+  a line where errors go. `cat f 2>/dev/null` no longer looks for a file
+  named `2`.
+- `$( )` no longer catches error text. `x=$(cat nosuch)` shows the error on
+  the screen and leaves `x` empty; write `x=$(cat nosuch 2>&1)` to catch it.
+- A backslash inside double quotes now stays put unless it's in front of `$`,
+  a backquote, `"` or another backslash, as on a real sh. `grep "a\.c"` now
+  finds `a.c` and no longer `abc`, and `echo "C:\dos"` prints `C:\dos`. The
+  shell no longer turns `\n` into a new line or `\t` into a tab: that is
+  printf's job, and `printf "a\nb\n"` works as before. A script you already
+  saved that used `echo "a\nb"` now prints the two characters `\n`; change
+  it to `printf "a\nb\n"`.
+- `read` takes several names: `read cmd rest` puts the first word in `cmd` and
+  the rest of the line in `rest`. `read -r` keeps backslashes as typed, and
+  `read -n 3` keeps three characters instead of only one.
+- `cp` onto a file that's already there now writes over it, like a real cp,
+  and the file keeps its owner and mode. `cp f f` says "are identical".
+- `ls` takes several names at once, and `ls /etc/passwd` now prints
+  `/etc/passwd` as typed.
+- `cat -` reads the pipe among files (`echo top | cat - notes`), and `cat -n`
+  numbers the lines.
+- A `[` missing its `]`, or `sleep abc`, no longer stops a script: the error is
+  printed, `$?` is 2 (or 1 for sleep), and the script carries on.
+- `$?` after "command not found" is now 127, and 126 for a file you may not
+  run, so a script can tell "failed" from "wasn't there".
+- `$*` and `$!` work, and a bare `$@` splits its words like `$*`.
+- The manual's "What is not Unix here" pages are now the complete list, and
+  checked both ways against the machine: every difference from a 1993 Unix
+  that is kept is on them, and nothing on them is untrue. New are the file
+  that ends without a newline (`echo a > p` is one byte), `IFS` not being
+  read, `read -p/-s/-n` and `!!` being later shells' words, the passwd file,
+  the `#` prompt, the error wording, and the commands and flags that are not
+  here (`set`, `rmdir`, `rm -f`, `kill -9`, `tail +N`, printf widths). The
+  error appendix also gained grep's pattern errors, `passwd: permission
+  denied`, `export: not a name` and `wait: too many jobs`.
 
 ## 0.6.1 - 2026-09-21
 
