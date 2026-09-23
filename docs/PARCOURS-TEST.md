@@ -4334,7 +4334,7 @@ seuls au tour de ronde suivant. La règle complète est dans
      Électricité 1 et une vingtaine de **fils électriques** dans le sac, clic droit
      sur le lampadaire → **Relier à un ordinateur**. Attendu : un sous-menu avec une
      ligne par machine à portée, la plus proche en haut, écrite
-     « `ksp-front-01, 12 cases, 12 fils` », le **nom d'hôte** de la machine, la
+     « `ksp-front-01, 12 tuiles, 12 fils` », le **nom d'hôte** de la machine, la
      distance et le prix. Cliquer : le survivant se tourne vers le poteau, une barre
      de progression, et à la fin **12 fils en moins** dans le sac. Retourner au
      terminal : `dev` liste un `lightN` de plus et `dev lightN off` éteint le
@@ -4348,7 +4348,7 @@ seuls au tour de ronde suivant. La règle complète est dans
      entre l'appareil et la machine en diagonale : la ligne du menu annonce la
      **distance arrondie au-dessus** et le même nombre de fils. Recommencer vers une
      machine **à l'étage au-dessus**, trois cases plus loin sur le plan : la ligne dit
-     « `3 cases, 7 fils` », quatre fils de plus par étage, parce qu'un câble monte
+     « `3 tuiles, 7 fils` », quatre fils de plus par étage, parce qu'un câble monte
      dans un mur et court dans un plafond. Une machine sur la **case même** de
      l'appareil : 1 fil, jamais 0. [ ]
 427. **Trente cases, et pas une de plus.** Une machine à plus de trente cases n'a
@@ -4425,7 +4425,7 @@ seuls au tour de ronde suivant. La règle complète est dans
      sous-sol dont `dev` ne voit que ses propres appareils (le bâtiment du jeu
      s'arrête là, pas d'étage au-dessus) : un interrupteur équipé à l'étage,
      clic droit → **Relier à un ordinateur** → la ligne vers l'ordinateur du
-     sous-sol dit « `<nom>, N cases, free` » et non « N fils ». Cliquer :
+     sous-sol dit « `<nom>, N tuiles, free` » et non « N fils ». Cliquer :
      **aucun fil ne quitte le sac**, `dev` du sous-sol liste l'interrupteur en
      plus. Le même geste depuis un interrupteur du sous-sol vers un ordinateur
      de l'étage : gratuit aussi, dans les deux sens. Un ordinateur d'une
