@@ -250,6 +250,62 @@ street, the gate at the end of the drive, the shop across the car park, and the
 answer to all of it is the one an electrician would give. **He runs a cable**,
 and the fixture is in that machine's `/dev` like anything in the building.
 
+**`SandboxVars.CeroSec.RequireWiring`, false by default, makes the rule
+uniform.** On, the same walks that already skip a generator by proximity
+(`allowGen`, below) skip every other fixture too -- `CeroSecModules.
+wiringRequired()`, read once a walk and not once a fixture, because the walk
+runs hundreds of times a building and a per-fixture sandbox read is the cost
+`tests/hostile_test.lua`'s mall benchmark exists to catch. There is then no
+free discovery anywhere, in the building or off it: a fixture is on `/dev` only
+once a cable actually reaches it, the same rule a generator has always lived
+under. It fails OPEN like `SafehouseModules` (a missing sandbox group or a save
+that predates the option reads as off, the world as it always was), and it
+follows the generator's own save-compat precedent exactly: flipping it on mid-
+save drops every un-cabled fixture out of `/dev`, the number is not lost
+(`os.devmap` keeps the `kind:x:y:z:side:n` record either way), and cabling the
+fixture resurfaces the same id.
+
+One caveat, not fixed: if two same-kind, same-side fixtures share a square and
+only one of them is cabled after `RequireWiring` turns on, the survivor's
+scan-order ordinal (`n` in the key, `SCeroSecDevices.addDevices`) can shift
+between the walk that numbered them and the one that finds just the one --
+landing the cabled fixture on a different `entry.key` and a fresh id instead of
+its old one. Rare, and the same class of caveat as a script's hardcoded device
+number drifting elsewhere in this file; noted here rather than engineered
+around.
+
+**`SandboxVars.CeroSec.FreeWiring`, also false by default, is independent of
+it.** It waives what a cable COSTS -- outdoors, cross-building, a generator, or
+indoors too with `RequireWiring` on -- never how far one reaches:
+`CeroSecModules.linkWire` (the price) reads `CeroSecModules.wiringFree()`
+after the nested-basement waiver and before working the geometry out, but the
+range check (`CeroSecModules.linkRange()`, `linkRefusal`'s `far`, the menu's own row filter) is
+measured against `CeroSecModules.linkSpan`, the raw geometry alone -- `linkWire`
+can answer 0 under `FreeWiring` with no distance behind it at all, and a range
+check that read `linkWire` instead would have silently gone unlimited the
+moment this option existed. With `RequireWiring` off and `FreeWiring` on, indoor
+discovery stays exactly as automatic as it always was; only a cable that is
+already needed becomes free.
+
+**`SandboxVars.CeroSec.LinkRange`, 30 by default, is how far a cable reaches
+before "far" is the only answer.** Thirty is the number this mod always used
+before the option existed, so a missing sandbox group or a save from before
+it (`CeroSecModules.linkRange()`, falling back to the `LINK_RANGE` constant)
+answers exactly as it always did. Read wherever the fixed 30 used to be:
+`linkRefusal`'s `far` check and the cable menu's own row filter
+(`CeroSecLinkMenu.machines`), both against the raw geometry
+(`linkSpan`), same as before. **Shrinking it never breaks a cable already
+run**: an already-stored cable is validated against `LINK_RANGE_MAX` = 48, a
+hard ceiling that never moves with the sandbox setting, so `linkOk` (the
+read-back sanity check inside `ownLinksOn`) keeps answering a cable a server
+shrunk the range under, and only a NEW cable (`linkOn`, `linkRefusal`) is
+held to today's setting. The ceiling itself is not arbitrary: 48 tiles is as
+far as the game guarantees a chunk stays loaded around a player at its
+default view width (`zombie.iso.IsoChunkMap.CHUNK_SIZE_IN_SQUARES` = 8,
+`START_CHUNK_GRID_WIDTH` = 13, verified with `javap` against the installed
+jar) -- past it a client's own `getGridSquare` may answer nothing at all, so
+the option never asks a server for more than the engine can promise.
+
 **A generator is cable-only, decided in game (0.5.0), even where it stands in
 the building or well inside the outdoor radius.** Before 0.5.0 it was fitted
 where it stood, like a porch lamp, and read off the neighbouring walk for free;
@@ -330,7 +386,8 @@ worked out by integer arithmetic is the same whole number on Kahlua as on
 `lua5.1`, where a float landing a millionth under 12 would be eleven cables on
 one VM and twelve on the other (`docs/CONTRIBUTING.md`, Kahlua purity).
 
-`CeroSecModules.LINK_RANGE` = 30 is measured against that PRICE and not against
+`CeroSecModules.linkRange()` (30 by default, `SandboxVars.CeroSec.LinkRange`)
+is measured against that PRICE and not against
 the flat distance, so the storeys are inside the range too: a machine 28 tiles
 away and one floor up is 32 tiles of cable and is out of reach. The menu shows
 both numbers because they are different questions, "12 tiles" is what a
@@ -345,6 +402,24 @@ Past the range the answer is another computer for that part of the building,
 worked from the first one down the coax or over the telephone. That is a machine
 he has to find and put on a desk, and it is the reason there is a limit at all.
 
+**Except a basement that is its own lot.** Some basements are not
+`SpawnBasement`'s runtime append into the house's own `BuildingDef`
+([notes/tenancies.md](notes/tenancies.md), "A basement, during play") — they
+are a second `BuildingDef` the map was drawn with, sitting entirely inside the
+house's footprint. CeroSec cannot merge the two back into one building (no
+vanilla mechanism does that at runtime, and fixing the map itself means
+TileZed/WorldEd, not this mod), but a cable between a fixture in one and a
+machine in the other is still just wire run down to the basement, not wire
+bought from a shop across town — so it costs nothing, and the range does not
+apply to it either: `linkRefusal` never calls it `far` and the menu's row filter
+keeps its row however many floors apart the two are (`CeroSecModules.nestedFree`,
+`CeroSecModules.nestedBuilding`, [notes/tenancies.md](notes/tenancies.md), "A
+basement baked in as its own lot"). The menu says so:
+
+```
+basement, 2 tiles, free
+```
+
 ### What is refused, and where
 
 Both ends of the gesture are the same list of words, `CeroSecModules.linkRefusal`
@@ -354,17 +429,21 @@ believes nothing that arrived (`Commands.linkmodule`, `SCeroSecSystem:linkJob`):
 
 | word | run | cut |
 | --- | --- | --- |
-| `fixture` | nothing is wired here at all | no cable from that machine |
+| `fixture` | nothing is wired here at all (unless `HardwareRequired` is off, when the sandbox never asked a module of this fixture and it reads as fitted enough for a cable, `anyFittedOrNotRequired`) | no cable from that machine |
 | `safehouse` | somebody else's, with the option on | somebody else's |
 | `linked` | this machine is already on the list, and its "run" row is not offered at all -- the "Unlink from" row below says so | - |
 | `links` | the fixture is full (`LINKS_MAX`) | - |
-| `far` | past `LINK_RANGE` | - |
+| `far` | past `linkRange()` (`SandboxVars.CeroSec.LinkRange`, 30 by default) | - |
 | `outside` | a door, window or curtain, and he is not inside | same |
 | `closed` | a door or window, and it is shut | same |
 | `drawn` | a curtain, and it is drawn | same |
-| `reach` | the machine's own walk already lists this fixture, cable-free -- its building, or its ten-tile radius outdoors | - |
+| `reach` | the machine's own walk already lists this fixture, cable-free -- its building, or its ten-tile radius outdoors -- and never fires at all with `RequireWiring` on, where no walk ever lists anything for free | - |
 
-A bare fixture is refused a cable and is NOT refused the cut: a module that came
+A bare fixture is refused a cable -- unless `CeroSec.HardwareRequired` is off,
+when it never had a module to be bare of and a cable to it is not refused for
+that reason; under `CeroSec.RequireWiring` this is the only door onto `/dev`
+such a fixture has left, since the free walk no longer lists anything either.
+It is NOT refused the cut: a module that came
 off a fixture somebody had cabled leaves the cable run and the reel owed, and
 refusing the unlink would be a survivor who can only get his wire back by taking
 the door down. A door, window or curtain asks the ENVELOPE a module's own
@@ -1494,6 +1573,28 @@ that **nothing about such a module is special**.
   needs fitting, and the walk fits anyway: the modules are then items a survivor can
   take off a wall, and a world where they are there is truer than one where the shop
   was automated by magic.
+- **And cabled, under `RequireWiring`.** With that option on nothing reaches `/dev`
+  without a cable, a pre-fitted fixture included, so the walk runs one from each
+  fixture it fits to the machine (`SCeroSecAuto`, `cablePreFitted`): both ends,
+  in `Commands.linkmodule`'s order, at `CeroSecModules.linkWire`'s price (so
+  `FreeWiring` and the nested-basement waiver apply, and an unlink gives that
+  price back, for the "real hardware" reason above). The first walk runs before
+  the machine is switched on and has no state to file the machine's end in, so
+  it writes each such fixture's filing square into the premises' record
+  (`record.later`, saved), and the next `turnOn` of that machine that succeeds
+  runs them (`CeroSecAuto.resolveLater`): the decision's own a moment later,
+  or a survivor's once he brings a generator to a shop first found dark. The
+  list is spent at that power-on -- a cable refused then is refused for good,
+  and is the survivor's to run; only a fixture whose chunk is away stays on
+  it -- and a save from before it has no list and
+  keeps its fixtures uncabled, as it did. A fixture past the range, one
+  already carrying `LINKS_MAX` cables, or a machine already carrying
+  `LINKS_PER_MACHINE` is passed
+  over without stopping the walk, and stays pre-fitted: the cable is the
+  survivor's to run. Off, no cable is written -- the building walk finds the
+  fixture for free and a cable would be modData buying nothing. Going forward
+  only: a premises already `wired` when the option is switched on is not walked
+  again, and its fixtures stand where a survivor's fitted-but-uncabled ones do.
 
 Which fixtures: the ones the machine can act on, sifted back down to its own premises.
 `CeroSecDevices.fixturesInRooms` is handed the rooms of the **premises**, its

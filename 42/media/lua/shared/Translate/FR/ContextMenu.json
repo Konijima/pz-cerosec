@@ -18,6 +18,7 @@
     "ContextMenu_CeroSec_LookUpNumbers": "Chercher un numéro",
     "ContextMenu_CeroSec_Link": "Relier à un ordinateur",
     "ContextMenu_CeroSec_LinkTo": "%1, %2 cases, %3 fils",
+    "ContextMenu_CeroSec_LinkToFree": "%1, %2 cases, gratuit",
     "ContextMenu_CeroSec_Unlink": "Débrancher de %1",
     "ContextMenu_CeroSec_UnlinkLoose": "Débrancher le câble libre",
     "ContextMenu_CeroSec_Fixture": "CeroSec : %1",

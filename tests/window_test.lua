@@ -16166,6 +16166,224 @@ do
 end
 
 --
+-- 43e-ter. CeroSec.RequireWiring's own bug: a bare fixture, with
+-- CeroSec.HardwareRequired off, had NO way onto /dev at all -- not the free
+-- walk (RequireWiring turns that off everywhere, CeroSecModules.reachRefusal's
+-- own comment) and not a cable either, because linkRefusal's own "fixture"
+-- check read anyFitted, the real and unconditional question, rather than
+-- anyFittedOrNotRequired's fiction that a fixture the sandbox never asked to
+-- carry a module is fitted enough for a cable. Found by the mod author testing
+-- HardwareRequired=false AND RequireWiring=true together: a light switch's
+-- right-click carried no "Link to computer" entry at all.
+--
+do
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	local bare = world.hung(world.square(11, 10, 0, nil), fakeLight(false, true), nil)
+
+	_G.__world = world
+	_G.Perks = { Electricity = "Electricity" }
+
+	local bench = newBench()
+	local inv = newInventory()
+	bench.player.getInventory = function() return inv end
+	bench.player.getPerkLevel = function() return 5 end
+	bench.player.getUsername = function() return "carter" end
+	bench.player.getCurrentSquare = function() return world.squares["11,10,0"] end
+	bench.player.getX = function() return 11.5 end
+	bench.player.getY = function() return 10.5 end
+	local iso = fittable({ __class = "IsoObject" })
+	bench.object.getIsoObject = function() return iso end
+	local MACHINE = { 10, 10, 0 }
+
+	-- 1. THE REGRESSION GUARD: HardwareRequired on (the default), a bare
+	-- fixture is refused a cable exactly as before -- unchanged behaviour.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+	eq("HardwareRequired on: a bare fixture still refuses the cable",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), "fixture")
+
+	-- 2. HardwareRequired off: the "fixture" refusal is gone, wiring required
+	-- or not -- the sandbox never asked this fixture to carry a module, so it
+	-- is not missing one.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, RequireWiring = false,
+		PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+	check("HardwareRequired off, wiring not required: no longer refused as bare",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player) ~= "fixture")
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, RequireWiring = true,
+		PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+	check("HardwareRequired off, wiring required: no longer refused as bare",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player) ~= "fixture")
+
+	-- 3. THE BUG REPORT ITSELF, proven fixed end to end: under exactly the
+	-- combination the author hit, the bare fixture is not just un-refused --
+	-- it can actually be cabled, and the cable puts it on the machine's /dev.
+	inv:add("Base.Screwdriver")
+	local function reel(n)
+		while CeroSecModules.wireCount(inv) > n do
+			inv:Remove(inv:getFirstTypeRecurse(CeroSecModules.WIRE))
+		end
+		while CeroSecModules.wireCount(inv) < n do inv:add(CeroSecModules.WIRE) end
+	end
+	reel(30)
+	bench.login("admin")
+	local state = bench.object:osState()
+	eq("nothing lists the bare fixture before the cable",
+		#CeroSecDevices.find(MACHINE[1], MACHINE[2], MACHINE[3], state.links), 0)
+	CCeroSecSystem.instance:sendCommand(bench.player, "linkmodule",
+		{ x = 11, y = 10, z = 0, index = 0, mx = MACHINE[1], my = MACHINE[2],
+			mz = MACHINE[3] })
+	bench.frame()
+	eq("the cable actually went in", #CeroSecModules.linksOn(bare), 1)
+	CeroSecDevices.invalidate()
+	CeroSecDevices.refresh(bench.object, state)
+	local found = CeroSecDevices.find(MACHINE[1], MACHINE[2], MACHINE[3], state.links)
+	local listed = false
+	for i = 1, #found do
+		if found[i].kind == "light" then listed = true end
+	end
+	check("and the fixture is now on the machine's /dev", listed)
+
+	-- 4. MUTATION-PROOF, server side: put linkRefusal's check back to the raw,
+	-- unconditional anyFitted and confirm the exact case above (2, wiring
+	-- required) goes red for the reason this fix exists.
+	local realAnyFittedOrNotRequired = CeroSecModules.anyFittedOrNotRequired
+	CeroSecModules.anyFittedOrNotRequired = CeroSecModules.anyFitted
+	eq("MUTATION: reverting to the raw anyFitted refuses the bare fixture again",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), "fixture")
+	CeroSecModules.anyFittedOrNotRequired = realAnyFittedOrNotRequired
+	check("and restored, it is not refused as bare",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player) ~= "fixture")
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+end
+
+--
+-- 43e-bis. The nested-basement exception: free, not priced
+--
+-- CONFIRMED ON A REAL SAVE with CeroSecDebug.premises (SCeroSecDebug.lua:663-702):
+-- a basement whose lot was drawn on the map as its own BuildingDef rather than
+-- appended into the house's at runtime (docs/notes/tenancies.md, the OTHER
+-- basement case, not SpawnBasement's).
+--
+--   basement:     6957,5583 to 6968,5589   11x6
+--   house-relay:  6955,5575 to 6970,5592   15x17
+--
+-- the basement's box entirely inside the house's, on all four sides. Nobody
+-- ever ran a cable between two rooms of one house, so CeroSecModules.linkWire
+-- charges nothing for the pair (CeroSecModules.nestedBuilding).
+--
+-- THREE THINGS, and the middle one is the guard the strict containment is
+-- FOR: an ordinary building of the SAME shape, standing well clear of the
+-- house, at the sort of distance a real cable is priced at, must NOT read as
+-- nested -- two neighbouring row-houses share nothing but geometry that looks
+-- similar at a glance, and a loose test here would waive wire for half the
+-- county.
+do
+	local net = newNet()
+	local house = net.buildingAt(6955, 5575, 15, 17, 15)
+	local basement = net.buildingAt(6957, 5583, 11, 6, 6)
+	-- Next door, sharing the house's east wall -- the shape a false positive
+	-- would actually have to survive, not a building a county away.
+	local neighbour = net.buildingAt(6970, 5575, 15, 17, 15)
+	-- Three sides in, one side out: a shed whose x-range sits fully inside the
+	-- house's and whose north wall lines up with the house's own, but whose
+	-- south wall runs six tiles past it. ax1>=bx1, ay1>=by1 and ax2<=bx2 are
+	-- all true here -- only ay2<=by2 tells this apart from the real nested
+	-- case, which is exactly the clause a loose boxInside would drop.
+	local shed = net.buildingAt(6960, 5575, 5, 23, 4)
+
+	local squares = {}
+	local function put(x, y, z, building)
+		local sq = net.square(x, y, z, building)
+		squares[x .. "," .. y .. "," .. z] = sq
+		return sq
+	end
+	put(6960, 5585, 0, house)      -- the ground floor, over the basement
+	put(6960, 5585, -1, basement)  -- the basement itself, same x, y
+	put(6971, 5580, 0, neighbour)  -- a fixture just over the shared wall
+	put(6962, 5595, 0, shed)       -- past the house's south wall
+
+	local hadWorld = _G.__world
+	_G.__world = { getGridSquare = function(_, x, y, z)
+		return squares[x .. "," .. y .. "," .. z]
+	end }
+
+	-- (1) SAME BUILDING, the ordinary case, never reaches the geometry at
+	-- all (the identity check short-circuits it).
+	check("the same building is never nested with itself",
+		not CeroSecModules.nestedBuilding(house, house))
+
+	-- (2) THE FALSE-POSITIVE GUARD: two ordinary, unrelated buildings, at a
+	-- distance that prices a real cable, are not nested and are not free.
+	check("two ordinary neighbours are not nested",
+		not CeroSecModules.nestedBuilding(house, neighbour))
+	local normalPrice = CeroSecModules.linkWire(6960, 5585, 0, 6971, 5580, 0)
+	check("and a cable between them still has its ordinary price",
+		normalPrice > 0 and normalPrice <= CeroSecModules.LINK_RANGE)
+	-- The narrow guard boxInside's fourth clause is FOR: three sides contained,
+	-- one side (the south wall) poking six tiles past the house. A three-clause
+	-- boxInside would wrongly call this nested; this is the one fixture that
+	-- tells the two apart.
+	check("a shed that overflows the house's south wall is not nested",
+		not CeroSecModules.nestedBuilding(house, shed))
+	local shedPrice = CeroSecModules.linkWire(6960, 5585, 0, 6962, 5595, 0)
+	check("and a cable to it is still priced, not free",
+		shedPrice > 0 and shedPrice <= CeroSecModules.LINK_RANGE)
+
+	-- (3) THE NESTED PAIR, proved both directions -- the rule does not care
+	-- which of the two callers handed the small footprint.
+	check("the basement's box sits inside the house's",
+		CeroSecModules.nestedBuilding(basement, house))
+	check("and the same is true asked the other way round",
+		CeroSecModules.nestedBuilding(house, basement))
+	eq("a cable between the house and its own basement is free",
+		CeroSecModules.linkWire(6960, 5585, 0, 6960, 5585, -1), 0)
+	eq("and the same the other way, fixture in the basement",
+		CeroSecModules.linkWire(6960, 5585, -1, 6960, 5585, 0), 0)
+
+	_G.__world = hadWorld
+
+	-- linkOk's FLOOR MOVED, IT DID NOT DISAPPEAR: a stored cable of 0 (the
+	-- nested case, once saved) reads back as a real cable, and a negative
+	-- one -- which nothing this build ever writes -- still does not.
+	local object = fittable({ __class = "IsoObject" })
+	fit(object, "relay")
+	local data = object:getModData()[CeroSecModules.DATA_KEY]
+	data[CeroSecModules.VERSION_KEY] = CeroSecModules.VERSION
+	data[CeroSecModules.LINK_KEY] = {
+		{ x = 1, y = 1, z = 0, wire = 0 },
+		{ x = 2, y = 2, z = 0, wire = -1 },
+	}
+	local stored = CeroSecModules.linksOn(object)
+	eq("a stored free cable (wire 0) survives the read", #stored, 1)
+	eq("and it is the zero-wire entry, not the forged negative one",
+		stored[1].x .. "," .. stored[1].y, "1,1")
+
+	-- AND THE WRITE SIDE, linkOn: a free cable must go ON, not bounce off
+	-- the same floor as "far" would.
+	local free = fittable({ __class = "IsoObject" })
+	check("linkOn accepts a wire of 0",
+		CeroSecModules.linkOn(free, 5, 5, 0, 0))
+	eq("wireTotal reads the free cable back as zero",
+		CeroSecModules.wireTotal(free, 5, 5, 0), 0)
+	eq("unlinking it refunds cleanly: zero wire, no error",
+		CeroSecModules.unlinkOn(free, 5, 5, 0), 0)
+	local _, why = CeroSecModules.linkOn(free, 6, 6, 0, -1)
+	eq("but linkOn still refuses a negative wire, same word as before",
+		why, "far")
+end
+
+--
 -- 43f. What the walk does with a cable, and what `find` says about one
 --
 -- The cable is written on both ends and this is the end that is READ: the machine
@@ -16272,6 +16490,12 @@ do
 	check("with no wire in the line",
 		not bench.painted("light0: blinking, linked"))
 	blinkOut()
+	-- A FREE cable (a nested basement, or CeroSec.FreeWiring) is still a
+	-- cable: 0 reads "linked", never as the building walk's bare word.
+	eq("a free cable is linked", CeroSecOS.linkedText("blinking", 0),
+		"blinking, linked, no wire")
+	eq("no cable at all is just the word", CeroSecOS.linkedText("blinking", nil),
+		"blinking")
 
 	-- THE CHUNK GOES AWAY. The street is not loaded any more -- nobody has been down
 	-- there for a while -- so the lamppost is not a device this minute. The ENTRY
@@ -25201,6 +25425,271 @@ do
 	end
 
 	--
+	-- 4c. CeroSec.RequireWiring AND THE SHOP WIRED IN 1991
+	--
+	-- With the option on nothing reaches /dev without a cable, a pre-fitted
+	-- fixture included: the walk that screws the box on runs the cable to the
+	-- machine too (SCeroSecAuto, cablePreFitted), both ends of it. Off, it runs
+	-- none -- the building walk finds the fixture free. And a fixture the cable
+	-- cannot reach is passed over without stopping the walk.
+	--
+	do
+		local function sweep(sandbox)
+			_G.SandboxVars = { CeroSec = sandbox }
+			local bx, by, b1, b2 = cornerRolling(true)
+			check("some shop in the county rolled automated, for the cable", bx ~= nil)
+			local kit = newShop(bx, by)
+			_G.__world = kit.world
+			local county = newCounty(kit)
+			local machine = county.machine(bx + 2, by + 2, 0)
+			_G.__fireSquare("new", machine.square)
+			county.at(20, 55)
+			county.minute()
+			local record = pageOf(county.system, b1, b2)
+			check("the sweep walked the shop",
+				type(record) == "table" and record.wired == true)
+			return kit, machine, county, record
+		end
+		local function cabled(machine, object)
+			local onFixture = CeroSecModules.wireOf(object, machine.x, machine.y,
+				machine.z) ~= nil
+			local px, py, pz = CeroSecModules.placeOf(object)
+			local onMachine = CeroSecOS.linkAt(CeroSecOS.linkSquares(machine.os),
+				px, py, pz) ~= nil
+			return onFixture, onMachine
+		end
+		local function onDev(machine, object)
+			CeroSecDevices.invalidate()
+			local out = CeroSecDevices.find(machine.x, machine.y, machine.z,
+				CeroSecOS.linkSquares(machine.os))
+			for i = 1, #out do
+				if out[i].object == object then return true end
+			end
+			return false
+		end
+
+		-- ON: fitted, cabled at both ends, and on /dev through the cable.
+		local kit, machine, county, record = sweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		check("required: the switch got its relay",
+			CeroSecModules.installedOn(kit.light0).relay ~= nil)
+		local f, m = cabled(machine, kit.light0)
+		check("required: the fixture's end of the cable is on", f)
+		check("required: and the machine's end is in its book", m)
+		check("required: and the switch is on /dev", onDev(machine, kit.light0))
+		check("required: the alley door, off the room, is cabled too",
+			(cabled(machine, kit.backDoor)))
+
+		-- THE LATER WALK, through CeroSecAuto.wire, where the machine already
+		-- has a state and the cable goes on inline rather than after turnOn:
+		-- a switch that was not there the first time, and the walk made to
+		-- come round again.
+		check("required: the machine has a state by now", type(machine.os) == "table")
+		local late = kit.world.put(
+			kit.world.squares[(kit.bx + 6) .. "," .. (kit.by + 2) .. ",0"],
+			fakeLight(true, true))
+		record.wired, record.rooms = nil, nil
+		county.minute()
+		eq("required: the later walk finished", record.wired, true)
+		check("required: the late switch got its relay",
+			CeroSecModules.installedOn(late).relay ~= nil)
+		f, m = cabled(machine, late)
+		check("required: and its cable, fixture end", f)
+		check("required: and machine end", m)
+		check("required: and it is on /dev", onDev(machine, late))
+
+		-- OFF: fitted as always, no cable written, on /dev for free.
+		kit, machine = sweep({ HardwareRequired = true, PrefilledMachines = true })
+		check("not required: the switch got its relay",
+			CeroSecModules.installedOn(kit.light0).relay ~= nil)
+		f, m = cabled(machine, kit.light0)
+		eq("not required: no cable on the fixture", f, false)
+		eq("not required: nothing in the machine's book", m, false)
+		check("not required: on /dev by the building walk", onDev(machine, kit.light0))
+
+		-- OUT OF REACH, under FreeWiring, where the price is 0 whatever the
+		-- distance and linkOn alone would take it: a range of one tile reaches
+		-- light1 (one tile north of the machine) and not light0 (two).
+		kit, machine = sweep({ HardwareRequired = true, PrefilledMachines = true,
+			RequireWiring = true, FreeWiring = true, LinkRange = 1 })
+		f, m = cabled(machine, kit.light1)
+		check("far: the switch in reach is cabled", f and m)
+		eq("far: for no wire", CeroSecModules.wireOf(kit.light1, machine.x,
+			machine.y, machine.z), 0)
+		check("far: the switch out of reach still got its relay",
+			CeroSecModules.installedOn(kit.light0).relay ~= nil)
+		f, m = cabled(machine, kit.light0)
+		eq("far: and no cable", f, false)
+		eq("far: at either end", m, false)
+		eq("far: so it is not on /dev", onDev(machine, kit.light0), false)
+
+		--
+		-- 4d. THE CABLES OWED TO A MACHINE THAT DID NOT COME UP
+		--
+		-- The first walk runs before the machine has a state, so every cable
+		-- it owes is written into the record (`record.later`, saved) and run by
+		-- the next turnOn of that machine that succeeds -- the decision's own,
+		-- or a survivor's with a generator long after (CeroSecAuto.resolveLater).
+		--
+		local function darkSweep(sandbox)
+			_G.SandboxVars = { CeroSec = sandbox }
+			local bx, by, b1, b2 = cornerRolling(true)
+			local dark = newShop(bx, by)
+			dark.world.power = false
+			_G.__world = dark.world
+			local c = newCounty(dark)
+			local m = c.machine(bx + 2, by + 2, 0)
+			_G.__fireSquare("new", m.square)
+			c.at(20, 55)
+			c.minute()
+			return dark, m, c, pageOf(c.system, b1, b2)
+		end
+		local function owes(rec, object)
+			if type(rec.later) ~= "table" then return false end
+			local px, py, pz = CeroSecModules.placeOf(object)
+			for i = 1, #rec.later do
+				local at = rec.later[i]
+				if at.x == px and at.y == py and at.z == pz then return true end
+			end
+			return false
+		end
+		local realLinkOn = CeroSecModules.linkOn
+		local linkCalls, linkRefused = 0, 0
+		CeroSecModules.linkOn = function(...)
+			local ok, why = realLinkOn(...)
+			linkCalls = linkCalls + 1
+			if not ok then linkRefused = linkRefused + 1 end
+			return ok, why
+		end
+		-- And the range check, which a cable out of reach stops at before linkOn:
+		-- what counts a retry of one.
+		local realSpan = CeroSecModules.linkSpan
+		local spanCalls = 0
+		CeroSecModules.linkSpan = function(...)
+			spanCalls = spanCalls + 1
+			return realSpan(...)
+		end
+		local realLog = CeroSec.log
+		local runLines = 0
+		CeroSec.log = function(level, text)
+			if string.find(tostring(text or level), "cable(s) run to it", 1, true) then
+				runLines = runLines + 1
+			end
+			return realLog(level, text)
+		end
+
+		-- 1. Found dark: nothing cabled, and what is owed is WRITTEN DOWN.
+		kit, machine, county, record = darkSweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		eq("dark: the machine stays off", machine.on, false)
+		eq("dark: with no state", machine.os, nil)
+		eq("dark: the walk is finished all the same", record.wired, true)
+		check("dark: the switch got its relay",
+			CeroSecModules.installedOn(kit.light0).relay ~= nil)
+		eq("dark: and no cable", CeroSecModules.wireOf(kit.light0, machine.x,
+			machine.y, machine.z), nil)
+		check("dark: the switch's square is owed a cable", owes(record, kit.light0))
+		check("dark: and the alley door's", owes(record, kit.backDoor))
+		local seen, twice = {}, false
+		for i = 1, #(record.later or {}) do
+			local at = record.later[i]
+			local key = at.x .. "," .. at.y .. "," .. at.z
+			if seen[key] then twice = true end
+			seen[key] = true
+		end
+		eq("dark: a square with two fixtures is owed once", twice, false)
+
+		-- 2. A generator, and the survivor switches it on by hand.
+		kit.world.power = true
+		check("powered: the machine comes up", machine:turnOn())
+		f, m = cabled(machine, kit.light0)
+		check("powered: the switch's cable, fixture end", f)
+		check("powered: and machine end", m)
+		check("powered: and the switch is on /dev", onDev(machine, kit.light0))
+		check("powered: the door on the same square is cabled too",
+			(cabled(machine, kit.front)))
+		check("powered: and the alley door", (cabled(machine, kit.backDoor)))
+		eq("powered: nothing is owed any more", record.later, nil)
+		eq("powered: one line says the cables went on", runLines, 1)
+
+		-- 3. POWER FROM THE START: the decision's own turnOn runs them, once,
+		-- and settle does not run them a second time.
+		linkCalls, linkRefused, runLines = 0, 0, 0
+		kit, machine, county, record = sweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		check("at once: the switch is cabled", (cabled(machine, kit.light0)))
+		eq("at once: nothing is owed", record.later, nil)
+		check("at once: cables were run", linkCalls > 0)
+		eq("at once: none was tried twice", linkRefused, 0)
+		eq("at once: and one line says so", runLines, 1)
+
+		-- 4. OUT OF REACH, found dark: dropped once tried, never retried.
+		kit, machine, county, record = darkSweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true, FreeWiring = true,
+			LinkRange = 1 })
+		check("far, dark: the far switch is owed", owes(record, kit.light0))
+		kit.world.power = true
+		check("far, dark: the machine comes up", machine:turnOn())
+		check("far, dark: the switch in reach is cabled", (cabled(machine, kit.light1)))
+		eq("far, dark: the far one is not", (cabled(machine, kit.light0)), false)
+		eq("far, dark: and is not kept owed", record.later, nil)
+		machine:turnOff(true)
+		linkCalls, spanCalls = 0, 0
+		check("far, dark: it comes up again", machine:turnOn())
+		eq("far, dark: and no cable is tried again", linkCalls, 0)
+		eq("far, dark: not even measured", spanCalls, 0)
+
+		-- 5. A SAVE FROM BEFORE `later`: found dark under the old build, so the
+		-- record has no such field. It comes up and nothing is run retroactively.
+		kit, machine, county, record = darkSweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		record.later = nil
+		kit.world.power = true
+		linkCalls = 0
+		check("old save: the machine comes up", machine:turnOn())
+		eq("old save: no cable is tried", linkCalls, 0)
+		eq("old save: the switch stays uncabled", (cabled(machine, kit.light0)), false)
+		eq("old save: and nothing is written", record.later, nil)
+
+		-- 6. WHAT THE WORLD DID MEANWHILE. The switch's square has lost both its
+		-- fixtures (somebody took them down): its entry goes. The window's square
+		-- is in a chunk that is away at the power-on: its entry is KEPT, as
+		-- scanLinked keeps a cable it cannot see, and run at a later power-on.
+		kit, machine, county, record = darkSweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		local gone = kit.world.squares[(kit.bx + 1) .. "," .. (kit.by + 1) .. ",0"]
+		for i = #gone.objects, 1, -1 do
+			if gone.objects[i] == kit.light0 or gone.objects[i] == kit.front then
+				table.remove(gone.objects, i)
+			end
+		end
+		local ax, ay, az = CeroSecModules.placeOf(kit.light1)
+		local realGet = kit.world.getGridSquare
+		kit.world.getGridSquare = function(self, x, y, z)
+			if x == ax and y == ay and z == az then return nil end
+			return realGet(self, x, y, z)
+		end
+		kit.world.power = true
+		check("away: the machine comes up", machine:turnOn())
+		kit.world.getGridSquare = realGet
+		check("away: the alley door is cabled", (cabled(machine, kit.backDoor)))
+		eq("away: the window's switch is not, yet", (cabled(machine, kit.light1)), false)
+		eq("away: the emptied square is no longer owed", owes(record, kit.light0), false)
+		check("away: the square that was away still is", owes(record, kit.light1))
+		eq("away: and nothing else", #(record.later or {}), 1)
+		machine:turnOff(true)
+		check("away: it comes up again with the chunk in", machine:turnOn())
+		check("away: and the switch that was away is cabled now",
+			(cabled(machine, kit.light1)))
+		eq("away: nothing is owed any more", record.later, nil)
+
+		CeroSecModules.linkOn = realLinkOn
+		CeroSecModules.linkSpan = realSpan
+		CeroSec.log = realLog
+		_G.__world = nil
+	end
+
+	--
 	-- 5. A SHOP THAT ROLLED THE OTHER WAY
 	--
 	do
@@ -27050,6 +27539,394 @@ do
 	reset()
 	window:onKeystroke("CeroSecKeyEnter")
 	eq("Enter is sent under its own name", sent[1], "CeroSecKeyEnter")
+end
+
+--
+-- 44. CeroSec.RequireWiring / CeroSec.FreeWiring
+--
+-- Two independent sandbox options (CeroSecModules.wiringRequired/wiringFree,
+-- both fail-open to false like safehouseGated): does a fixture need an actual
+-- cable before a machine sees it at all, in a building or off one
+-- (RequireWiring), and does a cable cost anything wherever one is needed
+-- (FreeWiring). Both default false, which is why every block above this one
+-- -- none of which ever sets either key -- is itself the both-off regression
+-- guard: the walk, linkWire and reachRefusal all read false from a group that
+-- never mentions the keys, exactly as before this plan.
+--
+
+do
+	-- 1. RequireWiring alone -- THE BUILDING CASE. A light switch, three
+	-- tiles from the machine, in the same room: exactly what free in-building
+	-- discovery has always found without a cable.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0} })
+	local switch = fit(world.put(world.squares["13,10,0"], fakeLight(true, true)),
+		"relay")
+	-- A door in the room's SOUTH wall, found only by scanFarEdges (it stands
+	-- on the pavement at 10,11, off the room's own square) and not by
+	-- scanSquare's own classification loop -- find()'s call to scanFarEdges
+	-- is skipped wholesale under RequireWiring, so this is the one fixture
+	-- that would slip through free if that skip were forgotten.
+	local southDoor = fit(world.wall(world.square(10, 11, 0, nil),
+		fakeDoor(false, true), "N"), "contact")
+	_G.__world = world
+	local state = {}
+
+	local function seesSwitch()
+		CeroSecDevices.invalidate()
+		local out = CeroSecDevices.find(10, 10, 0, state.links)
+		for i = 1, #out do
+			if out[i].object == switch then return true end
+		end
+		return false
+	end
+	local function seesDoor()
+		CeroSecDevices.invalidate()
+		local out = CeroSecDevices.find(10, 10, 0, state.links)
+		for i = 1, #out do
+			if out[i].object == southDoor then return true end
+		end
+		return false
+	end
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	check("RequireWiring off (default): the in-room switch is free, as always",
+		seesSwitch())
+	check("and so is the south wall's door, off scanFarEdges", seesDoor())
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false,
+		RequireWiring = true } }
+	check("RequireWiring on: the same switch is gone until cabled", not seesSwitch())
+	check("and so is the far-edge door", not seesDoor())
+
+	check("cabled on the fixture's own end",
+		CeroSecModules.linkOn(switch, 10, 10, 0, 3))
+	check("and filed on the machine's own end",
+		CeroSecOS.addLink(state, 13, 10, 0))
+	check("RequireWiring on, cabled: the switch is found again", seesSwitch())
+	CeroSecModules.unlinkOn(switch, 10, 10, 0)
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
+end
+
+do
+	-- 1 (continued). RequireWiring alone -- THE RADIUS CASE. A base has no
+	-- building, so CeroSecDevices.RADIUS is the free-discovery rule
+	-- scanOutdoorSquare's own skipFixtures must gate the same way.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.square(10, 10, 0, nil)
+	local stove = fit(world.put(world.square(12, 10, 0, nil), fakeStove(false)),
+		"appliance")
+	_G.__world = world
+	local state = {}
+
+	local function seesStove()
+		CeroSecDevices.invalidate()
+		local out = CeroSecDevices.find(10, 10, 0, state.links)
+		for i = 1, #out do
+			if out[i].object == stove then return true end
+		end
+		return false
+	end
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	check("RequireWiring off: a base's radius still finds it for free", seesStove())
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false,
+		RequireWiring = true } }
+	check("RequireWiring on: the base radius no longer finds it for free",
+		not seesStove())
+
+	check("cabled on the fixture's own end",
+		CeroSecModules.linkOn(stove, 10, 10, 0, 2))
+	check("and filed on the machine's own end",
+		CeroSecOS.addLink(state, 12, 10, 0))
+	check("RequireWiring on, cabled: it is found again", seesStove())
+	CeroSecModules.unlinkOn(stove, 10, 10, 0)
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
+end
+
+do
+	-- 3. FreeWiring alone -- discovery untouched, cost waived wherever a
+	-- cable is needed, and the 30-tile range untouched. THE CAUGHT BUG, and
+	-- the regression test for it: linkRefusal's "far" check and
+	-- CeroSecLinkMenu.machines()'s row filter both read linkSpan and not
+	-- linkWire for exactly this reason -- without this test, FreeWiring
+	-- waiving the range along with the cost would ship invisibly.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.square(10, 10, 0, nil)
+	local street = world.square(22, 10, 0, nil)
+	local lamp = fit(world.put(street, fakeLight(true, true)), "relay")
+	local farX = 10 + CeroSecModules.LINK_RANGE + 1
+	local farLamp = fit(world.put(world.square(farX, 10, 0, nil), fakeLight(true, true)),
+		"relay")
+	_G.__world = world
+	local player = {}
+
+	_G.SandboxVars = { CeroSec = {} }
+	local ordinaryPrice = CeroSecModules.linkWire(10, 10, 0, 22, 10, 0)
+	check("off: an outdoor cable has its ordinary price", ordinaryPrice > 0)
+	eq("off: within range, linkRefusal allows it",
+		CeroSecModules.linkRefusal(lamp, 10, 10, 0, player), nil)
+
+	_G.SandboxVars = { CeroSec = { FreeWiring = true } }
+	eq("on: the same cable costs nothing",
+		CeroSecModules.linkWire(10, 10, 0, 22, 10, 0), 0)
+	eq("but the raw geometry (linkSpan) is unchanged",
+		CeroSecModules.linkSpan(10, 10, 0, 22, 10, 0), ordinaryPrice)
+	eq("and linkRefusal still allows the in-range cable",
+		CeroSecModules.linkRefusal(lamp, 10, 10, 0, player), nil)
+
+	-- Past LINK_RANGE: linkWire itself still reads 0 (FreeWiring waives cost
+	-- unconditionally, distance or not), but linkRefusal must still say
+	-- "far" -- it is linkSpan, not linkWire, that the range check reads.
+	eq("linkWire past the range still reads 0 under FreeWiring",
+		CeroSecModules.linkWire(10, 10, 0, farX, 10, 0), 0)
+	check("but linkSpan still answers past LINK_RANGE",
+		CeroSecModules.linkSpan(10, 10, 0, farX, 10, 0) > CeroSecModules.LINK_RANGE)
+	eq("so linkRefusal still refuses it \"far\", FreeWiring or not",
+		CeroSecModules.linkRefusal(farLamp, 10, 10, 0, player), "far")
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+end
+
+do
+	-- 4. Both on -- an in-building fixture cabled under RequireWiring costs 0
+	-- under FreeWiring, composing the two options.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	local switch = fit(world.put(world.squares["11,10,0"], fakeLight(true, true)),
+		"relay")
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false,
+		RequireWiring = true, FreeWiring = true } }
+
+	eq("both on: the in-building cable to it costs nothing",
+		CeroSecModules.linkWire(10, 10, 0, 11, 10, 0), 0)
+	eq("linkRefusal allows the cable, and it would run for nothing",
+		CeroSecModules.linkRefusal(switch, 10, 10, 0, {}), nil)
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+end
+
+do
+	-- 5. Interaction with the nested-basement exemption -- free and never
+	-- "far"-refused regardless of either new option's own value: nestedFree
+	-- is checked before wiringFree in linkWire and before the range test in
+	-- linkRefusal, exactly as before this plan (see linkWire and the "far"
+	-- check's own guard).
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local net = newNet()
+	local house = net.buildingAt(6955, 5575, 15, 17, 15)
+	local basement = net.buildingAt(6957, 5583, 11, 6, 6)
+	local squares = {}
+	local function put(x, y, z, building)
+		local sq = net.square(x, y, z, building)
+		squares[x .. "," .. y .. "," .. z] = sq
+		return sq
+	end
+	put(6960, 5585, 0, house)
+	put(6960, 5585, -1, basement)
+	_G.__world = { getGridSquare = function(_, x, y, z)
+		return squares[x .. "," .. y .. "," .. z]
+	end }
+
+	for _, wiring in ipairs({ false, true }) do
+		for _, free in ipairs({ false, true }) do
+			_G.SandboxVars = { CeroSec = { RequireWiring = wiring, FreeWiring = free } }
+			eq("nested, RequireWiring=" .. tostring(wiring) .. " FreeWiring="
+					.. tostring(free) .. ": still free",
+				CeroSecModules.linkWire(6960, 5585, 0, 6960, 5585, -1), 0)
+		end
+	end
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+end
+
+do
+	-- 6. reachRefusal regression -- RequireWiring stops the free "reach"
+	-- refusal, in a building and off one; RequireWiring off still greys both
+	-- exactly as today. An appliance, not a door or a light switch: a door
+	-- would drag in the envelope gate and a light switch is never
+	-- "reach"-refused outdoors at all (outdoorReachRefusal's own doubt-not-
+	-- reach rule), so neither would prove this option's own gate alone.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	local innerStove = fit(world.put(world.squares["11,10,0"], fakeStove(false)),
+		"appliance")
+	world.square(30, 30, 0, nil)
+	local nearStove = fit(world.put(world.square(32, 30, 0, nil), fakeStove(false)),
+		"appliance")
+	_G.__world = world
+	local player = {}
+
+	_G.SandboxVars = { CeroSec = {} }
+	eq("off, building: a fixture the walk already lists is refused \"reach\"",
+		CeroSecModules.linkRefusal(innerStove, 10, 10, 0, player), "reach")
+	eq("off, radius: same for a base fixture well inside it",
+		CeroSecModules.linkRefusal(nearStove, 30, 30, 0, player), "reach")
+
+	_G.SandboxVars = { CeroSec = { RequireWiring = true } }
+	check("on, building: no free \"reach\" any more",
+		CeroSecModules.linkRefusal(innerStove, 10, 10, 0, player) ~= "reach")
+	check("on, radius: same off a base",
+		CeroSecModules.linkRefusal(nearStove, 30, 30, 0, player) ~= "reach")
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+end
+
+do
+	-- 7. Save-compat -- a fixture already numbered under RequireWiring=false,
+	-- sandbox flipped to true mid-bench, drops out of /dev with its devmap
+	-- slot intact (state.devmap is keyed by place, never evicted just for
+	-- dropping out of a walk -- the same precedent an un-cabled generator
+	-- already sets, docs/DEVICES.md), then cabling it resurfaces the same id.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	local switch = fit(world.put(world.squares["11,10,0"], fakeLight(true, true)),
+		"relay")
+	_G.__world = world
+	local state = {}
+
+	local function numbered()
+		CeroSecDevices.invalidate()
+		return CeroSecDevices.number(state,
+			CeroSecDevices.find(10, 10, 0, state.links))
+	end
+	local function idOf(found)
+		for i = 1, #found do
+			if found[i].object == switch then return found[i].id end
+		end
+		return nil
+	end
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	local before = numbered()
+	local wantId = idOf(before)
+	eq("the switch gets a number before RequireWiring is ever on", wantId, "light0")
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false,
+		RequireWiring = true } }
+	local flipped = numbered()
+	eq("flipped on mid-save, it drops out of /dev", idOf(flipped), nil)
+	check("but its devmap slot is still there", state.devmap ~= nil
+		and next(state.devmap) ~= nil)
+
+	check("cabled, it comes back",
+		CeroSecModules.linkOn(switch, 10, 10, 0, 3))
+	check("and filed on the machine",
+		CeroSecOS.addLink(state, 11, 10, 0))
+	local relinked = numbered()
+	eq("wearing the same id it had before", idOf(relinked), wantId)
+	CeroSecModules.unlinkOn(switch, 10, 10, 0)
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
+end
+
+-- 45. CeroSec.LinkRange -- how far a cable reaches, turned into a sandbox
+-- option (CeroSecModules.linkRange, mirroring wiringRequired/wiringFree's
+-- own shape). Falls back to LINK_RANGE, not false: there is no "off" reading
+-- for a distance, so a missing group or key, or a save from before the
+-- option, answers the one number this mod always used (30).
+--
+-- The load-bearing case is compatibility: a cable already run and stored is
+-- checked against LINK_RANGE_MAX (the hard, engine-derived ceiling) and NOT
+-- against today's linkRange() when it is read back, so a server shrinking
+-- the setting later never turns yesterday's cable into a "corrupt" entry the
+-- next modData load drops. A NEW cable, in linkOn and linkRefusal, is held
+-- to linkRange() -- today's policy -- same as before this option existed.
+do
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.square(10, 10, 0, nil)
+	local lamp20 = fit(world.put(world.square(30, 10, 0, nil), fakeLight(true, true)),
+		"relay")      -- 20 tiles from (10,10,0)
+	local lamp40 = fit(world.put(world.square(50, 10, 0, nil), fakeLight(true, true)),
+		"relay")      -- 40 tiles from (10,10,0)
+	_G.__world = world
+	local player = {}
+
+	-- 1. Regression -- no sandbox var set at all, both the way it can be
+	-- missing: SandboxVars itself nil, and a CeroSec group with no LinkRange
+	-- key (an older save with other CeroSec options already in it). Every
+	-- "far" refusal fires at exactly the distances it always did.
+	_G.SandboxVars = nil
+	eq("no SandboxVars at all: linkRange reads the compat default",
+		CeroSecModules.linkRange(), CeroSecModules.LINK_RANGE)
+
+	_G.SandboxVars = { CeroSec = {} }
+	eq("group present, key absent: same compat default",
+		CeroSecModules.linkRange(), CeroSecModules.LINK_RANGE)
+	check("regression: 40 tiles is still refused \"far\" at the old default",
+		CeroSecModules.linkRefusal(lamp40, 10, 10, 0, player) == "far")
+	eq("regression: 20 tiles is still allowed at the old default",
+		CeroSecModules.linkRefusal(lamp20, 10, 10, 0, player), nil)
+
+	-- 2. Raising it -- a cable that was "far" under the fixed 30 is allowed
+	-- once the sandbox option raises the ceiling past it.
+	_G.SandboxVars = { CeroSec = { LinkRange = 45 } }
+	eq("raised to 45: linkRange reads 45", CeroSecModules.linkRange(), 45)
+	eq("raised: the 40-tile cable is now allowed",
+		CeroSecModules.linkRefusal(lamp40, 10, 10, 0, player), nil)
+
+	-- 2b. Past the ceiling -- the slider stops at LINK_RANGE_MAX, a save or
+	-- another mod need not. Read as the ceiling, never past what a stored
+	-- cable is read back against (linkOk).
+	_G.SandboxVars = { CeroSec = { LinkRange = 999 } }
+	eq("999: linkRange reads the ceiling", CeroSecModules.linkRange(),
+		CeroSecModules.LINK_RANGE_MAX)
+	eq("and the ceiling is 48", CeroSecModules.LINK_RANGE_MAX, 48)
+	eq("999: a 49-tile cable is refused far by linkOn itself",
+		select(2, CeroSecModules.linkOn(lamp40, 93, 93, 0, 49)), "far")
+
+	-- 3. Lowering it -- a cable that was fine under the fixed 30 is refused
+	-- once the sandbox option drops the ceiling under it.
+	_G.SandboxVars = { CeroSec = { LinkRange = 10 } }
+	eq("lowered to 10: linkRange reads 10", CeroSecModules.linkRange(), 10)
+	eq("lowered: the 20-tile cable is now refused \"far\"",
+		CeroSecModules.linkRefusal(lamp20, 10, 10, 0, player), "far")
+
+	-- 4. THE COMPATIBILITY BUG THIS OPTION MUST NOT INTRODUCE: a cable
+	-- stored while the range read 30 (unset) must still read back once the
+	-- server shrinks LinkRange below the stored cable's own length. linkOn
+	-- takes the wire cost directly and does not re-measure the geometry, so
+	-- a fixture and an arbitrary "machine" position are enough here.
+	_G.SandboxVars = { CeroSec = {} }
+	check("store a 25-tile cable while the range reads 30 (unset)",
+		CeroSecModules.linkOn(lamp20, 91, 91, 0, 25))
+	eq("it is on the fixture's own list, wire and all",
+		CeroSecModules.wireOf(lamp20, 91, 91, 0), 25)
+
+	_G.SandboxVars = { CeroSec = { LinkRange = 10 } }
+	eq("range shrunk to 10, well under the stored cable's 25",
+		CeroSecModules.linkRange(), 10)
+	eq("the stored cable is STILL there, not dropped as corrupt",
+		CeroSecModules.wireOf(lamp20, 91, 91, 0), 25)
+	local ownLinks = CeroSecModules.ownLinksOn(lamp20)
+	check("ownLinksOn still lists it intact",
+		CeroSecModules.linkIndexOf(ownLinks, 91, 91, 0) ~= nil)
+
+	-- 5. A NEW link creation still respects the CURRENT (possibly shrunk)
+	-- range, even though the stored cable above is longer than it: a forged
+	-- or stale wire value beyond today's policy, but inside LINK_RANGE_MAX,
+	-- is refused "far" by linkOn itself.
+	local ok, why = CeroSecModules.linkOn(lamp40, 92, 92, 0, 25)
+	eq("a fresh 25-tile link is refused under LinkRange=10", ok, false)
+	eq("...and refused for being far, specifically", why, "far")
+
+	CeroSecModules.unlinkOn(lamp20, 91, 91, 0)
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
 end
 
 print("window_test: " .. count .. " checks passed")

@@ -453,10 +453,17 @@ end
 -- One line, because that is what `dev find` has: sixty columns and no wrap.
 --
 --   light1: highlighted, linked, 12 tiles of wire
+--   light2: blinking, linked, no wire
+--
+-- The second is a free cable -- a house and its own basement lot, or a server
+-- that charges no wire (CeroSecModules.linkWire) -- and it is still a cable: a
+-- 0 is "linked" with nothing paid, never read as no cable at all. No wire
+-- (nil) is a device the building walk found, and says only what the world did.
 function CeroSecOS.linkedText(word, wire)
 	if type(word) ~= "string" or word == "" then word = "found" end
 	local n = tonumber(wire)
-	if n == nil or n < 1 then return word end
+	if n == nil or n < 0 then return word end
+	if n < 1 then return word .. ", linked, no wire" end
 	return word .. ", linked, " .. math.floor(n) .. " tiles of wire"
 end
 

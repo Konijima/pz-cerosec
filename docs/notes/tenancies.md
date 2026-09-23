@@ -147,6 +147,46 @@ save.
 about where the room is drawn on the map, which no load order can move. Written as
 `CeroSecOS.roomKey`, in `buildingKey`'s own arithmetic, beside it.
 
+## A basement baked in as its own lot
+
+The runtime case above is not the only one. A basement's rooms can also arrive
+already sitting in a SEPARATE `BuildingDef` from the house above it — not
+appended by `SpawnBasement` at all, just two lots the map was authored with,
+one nested under the other. Confirmed on a real save with
+`CeroSecDebug.premises` (`SCeroSecDebug.lua:663-702`):
+
+```
+basement:     6957,5583 to 6968,5589   11x6   rooms 6    room: storage
+house-relay:  6955,5575 to 6970,5592   15x17  rooms 15   room: closet
+```
+
+The basement's box sits entirely inside the house's, on all four sides
+(`getX()/getY()` to the EXCLUSIVE `getX2()/getY2()`, the same proof cited at
+`SCeroSecDebug.lua:628-636`) — two different `BuildingDef`s, not one growing
+the way `SpawnBasement` grows one. Nothing in vanilla ever merges two
+`BuildingDef`s back into one at runtime (a full `javap` scan of every writer
+of `RoomDef.building`/`IsoRoom.building` turns up exactly five, all reachable
+only from the lot-load path or `SpawnBasement`'s own append — never from
+Lua, and never from two existing defs into each other); fixing the two
+`BuildingDef`s themselves would mean re-drawing the lot in TileZed/WorldEd,
+outside the running game.
+
+What CeroSec does instead is narrower: `CeroSecModules.nestedBuilding` treats
+this specific geometry — one footprint STRICTLY contained in the other,
+never a mere overlap — as "the same house" for the purpose of what a cable
+between them costs (`CeroSecModules.linkWire`, `nestedFree`), so a survivor
+running a control cable from the house down to the basement machine pays
+nothing for it. Strict containment and not intersection on purpose: two
+ordinary neighbouring row-houses, or two shops of a mall, share a wall and
+sometimes a corner, but essentially never have one's whole footprint sitting
+inside the other's — that geometry is specific enough to basements-under-houses
+that it does not need a floor/distance condition on top of it. This is
+deliberately narrower than treating the two `BuildingDef`s as one building for
+`/dev` discovery purposes (which would touch `CeroSecDevices.find`'s
+performance-bounded walk and its per-building cache, `hostile_test.lua`'s "a
+mall through /dev" ceiling among them) — that question was raised and
+explicitly set aside, not attempted here.
+
 ## Enumerating a region's buildings, bounded
 
 The telephone book lists the tenants of a region, so it needs the buildings of a

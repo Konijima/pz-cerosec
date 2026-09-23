@@ -704,9 +704,11 @@ ksp-back-02, 3 tiles, 7 wire
 One `Base.ElectricWire` a tile, straight across the ground, corners cost
 nothing, the crow's distance is what you pay, and **four tiles more for every
 floor between you and it**, which is why the machine on the landing above costs
-seven for three tiles. **Thirty tiles is as far as a cable goes**, floors
-included. Further than that and the answer is a second computer for that end of
-the building, worked from the first one down the coax or over the telephone.
+seven for three tiles. **Thirty tiles, by default, is as far as a cable
+goes**, floors included -- a server can set it further or shorter (see
+**Cable range, in tiles**, below). Further than that and the answer is a
+second computer for that end of the building, worked from the first one down
+the coax or over the telephone.
 
 It does not have to be switched on. A cable goes to the back of the machine and
 not to a login, and a survivor who had to boot the thing first to wire his porch
@@ -714,8 +716,8 @@ light would be wiring it in the dark. Nothing asks where you stand either, or
 that the door be open, or that you be inside: those are rules about reaching a
 thing with your hands, and this is the answer to not being able to. You need the
 screwdriver, the wire in your bag and the same level of Electricity the box
-itself wanted. The job takes as long as the walk, it is thirty tiles of reel you
-are paying out, and the greyed lines say why:
+itself wanted. The job takes as long as the walk, it is up to the range's
+worth of reel you are paying out, and the greyed lines say why:
 
 | the line says | what to do about it |
 | --- | --- |
@@ -725,8 +727,8 @@ are paying out, and the greyed lines say why:
 | *This computer already has 32 cables.* | cut one of that machine's other cables |
 | *This is somebody else's safehouse.* | with **Safehouse members only** on |
 
-A machine further away than thirty tiles is not on the list at all, and neither
-is one whose part of the map nobody has loaded.
+A machine further away than that is not on the list at all, and neither is
+one whose part of the map nobody has loaded.
 
 Then it is in that machine's `/dev` like anything in the building, same kinds,
 same numbers, same words, and `dev find` tells you what the run cost:
@@ -747,6 +749,19 @@ whether the box is still on the fixture, because a module that came off a fixtur
 you had cabled leaves the cable run and the reel owed. And if the fixture itself
 leaves the world, you pick the light switch up, somebody takes the door down,
 the wire drops on the floor where it stood, beside the boxes.
+
+A server may run a few options of its own about all of this. **Cabling
+required indoors too** (`CeroSec.RequireWiring`, off by default) turns off
+the free ride your own building normally gives you: nothing is in `/dev`,
+inside or out, until you have actually run a cable to it. **Cabling costs
+nothing** (`CeroSec.FreeWiring`, off by default) leaves the wire in your bag
+wherever a cable is needed -- it never buys you extra reach, whatever the
+range is set to it is still that, only the reel is free. **Cable range, in
+tiles** (`CeroSec.LinkRange`, thirty by default) is that reach itself: a
+server can raise it so fewer machines cover a big building, or lower it so
+you spread computers out more. If it drops after you have already run a
+longer cable, that cable keeps working -- the setting only decides what a
+NEW cable can reach.
 
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.

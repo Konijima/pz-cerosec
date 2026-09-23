@@ -14,6 +14,39 @@ date.
 - The editor now shows a line number down the left of every row, like `vi
   -- :set number`. A wrapped row's number stays blank, so it can't be
   mistaken for a new line.
+- Running a cable to a fixture in your own basement, or from the basement to
+  the house above it, no longer costs any wire. Some basements are drawn on
+  the map as their own building rather than part of the house's, and a
+  computer down there could see only its own switches; the cable between them
+  is still needed, but it's free now, the way running wire down to your own
+  basement should be -- and it's offered however many floors apart the two
+  are, whatever the cable range.
+- Two new server options, both off by default. **Cabling required indoors
+  too** (`CeroSec.RequireWiring`) turns off the free ride a computer's own
+  building normally gives it: nothing is in `/dev`, inside or out, until a
+  cable has actually been run to it. **Cabling costs nothing**
+  (`CeroSec.FreeWiring`) leaves the wire in your bag wherever a cable is
+  needed, without ever buying extra reach -- the cable range stays exactly
+  what it was, and `dev find` still says such a device is linked. Under
+  **Cabling required indoors too**, a shop that was automated before the
+  outbreak comes with its cables already run, as far as the cable range
+  reaches -- and a shop you first found dark gets them the moment you bring
+  it power and switch its computer on. A shop already wired before the
+  option was switched on doesn't: its fixtures wait for a cable like any
+  you fitted yourself.
+  Fixed: with **Hardware required** off, the "Link to
+  computer" submenu could vanish entirely with no way to get a bare fixture
+  onto `/dev` at all -- most completely under **Cabling required indoors
+  too**, but also for a generator, an outdoor fixture, a fixture in another
+  building, and a basement built as its own separate lot: none of those were
+  ever covered by the free ride in the first place. Every one of them is
+  cabled now, same as a fixture that carries a real module always was.
+- New server option, **Cable range, in tiles** (`CeroSec.LinkRange`), thirty
+  by default -- the same reach a cable has always had, and forty-eight at
+  most. A server can raise it
+  to cover more of a building off fewer machines, or lower it to spread
+  computers out. Lowering it never strips a cable already run: only a new
+  one feels the change.
 
 ## 0.6.1 - 2026-09-21
 

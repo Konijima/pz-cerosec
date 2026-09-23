@@ -442,6 +442,88 @@ passé réellement, même quand ça correspond au texte attendu.
      dans la pièce : `cat /dev/sensor0` reste `clear`, rien ne le déclenche.
      Marcher DEHORS, devant lui, sur le trottoir : `cat /dev/sensor0` passe
      à `motion`. [ ]
+91h. **Câblage obligatoire même dedans, et câblage gratuit.** Option « Câblage
+     requis même à l'intérieur » cochée : un ordinateur DANS la maison ne
+     montre plus, dans `ls -l /dev`, un interrupteur pourtant dans la même
+     pièce -- il faut lui tirer un câble comme à la lampe du porche, et une
+     fois câblé il revient sous le MÊME numéro qu'avant (comparer avec le
+     numéro qu'il portait l'option décochée). Sur une base sans bâtiment de
+     carte, même chose pour un appareil pourtant à moins de dix cases.
+     Option « Le câblage ne coûte rien » cochée (indépendamment de la
+     première) : tirer un câble jusqu'à la lampe du porche du 91b ne prend
+     aucune bobine de `Base.ElectricWire` dans l'inventaire, et la ligne du
+     menu dit « free » comme pour le câble de sous-sol du 430g. Une
+     machine à plus de trente cases reste absente de la liste « Link to
+     computer », option cochée ou non : elle ne change QUE le prix, jamais la
+     portée. Toujours option cochée : la liste reste triée de la machine la
+     plus proche à la plus lointaine (pas par ordre alphabétique) ; la bulle
+     d'une ligne « free » dit que le serveur ne fait pas payer le fil, et NON
+     « la même maison » (réservé au sous-sol du 430g) ; la bulle de
+     « Unlink from » sur ce câble dit qu'il n'a coûté aucun fil, sans
+     promettre de rendre « 0 » fil ; et `dev find` sur l'appareil répond
+     `..., linked, no wire`, pas le simple mot de l'appareil trouvé dans le
+     bâtiment. [ ]
+91i. **Un appareil nu, sous ce même câblage obligatoire.** Bug remonté en
+     jeu : « Modules matériels obligatoires » décochée ET « Câblage requis
+     même à l'intérieur » cochée, sur un interrupteur SANS module posé
+     dessus. Clic droit dessus : le sous-menu « Link to computer » est
+     présent (il ne l'était pas avant ce correctif -- aucune entrée du tout),
+     et tirer un câble jusqu'à un ordinateur fonctionne, l'interrupteur
+     apparaît ensuite dans `ls -l /dev` de cette machine. Avec « Modules
+     matériels obligatoires » cochée (le réglage par défaut), refaire le même
+     clic droit sur un appareil nu : toujours aucune entrée « Link to
+     computer », comportement inchangé. [ ]
+91j. **La version plus profonde du même bug.** Remontée par l'auteur juste
+     après 91i : « Modules matériels obligatoires » ET « Câblage requis même
+     à l'intérieur » décochées toutes les deux (le duo par défaut), sur un
+     sous-sol bâti comme son propre lot de carte, séparé de la maison
+     au-dessus (docs/notes/tenancies.md, « Un sous-sol coulé dans son propre
+     lot »). Avant ce correctif, le sous-menu « Link to computer » était
+     TOTALEMENT absent, y compris entre le sous-sol et l'ordinateur de la
+     maison -- un appareil nu qui n'a jamais eu droit à la marche gratuite
+     entre les deux bâtiments. Attendu maintenant : le sous-menu est présent
+     dans les deux sens (interrupteur du sous-sol vers l'ordinateur de la
+     maison, et l'inverse), la ligne dit « free » comme au 91h/430g, et le
+     câble fonctionne réellement. Un interrupteur nu logé dans le MÊME
+     bâtiment que l'ordinateur montre lui aussi une ligne désormais, mais
+     GRISÉE avec la raison habituelle (portée déjà couverte gratuitement) --
+     ni absente ni activée. Un générateur nu n'est jamais grisé de cette
+     façon, câble obligatoire quel que soit le bâtiment. [ ]
+91k. **Portée du câble réglable (option « Portée du câble, en tuiles »).**
+     Par défaut (30), reprendre la lampe du porche du 91b et une machine à
+     plus de trente cases : absente de « Link to computer », comme au 91h.
+     Monter l'option à 48 (le maximum) : rouvrir le menu sur la même lampe,
+     cette même machine apparaît maintenant dans la liste, avec sa distance
+     et son coût, et le câble se tire normalement. Remettre l'option à 30 :
+     redescendre l'option ne coupe PAS le câble qui vient d'être tiré --
+     `dev find` la montre toujours câblée sur cette machine, et
+     `ls -l /dev` la liste encore, seule une machine plus loin encore
+     redevient hors de portée pour un NOUVEAU câble. [ ]
+91l. **Le sous-sol à plusieurs étages de l'ordinateur.** Même paire qu'au
+     430g (un sous-sol bâti comme son propre lot, sous la maison), mais
+     l'ordinateur tout en haut de la maison, ou l'option « Portée du câble »
+     descendue à 10 : la ligne de l'interrupteur du sous-sol vers cet
+     ordinateur est TOUJOURS dans « Link to computer », « free », non grisée,
+     même quand la distance plus les étages dépassent la portée. Une maison
+     voisine à la même distance, elle, disparaît de la liste. [ ]
+91m. **Le magasin automatisé, sous câblage obligatoire.** Nouvelle partie,
+     « Câblage requis même à l'intérieur » cochée. Trouver un magasin dont les
+     lumières s'éteignent seules à 21 h (voir 319-320).
+     Attendu : les lumières s'éteignent quand même, `ls -l /dev` de
+     l'ordinateur du magasin liste les interrupteurs et les portes, et un clic
+     droit sur un interrupteur du magasin montre « Unlink from <machine> » :
+     l'électricien de 1991 a tiré le câble avec le relais. Le même magasin
+     avec l'option décochée : aucune ligne « Unlink from », les appareils
+     sont dans `/dev` par la marche gratuite du bâtiment. [ ]
+91n. **Le magasin automatisé trouvé sans courant, sous câblage
+     obligatoire.** Même option cochée, un magasin automatisé dont le
+     réseau est déjà coupé la première fois qu'on s'en approche. Attendu :
+     l'ordinateur reste éteint, un clic droit sur un interrupteur du magasin
+     ne montre AUCUNE ligne « Unlink from ». Brancher un générateur au
+     magasin, allumer l'ordinateur à la main : `ls -l /dev` liste maintenant
+     les interrupteurs et les portes, et le clic droit montre « Unlink from
+     <machine> ». L'éteindre et le rallumer ne tire rien de plus (même
+     nombre de lignes « Unlink from »). [ ]
 92. Cadenasser la porte du joueur → `cat /dev/lockN` dit `padlock`.
      `echo unlock > /dev/lockN` → le cadenas tombe dans l'inventaire comme si
      on l'avait retiré à la main ; `echo lock > /dev/lockN` le remet. Une
@@ -4325,6 +4407,16 @@ seuls au tour de ronde suivant. La règle complète est dans
      **grisée**, avec la raison en rouge (l'ordinateur la voit déjà sans
      câble). La même génératrice tirée plus loin que dix tuiles : la ligne
      est offerte normalement. [ ]
+430g. **Le sous-sol qui est sa propre maison ne coûte rien.** Un ordinateur au
+     sous-sol dont `dev` ne voit que ses propres appareils (le bâtiment du jeu
+     s'arrête là, pas d'étage au-dessus) : un interrupteur équipé à l'étage,
+     clic droit → **Relier à un ordinateur** → la ligne vers l'ordinateur du
+     sous-sol dit « `<nom>, N cases, free` » et non « N fils ». Cliquer :
+     **aucun fil ne quitte le sac**, `dev` du sous-sol liste l'interrupteur en
+     plus. Le même geste depuis un interrupteur du sous-sol vers un ordinateur
+     de l'étage : gratuit aussi, dans les deux sens. Un ordinateur d'une
+     **maison voisine**, à la même distance : la ligne redemande des fils
+     normalement, ce n'est pas la même maison. [ ]
 431. **Un appareil dont le module est parti garde son câble.** Câbler le lampadaire,
      puis **retirer le relais** (clic droit → Retirer). Attendu : le câble est
      toujours là, l'entrée **Débrancher** aussi, et elle rend les fils. Sans ça, le
