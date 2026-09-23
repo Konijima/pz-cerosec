@@ -118,8 +118,10 @@ and a command whose redirect is refused no longer runs.
   that is kept is on them, and nothing on them is untrue. New are the file
   that ends without a newline (`echo a > p` is one byte), `IFS` not being
   read, `read -p/-s/-n` and `!!` being later shells' words, the passwd file,
-  the `#` prompt, the error wording, and the commands and flags that are not
-  here (`set`, `rmdir`, `rm -f`, `kill -9`, `tail +N`, printf widths). The
+  the `#` prompt, the error wording, a pipe stopping its left side as soon as
+  the right side is done (`sleep 5 | true` ends at once), and the commands and
+  flags that are not here (`set`, `rmdir`, `rm -f`, `kill -9`, `tail +N`,
+  printf widths, `sh -c`). The
   error appendix also gained grep's pattern errors, `passwd: permission
   denied`, `export: not a name` and `wait: too many jobs`.
 

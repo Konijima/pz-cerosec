@@ -1044,6 +1044,17 @@ CeroSecOS.DEVIATIONS = {
 	-- ksh88 had fc and r; !! and !n are csh's, and history -c is bash's.
 	{ name = "history", shell = true, phrase = "!!, !n and history -c are csh's",
 		why = "csh's and bash's history words, not sh's or ksh88's" },
+	-- A stage whose reader is over is stopped once it has run a command,
+	-- written or not (CeroSecOSVM's pipeline stepper, stage.ran). A real
+	-- sh runs every stage to its end; write(2) raises SIGPIPE only on the
+	-- next write into the closed pipe (pipe(7)). So `{ echo a > f; echo b
+	-- > g; } | true` never makes g, and `sleep 5 | true` ends at once.
+	{ name = "pipe", world = true,
+		phrase = "A stage of a pipe stops as soon as the command reading it",
+		why = "a stage is stopped when its reader ends, not on its next write" },
+	-- sh(1) took -c and a command string; commands.sh takes a file only.
+	{ name = "sh", phrase = "sh -c is not here",
+		why = "sh runs a script file, never a string" },
 
 	-- ACCOUNTS. /etc/passwd is name:hash:home:flag, root's, mode 600
 	-- (CeroSecOS.passwdLine); a 1993 one was seven fields at mode 644 with the
