@@ -17057,4 +17057,64 @@ do
 	ok(state, admin, "printf '%5.2f|%d|%s\\n' 5 6", { "%5.2f|5|6" })
 end
 
+--
+-- 54. A call's own redirect inside a pipeline. POSIX.2 sh, Pipelines: the pipe
+-- is assigned to a command BEFORE the redirections that are part of it, so
+-- `g > f | wc -l` puts what g says in f and nothing down the pipe -- wc counts
+-- 0. A function, a script and the dot, in any stage, the last one included.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "g() { echo a; echo b; }", {})
+	ok(state, admin, "g > z.txt | wc -l", { "     0" })
+	ok(state, admin, "cat z.txt", { "a", "b" })
+	ok(state, admin, "g >> z.txt | wc -l", { "     0" })
+	ok(state, admin, "cat z.txt", { "a", "b", "a", "b" })
+	-- The last stage, whose pipe drains onto the screen: nothing reaches it.
+	ok(state, admin, "echo x | g > y.txt", {})
+	ok(state, admin, "cat y.txt", { "a", "b" })
+	-- `2>` on the call: the error in the file or nowhere, the output down the pipe.
+	ok(state, admin, "h() { echo out; cat nosuch; }", {})
+	ok(state, admin, "h 2>/dev/null | wc -l", { "     1" })
+	ok(state, admin, "h 2> e.txt | wc -l", { "     1" })
+	ok(state, admin, "cat e.txt", { "cat: nosuch: no such file" })
+	-- Both into the file, in the order they were said; and `2>&1 > f` sends the
+	-- error where the output WAS -- the pipe -- read left to right.
+	ok(state, admin, "h > o.txt 2>&1 | wc -l", { "     0" })
+	ok(state, admin, "cat o.txt", { "out", "cat: nosuch: no such file" })
+	ok(state, admin, "h 2>&1 > o2.txt | wc -l", { "     1" })
+	ok(state, admin, "cat o2.txt", { "out" })
+	-- `>&2`: the output goes where the errors go, the screen, and not down the pipe.
+	ok(state, admin, "g >&2 | wc -l", { "a", "b", "     0" })
+	-- A redirect that cannot be opened is a call that never runs.
+	ok(state, admin, "k() { echo ran > ran.txt; }", {})
+	ok(state, admin, "k > /etc/hosts | wc -l",
+		{ "k: /etc/hosts: permission denied", "     0" })
+	bad(state, admin, "cat ran.txt", "cat: ran.txt: no such file")
+	-- A stage that ends inside the call still leaves the file whole.
+	ok(state, admin, "m() { echo a; exit 3; }", {})
+	ok(state, admin, "m > ex.txt | wc -l", { "     0" })
+	ok(state, admin, "cat ex.txt", { "a" })
+	-- A script and the dot, the same.
+	ok(state, admin, "echo 'echo s1; echo s2' > s.sh", {})
+	ok(state, admin, "sh s.sh > sf.txt | wc -l", { "     0" })
+	ok(state, admin, "cat sf.txt", { "s1", "s2" })
+	ok(state, admin, ". ./s.sh > df.txt | wc -l", { "     0" })
+	ok(state, admin, "cat df.txt", { "s1", "s2" })
+	-- And what the call writes is going to a FILE, not a screen: ls in one name a
+	-- line, in the last stage exactly as outside a pipeline.
+	ok(state, admin, "mkdir dd; touch dd/a; touch dd/b; touch dd/c", {})
+	ok(state, admin, "l() { ls dd; }", {})
+	ok(state, admin, "echo x | l > la.txt", {})
+	ok(state, admin, "cat la.txt", { "a", "b", "c" })
+	-- A stage still running has its file written at the end of every pass, like
+	-- the shell's own: what g said before it went to sleep is on the disk.
+	local res = runScript(state, admin, "g() { echo a; sleep 60; }\ng > slow.txt | cat\n",
+		nil, nil, { passes = 5 })
+	eq("the sleeping stage is still running", CeroSecOS.jobIsOver(res.job), false)
+	local slow = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/slow.txt")
+	eq("and what it wrote before sleeping is in its file", slow and slow.data, "a")
+end
+
 print("os_test: " .. count .. " assertions passed")

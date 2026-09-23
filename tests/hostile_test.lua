@@ -911,6 +911,54 @@ do
 end
 
 --
+-- 8c3. The same flood, from a function's own files INSIDE a pipeline stage.
+--
+-- `g > f 2> e | cat`: g's lines go into its files and not down the pipe, so
+-- the pipe's back-pressure no longer holds the stage, and jobStep's forty-line
+-- limiter asks the job and never a stage. pipeStep writes a stage's files at
+-- the same forty lines; without it a pass carries every line its budget
+-- affords -- three hundred here -- in one write, and a pass that never ended
+-- would grow the buffer for ever. It must end on the FILE's ceiling.
+--
+do
+	local machine, state, console = newMachine()
+	local LINES = 100
+	put(state, "/home/admin/lines", string.rep("y\n", LINES - 1) .. "y")
+
+	local realWrite = CeroSecOS.writeRedirect
+	local writes, worstChunk = {}, 0
+	CeroSecOS.writeRedirect = function(st, session, who, redirect, text, env)
+		writes[redirect.path] = (writes[redirect.path] or 0) + 1
+		local n = 1
+		for _ in string.gmatch(text, "\n") do n = n + 1 end
+		if n > worstChunk then worstChunk = n end
+		return realWrite(st, session, who, redirect, text, env)
+	end
+
+	typeLine(system, machine, state, console,
+		"g() { while true; do cat /home/admin/lines; cat nosuch; done; }; " ..
+		"g > f 2> e | cat")
+	local result = drive(machine, PASSES)
+	CeroSecOS.writeRedirect = realWrite
+
+	flat("stage's own file", result)
+	timely("stage's own file", result)
+	note("stage's own file", result)
+	check("both of the stage's files were written (" .. tostring(writes["f"]) ..
+		", " .. tostring(writes["e"]) .. ")",
+		(writes["f"] or 0) > 1 and (writes["e"] or 0) > 0)
+	check("no write carried more than the ceiling and one command (" ..
+		worstChunk .. " lines)", worstChunk <= CeroSecOS.JOB_OUT_MAX + LINES)
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/f")
+	check("the file holds what fitted (" .. #(node.data or "") .. " bytes)",
+		#(node.data or "") > 0 and #(node.data or "") <= CeroSecOS.MAX_FILE_BYTES)
+	eq("and the pipeline ended on the file's ceiling",
+		CeroSecJobs.foreground(machine, console), nil)
+	report[#report + 1] = string.format("  %-22s worst %4d lines/write, %d writes",
+		"stage's own file", worstChunk, writes["f"] or 0)
+end
+
+--
 -- 8d. A `case` of forty patterns, in a loop (debts 2).
 --
 -- A case of forty alternatives does forty comparisons every time round, and each

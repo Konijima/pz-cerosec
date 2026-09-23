@@ -4636,19 +4636,28 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `cat nosuch` cent fois et `2> e; wc -l e`. Se déconnecter après
      `sleep 5 &`, se reconnecter : `echo "[$!]"` affiche `[]`. `cat -- p`
      affiche `neuf`. [ ]
+459. **La redirection d'une fonction passe avant le tuyau.**
+     `g() { echo a; echo b; }`, puis `g > z | wc -l` : `0`, et `cat z`
+     affiche `a` puis `b`. `g >> z | wc -l` : `0`, et `z` a quatre lignes.
+     `echo x | g > y` n'affiche rien et `cat y` affiche `a` puis `b`.
+     `h() { echo out; cat nosuch; }`, puis `h 2>/dev/null | wc -l` : `1`, et
+     `h > o 2>&1 | wc -l` : `0`, `cat o` affiche `out` puis la plainte de
+     cat. `k() { echo ran > r; }`, puis `k > /etc/hosts | wc -l` :
+     `k: /etc/hosts: permission denied`, `0`, et `cat r` dit qu'il n'existe
+     pas. Pareil pour un script : `sh s.sh > f | wc -l` affiche `0`. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
 
-459. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les
+460. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les
      pages *What is not Unix here* jusqu'à « That is the whole list. » Il y en a
      maintenant dix, dont *errors, continued*, *files and the shell*, *read,
      history, and who you are* et *what is missing*. [ ]
-460. **Trois affirmations, vérifiées à l'écran.** `echo a > p` puis `wc -c p` :
+461. **Trois affirmations, vérifiées à l'écran.** `echo a > p` puis `wc -c p` :
      `1`, pas `2` (pas de saut de ligne après la dernière ligne). `IFS=:`,
      `x=a:b`, puis `for i in $x; do echo $i; done` : une seule ligne `a:b`
      (IFS n'est pas lu). `set` : `set: command not found`. Si l'une de ces
      réponses a changé, la page ment : le noter au rapport. [ ]
-461. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
+462. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
      `grep: [z-a]: bad range`, et la ligne figure au volume 1, annexe,
      *Commands the machine could not run*. Connecté en admin,
      `passwd root` : `passwd: permission denied`, dans *Logging in, and your

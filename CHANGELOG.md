@@ -68,6 +68,10 @@ and a command whose redirect is refused no longer runs.
   errors in a file, `> log 2>&1` puts both in one, and `echo oops >&2` sends
   a line where errors go. `cat f 2>/dev/null` no longer looks for a file
   named `2`.
+- A function or script with its own redirect in a pipeline now writes to
+  its file and not down the pipe: `g > out | wc -l` fills `out` and counts
+  0, as in a real shell. The redirect used to be ignored there, leaving
+  `out` empty; `>>`, `2>`, `2>&1` and `>&2` on such a call now work too.
 - `$( )` no longer catches error text. `x=$(cat nosuch)` shows the error on
   the screen and leaves `x` empty; write `x=$(cat nosuch 2>&1)` to catch it.
 - A backslash inside double quotes now stays put unless it's in front of `$`,

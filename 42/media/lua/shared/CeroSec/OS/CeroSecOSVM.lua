@@ -218,8 +218,12 @@ end
 local function toScreen(job)
 	if capturing(job) then return false end
 	if job.mailTo ~= nil then return false end
-	if job.pipe ~= nil then return job.screen == true end
+	-- The file before the pipe: a stage is born with no rdto (newStage), so one
+	-- it has is its own call's `>` -- `g > f | wc` -- and that call's standard
+	-- output is the file, whatever the stage's is (POSIX.2 sh, Pipelines: the
+	-- pipe is assigned before the command's own redirections).
 	if job.rdto ~= nil then return false end
+	if job.pipe ~= nil then return job.screen == true end
 	return true
 end
 
@@ -304,17 +308,6 @@ local function outLine(job, text, notFile)
 		buf[#buf + 1] = text
 		return
 	end
-	-- A stage of a pipeline writes into the pipe, and a pipe is not a screen:
-	-- the line goes over whole, uncut and unwrapped, because the thing reading
-	-- it is another command and not a person. The ceiling on how much may sit
-	-- there is not here either -- it is back-pressure, asked before the stage is
-	-- stepped at all (see pipeStep), the way the screen limiter is.
-	if job.pipe ~= nil then
-		local buf = job.pipe
-		buf.lines[#buf.lines + 1] = text
-		buf.bytes = buf.bytes + #text + 1
-		return
-	end
 	-- The FILE the shell opened for the script this job is running. A redirect is
 	-- not a screen either, so the line goes over whole -- uncut, unwrapped -- the
 	-- way it goes down a pipe, and for the same reason: what reads it is a file and
@@ -323,6 +316,13 @@ local function outLine(job, text, notFile)
 	-- and a write needs both. What bounds the buffer is the SCREEN's own limiter,
 	-- asked of it in jobStep: forty lines, then the job is made to stop and let them
 	-- drain, exactly as a flood onto the glass is.
+	--
+	-- Ahead of the pipe, because in a stage the file IS the call's own: a stage is
+	-- born with no rdto (newStage), and `g > f | wc -l` sends what g says into f
+	-- and nothing down the pipe, so wc counts 0. POSIX.2 sh, Pipelines: the
+	-- pipe is assigned to a command BEFORE the redirections that are part of
+	-- it. A stage's buffer is written by pipeStep and jobFlush, which walk the
+	-- stages for it.
 	if job.rdto ~= nil and not notFile then
 		local to = job.rdto
 		-- `f >&2`: the standard output of what runs in this frame is a copy of the
@@ -332,6 +332,17 @@ local function outLine(job, text, notFile)
 			return
 		end
 		to.buf[#to.buf + 1] = text
+		return
+	end
+	-- A stage of a pipeline writes into the pipe, and a pipe is not a screen:
+	-- the line goes over whole, uncut and unwrapped, because the thing reading
+	-- it is another command and not a person. The ceiling on how much may sit
+	-- there is not here either -- it is back-pressure, asked before the stage is
+	-- stepped at all (see pipeStep), the way the screen limiter is.
+	if job.pipe ~= nil then
+		local buf = job.pipe
+		buf.lines[#buf.lines + 1] = text
+		buf.bytes = buf.bytes + #text + 1
 		return
 	end
 	-- The screen's own rule, applied once, here: a job's line is at most sixty
@@ -417,6 +428,18 @@ local function wrapPartial(job)
 		end
 		return
 	end
+	-- Into the FILE the shell opened for this script, the pipe's reasoning again: a
+	-- file is not sixty columns wide, so a row's worth of text with no newline in
+	-- it must not be folded as if it were -- `printf %s` into a file writes what it
+	-- was given -- and it cannot be held for ever either. Same ceiling as the pipe,
+	-- because the thing that is full is a buffer either way.
+	if job.rdto ~= nil then
+		while #job.partial >= CeroSecOS.PIPE_BYTES do
+			outLine(job, string.sub(job.partial, 1, CeroSecOS.PIPE_BYTES))
+			job.partial = string.sub(job.partial, CeroSecOS.PIPE_BYTES + 1)
+		end
+		return
+	end
 	-- Into a pipe, the same reasoning and a different ceiling. A pipe is not
 	-- sixty columns wide, so text with no newline in it is not folded at the
 	-- screen's width -- but it cannot be held for ever either, or `while true;
@@ -425,18 +448,6 @@ local function wrapPartial(job)
 	-- bytes is held with no newline, that much goes down the pipe, which is
 	-- exactly what a full kernel buffer does to a writer that never ends a line.
 	if job.pipe ~= nil then
-		while #job.partial >= CeroSecOS.PIPE_BYTES do
-			outLine(job, string.sub(job.partial, 1, CeroSecOS.PIPE_BYTES))
-			job.partial = string.sub(job.partial, CeroSecOS.PIPE_BYTES + 1)
-		end
-		return
-	end
-	-- Into the FILE the shell opened for this script, the pipe's reasoning again: a
-	-- file is not sixty columns wide, so a row's worth of text with no newline in
-	-- it must not be folded as if it were -- `printf %s` into a file writes what it
-	-- was given -- and it cannot be held for ever either. Same ceiling as the pipe,
-	-- because the thing that is full is a buffer either way.
-	if job.rdto ~= nil then
 		while #job.partial >= CeroSecOS.PIPE_BYTES do
 			outLine(job, string.sub(job.partial, 1, CeroSecOS.PIPE_BYTES))
 			job.partial = string.sub(job.partial, CeroSecOS.PIPE_BYTES + 1)
@@ -2927,7 +2938,7 @@ end
 -- of shells hanging off one of them.
 --
 
-local stepOnce, handleSignal, flushDone
+local stepOnce, handleSignal, flushDone, jobFlush
 
 -- One pipe. lines is what is in it, eof says the stage on the left has
 -- finished, closed says the stage on the right will read no more.
@@ -3214,6 +3225,11 @@ local function pipeStep(state, job, f, env)
 				job.control = stage.control
 				job.controlData = stage.controlData
 			end
+			-- What it wrote into a file of its own goes on the disk now, before the
+			-- pipeline is popped and the stage with it: `g() { echo a; exit 3; }; g >
+			-- f | wc -l` ends the stage with the call's frame still open, and the
+			-- next command must find f whole.
+			jobFlush(state, stage, env)
 		end
 	end
 
@@ -3246,6 +3262,18 @@ local function pipeStep(state, job, f, env)
 				-- here; the stage to the left is no help either, so the loop
 				-- walks on and finds the one that is.
 			else
+				-- A file of the stage's own (`g > f | cat`) is not the pipe and has
+				-- no reader to hold it back, and jobStep's forty-line limiter asks
+				-- the job and never a stage. So it is written here, at the same
+				-- forty lines, or `g() { while true; do echo x; done; }` would
+				-- grow one table for as long as the pass lasts.
+				local rd, erd = stage.rdto, stage.errRd
+				if (rd ~= nil and rd.buf ~= nil and #rd.buf >= CeroSecOS.JOB_OUT_MAX)
+						or (erd ~= nil and erd.buf ~= nil
+							and #erd.buf >= CeroSecOS.JOB_OUT_MAX) then
+					jobFlush(state, stage, env)
+					if CeroSecOS.jobIsOver(stage) then return 0 end
+				end
 				return stageStep(state, stage, env)
 			end
 		end
@@ -3854,7 +3882,7 @@ flushDone = function(state, job, env)
 	return good
 end
 
-local function jobFlush(state, job, env)
+jobFlush = function(state, job, env)
 	local bad = false
 	if not flushDone(state, job, env) then bad = true end
 	if job.rdto ~= nil then
@@ -3868,6 +3896,19 @@ local function jobFlush(state, job, env)
 		job.errRd = nil
 		job.status = 1
 		finish(job, "done")
+	end
+	-- And the files the STAGES of a running pipeline hold: `g > f | cat` is
+	-- g writing into its own f from inside a stage (outLine), which is a job
+	-- the scheduler never sees, so the pass that ends writes its lines too --
+	-- the same once a pass the shell's own file gets. Bounded by how deep the
+	-- frames go (MAX_FRAMES), like every other walk of them.
+	local frames = job.frames
+	if frames == nil then return end
+	for i = 1, #frames do
+		local stages = frames[i].stages
+		if frames[i].k == "pipe" and stages ~= nil then
+			for k = 1, #stages do jobFlush(state, stages[k], env) end
+		end
 	end
 end
 
