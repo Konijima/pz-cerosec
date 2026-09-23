@@ -410,6 +410,10 @@ died with it, so `echo $x` after it prints nothing. Every shell behaves this way
 `x=$(cat notes | head -n 1)` is how you keep it. `$?` after a pipeline is the last
 stage's status, and `|` works inside `$(...)`.
 
+**A call's own `>` wins over a `$( )`** the way it wins over a pipe:
+`x=$(g > f)` fills `f` and leaves `x` empty. `rdto.depth` records how many
+captures were open when the file was, and `capturing` asks it.
+
 **And so is a `$( )`.** POSIX.2 runs a command substitution in a subshell
 environment, so what it sets dies with it: `x=1; y=$(x=2; echo $x); echo $x` prints
 `1`, and an `export` inside one marks the subshell's environment and not the
@@ -441,7 +445,10 @@ A pipe holds **a hundred lines and four kilobytes**, and what happens when it is
 full is back-pressure and not an error: the writer simply does not run again until
 the reader has drained it, exactly as a job that has filled the screen does not.
 A reader that stops reading kills the writer with **141**, `SIGPIPE`, as `sh`
-reports it, so the flood in front of a `head` ends at once:
+reports it, so the flood in front of a `head` ends at once. Only a writer that
+has run its first command and whose output is *the pipe*: SIGPIPE is what
+write(2) earns on a pipe nobody reads, so `echo a > f | true` still leaves `a`
+in `f`, and a function inside its own `>` runs on into its file:
 
     admin@ksp-04-11:~$ while true; do echo y; done | head -n 1
     y

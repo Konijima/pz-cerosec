@@ -197,9 +197,20 @@ end
 
 -- Is what this job writes being caught by a $(...) instead of going to the
 -- screen? The one test, asked in the three places that must agree about it.
+--
+-- Not when the call running now has a `>` of its own opened INSIDE the
+-- capture: `x=$(g > f)` puts what g says in f and leaves x empty, because the
+-- substitution's pipe is the command's standard output before the command's own
+-- redirections are applied (POSIX.2 sh, Command Substitution and Redirection).
+-- rdto.depth is how many captures were open when the file was (rdtoOf); a
+-- capture opened after it -- `g() { y=$(echo in); }; g > f` -- still catches.
+-- An rdto with no depth is one from before this rule and keeps the old order.
 local function capturing(job)
 	local caps = job.caps
-	return caps ~= nil and #caps > 0
+	if caps == nil or #caps == 0 then return false end
+	local rd = job.rdto
+	if rd ~= nil and rd.depth ~= nil and rd.depth >= #caps then return false end
+	return true
 end
 
 -- Is what this job writes going to a SCREEN? Asked by the shell before it runs a
@@ -2627,7 +2638,7 @@ local function runSimple(state, job, f, env)
 			frame.oldErd = job.errRd
 		end
 		if not pushFrame(job, frame) then return 1 end
-		if target ~= nil then job.rdto = CeroSecOS.rdtoOf(target) end
+		if target ~= nil then job.rdto = CeroSecOS.rdtoOf(target, #job.caps) end
 		if errSpec ~= nil then job.errRd = CeroSecOS.sameOut(job, errSpec) end
 		job.args = kept
 		-- $0 is NOT the function's name: POSIX leaves it the script's, and so does
@@ -2927,6 +2938,9 @@ end
 --   * a stage whose reader has finished is killed, with 141 -- SIGPIPE, as sh
 --     reports it. That is what ends the flood in `yes | head -1`: head reads
 --     its one line, closes its input, and the writer dies where it stands.
+--     Only a stage that has started and is writing into the pipe: one inside
+--     its own call's `>` is writing into a file, and write(2) raises SIGPIPE
+--     on a pipe and nothing else.
 --
 -- Reading right to left is what makes the back-pressure fall out: the last
 -- stage runs until it has read everything there is, and only then does the one
@@ -3244,7 +3258,14 @@ local function pipeStep(state, job, f, env)
 	for i = n, 1, -1 do
 		local stage = stages[i]
 		if not CeroSecOS.jobIsOver(stage) then
-			if i < n and pipes[i].closed then
+			-- SIGPIPE is what WRITING into a pipe nobody reads earns (write(2),
+			-- EPIPE), so a stage whose standard output is not the pipe is not
+			-- killed for it: one inside its own call's `>` -- `g > f | true` --
+			-- writes into f and runs on, as it does under sh. And a stage whose
+			-- first command has not run yet is let run it: sh starts every
+			-- command of the pipeline, so `echo a > f | true` leaves a in f even
+			-- when true was over before echo ever ran here (job.ran, stepOnce).
+			if i < n and pipes[i].closed and stage.ran and stage.rdto == nil then
 				sigpipe(stage)
 				return 0
 			end
@@ -3651,6 +3672,10 @@ stepOnce = function(state, job, env)
 		-- one command.
 		popFrame(job)
 		job.again = nil
+		-- A command has run: in a stage, from here on a closed pipe in front of
+		-- it is a SIGPIPE (pipeStep), and not before -- the first command opens
+		-- its redirect even when the reader is already gone.
+		job.ran = true
 		local cost = runSimple(state, job, f, env)
 		if job.again ~= nil and job.state == "running" then pushFrame(job, f) end
 		job.again = nil
@@ -4192,10 +4217,14 @@ end
 -- What a frame's standard output is, made from what the shell opened for it: a
 -- file ({ path, who }), or `>&2`'s copy of the standard error the call found
 -- ({ toErr, spec }, which outLine hands to routeErr). The buffer is there on
--- both, empty on the second, so everything that counts it counts nought.
-function CeroSecOS.rdtoOf(target)
-	if target.toErr then return { toErr = true, spec = target.spec, buf = {} } end
-	return { path = target.path, who = target.who, buf = {} }
+-- both, empty on the second, so everything that counts it counts nought. depth is
+-- how many $( ) captures were open when it was, which is what lets it win over
+-- them (capturing).
+function CeroSecOS.rdtoOf(target, depth)
+	if target.toErr then
+		return { toErr = true, spec = target.spec, buf = {}, depth = depth }
+	end
+	return { path = target.path, who = target.who, buf = {}, depth = depth }
 end
 
 -- The `2>` of a line that sent both descriptors into one file, turned into
@@ -4247,7 +4276,7 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace, target, erd)
 		job.depth = job.depth - 1
 		return false
 	end
-	if target ~= nil then job.rdto = CeroSecOS.rdtoOf(target) end
+	if target ~= nil then job.rdto = CeroSecOS.rdtoOf(target, #job.caps) end
 	if erd ~= nil then job.errRd = CeroSecOS.sameOut(job, erd) end
 	job.name = name
 	if not inPlace then

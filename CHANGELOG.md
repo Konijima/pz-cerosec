@@ -72,6 +72,13 @@ and a command whose redirect is refused no longer runs.
   its file and not down the pipe: `g > out | wc -l` fills `out` and counts
   0, as in a real shell. The redirect used to be ignored there, leaving
   `out` empty; `>>`, `2>`, `2>&1` and `>&2` on such a call now work too.
+- `echo a > f | true` now leaves `a` in `f`. A command in a pipeline was
+  stopped before it ran when the command after it finished first, so its
+  file was never made; now every command in a pipeline gets to run, and one
+  writing into its own file is not stopped at all.
+- `x=$(g > f)` now puts what `g` prints in `f` and leaves `x` empty, as in
+  a real shell. A function's or script's own `>` or `>>` used to lose to
+  the `$( )`, leaving the file empty.
 - `$( )` no longer catches error text. `x=$(cat nosuch)` shows the error on
   the screen and leaves `x` empty; write `x=$(cat nosuch 2>&1)` to catch it.
 - A backslash inside double quotes now stays put unless it's in front of `$`,

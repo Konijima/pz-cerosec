@@ -4644,7 +4644,11 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `h > o 2>&1 | wc -l` : `0`, `cat o` affiche `out` puis la plainte de
      cat. `k() { echo ran > r; }`, puis `k > /etc/hosts | wc -l` :
      `k: /etc/hosts: permission denied`, `0`, et `cat r` dit qu'il n'existe
-     pas. Pareil pour un script : `sh s.sh > f | wc -l` affiche `0`. [ ]
+     pas. Pareil pour un script : `sh s.sh > f | wc -l` affiche `0`.
+     Quand le lecteur finit d'abord : `echo a > f1 | true`, puis `cat f1`
+     affiche `a` ; `g > f2 | true`, puis `cat f2` affiche `a` puis `b`.
+     Dans un `$( )` : `x=$(g > c)`, puis `echo "[$x]"` affiche `[]` et
+     `cat c` affiche `a` puis `b`. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
 

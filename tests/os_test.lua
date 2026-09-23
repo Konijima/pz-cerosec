@@ -8928,7 +8928,8 @@ do
 	ok(state, admin, "x=here; echo there | read x; echo $x", { "here" })
 	ok(state, admin, "echo there | read x; echo $?", { "0" })
 	ok(state, admin, "printf '' | read x; echo $?", { "1" })
-	ok(state, admin, "cd /tmp | echo x", { "x" })
+	-- A directory that exists: every stage runs, so a cd that fails says so.
+	ok(state, admin, "cd /etc | echo x", { "x" })
 	ok(state, admin, "pwd", { "/home/admin" })
 
 	-- A pipe inside $(...), which is the shape a script really uses.
@@ -17115,6 +17116,88 @@ do
 	eq("the sleeping stage is still running", CeroSecOS.jobIsOver(res.job), false)
 	local slow = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/slow.txt")
 	eq("and what it wrote before sleeping is in its file", slow and slow.data, "a")
+end
+
+--
+-- 55. A stage whose reader is already gone still runs its first command, and one
+-- writing into a file of its own is not killed at all. SIGPIPE is what writing
+-- into a pipe nobody reads earns (write(2), EPIPE), and `echo a > f | true`
+-- never writes into the pipe: sh leaves a in f.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "echo a > p1.txt | true", {})
+	ok(state, admin, "cat p1.txt", { "a" })
+	ok(state, admin, "echo b >> p1.txt | true", {})
+	ok(state, admin, "cat p1.txt", { "a", "b" })
+	ok(state, admin, "g() { echo a; echo b; }", {})
+	ok(state, admin, "g > p2.txt | true", {})
+	ok(state, admin, "cat p2.txt", { "a", "b" })
+	ok(state, admin, "g >> p2.txt | true", {})
+	ok(state, admin, "cat p2.txt", { "a", "b", "a", "b" })
+	ok(state, admin, "echo 'echo s1; echo s2' > s.sh", {})
+	ok(state, admin, "sh s.sh > p3.txt | true", {})
+	ok(state, admin, "cat p3.txt", { "s1", "s2" })
+	-- A program from /bin, the same.
+	ok(state, admin, "cat s.sh > p4.txt | true", {})
+	ok(state, admin, "cat p4.txt", { "echo s1; echo s2" })
+	-- And a writer INTO the pipe still dies when its reader is gone: the
+	-- endless one ends.
+	ok(state, admin, "y() { while true; do echo y; done; }", {})
+	local _, lines, _, _, job = exec(state, admin, "y | head -n 1")
+	eq("`y | head -n 1` prints one line", table.concat(lines, "|"), "y")
+	eq("`y | head -n 1` is over", CeroSecOS.jobIsOver(job), true)
+end
+
+--
+-- 56. A call's own redirect inside a $( ). The substitution is the command's
+-- standard output before the command's own redirections are applied (POSIX.2
+-- sh, Command Substitution), so `x=$(g > f)` fills f and leaves x empty.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "g() { echo a; }", {})
+	ok(state, admin, "x=$(g > c1.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c1.txt", { "a" })
+	ok(state, admin, "x=$(g >> c1.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c1.txt", { "a", "a" })
+	ok(state, admin, "x=$(echo a > c2.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c2.txt", { "a" })
+	ok(state, admin, "echo \"[$(g > c3.txt)]\"", { "[]" })
+	ok(state, admin, "cat c3.txt", { "a" })
+	-- A script and the dot, the same.
+	ok(state, admin, "echo 'echo s1; echo s2' > s.sh", {})
+	ok(state, admin, "x=$(sh s.sh > c4.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c4.txt", { "s1", "s2" })
+	ok(state, admin, "x=$(. ./s.sh > c5.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c5.txt", { "s1", "s2" })
+	-- Text with no newline after it reaches the file when the call is over.
+	ok(state, admin, "p() { printf %s a; }", {})
+	ok(state, admin, "x=$(p > c6.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c6.txt", { "a" })
+	-- `>&2`: the output goes where the errors go, the screen, and x is empty.
+	ok(state, admin, "x=$(g >&2)", { "a" })
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	-- The file on the call, and in it both descriptors.
+	ok(state, admin, "h() { echo out; cat nosuch; }", {})
+	ok(state, admin, "x=$(h > c7.txt 2>&1)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c7.txt", { "out", "cat: nosuch: no such file" })
+	-- A capture opened INSIDE the redirected call still catches: it is the
+	-- newer standard output.
+	ok(state, admin, "k() { y=$(echo in); echo \"<$y>\"; }", {})
+	ok(state, admin, "k > c8.txt", {})
+	ok(state, admin, "cat c8.txt", { "<in>" })
+	ok(state, admin, "x=$(k)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[<in>]" })
 end
 
 print("os_test: " .. count .. " assertions passed")

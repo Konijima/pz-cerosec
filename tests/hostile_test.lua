@@ -920,7 +920,14 @@ end
 -- affords -- three hundred here -- in one write, and a pass that never ended
 -- would grow the buffer for ever. It must end on the FILE's ceiling.
 --
-do
+-- And `| true`: the reader is gone at once, but a stage writing into a file
+-- of its own is not writing into the pipe, so no SIGPIPE ends it (write(2))
+-- -- it floods its file exactly as under `| cat`, and on the same leash. And
+-- `x=$( )`: the call's own file wins over the capture, so the word's ceiling
+-- no longer ends it -- the file's must.
+--
+for _, shape in ipairs({ "g > f 2> e | cat", "g > f 2> e | true", "x=$(g > f 2> e)" }) do
+	local label = shape
 	local machine, state, console = newMachine()
 	local LINES = 100
 	put(state, "/home/admin/lines", string.rep("y\n", LINES - 1) .. "y")
@@ -937,13 +944,13 @@ do
 
 	typeLine(system, machine, state, console,
 		"g() { while true; do cat /home/admin/lines; cat nosuch; done; }; " ..
-		"g > f 2> e | cat")
+		shape)
 	local result = drive(machine, PASSES)
 	CeroSecOS.writeRedirect = realWrite
 
-	flat("stage's own file", result)
-	timely("stage's own file", result)
-	note("stage's own file", result)
+	flat(label, result)
+	timely(label, result)
+	note(label, result)
 	check("both of the stage's files were written (" .. tostring(writes["f"]) ..
 		", " .. tostring(writes["e"]) .. ")",
 		(writes["f"] or 0) > 1 and (writes["e"] or 0) > 0)
@@ -955,7 +962,7 @@ do
 	eq("and the pipeline ended on the file's ceiling",
 		CeroSecJobs.foreground(machine, console), nil)
 	report[#report + 1] = string.format("  %-22s worst %4d lines/write, %d writes",
-		"stage's own file", worstChunk, writes["f"] or 0)
+		label, worstChunk, writes["f"] or 0)
 end
 
 --
