@@ -1046,9 +1046,11 @@ function CeroSecTerminal:updateEditor()
 		if refusal ~= nil and CeroSec.editBadness(text) >= CeroSec.editBadness(prev.text) then
 			-- Refused under the fingers: the character never lands, and the
 			-- cursor goes back where it was before it was typed. Only when it
-			-- made things no better, though -- a file the shell wrote can hold
-			-- a row wider than the screen, and an editor that undid the
-			-- backspaces on it would be an editor that could never fix it.
+			-- made things no better, though -- a file already past 4096 bytes,
+			-- or already carrying a control character, before this build ever
+			-- looked at it, and an editor that undid the backspaces on one
+			-- would be an editor that could never fix it. A row wider than the
+			-- screen is no longer one of these: it wraps, and is never refused.
 			self.entry:setText(prev.text)
 			self:setCursor(prev.pos)
 			self.editMessage = refusal
