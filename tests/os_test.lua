@@ -16266,6 +16266,34 @@ do
 	okAt(state, admin, "type if", { "if is a shell keyword" })
 end
 
+-- 50h2. `(` and `)` are operators in sh and end a word (XCU 2.3, 2.9.5), so the
+-- blanks around them are free. Every spelling dash takes is taken here.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "s1(){ echo one; }", {})
+	okAt(state, admin, "s1", { "one" })
+	ok(state, admin, "s2 (){ echo two; }", {})
+	okAt(state, admin, "s2", { "two" })
+	ok(state, admin, "s3 ( ) { echo three; }", {})
+	okAt(state, admin, "s3", { "three" })
+	ok(state, admin, "s4( ){ echo four; }", {})
+	okAt(state, admin, "s4", { "four" })
+	ok(state, admin, "s5()\n{ echo five; }", {})
+	okAt(state, admin, "s5", { "five" })
+	-- `{` is a reserved word, not an operator: glued to the command it is not a
+	-- brace, and dash refuses `t(){echo a;}` too. So does bash `t()x`.
+	badAt(state, admin, "s6(){echo six;}", "sh: syntax error: missing '{'")
+	badAt(state, admin, "s7()x", "sh: syntax error: missing '{'")
+	-- And `(` still means nothing new anywhere else.
+	okAt(state, admin, "case x in x) echo y;; esac", { "y" })
+	okAt(state, admin, "echo $(echo a) $((1+2)) \"s(){\"", { "a 3 s(){" })
+	do
+		local res = runAt(state, admin, "s8(x) { echo no; }", ENV)
+		eq("a name with something in its parentheses is no definition", res.ok, false)
+	end
+end
+
 -- 50i. A function that calls itself is bounded by the frame stack (debts 2).
 do
 	local state = fresh()

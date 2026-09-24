@@ -930,8 +930,15 @@ end
 -- A function definition
 --
 -- `name() { list; }`, POSIX.2's shape and the one every sh has taken since the
--- seventh edition. Two spellings are read, which are the two a pair of hands types:
--- `name()` as one word, and `name ()` as two.
+-- seventh edition. In sh `(` and `)` are operators and end a word (XCU 2.3 rule 6,
+-- 2.9.5 `fname ( ) compound-command`), so the blanks around them are free:
+-- `t(){`, `t() {`, `t (){`, `t ( ) {` and a `{` on the next line are all the same
+-- definition on dash. This tokenizer does not split on them -- `(` means nothing
+-- anywhere else on this machine and `echo (a)` is kept -- so funcAhead glues the
+-- words back together where a definition begins instead.
+--
+-- `{` is a reserved word, not an operator: it needs a blank after it, and
+-- `t(){echo a;}` is a syntax error on dash ("}" unexpected) and here.
 --
 -- The braces are NOT made reserved words. `{` and `}` are POSIX reserved words, and
 -- making them so here would mean a brace group (`{ list; }` as a command) this
@@ -947,16 +954,18 @@ end
 -- and checked like a variable's value, and the body is read out of it by this
 -- parser. A parsed program handed back out of modData is the one thing this machine
 -- will not do.
-local function parseFunc(P, depth, name, tokens)
+local function parseFunc(P, depth, name, tokens, braced)
 	local line = P.tokens[P.i].line
 	local at = P.tokens[P.i].at
 	P.i = P.i + tokens
-	skipNewlines(P)
-	local open = wordAt(P)
-	if open == nil or open.plain ~= "{" then
-		return nil, "syntax error: missing '{'", peek(P).line
+	if not braced then
+		skipNewlines(P)
+		local open = wordAt(P)
+		if open == nil or open.plain ~= "{" then
+			return nil, "syntax error: missing '{'", peek(P).line
+		end
+		P.i = P.i + 1
 	end
-	P.i = P.i + 1
 	local body, reason, where = parseProgram(P, { ["}"] = true }, depth + 1)
 	if body == nil then return nil, reason, where end
 	local close = wordAt(P)
@@ -972,22 +981,36 @@ local function parseFunc(P, depth, name, tokens)
 end
 
 -- Is what is next a function definition, and what is its name? nil when it is not
--- one, so the caller goes on to read an ordinary command.
+-- one, so the caller goes on to read an ordinary command. Else the name, how many
+-- words spell `name ( )`, and whether the last of them already carried the `{`.
+--
+-- The bare words on the line are read one after another and joined, blanks
+-- dropped, for as long as the join is still the start of `name(){`. `name()` is a
+-- definition; `name(){` is one with its brace; `name()` and anything else glued on
+-- (`t(){echo`) is one whose brace is missing, the syntax error it is on a real sh.
+-- A quoted word has no plain text and ends the join: `t "()"` is a command.
 --
 -- A reserved word is not a name: `if() { :; }` is a syntax error on a real sh and is
 -- one here, because `if` is grammar and cannot be a command.
 local function funcAhead(P)
 	local t = wordAt(P)
 	if t == nil or t.plain == nil then return nil end
-	local bare = string.match(t.plain, "^([A-Za-z_][A-Za-z0-9_]*)%(%)$")
-	if bare ~= nil then
-		if CeroSecOS.RESERVED[bare] then return nil end
-		return bare, 1
+	local name = string.match(t.plain, "^([A-Za-z_][A-Za-z0-9_]*)")
+	if name == nil or CeroSecOS.RESERVED[name] then return nil end
+	local joined = ""
+	local n = 0
+	while true do
+		local w = P.tokens[P.i + n]
+		if w == nil or w.t ~= "word" or w.plain == nil then return nil end
+		joined = joined .. w.plain
+		n = n + 1
+		local rest = string.sub(joined, #name + 1)
+		if string.sub(joined, 1, #name) ~= name then return nil end
+		if rest == "()" then return name, n, false end
+		if rest == "(){" then return name, n, true end
+		if string.sub(rest, 1, 2) == "()" then return name, n, "bad" end
+		if rest ~= "" and rest ~= "(" then return nil end
 	end
-	if not CeroSecOS.isVarName(t.plain) or CeroSecOS.RESERVED[t.plain] then return nil end
-	local nx = P.tokens[P.i + 1]
-	if nx == nil or nx.t ~= "word" or nx.plain ~= "()" then return nil end
-	return t.plain, 2
 end
 
 local function parsePiece(P, depth)
@@ -1001,8 +1024,11 @@ local function parsePiece(P, depth)
 		if t.plain == "while" or t.plain == "until" then return parseLoop(P, depth) end
 		if t.plain == "case" then return parseCase(P, depth) end
 	end
-	local fname, fwords = funcAhead(P)
-	if fname ~= nil then return parseFunc(P, depth, fname, fwords) end
+	local fname, fwords, braced = funcAhead(P)
+	if braced == "bad" then
+		return nil, "syntax error: missing '{'", P.tokens[P.i].line
+	end
+	if fname ~= nil then return parseFunc(P, depth, fname, fwords, braced) end
 	return parseSimple(P)
 end
 

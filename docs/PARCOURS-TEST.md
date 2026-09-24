@@ -4650,6 +4650,11 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      Dans un `$( )` : `x=$(g > c)`, puis `echo "[$x]"` affiche `[]` et
      `cat c` affiche `a` puis `b`. [ ]
 
+459b. **Une fonction sans espace avant l'accolade.** Taper `t(){ echo a; }`
+     puis `t` : affiche `a`. Idem avec `t (){ echo a; }` et
+     `t ( ) { echo a; }`. `t(){echo a;}` répond
+     `sh: syntax error: missing '{'`. [ ]
+
 ## Le manuel dit tout ce qui n'est pas Unix
 
 460. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les

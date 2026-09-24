@@ -19,6 +19,8 @@ shell: a script you saved that used `echo "a\nb"` now prints the two characters
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
+- A shell function can be defined without a space before the brace, as in
+  `t(){ echo a; }`, like on any sh.
 - A computer that's already on now opens with a left click, same as the
   menu's Use computer.
 - The editor no longer refuses a line wider than the screen. It wraps onto the
