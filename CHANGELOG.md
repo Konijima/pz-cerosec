@@ -19,6 +19,11 @@ shell: a script you saved that used `echo "a\nb"` now prints the two characters
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
+- The shell reads `IFS`, as sh does: `IFS=:; x=a:b; for i in $x` gives `a` and
+  `b`, `read` splits on it, and `"$*"` joins with its first character. `$( )`
+  keeps the newlines inside what it catches and drops only the trailing ones,
+  so `echo "$(printf 'a\nb')"` prints two lines. A script that never sets
+  `IFS` splits exactly as before.
 - A shell function can be defined without a space before the brace, as in
   `t(){ echo a; }`, like on any sh.
 - A computer that's already on now opens with a left click, same as the
@@ -118,8 +123,8 @@ and a command whose redirect is refused no longer runs.
 - The manual's "What is not Unix here" pages are now the complete list, and
   checked both ways against the machine: every difference from a 1993 Unix
   that is kept is on them, and nothing on them is untrue. New are the file
-  that ends without a newline (`echo a > p` is one byte), `IFS` not being
-  read, `read -p/-s/-n` and `!!` being later shells' words, the passwd file,
+  that ends without a newline (`echo a > p` is one byte),
+  `read -p/-s/-n` and `!!` being later shells' words, the passwd file,
   the `#` prompt, the error wording, a pipe stopping its left side as soon as
   the right side is done (`sleep 5 | true` ends at once), and the commands and
   flags that are not here (`set`, `rmdir`, `rm -f`, `kill -9`, `tail +N`,
