@@ -724,6 +724,20 @@ local function parseSimple(P)
 	return node
 end
 
+-- A list with nothing in it where the grammar wants one. Every part of if, while,
+-- until, for and a function's braces is a compound_list (POSIX XCU 2.10.2), and a
+-- compound_list is at least one command: a comment or a blank line is not one.
+-- dash refuses `if true; then fi` with `"fi" unexpected`, and so does this, in the
+-- words this shell already says it with. Only a list that stopped on a WORD is
+-- refused here: one that ran into the end of the file is missing its closing word,
+-- which the caller goes on to say.
+local function emptyList(P, prog)
+	if #prog > 0 then return nil end
+	local t = peek(P)
+	if t.t == "eof" then return nil end
+	return "syntax error: unexpected " .. describe(t), t.line
+end
+
 local function parseIf(P, depth)
 	local line = take(P).line
 	local clauses = {}
@@ -732,6 +746,8 @@ local function parseIf(P, depth)
 	while true do
 		local cond, reason, where = parseProgram(P, { ["then"] = true }, depth + 1)
 		if cond == nil then return nil, reason, where end
+		local empty, eline = emptyList(P, cond)
+		if empty ~= nil then return nil, empty, eline end
 		local t = wordAt(P)
 		if t == nil or t.plain ~= "then" then
 			return nil, "syntax error: missing 'then'", peek(P).line
@@ -740,6 +756,8 @@ local function parseIf(P, depth)
 		local body, breason, bwhere =
 			parseProgram(P, { ["elif"] = true, ["else"] = true, ["fi"] = true }, depth + 1)
 		if body == nil then return nil, breason, bwhere end
+		empty, eline = emptyList(P, body)
+		if empty ~= nil then return nil, empty, eline end
 		clauses[#clauses + 1] = { cond = cond, body = body }
 
 		local nx = wordAt(P)
@@ -750,6 +768,8 @@ local function parseIf(P, depth)
 				P.i = P.i + 1
 				local ebody, ereason, ewhere = parseProgram(P, { ["fi"] = true }, depth + 1)
 				if ebody == nil then return nil, ereason, ewhere end
+				empty, eline = emptyList(P, ebody)
+				if empty ~= nil then return nil, empty, eline end
 				otherwise = ebody
 				nx = wordAt(P)
 			end
@@ -772,6 +792,8 @@ local function parseDoDone(P, depth)
 	P.i = P.i + 1
 	local body, reason, where = parseProgram(P, { ["done"] = true }, depth + 1)
 	if body == nil then return nil, reason, where end
+	local empty, eline = emptyList(P, body)
+	if empty ~= nil then return nil, empty, eline end
 	local nx = wordAt(P)
 	if nx == nil or nx.plain ~= "done" then
 		return nil, "syntax error: missing 'done'", peek(P).line
@@ -811,6 +833,8 @@ local function parseLoop(P, depth)
 	local head = take(P)
 	local cond, reason, where = parseProgram(P, { ["do"] = true }, depth + 1)
 	if cond == nil then return nil, reason, where end
+	local empty, eline = emptyList(P, cond)
+	if empty ~= nil then return nil, empty, eline end
 	local body, breason, bwhere = parseDoDone(P, depth)
 	if body == nil then return nil, breason, bwhere end
 	return { k = "loop", line = head.line, negate = head.plain == "until",
@@ -968,6 +992,8 @@ local function parseFunc(P, depth, name, tokens, braced)
 	end
 	local body, reason, where = parseProgram(P, { ["}"] = true }, depth + 1)
 	if body == nil then return nil, reason, where end
+	local empty, eline = emptyList(P, body)
+	if empty ~= nil then return nil, empty, eline end
 	local close = wordAt(P)
 	if close == nil or close.plain ~= "}" then
 		return nil, "syntax error: missing '}'", peek(P).line

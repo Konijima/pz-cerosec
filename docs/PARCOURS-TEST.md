@@ -4655,6 +4655,13 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `t ( ) { echo a; }`. `t(){echo a;}` répond
      `sh: syntax error: missing '{'`. [ ]
 
+459c. **Un corps vide est refusé.** Taper `if true; then fi` : le shell
+     répond `sh: syntax error: unexpected 'fi'`. `if true; then true; fi` :
+     aucune erreur. Sur une machine trouvée, avec un compte ordinaire :
+     `ls /home` et `last` répondent, `cat /var/log/messages` est refusé. En
+     root : `cat /var/log/messages` et `cat /home/<nom>/.sh_history`
+     répondent, comme le dit la page « This machine may not be new. ». [ ]
+
 ## Le manuel dit tout ce qui n'est pas Unix
 
 460. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les

@@ -988,6 +988,17 @@ do
 			.. " characters")
 	states("the typing line", "typing line takes " .. CeroSec.INPUT_MAX .. " characters")
 	states("one file's ceiling", "One file: " .. CeroSecOS.MAX_FILE_BYTES .. " bytes.")
+	-- "This machine may not be new": the four places to look on a found machine,
+	-- each with who can look there. os_test runs every one of these lines on a
+	-- prefilled machine as the reader named, so a row changed here is a row to
+	-- run there. It used to send everybody to `cat /etc/passwd`, which is mode
+	-- 600 and root's, and to `cat .sh_history`, which is the reader's own.
+	states("who is on a found machine", "who is on it ls /home anybody")
+	states("who last sat at it", "who last sat here last anybody")
+	states("what it has done", "what it has done cat /var/log/messages root")
+	states("what he typed", "what he typed cat /home/<name>/.sh_history root")
+	states("his own history", "Logged in as him, his own is cat .sh_history.")
+	states("root reads /etc/passwd", "root also reads /etc/passwd")
 	states("the drive", "The drive: " .. CeroSecOS.DISK_BYTES .. " bytes and "
 		.. CeroSecOS.MAX_NODES .. " files")
 	states("one directory's ceiling",

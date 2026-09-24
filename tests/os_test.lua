@@ -6330,8 +6330,56 @@ do
 	parses("cat a |\n\tgrep b")
 	parses("cat a | grep b &")
 	parses(string.rep("cat a | ", CeroSecOS.MAX_STAGES - 1) .. "cat b")
-	parses("for i in a b; do done")
 	parses("")
+
+	-- A body is at least one command. Every list in if, while, until, for and a
+	-- function's braces is a compound_list (POSIX XCU 2.10.2), which is one command
+	-- or more, and dash refuses the empty one with `"fi" unexpected` -- said here
+	-- in this shell's words, naming the word that came where a command should be.
+	-- `do done` used to parse, and a script that did nothing looked like one that
+	-- worked.
+	refuses("if true; then fi", "syntax error: unexpected 'fi'", 1)
+	refuses("if true; then else echo a; fi", "syntax error: unexpected 'else'", 1)
+	refuses("if true; then echo a; elif false; then fi",
+		"syntax error: unexpected 'fi'", 1)
+	refuses("if true; then echo a; elif false; then else echo b; fi",
+		"syntax error: unexpected 'else'", 1)
+	refuses("if true; then echo a; else fi", "syntax error: unexpected 'fi'", 1)
+	refuses("while true; do done", "syntax error: unexpected 'done'", 1)
+	refuses("until false; do done", "syntax error: unexpected 'done'", 1)
+	refuses("for i in a b; do done", "syntax error: unexpected 'done'", 1)
+	refuses("for i; do done", "syntax error: unexpected 'done'", 1)
+	refuses("f() { }", "syntax error: unexpected '}'", 1)
+	refuses("f()\n{\n}", "syntax error: unexpected '}'", 3)
+	-- And the conditions, which are the same compound_list: dash says `"then"
+	-- unexpected` to `if then`.
+	refuses("if then echo a; fi", "syntax error: unexpected 'then'", 1)
+	refuses("if true; then echo a; elif then echo b; fi",
+		"syntax error: unexpected 'then'", 1)
+	refuses("while do echo a; done", "syntax error: unexpected 'do'", 1)
+	refuses("until do echo a; done", "syntax error: unexpected 'do'", 1)
+	-- A comment or a blank line is not a command either, and the line named is
+	-- the one the closing word is on.
+	refuses("if true; then\n# nothing yet\n\nfi", "syntax error: unexpected 'fi'", 4)
+	refuses("while true\ndo\n  # later\ndone", "syntax error: unexpected 'done'", 4)
+	refuses("f() {\n# later\n}", "syntax error: unexpected '}'", 3)
+	-- A list that runs into the end of the file is still missing its closing word.
+	refuses("if true; then", "syntax error: missing 'fi'", 1)
+	refuses("while true; do", "syntax error: missing 'done'", 1)
+	-- A body that does nothing is written with a command that does nothing:
+	-- `true` here, `:` not being one of this machine's commands.
+	parses("if true; then true; fi")
+	parses("if true; then true; elif false; then true; else true; fi")
+	parses("while false; do true; done")
+	parses("until true; do true; done")
+	parses("for i in a b; do true; done")
+	parses("f() { true; }")
+	parses("if true; then\n# a comment\ntrue\nfi")
+	-- What POSIX lets be empty stays so: a case clause (`pattern) ;;`) and a for
+	-- with no words after in.
+	parses("case x in a) ;; esac")
+	parses("case x in a) ;; b) echo b ;; esac")
+	parses("for i in; do true; done")
 
 	-- And every way of getting one wrong.
 	refuses("fi", "syntax error: unexpected 'fi'", 1)
@@ -17226,6 +17274,95 @@ do
 	ok(state, admin, "cat c8.txt", { "<in>" })
 	ok(state, admin, "x=$(k)", {})
 	ok(state, admin, "echo \"[$x]\"", { "[<in>]" })
+end
+
+--
+-- Volume 1, "This machine may not be new": every line of its table, run as the
+-- reader the table names, on a machine the world content filled.
+--
+-- The page is about a FOUND machine, and a found machine is not a fresh one: the
+-- factory `admin` is taken off it (CeroSecContent.prefill) and nobody on it is in
+-- /etc/sudoers or wheel, so sudo is nobody's there and the reader who may see the
+-- closed files is root, logged in with the password a paper names. The page used
+-- to send everybody to `cat /etc/passwd` (root's, mode 600) and to `cat
+-- .sh_history`, which is the reader's own. The same four lines are pinned in the
+-- page by tests/manual_test.lua.
+--
+-- Defs and Content are loaded here, at the end, and nowhere else in this file:
+-- the rest of it is the engine on its own.
+--
+
+do
+	local function load(path)
+		local chunk, err = loadfile(path)
+		if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+		chunk()
+	end
+	load("42/media/lua/shared/CeroSec/CeroSecDefs.lua")
+	load("42/media/lua/shared/CeroSec/CeroSecContent.lua")
+	local word = {}
+	for i = #CeroSecContent.PREMISES_WORDS, 1, -1 do
+		local pair = CeroSecContent.PREMISES_WORDS[i]
+		word[pair[2]] = pair[1]
+	end
+	local start = CeroSecOS.timeFromParts(1993, 7, 9, 9, 0, 0)
+	local secret = "0123456789abcdef"
+
+	-- The page's rows, with <name> filled in.
+	local function rows(name)
+		return {
+			anybody = { "ls /home", "last" },
+			root = { "cat /var/log/messages", "cat /home/" .. name .. "/.sh_history",
+				"cat /etc/passwd" },
+		}
+	end
+
+	local tried = 0
+	for _, id in ipairs({ "radio", "police", "office" }) do
+		local state = CeroSecOS.newState("ksp-4-b")
+		local _, rootPassword, logins = CeroSecContent.prefill(state, {
+			secret = secret, b1 = 12, b2 = 34, x = 8130, y = 9254, z = 0,
+			premises = word[id], start = start, now = start })
+		check(id .. ": the machine has at least two accounts",
+			type(logins) == "table" and #logins >= 2)
+		local root = CeroSecOS.login(state, "root", rootPassword)
+		check(id .. ": root logs in with the password prefill made", root ~= nil)
+		local him = CeroSecOS.login(state, logins[1],
+			CeroSecContent.accountPassword(secret, 12, 34, 1, logins[1]))
+		check(id .. ": and so does the first account", him ~= nil)
+		local other = logins[2]
+		local r = rows(other)
+		check(id .. ": the other account has a history to read",
+			CeroSecOS.systemNode(state, "/home/" .. other .. "/"
+				.. CeroSecOS.HISTORY_NAME) ~= nil)
+
+		for _, line in ipairs(r.anybody) do
+			local done, lines = exec(state, him, line)
+			eq(id .. ": `" .. line .. "` as " .. logins[1], done, true)
+			check(id .. ": `" .. line .. "` prints something", #lines > 0)
+			done = exec(state, root, line)
+			eq(id .. ": `" .. line .. "` as root", done, true)
+		end
+		for _, line in ipairs(r.root) do
+			local done, lines = exec(state, root, line)
+			eq(id .. ": `" .. line .. "` as root", done, true)
+			check(id .. ": `" .. line .. "` prints something", #lines > 0)
+			-- And closed to him, which is why the page says root.
+			done = exec(state, him, line)
+			eq(id .. ": `" .. line .. "` as " .. logins[1], done, false)
+		end
+		-- ls /home names the other account, which is what the row is for.
+		local _, homes = exec(state, him, "ls /home")
+		check(id .. ": ls /home names " .. other,
+			string.find(" " .. table.concat(homes, " ") .. " ", " " .. other .. " ",
+				1, true) ~= nil)
+		-- His own, logged in as him.
+		local done, lines = exec(state, him, "cat .sh_history")
+		eq(id .. ": `cat .sh_history` as " .. logins[1], done, true)
+		check(id .. ": and it is his", #lines > 0)
+		tried = tried + 1
+	end
+	eq("the page's lines were run on three found machines", tried, 3)
 end
 
 print("os_test: " .. count .. " assertions passed")

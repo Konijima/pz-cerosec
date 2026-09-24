@@ -2373,7 +2373,7 @@ own name and line -- broken.sh: line 3: -- a typed line with sh: alone.
   syntax error: unexpected 'fi'
       a closing word where a command should be; also
       'done', 'then', 'else', 'elif', 'do', 'esac',
-      ';;' and '<'
+      ';;', '}' and '<'
   syntax error: missing 'done'
       a loop never closed; also 'fi', 'then', 'do',
       'esac', 'in', ';;' and ')'

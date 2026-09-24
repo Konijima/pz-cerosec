@@ -19,6 +19,11 @@ shell: a script you saved that used `echo "a\nb"` now prints the two characters
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
+- The shell now refuses an `if`, `while`, `until`, `for` or function whose
+  body is empty (`if true; then fi`), as sh does; write `true` for a body
+  that does nothing.
+- The manual page "This machine may not be new." now gives commands that
+  actually work on a found machine, and says which of them need root.
 - A shell function can be defined without a space before the brace, as in
   `t(){ echo a; }`, like on any sh.
 - A computer that's already on now opens with a left click, same as the

@@ -410,20 +410,19 @@ were given, that is what has happened.
 
 Four places to look, and none of them is a guess.
 
-  who is on it        cat /etc/passwd
-  what it has done    cat /var/log/messages
-  who last sat here   last
-  what he typed       cat .sh_history
+  who is on it       ls /home                     anybody
+  who last sat here  last                         anybody
+  what it has done   cat /var/log/messages        root
+  what he typed      cat /home/<name>/.sh_history root
 
-/etc/passwd is one line per account. The first field is the name to type
-at login:; the second is not a password but what one turns into, and you
-cannot read one back out of it.
+Logged in as him, his own is cat .sh_history. root also reads
+/etc/passwd: the first field is the name to type at login:; the
+second is not a password but what one turns into.
 
 If nobody left you the password, ask whoever had the desk. Failing that,
 your site administrator can set you a new one (Volume 2, chapter 2), and
-the firmware can put a machine back to the way it left our factory
-without touching anybody's home directory -- the last resort, chapter
-10.]],
+the firmware can put the machine back as it left our factory, homes
+untouched -- the last resort, chapter 10.]],
 
 		} },
 
