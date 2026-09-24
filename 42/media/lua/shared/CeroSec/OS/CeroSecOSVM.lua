@@ -1019,8 +1019,10 @@ function CeroSecOS.newJob(opts)
 		-- whole path in a crontab line. A script run by hand is handed a copy of
 		-- its parent's ENVIRONMENT instead, and a subshell -- a stage, an `&` -- a
 		-- copy of everything its parent held.
-		vars = { PATH = CeroSecOS.DEFAULT_PATH }
-		nvars = 1
+		-- And IFS, which every sh sets at its start (POSIX.2 2.5.3; 4.4BSD
+		-- var.c's varinit, "IFS= \t\n") and nobody exports.
+		vars = { PATH = CeroSecOS.DEFAULT_PATH, IFS = IFS_DEFAULT }
+		nvars = 2
 		-- And it is an environment and not a shell variable: a machine with no
 		-- PATH in front of a cron line could not run a command at all.
 		if exported == nil then exported = { PATH = true } end
@@ -1652,7 +1654,9 @@ local function expandStep(job, state, ex, env)
 	local ifsRaw = job.vars.IFS
 	if not ex.ifsCached or ifsRaw ~= ex.ifsRaw then
 		ex.ifsRaw, ex.ifsCached = ifsRaw, true
-		if ifsRaw == nil then ex.ifsWs, ex.ifsDelim = nil, nil
+		-- Set to space, tab and newline -- what every shell starts with now
+		-- -- is the unset case byte for byte, so it takes the same splitter.
+		if ifsRaw == nil or ifsRaw == IFS_DEFAULT then ex.ifsWs, ex.ifsDelim = nil, nil
 		else ex.ifsWs, ex.ifsDelim = ifsClasses(ifsRaw) end
 	end
 	while ex.wi <= #ex.words do
@@ -5417,6 +5421,11 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace, target, erd)
 		job.fprog = nil
 		job.traps = nil
 		local child = CeroSecOS.exportedVars(job.vars, job.exported)
+		-- A new sh sets IFS to space, tab and newline whatever it was handed:
+		-- POSIX.2 2.5.3 lets a shell ignore an IFS in the environment, and a
+		-- script that starts splitting on whatever its caller exported is a
+		-- script nobody can read. Not exported, so it is the child's own.
+		child.IFS = IFS_DEFAULT
 		local n = 0
 		for _, _ in pairs(child) do n = n + 1 end
 		job.vars = child

@@ -123,10 +123,11 @@ do
 	local names = {}
 	for name in pairs(c.vars) do names[#names + 1] = name end
 	table.sort(names)
-	eq("set lists every variable", #listed, #names)
-	for i = 1, #names do
-		eq("set line " .. i, listed[i], names[i] .. "=" .. c.vars[names[i]])
-	end
+	-- As text and not line by line: IFS holds a newline, and showvars
+	-- printed it as it stands, so its one entry is two lines on the glass.
+	local want = {}
+	for i = 1, #names do want[i] = names[i] .. "=" .. c.vars[names[i]] end
+	eq("set lists every variable", table.concat(listed, "\n"), table.concat(want, "\n"))
 	local seen = false
 	for i = 1, #listed do if listed[i] == "Qz=1" then seen = true end end
 	check("and an unexported one is among them", seen)

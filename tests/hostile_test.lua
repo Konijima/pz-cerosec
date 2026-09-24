@@ -1666,7 +1666,9 @@ do
 			check("cron fired something", fired ~= nil)
 			eq("with the default PATH", fired.vars.PATH, CeroSecOS.DEFAULT_PATH)
 			eq("and the account's HOME", fired.vars.HOME, "/home/admin")
-			eq("and nothing else at all", fired.nvars, 2)
+			-- And IFS, which every sh starts with and nobody exports.
+			eq("and IFS at space, tab and newline", fired.vars.IFS, " \t\n")
+			eq("and nothing else at all", fired.nvars, 3)
 		end
 		for _ = 1, 10 do
 			_G.__now = _G.__now + CeroSec.JOB_PASS_MS

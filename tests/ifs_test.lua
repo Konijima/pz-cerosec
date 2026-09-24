@@ -203,5 +203,36 @@ do
 		{ "[a]", "[b]" })
 end
 
+--
+-- N. Every new shell STARTS with IFS at space, tab and newline, set and not
+-- exported (POSIX.2 2.5.3), so `${#IFS}` is 3 and the save-and-restore idiom
+-- restores. With IFS unset, OIFS="$IFS" saved "" and IFS="$OIFS" then turned
+-- splitting OFF for the rest of the script.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	admin.shvars = CeroSecOS.loginVars("/home/admin")
+	admin.shexport = CeroSecOS.loginExported()
+	ok(state, admin, "echo ${#IFS}", { "3" })
+	ok(state, admin, 'x="a b:c"; OIFS="$IFS"; IFS=:; for w in $x; do echo "[$w]"; done; '
+		.. 'IFS="$OIFS"; for w in $x; do echo "<$w>"; done',
+		{ "[a b]", "[c]", "<a>", "<b:c>" })
+	-- A script is a new sh: IFS at the default again, even one exported colon.
+	ok(state, admin, 'printf "echo \\${#IFS}; x=a:b; echo \\$x\\n" > s.sh', {})
+	ok(state, admin, "IFS=:; export IFS; sh s.sh", { "3", "a:b" })
+	ok(state, admin, 'IFS="$OIFS"; sh s.sh', { "3", "a:b" })
+	-- A subshell is not a new sh: $( ) and a stage keep the caller's.
+	ok(state, admin, 'IFS=:; echo $(echo ${#IFS}); echo ${#IFS} | cat; IFS="$OIFS"',
+		{ "1", "1" })
+	-- A job nobody handed an environment -- cron's case -- has it too.
+	eq("a cron line's shell has IFS", CeroSecOS.newJob({ prog = {} }).vars.IFS, " \t\n")
+	-- And a shell saved before there was one reads unset as the same three.
+	local old = open(state, "admin")
+	old.shvars = { PATH = CeroSecOS.DEFAULT_PATH }
+	ok(state, old, "echo ${#IFS}; x='a  b'; for w in $x; do echo \"[$w]\"; done",
+		{ "0", "[a]", "[b]" })
+end
+
 print("ifs_test: " .. count .. " checks passed")
 

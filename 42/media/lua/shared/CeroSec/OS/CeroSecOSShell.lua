@@ -6757,8 +6757,13 @@ end
 -- prompt. HOME goes in with it: it is the other thing a login shell has always
 -- set, and it is what makes PATH=$PATH:$HOME/bin a line worth writing in a
 -- .profile. A fresh table every time, so no two shells ever share one.
+--
+-- And IFS, set and not exported: every sh starts with it at space, tab and
+-- newline (POSIX.2 2.5.3; 4.4BSD sh var.c's varinit), so `echo ${#IFS}` is 3
+-- and OIFS="$IFS" ... IFS="$OIFS" puts back what it saved. A shell saved
+-- before this line has no IFS, which reads as the same three bytes.
 function CeroSecOS.loginVars(home)
-	local vars = { PATH = CeroSecOS.DEFAULT_PATH }
+	local vars = { PATH = CeroSecOS.DEFAULT_PATH, IFS = " \t\n" }
 	if type(home) == "string" and home ~= "" then vars.HOME = home end
 	return vars
 end

@@ -11057,7 +11057,12 @@ do
 	local job = CeroSecOS.newJob({ prog = {} })
 	eq("a job nobody handed an environment starts with the default PATH",
 		job.vars.PATH, CeroSecOS.DEFAULT_PATH)
-	eq("and with nothing else in it", job.nvars, 1)
+	-- Nothing else but IFS, which every sh sets at its start and nobody
+	-- exports (POSIX.2 2.5.3): space, tab, newline.
+	eq("and IFS, at space, tab and newline", job.vars.IFS, " \t\n")
+	eq("and with nothing else in it", job.nvars, 2)
+	eq("a login sets IFS too", CeroSecOS.loginVars("/root").IFS, " \t\n")
+	check("and does not export it", CeroSecOS.loginExported().IFS == nil)
 end
 
 -- How many directories a PATH may name. The ceiling is met where the value is

@@ -837,7 +837,14 @@ is room, the same loop reads better:
   done
 
 The list is words, split on blanks like any other line, so quotes work in
-it the way they work everywhere. And the list can come from a command,
+it the way they work everywhere. What splits is IFS: space, tab and
+newline in every new shell. Save it, change it, put it back:
+
+  OIFS="$IFS"; IFS=:
+  for d in $PATH; do echo $d; done
+  IFS="$OIFS"
+
+And the list can come from a command,
 which is what makes for useful rather than merely tidy -- that is chapter
 6, and it is the one thing in this book worth reading twice.
 
@@ -2324,7 +2331,7 @@ may be.]],
   $0              the script's own name
   $#              how many words were handed over
   $@              all of them; "$@" one word each
-  $*              all of them as one string
+  $*              all of them, joined by IFS's first byte
   $?              the number the last command finished on
   $$              this job's number
   $!              the last & job's number
