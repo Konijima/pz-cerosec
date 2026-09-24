@@ -4,9 +4,10 @@
 -- list is evaltree in place). Run from the repo root:
 --   lua5.1 tests/groups_test.lua
 --
--- Each expected answer is what dash (Ubuntu's /bin/sh, the same parser.c
--- lineage) printed for the same line; a comment says so where the rule is
--- not the obvious one.
+-- The syntax errors and the statuses are what dash (Ubuntu's /bin/sh, the
+-- same parser.c lineage) printed for the same line, except where a comment
+-- says otherwise; the rest is 4.4BSD-Lite2's wording (`directory
+-- nonexistent`, wc's eight columns), as everywhere on this machine.
 local DIR = "42/media/lua/shared/CeroSec/OS/"
 local FILES = {
 	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSDev", "CeroSecOSDisk", "CeroSecOSFS", "CeroSecOSNet", "CeroSecOSPath", "CeroSecOSScript",
@@ -218,7 +219,14 @@ do
 	-- Kept from one line to the next, as its source is re-read.
 	ok(state, admin, "f", { "in 2" })
 	ok(state, admin, "g() ( echo gg ) > gf; g; cat gf", { "gg" })
+	-- The source it keeps ends on its last token, a `2>&1` included: a
+	-- redirect token without an end kept the text "e" alone, and the next
+	-- line found no function there.
+	ok(state, admin, "e() ( echo o; cat nosuch ) 2>&1", {})
+	ok(state, admin, "e | wc -l", { "       2" })
 	ok(state, admin, "m() if true; then echo yes; fi; m", { "yes" })
+	-- XCU 2.9.5: `function_body : compound_command`. parser.c and dash take
+	-- a simple command too; POSIX does not, and neither does this machine.
 	bad(state, admin, "n() echo x", "Syntax error: word unexpected (expecting \"{\")")
 end
 

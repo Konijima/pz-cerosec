@@ -16202,7 +16202,7 @@ do
 	okAt(state, admin, "case \"a)\" in \"a)\") echo quoted;; esac", { "quoted" })
 	okAt(state, admin, "case \")\" in [\\)]) echo inset;; esac", { "inset" })
 	badAt(state, admin, "case \")\" in [)]) echo inset;; esac",
-		"Syntax error: \")\" unexpected")
+		"Syntax error: \")\" unexpected (expecting \";;\")")
 	-- And a quoted bracket does not CLOSE one either, so a pattern that ends in one
 	-- and has no bracket after it is a pattern list that was never closed.
 	badAt(state, admin, "case \"a)\" in \"a)\" echo x;; esac",

@@ -626,7 +626,9 @@ local function tokenize(text, depth)
 				if d == "2" then dup = 2 end
 				i = i + 2
 			end
-			tokens[#tokens + 1] = { t = "redir", append = append, fd = fd, dup = dup, line = line }
+			-- stop, as a word has: a function body may end on a `2>&1`.
+			tokens[#tokens + 1] = { t = "redir", append = append, fd = fd, dup = dup, line = line,
+				stop = i - 1 }
 		elseif c == "<" then
 			return nil, "Syntax error: redirection unexpected", line
 		elseif c == "(" or c == ")" then
@@ -1146,8 +1148,11 @@ local function parseCase(P, depth)
 			skipNewlines(P)
 		end
 
+		-- A ")" stops the body too, so that a stray one is a clause that never
+		-- ended, as parser.c has it (list(), then synexpect(TENDCASE)): dash
+		-- says `")" unexpected (expecting ";;")` for `case ) in [)]) ...`.
 		local body, reason, where =
-			parseProgram(P, { [";;"] = true, ["esac"] = true }, depth + 1)
+			parseProgram(P, { [";;"] = true, ["esac"] = true, [")"] = true }, depth + 1)
 		if body == nil then return nil, reason, where end
 		clauses[#clauses + 1] = { pats = pats, body = body }
 
@@ -1181,7 +1186,8 @@ end
 -- any compound command, as POSIX.2 XCU 2.9.5 and 4.4BSD sh's parser.c
 -- (`n->nfunc.body = command()`) have it: a brace group most of the time, and
 -- `f() ( list )`, `f() if ...; fi` or a loop. A simple command is not one:
--- `f() echo x` is `word unexpected (expecting "{")`, as on dash.
+-- XCU 2.9.5's grammar is `function_body : compound_command`, so `f() echo x`
+-- is `word unexpected (expecting "{")` here, though parser.c and dash take it.
 --
 -- The SOURCE of the definition travels with it (`src`). The console keeps a
 -- function between one line and the next, and what it keeps has to survive being
