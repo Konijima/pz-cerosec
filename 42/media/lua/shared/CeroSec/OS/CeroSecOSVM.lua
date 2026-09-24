@@ -1571,7 +1571,14 @@ local function printfPass(format, args, from)
 			elseif conv == "" then
 				out = out .. "%"
 			else
-				out = out .. "%" .. conv
+				-- An unknown conversion prints as it stood in the format, flags,
+				-- width and precision included -- `%5.2f` comes out `%5.2f`, not
+				-- `%f` with the field thrown away (this machine has no %f: no
+				-- floating point conversion is trusted here, printf(3)'s NUL
+				-- termination and rounding wanting more than Kahlua's numbers
+				-- prove). No argument is consumed either: the operand is still
+				-- waiting for the conversion that would have read it.
+				out = out .. string.sub(format, i, j)
 			end
 			i = j + 1
 		else
@@ -4703,6 +4710,7 @@ for name, num in pairs(KILL_SIGNALS) do KILL_NAME_OF[num] = name end
 -- kill(1)'s own default.
 local function killSignalOf(args)
 	local first = args[2]
+	if first == nil then return nil, nil, 2 end
 	if first == "-s" then
 		return args[3], args[3], 4
 	end

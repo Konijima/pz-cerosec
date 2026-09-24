@@ -1672,14 +1672,20 @@ do
 	eq("no dirty file exists",
 		state.fs.children.home.children.admin.children["dirty.txt"].data, "")
 
-	-- No escape can manufacture one: inside double quotes \1 is the two
-	-- characters \ and 1, and printf knows \n \t \\ and no octal \ddd.
+	-- The shell's own double quotes make no escape at all: inside them \1 is
+	-- the two characters \ and 1, sh(1)'s own rule (only $ ` " \ and newline
+	-- are special there). What printf's OWN \ddd table does with the two
+	-- characters it is handed is a separate question, asked right below.
 	ok(state, admin, 'echo "\\1"', { "\\1" })
 	ok(state, admin, 'echo "\\1" > tame.txt', {})
 	ok(state, admin, "cat tame.txt", { "\\1" })
 	eq("the file holds backslash and digit, not the byte",
 		state.fs.children.home.children.admin.children["tame.txt"].data, "\\1")
-	ok(state, admin, 'printf "\\1"', { "\\1" })
+	-- printf(1) of 4.4BSD, its own \ddd: "\1" is the octal escape for the
+	-- single digit 1, which names the byte 0x01 -- not the two characters
+	-- backslash and one that reached it. (printf.c's chkfields/escape table,
+	-- shared with the C escape K&R A2.5.2 names it after.)
+	ok(state, admin, 'printf "\\1"', { string.char(1) })
 
 	-- Newline and tab still go in, through printf, and come back out.
 	ok(state, admin, 'printf "a\\nb\\tc\\n" > good.txt', {})
@@ -3834,7 +3840,7 @@ do
 	badAt(state, admin, "head", "head: usage: head [-n N|-N] [file]")
 	badAt(state, admin, "head -n a.txt", "head: usage: head [-n N|-N] [file]")
 	badAt(state, admin, "head -n -3 a.txt", "head: usage: head [-n N|-N] [file]")
-	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N|-N] [file]")
+	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N|-N|+N] [file]")
 	-- Digits and nothing else: `-2x` is not a number and is not a flag either.
 	badAt(state, admin, "head -2x a.txt", "head: usage: head [-n N|-N] [file]")
 	badAt(state, admin, "head -l a.txt", "head: usage: head [-n N|-N] [file]")
@@ -7664,7 +7670,8 @@ do
 	ok, lines = exec(state, admin, "kill 99", env)
 	eq("a job that is not there", lines[1], "kill: 99: no such job")
 	ok, lines = exec(state, admin, "kill", env)
-	eq("and kill with nothing to kill says how", lines[1], "kill: usage: kill <id>|%<n>")
+	eq("and kill with nothing to kill says how", lines[1],
+		"kill: usage: kill [-<signal>|-s <signal>] <id>|%<n>")
 
 	-- WHOSE job it is. kill(2) is root, or the account the process belongs to, and
 	-- EPERM for anybody else. It is the one rule the jobs deviation does NOT touch:
@@ -8354,12 +8361,12 @@ do
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
 	local WANT = "[ arp at atq atrm cat chgrp chmod chown clear cp crontab cu cut date dev df"
-		.. " echo edit env false find grep groupadd groupdel groups halt head"
+		.. " echo edit env expr false find grep groupadd groupdel groups halt head"
 		.. " help hostname id ifconfig kill last ln ls mail man mkdir mkpasswd more mount"
 		.. " mv newfs passwd ping"
-		.. " printf ps pwd rcp reboot rlogin rm rsh ruptime rwho"
+		.. " printf ps pwd rcp reboot rlogin rm rmdir rsh ruptime rwho"
 		.. " sh shutdown"
-		.. " sleep sort su sudo tail tar tee test touch tr true umount uniq uptime"
+		.. " sleep sort su sudo tail tar tee test touch tr true umount uname uniq uptime"
 		.. " useradd userdel usermod w wall wc which who whoami"
 
 	eq("/bin holds exactly these",

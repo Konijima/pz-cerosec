@@ -2090,10 +2090,11 @@ Groups, and who may read what.
 [==[The machine itself.
 
   hostname [name]
+  uname [-asnrv]
   df
   ps
   jobs
-  kill <id>|%<n>
+  kill [-<signal>|-s <signal>] <id>|%<n>
   fg [%<n>|<id>]
   shutdown [-h|-r] now|+N
   halt

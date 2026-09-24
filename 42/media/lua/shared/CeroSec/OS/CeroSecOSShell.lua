@@ -704,6 +704,9 @@ CeroSecOS.COMMAND_INFO = {
 	export   = { desc = "put a variable in the environment",
 		usage = "export NAME[=value]...", shell = true },
 	exit     = { desc = "log out", usage = "exit", shell = true },
+	-- POSIX.2's grammar, minus `:` -- see the head of commands.expr for why, and
+	-- the manual's deviations page for the declaration.
+	expr     = { desc = "evaluate an expression", usage = "expr <expression>" },
 	fg       = { desc = "bring a background job to the front",
 		usage = "fg [%<n>|<id>]", shell = true },
 	["false"] = { desc = "do nothing, unsuccessfully", usage = "false" },
@@ -776,10 +779,9 @@ CeroSecOS.COMMAND_INFO = {
 	rlogin   = { desc = "log in on another machine", usage = "rlogin <host|address> [-l user]" },
 	rm       = { desc = "remove a file or a directory", usage = "rm [-rf] <path>..." },
 	-- 4.4BSD's rmdir(1): a directory that already has nothing in it, or `rm -r`
-	-- for one that has not. No -p: that flag climbs and removes every parent
-	-- that is empty afterwards too, which is a second command's worth of walk
-	-- behind one flag, and the manual's deviations page says so.
-	rmdir    = { desc = "remove an empty directory", usage = "rmdir <dir>..." },
+	-- for one that has not. -p climbs and removes every parent that is empty
+	-- behind it too, rmdir.c's own rm_path (see the head of commands.rmdir).
+	rmdir    = { desc = "remove an empty directory", usage = "rmdir [-p] <dir>..." },
 	rsh      = { desc = "run one command on another machine",
 		usage = "rsh <host|address> [-l user] <command>..." },
 	ruptime  = { desc = "list the machines on the wire", usage = "ruptime" },
@@ -1089,22 +1091,22 @@ CeroSecOS.DEVIATIONS = {
 		why = "a job cannot replace its shell" },
 	{ name = "trap", absent = true, phrase = "set, unset, exec and trap are not in this shell",
 		why = "there are no signals to catch" },
-	{ name = "rmdir", absent = true, phrase = "rmdir, expr and uname are not on the disk",
-		why = "rm -r takes a directory" },
-	{ name = "expr", absent = true, phrase = "rmdir, expr and uname are not on the disk",
-		why = "$(( )) does the sums" },
-	{ name = "uname", absent = true, phrase = "rmdir, expr and uname are not on the disk",
-		why = "hostname names the machine" },
-	-- And flags that are not here on commands that are.
-	{ name = "rm", phrase = "rm has no -f",
-		why = "rm -f is an unknown option" },
-	{ name = "kill", phrase = "kill takes no signal",
-		why = "there are no signals: kill ends a job" },
-	{ name = "tail", phrase = "tail +N is not here",
-		why = "tail -n N and tail -N are the forms" },
-	-- CeroSecOS.printfText knows %s, %d and %% and copies anything else.
-	{ name = "printf", phrase = "prints anything else as it stands",
-		why = "no width, no precision, no %x or %f" },
+	-- expr has arithmetic and comparison now, but no : -- the manual's own
+	-- words say why (a matcher that only answers whether, never where).
+	{ name = "expr", phrase = "expr has no :",
+		why = "the matcher grep uses cannot hand back where a match ended" },
+	-- No -m: see the head of commands.uname for why.
+	{ name = "uname", phrase = "uname has no -m",
+		why = "no hardware name was ever put in this machine to print" },
+	-- kill honours the five signals whose default action ends a job outright,
+	-- and refuses the rest by name -- STOP and CONT among them, since nothing
+	-- here can pause or resume a job the way a real process can be.
+	{ name = "kill", phrase = "kill -9 and kill -s KILL, TERM, HUP, INT or QUIT end a job",
+		why = "STOP and CONT are refused: a job cannot be paused and resumed here" },
+	-- CeroSecOS.printfText knows %s, %c, %d, %x, %o and %%, with a width, a
+	-- precision and the "-" and "0" flags, but no %f.
+	{ name = "printf", phrase = "no %f: no floating point conversion is trusted here",
+		why = "no floating point conversion is trusted here" },
 }
 
 --
@@ -1382,6 +1384,153 @@ commands.uname = function(state, session, args, env)
 	if want.r then fields[#fields + 1] = release end
 	if want.v then fields[#fields + 1] = version end
 	return true, { table.concat(fields, " ") }
+end
+
+-- expr(1), POSIX.2's own grammar (the same one 4.4BSD's V7-descended expr
+-- carries): lowest to highest, ARG | ARG, ARG & ARG, the six comparisons,
+-- + -, then * / %, and ( EXPR ) to override any of it. Read a token at a
+-- time off args, never through Lua's pattern matcher (docs/SECURITY.md).
+--
+-- Not here: `:` against a pattern, `match`, `substr`, `index` and `length`.
+-- A bare `:` wants a matcher that can hand back where a match ENDED, and
+-- CeroSecOS.breMatch above answers only whether one exists (see its own
+-- head comment) -- built that way on purpose, so an anchored walk never
+-- pays for remembering a position nothing here needed until now. Teaching
+-- it to also could only be done straight against Kahlua's own strings, so
+-- it stays undone rather than reached for with string.find on a player's
+-- own pattern. Declared on the manual's deviations page.
+--
+-- Exit status is expr(1)'s own: 0 when the value is neither empty nor "0",
+-- 1 when it is, 2 for a syntax error or an operation that failed outright
+-- (a non-integer to an arithmetic operator, or a division by zero) -- the
+-- two cases POSIX.2 does not split the way some expr(1)s do with a third
+-- status.
+local exprOr, exprAnd, exprRel, exprAdd, exprMul, exprPrimary
+
+local function exprIsInt(s)
+	return string.match(s, "^%-?%d+$") ~= nil
+end
+
+-- Truncated toward zero, the way C's / and % (and so expr(1)'s) work --
+-- floor would answer -1 for -7 / 2 where C and expr both say -3.
+local function exprDiv(a, b)
+	local q = a / b
+	if q < 0 then return -math.floor(-q) end
+	return math.floor(q)
+end
+
+local function exprCompare(op, a, b)
+	local na, nb = nil, nil
+	if exprIsInt(a) and exprIsInt(b) then na, nb = tonumber(a), tonumber(b) end
+	local x, y = na or a, nb or b
+	if op == "=" then return x == y end
+	if op == "!=" then return x ~= y end
+	if op == "<" then return x < y end
+	if op == "<=" then return x <= y end
+	if op == ">" then return x > y end
+	return x >= y
+end
+
+exprPrimary = function(t, i, hi)
+	if i > hi then return nil, "expr: syntax error", i end
+	if t[i] == "(" then
+		local v, err, ni = exprOr(t, i + 1, hi)
+		if err ~= nil then return nil, err, ni end
+		if t[ni] ~= ")" then return nil, "expr: syntax error", ni end
+		return v, nil, ni + 1
+	end
+	return t[i], nil, i + 1
+end
+
+exprMul = function(t, i, hi)
+	local v, err, ni = exprPrimary(t, i, hi)
+	if err ~= nil then return nil, err, ni end
+	while t[ni] == "*" or t[ni] == "/" or t[ni] == "%" do
+		local op = t[ni]
+		local w, werr, nj = exprPrimary(t, ni + 1, hi)
+		if werr ~= nil then return nil, werr, nj end
+		if not exprIsInt(v) or not exprIsInt(w) then
+			return nil, "expr: non-numeric argument", nj
+		end
+		local a, b = tonumber(v), tonumber(w)
+		if op == "*" then
+			v = tostring(a * b)
+		else
+			if b == 0 then return nil, "expr: division by zero", nj end
+			if op == "/" then v = tostring(exprDiv(a, b))
+			else v = tostring(a - exprDiv(a, b) * b) end
+		end
+		ni = nj
+	end
+	return v, nil, ni
+end
+
+exprAdd = function(t, i, hi)
+	local v, err, ni = exprMul(t, i, hi)
+	if err ~= nil then return nil, err, ni end
+	while t[ni] == "+" or t[ni] == "-" do
+		local op = t[ni]
+		local w, werr, nj = exprMul(t, ni + 1, hi)
+		if werr ~= nil then return nil, werr, nj end
+		if not exprIsInt(v) or not exprIsInt(w) then
+			return nil, "expr: non-numeric argument", nj
+		end
+		local a, b = tonumber(v), tonumber(w)
+		if op == "+" then v = tostring(a + b) else v = tostring(a - b) end
+		ni = nj
+	end
+	return v, nil, ni
+end
+
+local EXPR_REL = { ["="] = true, ["!="] = true, ["<"] = true, ["<="] = true, [">"] = true, [">="] = true }
+exprRel = function(t, i, hi)
+	local v, err, ni = exprAdd(t, i, hi)
+	if err ~= nil then return nil, err, ni end
+	while EXPR_REL[t[ni]] do
+		local op = t[ni]
+		local w, werr, nj = exprAdd(t, ni + 1, hi)
+		if werr ~= nil then return nil, werr, nj end
+		v = exprCompare(op, v, w) and "1" or "0"
+		ni = nj
+	end
+	return v, nil, ni
+end
+
+exprAnd = function(t, i, hi)
+	local v, err, ni = exprRel(t, i, hi)
+	if err ~= nil then return nil, err, ni end
+	while t[ni] == "&" do
+		local w, werr, nj = exprRel(t, ni + 1, hi)
+		if werr ~= nil then return nil, werr, nj end
+		if v == "" or v == "0" or w == "" or w == "0" then v = "0" end
+		ni = nj
+	end
+	return v, nil, ni
+end
+
+exprOr = function(t, i, hi)
+	local v, err, ni = exprAnd(t, i, hi)
+	if err ~= nil then return nil, err, ni end
+	while t[ni] == "|" do
+		local w, werr, nj = exprAnd(t, ni + 1, hi)
+		if werr ~= nil then return nil, werr, nj end
+		if v == "" or v == "0" then v = w end
+		ni = nj
+	end
+	return v, nil, ni
+end
+
+commands.expr = function(state, session, args, env, stdin, sh)
+	if #args < 2 then return usage("expr") end
+	local v, err, ni = exprOr(args, 2, #args)
+	if err == nil and ni ~= #args + 1 then err = "expr: syntax error" end
+	if err ~= nil then
+		if type(sh) == "table" then sh.status = 2 end
+		return false, { err }
+	end
+	local falsy = (v == "" or v == "0")
+	if falsy and type(sh) == "table" then sh.outOnFail = true end
+	return not falsy, { v }
 end
 
 commands.clear = function(state, session, args, env)
@@ -2148,17 +2297,34 @@ commands.rm = function(state, session, args, env)
 	return ok, out
 end
 
--- rmdir DIR... -- 4.4BSD's rmdir(1): each name has to be a directory of its
--- own, and it has to be empty, or the whole line answers about that one name
--- and moves no other node. rmdir(2)'s own two reasons are ENOTDIR and
+-- rmdir [-p] DIR... -- 4.4BSD's rmdir(1): each name has to be a directory of
+-- its own, and it has to be empty, or the whole line answers about that one
+-- name and moves no other node. rmdir(2)'s own two reasons are ENOTDIR and
 -- ENOTEMPTY (CeroSecOSFS.lua's rename shares the second wording already), so
 -- both are asked here before removeNode is ever called, rather than let a
 -- non-empty directory be answered by rm's "is a directory" instead.
+--
+-- -p is 4.4BSD's own too (rmdir.c's rm_path): once a name comes off, its
+-- parent is tried the same way, and its parent's, up to the first one that is
+-- not empty or is the root -- climbing is silent about a parent that already
+-- has something else in it (that is success, not a second error), but not
+-- about the named directory itself.
 commands.rmdir = function(state, session, args, env)
-	if #args < 2 then return usage("rmdir") end
-	local out, ok = {}, true
+	local climb, dirs = false, {}
 	for i = 2, #args do
-		local path = args[i]
+		local a = args[i]
+		if a == "-p" then
+			climb = true
+		elseif string.sub(a, 1, 1) == "-" and a ~= "-" then
+			return fail("rmdir", a, "unknown option")
+		else
+			dirs[#dirs + 1] = a
+		end
+	end
+	if #dirs == 0 then return usage("rmdir") end
+	local out, ok = {}, true
+	for i = 1, #dirs do
+		local path = dirs[i]
 		local node, reason = CeroSecOS.getNode(state, session, path, true)
 		if node == nil then
 			ok = false
@@ -2175,6 +2341,21 @@ commands.rmdir = function(state, session, args, env)
 			if done == nil then
 				ok = false
 				out[#out + 1] = "rmdir: " .. path .. ": " .. rreason
+			elseif climb then
+				local _, parts = CeroSecOS.resolve(session, path)
+				while #parts > 1 do
+					parts[#parts] = nil
+					local ppath = "/" .. table.concat(parts, "/")
+					local pnode = CeroSecOS.getNode(state, session, ppath, true)
+					if pnode == nil or pnode.type ~= "dir"
+							or CeroSecOS.countEntries(pnode) > 0 then
+						break
+					end
+					if CeroSecOS.removeNode(state, session, ppath, true,
+							CeroSecOS.clockOf(env)) == nil then
+						break
+					end
+				end
 			end
 		end
 	end
@@ -6800,6 +6981,11 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	-- And a command that failed and says the lines it hands back are its OUTPUT all
 	-- the same (grep, having found nothing): the shell routes them, the status is 1.
 	if type(sh) == "table" and inner.outOnFail == true then sh.outOnFail = true end
+	-- And a command that means to leave a status other than the plain 0/1 --
+	-- expr(1)'s own 2, the one case besides "could not be run at all" where a
+	-- status carries more than ok/fail (see CeroSecOSVM.runSimple's "sh.status
+	-- or 1", which is what reads this back).
+	if type(sh) == "table" and type(inner.status) == "number" then sh.status = inner.status end
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on

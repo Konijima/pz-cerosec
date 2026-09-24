@@ -335,9 +335,6 @@ here because a script reaches for them first.
 set, unset, exec and trap are not in this shell: a variable is set with
 NAME=value and emptied with NAME=, and nothing else touches it.
 
-rmdir has no -p: that flag climbs and removes every empty parent behind
-the one you named too, a second command's walk behind one flag.
-
 uname has no -m: no hardware name was ever put in this machine to print,
 and guessing one would be lying about what is inside the case.
 
@@ -1955,17 +1952,18 @@ The floppy drive.
 Making, copying, destroying.
 
   mkdir <dir>
-  touch <file>
+  touch <file>...
   cp [-r] <src>... <dst>
   mv <src>... <dst>
-  rm [-r] <path>...
+  rm [-rf] <path>...
+  rmdir [-p] <dir>...
   echo [text...]
   edit <file>
 
 Reading a file without opening it.
 
   head [-n N|-N] [file]
-  tail [-n N|-N] [file]
+  tail [-n N|-N|+N] [file]
   wc [-clw] [file]...
   grep [-cinv] [-e pattern] [pattern] [file]...
   sort [-r] [-n] [-u] [file]...

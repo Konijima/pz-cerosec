@@ -2479,7 +2479,8 @@ carries:
 
   sh <file> [args]        test <expression>
   [ <expression> ]        wait [id]...
-  printf <format> [arg...]    true    false]],
+  printf <format> [arg...]    true    false
+  expr <expression>]],
 
 [[The reasons off the disk, each after the command's name and the path:
 cat: notes: no such file.
