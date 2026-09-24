@@ -24,7 +24,8 @@ admin@ksp-04-11:~$ kill %1
 ```
 
 Multi-line constructs go on one line, all of it. There is no continuation prompt:
-a line with an unfinished construct answers `sh: syntax error: missing 'done'` and
+a line with an unfinished construct answers
+`Syntax error: end of file unexpected (expecting "done")` and
 nothing runs. A refusal the shell itself makes carries no line number, a typed line
 is line one of nothing, but past the first level it is inside a file again
 (`sh backup.sh`) and that file's name and line come back.
@@ -236,7 +237,7 @@ reads as space, tab and newline; a script that never sets it is unchanged); `rea
 with several names (splits on `IFS` too, a word each, the rest of the line to the
 last; `-r` keeps backslashes, `-n N` keeps N characters, and from a pipe leaves the
 rest of the line, newline included, to the next read as bash does); a command not
-found sets `$?` to 127
+found (`foo: not found`) sets `$?` to 127
 and one found but not executable to 126; `test`/`[` and `sleep` are programs, so
 their errors print, set `$?` (2 and 1) and the script goes on; single and double quotes and backslash (inside double quotes a backslash
 is special only before `$`, `` ` ``, `"`, `\` and a newline, and is kept before
@@ -266,7 +267,7 @@ follows. A `$(( ))` inside a `$(( ))` is not read (write the brackets plainly
 instead); `read` and `shift`, which are the shell's own words; and `echo [-n]`,
 `printf` and `sleep`, which the engine runs itself but which are still found
 through `/bin` first, as `ls` is -- so on a machine whose `/bin` has been emptied
-`echo` is `command not found`, and what still answers is the shell's own words
+`echo` is `not found`, and what still answers is the shell's own words
 (`. break cd continue export exit fg history jobs read shift type wait`) and
 `help`, which says the system is damaged.
 
@@ -571,7 +572,7 @@ somebody loosened (which is the `setgid mail` of a real spool, done the way this
 machine can do it). What it does **not** inherit is the quota exemption above:
 that exemption is for the machine writing about *itself*, so the bytes a message
 somebody typed really adds are charged to the drive and put back when they do not
-fit, `mail: /var/mail/bob: disk full`, and nothing written.
+fit, `mail: /var/mail/bob: No space left on device`, and nothing written.
 
 Across the wire it is `cat note | rsh gate mail -s Hi bob`: `rsh` drains its own
 standard input before it dials and hands it to the far command as an ordinary
@@ -718,7 +719,7 @@ permission, a script in `~/bin`, all of it, with `tty` and `keys` false, because
 nobody is standing behind one; an out-of-band order (`edit`) is refused there with
 the line the engine gives a command in that position, since a marker must never
 travel out through find. A word the *shell* is gets sudo's answer,
-`cd: command not found`: find execs a program.
+`cd: not found`: find execs a program.
 
 An exec is a **command's** worth of work, and find runs `FIND_EXEC_TURN` of them
 before handing the machine back, so the turn is charged the one command every
@@ -772,8 +773,8 @@ lines land, as it did before.
 **`2>file`, `2>>file`, `2>&1`, `>&2` and `1>`** are sh(1)'s `[n]>word` and
 `[n]>&digit`, for the two descriptors this machine has. A digit is a descriptor only
 where a word would start and only with `>` right after it (`a2>f` is the word `a2`);
-`3>f` is still the word `3`. One redirect per descriptor, or `syntax error: bad
-redirect`, and so is a `>&` that is not `>&1` or `>&2`. They are read left to right:
+`3>f` is still the word `3`. One redirect per descriptor, or `Syntax error:
+redirection unexpected`, and so is a `>&` that is not `>&1` or `>&2`. They are read left to right:
 `> f 2>&1` puts both in `f`, `2>&1 > f` puts the errors where the output *was*.
 
 The engine still has one list per command, so the second stream is a **sink**

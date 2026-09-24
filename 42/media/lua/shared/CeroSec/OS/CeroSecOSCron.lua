@@ -488,7 +488,7 @@ commands.crontab = function(state, session, args, env)
 		if type(node) ~= "table" or node.type ~= "file" then return noCrontab(user) end
 		local done, reason = CeroSecOS.removeNode(state, CeroSecOS.rootSession(), path, false,
 			CeroSecOS.clockOf(env))
-		if done == nil then return false, { "crontab: " .. path .. ": " .. reason } end
+		if done == nil then return false, { "crontab: " .. path .. ": " .. CeroSecOS.strerror(reason) } end
 		return true, {}
 	end
 
@@ -501,7 +501,7 @@ commands.crontab = function(state, session, args, env)
 			local file = CeroSecOS.newFile("root", CeroSecOS.CRONTAB_MODE, "")
 			local made, reason = CeroSecOS.createNode(state, CeroSecOS.rootSession(), path,
 				file, CeroSecOS.clockOf(env))
-			if made == nil then return false, { "crontab: " .. path .. ": " .. reason } end
+			if made == nil then return false, { "crontab: " .. path .. ": " .. CeroSecOS.strerror(reason) } end
 		end
 		return true, {}, "edit", {
 			path = path, text = CeroSecOS.bufferOf(text), readonly = false,
@@ -855,7 +855,7 @@ local function mailDeliver(state, session, to, subject, body, env, nullBody)
 	for i = 1, #to do
 		local done, reason = CeroSecOS.mailSend(state, to[i], from, host, subject, body, now)
 		if done == nil then
-			out[#out + 1] = "mail: " .. CeroSecOS.mailPath(to[i]) .. ": " .. reason
+			out[#out + 1] = "mail: " .. CeroSecOS.mailPath(to[i]) .. ": " .. CeroSecOS.strerror(reason)
 			return false, out
 		end
 	end
@@ -886,16 +886,16 @@ local function mailRead(state, session, env)
 	local node, reason = CeroSecOS.getNode(state, session, path)
 	if node == nil then
 		if reason == "no such file" then return true, { "No mail for " .. tostring(user) } end
-		return false, { "mail: " .. path .. ": " .. reason }
+		return false, { "mail: " .. path .. ": " .. CeroSecOS.strerror(reason) }
 	end
-	if node.type ~= "file" then return false, { "mail: " .. path .. ": " .. CeroSecOS.notAFile(node) } end
+	if node.type ~= "file" then return false, { "mail: " .. path .. ": " .. CeroSecOS.strerror(CeroSecOS.notAFile(node)) } end
 	if not CeroSecOS.can(state, session, node, "r") then
-		return false, { "mail: " .. path .. ": permission denied" }
+		return false, { "mail: " .. path .. ": Permission denied" }
 	end
 	local text = node.data or ""
 	if text == "" then return true, { "No mail for " .. tostring(user) } end
 	if not CeroSecOS.can(state, session, node, "w") then
-		return false, { "mail: " .. path .. ": permission denied" }
+		return false, { "mail: " .. path .. ": Permission denied" }
 	end
 	local lines = CeroSecOS.splitLines(text)
 	local now = CeroSecOS.clockOf(env)
@@ -909,7 +909,7 @@ local function mailRead(state, session, env)
 		if kept == nil then
 			-- The disk, or a directory that is not there any more. The messages stay in
 			-- the spool and are shown anyway: they have been read.
-			local out = { "mail: " .. box .. ": " .. why }
+			local out = { "mail: " .. box .. ": " .. CeroSecOS.strerror(why) }
 			for i = 1, #lines do out[#out + 1] = lines[i] end
 			return false, out
 		end
@@ -926,7 +926,7 @@ local function mailRead(state, session, env)
 	-- account's own authority, so a spool that cannot be emptied is a spool that is
 	-- not shown as read.
 	local done, why = CeroSecOS.setData(state, session, path, "", now)
-	if done == nil then return false, { "mail: " .. path .. ": " .. why } end
+	if done == nil then return false, { "mail: " .. path .. ": " .. CeroSecOS.strerror(why) } end
 	return true, lines
 end
 
@@ -942,13 +942,13 @@ local function mailFile(state, session)
 	local node, reason = CeroSecOS.getNode(state, session, box)
 	if node == nil then
 		if reason == "no such file" then return true, { "No mail for " .. tostring(user) } end
-		return false, { "mail: " .. box .. ": " .. reason }
+		return false, { "mail: " .. box .. ": " .. CeroSecOS.strerror(reason) }
 	end
 	if node.type ~= "file" then
-		return false, { "mail: " .. box .. ": " .. CeroSecOS.notAFile(node) }
+		return false, { "mail: " .. box .. ": " .. CeroSecOS.strerror(CeroSecOS.notAFile(node)) }
 	end
 	if not CeroSecOS.can(state, session, node, "r") then
-		return false, { "mail: " .. box .. ": permission denied" }
+		return false, { "mail: " .. box .. ": Permission denied" }
 	end
 	local text = node.data or ""
 	if text == "" then return true, { "No mail for " .. tostring(user) } end

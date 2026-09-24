@@ -175,10 +175,10 @@ contents are the one-line description `help` prints. `cat /bin/ls` prints
 puts it out of everybody's reach but root's. That holds for the small ones the
 engine runs without leaving the house too, `echo`, `printf`, `test`, `[`, `true`,
 `false` and `sleep` are resolved through `/bin/<name>` first and then executed
-inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
+inside the engine, so `rm /bin/sleep` gives `sleep: not found` and
 `chmod 600 /bin/echo` gives `echo: permission denied` to an ordinary account.
 `/bin/sh` is the shell itself: delete it and every line typed answers
-`sh: command not found`, and the BIOS repair brings it back.
+`sh: not found`, and the BIOS repair brings it back.
 
 Which directories a bare name is looked for in is `PATH`, an ordinary shell
 variable. A login sets it to `/bin`, sets `HOME` beside it and **exports** both; a
@@ -189,7 +189,7 @@ with `HOME` and nothing else, which is the oldest trap in `cron` and is why a
 crontab line spells the whole path. The walk is POSIX's: left to right, the first
 file with `x` on it for whoever typed it wins, and something in the way without `x`
 does not stop the search, found everywhere and runnable nowhere is
-`permission denied`, found nowhere at all is `command not found`. A file found in
+`permission denied`, found nowhere at all is `not found`. A file found in
 `/bin` is the machine's own executable and the engine is behind it; a file found
 anywhere else is run as a **script**, so `~/bin` is where an account's own commands
 go and a name there shadows one in `/bin` when `PATH` says so. A symlink in `/bin`
@@ -305,9 +305,9 @@ process's standard output belongs to the process: `sh nightly.sh > log` puts
 everything the script prints in `log` and nothing on the glass, `>>` adds to it, and
 a script the script runs writes there too. `./nightly.sh`, a script of your own on
 `PATH`, and `. nightly.sh` all do the same. What still comes to the screen is a
-**refusal**, `ls: /nope: no such file` is not output, here as on any Unix, and a
+**refusal**, `ls: /nope: No such file or directory` is not output, here as on any Unix, and a
 script whose output fills the file to its 4096 bytes is stopped there with
-`sh: log: file too large`.
+`cannot create log: file too large`.
 
 `shutdown` and `reboot` are the power button typed instead of pressed, and they are
 root's alone. `shutdown` turns the machine off: the sprite goes dark, the screen is
@@ -479,7 +479,7 @@ command's:
 | `door0: barricaded` | planks on it, and no machine takes those off |
 | `door0: blocked` | the doorway is not clear: a solid tile, a tree, or a vehicle across it, the game's own test, so a survivor could not open it by hand either |
 | `light0: invalid value` | that word means nothing to that kind |
-| `light0: permission denied` | the mode says no |
+| `light0: Permission denied` | the mode says no |
 | `win0: cannot toggle` | smashed or barricaded: no opposite for `toggle` to turn it into |
 | `sensor0: invalid value` | a sensor takes no word at all: every write to one says this |
 
@@ -498,7 +498,7 @@ path you mistyped.
 
 Devices are owner `root`, group `sudo`, mode `660`, so root and anybody
 `/etc/sudoers` names read and work them, with no `sudo` typed and no password
-asked, and everybody else gets `light0: permission denied` from the device itself.
+asked, and everybody else gets `light0: Permission denied` from the device itself.
 A sensor is born `440` instead, `cr--r-----`, because it is read-only by nature
 and the mode says so before anybody tries.
 Root may open one up to everybody with `chmod 666 /dev/light0`, that lasts.

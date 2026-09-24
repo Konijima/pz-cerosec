@@ -60,7 +60,7 @@ machine's console and stays there until the machine goes dark.
     `root@ksp-<x>-<y>:/root# `.
 13. **Wrong password.** Log out (`exit`), log in as `root` with `xyz`: `login
     incorrect`, and back to `login:`.
-14. **No such user.** `nobody` / anything: the same `login incorrect`, never "no such
+14. **No such user.** `nobody` / anything: the same `Login incorrect`, never "no such
     user" — the machine does not say which half was wrong. It is answered only at
     the **password** prompt, so an unknown name looks exactly like a known one on
     the way in.
@@ -78,7 +78,7 @@ machine's console and stays there until the machine goes dark.
     title bar.
 19. `cd`, then `mkdir notes`, `cd notes`, `echo "hello" > a.txt`, `cat a.txt`.
 20. `echo "second" >> a.txt`, `cat a.txt`: two lines.
-21. **Permission denied.** As `admin`: `cd /root` answers `cd: /root: permission
+21. **Permission denied.** As `admin`: `cd /root` answers `cd: /root: Permission
     denied`. As `root` it works.
 22. **A command that does not exist.** `frobnicate` answers `frobnicate: command not
     found`.
@@ -257,10 +257,10 @@ the vanilla text box parked off the glass; everything you see is drawn by the wi
 61. **A read-only file, as the admin.** As `root`, `chmod 444 /etc/motd`. As
     `admin`, `edit /etc/motd`: it opens with `[read-only]` in the bar instead of
     `[modified]`, and it stays `[read-only]` however much you type. Tab answers
-    `Cannot save: permission denied` on the message line and writes nothing.
+    `Cannot save: Permission denied` on the message line and writes nothing.
     Escape leaves at once, without asking.
 62. **A file the admin may not read.** As `root`, `chmod 000 /etc/motd`. As
-    `admin`, `edit /etc/motd` answers `edit: /etc/motd: permission denied` at the
+    `admin`, `edit /etc/motd` answers `edit: /etc/motd: Permission denied` at the
     shell and no editor opens. `edit /root/x.txt` answers `permission denied`;
     `edit /nope/x.txt` answers `no such file`; `edit /etc` answers `is a
     directory`. Put the mode back (`chmod 644`).
@@ -352,7 +352,7 @@ starred to the length of what was typed.
     `Retype new password: `, `passwd: password updated`. Log out, log in as
     `admin` with it.
 81. **The refusals.** As `root`, `passwd nobody` answers `passwd: no such user`.
-    As `admin`, `passwd root` answers `passwd: permission denied`, and `passwd
+    As `admin`, `passwd root` answers `passwd: Permission denied`, and `passwd
     admin` (your own name) behaves exactly like a bare `passwd`.
 82. **Walking away mid-question.** As `admin`, `passwd`, answer the old password,
     and at `New password: ` walk off the square. Come back: the machine is still
@@ -526,13 +526,13 @@ at the BIOS.
      description inside. `cat /bin/ls` prints `list a directory`. `help` is that
      directory listed, one command a line with its description.
 118. **The accounts are a file, and they are root's.** As `admin`,
-     `cat /etc/passwd` → `cat: /etc/passwd: permission denied`. Log out (`exit`),
+     `cat /etc/passwd` → `cat: /etc/passwd: Permission denied`. Log out (`exit`),
      log in as `root`, `cat /etc/passwd`: two lines,
      `root:$cs1$…:/root:admin` and `admin:$cs1$…:/home/admin:user`, each wrapped
      across two rows because a line is longer than sixty columns. No password in
      clear anywhere in it.
 119. **Taking a command away takes the command away.** As `root`,
-     `rm /bin/ls`, then `ls` → `ls: command not found`. `pwd` still works.
+     `rm /bin/ls`, then `ls` → `ls: not found`. `pwd` still works.
      `help` no longer lists `ls`.
 120. **Putting it back.** `write /bin/ls "list a directory"` then
      `chmod 755 /bin/ls`: `ls` works again. An executable is an ordinary file.
@@ -543,7 +543,7 @@ at the BIOS.
      put it back for everybody.
 122. **Wiping the machine.** As `root`, first `mkdir /home/admin/work` and
      `write /home/admin/work/notes.txt "keep me"`. Then `rm -r /bin`. Now `ls`,
-     `cat`, `pwd` are all `command not found`, and `help` says
+     `cat`, `pwd` are all `not found`, and `help` says
      `help: no commands in /bin: the system is damaged.` with
      `help: switch the computer off and on to repair it.` under it. `exit` still
      works: those two are the only builtins.
@@ -581,7 +581,7 @@ at the BIOS.
 131. **The name is a file.** As `root`, `hostname` prints `ksp-<x>-<y>`.
      `hostname ksp-front` writes it: `hostname` says the new name, and so does
      `cat /etc/hostname`. As `admin`, `hostname other` →
-     `hostname: permission denied`.
+     `hostname: Permission denied`.
 132. **The name rule.** As `root`, `hostname Upper` → `hostname: Upper: invalid
      name`, and the same for `hostname -x` and for anything over sixteen
      characters. One to sixteen of `a-z`, `0-9` and `-`, never starting with a
@@ -606,7 +606,7 @@ it has none, once. **Worth a look on an existing save:** open an old computer,
 `help` should list `sudo`, `shutdown`, `reboot` and `restart`, and
 `cat /etc/sudoers` as `root` should print the shipped list. After that the
 top-up is inert: `rm /bin/ls` as `root` still survives a save and a reload --
-save, quit to the menu, load again, and `ls` is still `command not found` until
+save, quit to the menu, load again, and `ls` is still `not found` until
 you repair the machine from the BIOS. That is what steps 121-122 are about, and
 the top-up must not undo it.
 
@@ -615,7 +615,7 @@ the top-up must not undo it.
      shows them owner `root`, mode `755`. `cat /bin/sudo` prints
      `run a command as root`.
 136. **shutdown is root's.** As `admin`: `shutdown` → `shutdown: permission
-     denied`. `reboot` → `reboot: permission denied`. `restart` → `restart:
+     denied`. `reboot` → `reboot: Permission denied`. `restart` → `restart:
      permission denied` (the refusal wears the name you typed, not the name of
      the order behind it). The machine stays on and the window stays open.
 137. **shutdown.** `exit`, log in as `root`, type `shutdown`. The screen shows
@@ -643,7 +643,7 @@ the top-up must not undo it.
      stays down, and the window closes. Turning it on again is refused until
      there is power.
 143. **sudo, the refusal.** Log in as `admin`. `cat /etc/passwd` →
-     `cat: /etc/passwd: permission denied`. Now `sudo cat /etc/passwd`: the
+     `cat: /etc/passwd: Permission denied`. Now `sudo cat /etc/passwd`: the
      machine asks `[sudo] password for admin: ` and what you type shows as
      stars. Type something wrong: `sudo: authentication failure`, one line, and
      you are back at the shell — there is no second try.
@@ -662,19 +662,19 @@ the top-up must not undo it.
      `admin NOPASSWD`. `exit`, log in as `admin`: `sudo whoami` prints `root`
      with no question asked. Put it back to plain `admin` afterwards.
 148. **The file is root's.** As `admin`, `cat /etc/sudoers` →
-     `cat: /etc/sudoers: permission denied`. `ls -l /etc` shows it
+     `cat: /etc/sudoers: Permission denied`. `ls -l /etc` shows it
      `-r--r-----  root      sudoers`.
 149. **sudo with no command.** `sudo` alone → `sudo: usage: sudo <command>
      [args]`. `sudo nosuch` → `nosuch: command not found`. `sudo sudo whoami`
      asks once and prints `root`.
-150. **sudo passwd.** As `admin`, `passwd root` → `passwd: permission denied`.
+150. **sudo passwd.** As `admin`, `passwd root` → `passwd: Permission denied`.
      Now `sudo passwd root`: it asks for **your** password first, then
      `New password:` and `Retype new password:` — root's chain, so it never asks
      for root's old one. Set it, `exit`, and log in as `root` with the new
      password; the empty one no longer gets in. The prompt at the glass was
      `admin@…$` the whole way through.
 151. **sudo edit.** As `admin`, `edit /etc/motd`: the bar says `[read-only]` and
-     Tab says `Cannot save: permission denied`. Escape out. Now
+     Tab says `Cannot save: Permission denied`. Escape out. Now
      `sudo edit /etc/motd`: it asks for your password, then the same file opens
      **without** `[read-only]`. Change the line, Tab → `Saved N bytes`, Escape.
      `cat /etc/motd` shows the new text and `ls -l /etc` still shows it owner
@@ -751,7 +751,7 @@ the seven should be in the list, with the machine's own files untouched.
 167. **`ls -F` marks the directories.** `ls -F /` — `bin/`, `dev/`, `etc/`,
      `home/`, `root/`, with the slash. `ls -lF /` is the long listing with the
      same slashes. `ls -Fl` and `ls -l -F` are the same thing; `ls -lz` is
-     `ls: -lz: unknown option`.
+     `ls: illegal option -- z` and the usage line.
 168. **`grep` is a string, not a pattern.** Put a few lines in a file, then
      `grep alpha notes.txt`. `grep -n alpha notes.txt` numbers them,
      `grep -i ALPHA notes.txt` ignores case, and `grep a.b notes.txt` matches the
@@ -767,7 +767,7 @@ the seven should be in the list, with the machine's own files untouched.
 171. **`cp -r` copies a tree.** `mkdir tree`, `mkdir tree/inner`, a file in each,
      then `cp -r tree copy` and `ls -l copy/inner`. Everything came over, owned
      by you, dated now. `cp tree copy2` without `-r` is
-     `cp: tree: is a directory`, and `cp -r tree tree/again` is
+     `cp: tree: Is a directory`, and `cp -r tree tree/again` is
      `cp: tree/again: invalid destination` — a directory never goes inside
      itself.
 172. **`man` and the shell agree.** `man ls` prints what `/bin/ls` says it does
@@ -831,7 +831,7 @@ away and coming back.
      `deluser: bob: removed`. `ls -l /home` still shows `bob`, still owned by
      `bob` — a name the machine no longer knows, which is the truth about whose
      files those were. `id bob` → `no such user`, and logging in as `bob` is
-     `login incorrect`.
+     `Login incorrect`.
 186. **With `-r` they go.** `deluser -r carl`, then `ls /home`: no `carl`.
 187. **The sudoers line goes too.** As root, `edit /etc/sudoers`, add a line
      `dan NOPASSWD`, save. `adduser dan`, `id dan` → `groups=sudo`. Then
@@ -839,7 +839,7 @@ away and coming back.
      comments included, is exactly as it was.
 188. **su asks for the target's password.** As `admin` with a password set on
      `root`: `su` (no argument) asks `Password:` with stars. A wrong one is
-     `su: authentication failure` and nothing changes. The right one and the
+     `Sorry` and nothing changes. The right one and the
      prompt becomes `root@<host>:/root#`. `whoami` says `root`.
 189. **su comes back.** `exit`: back to `admin@<host>:~$`, still logged in, and
      **the screen is not cleared**. `exit` again: now it is a logout — the screen

@@ -78,14 +78,15 @@ local root = open(state, "root")
 -- rmdir: 4.4BSD's rmdir.c, no flags at all.
 --
 case(state, admin, "mkdir e; rmdir e; ls", {}, 0)
-case(state, admin, "mkdir f; touch f/x; rmdir f", { "rmdir: f: directory not empty" }, 1)
-case(state, admin, "touch g; rmdir g", { "rmdir: g: not a directory" }, 1)
-case(state, admin, "rmdir nosuch", { "rmdir: nosuch: no such file" }, 1)
+case(state, admin, "mkdir f; touch f/x; rmdir f", { "rmdir: f: Directory not empty" }, 1)
+case(state, admin, "touch g; rmdir g", { "rmdir: g: Not a directory" }, 1)
+case(state, admin, "rmdir nosuch", { "rmdir: nosuch: No such file or directory" }, 1)
 -- A failure does not stop the operands after it.
 case(state, admin, "mkdir h; rmdir nosuch h; echo $?; ls h", {
-	"rmdir: nosuch: no such file", "1", "ls: h: no such file" }, 1)
+	"rmdir: nosuch: No such file or directory", "1",
+	"ls: h: No such file or directory" }, 1)
 case(state, admin, "rmdir -p f", {
-	"rmdir: illegal option -- p", "rmdir: usage: rmdir <dir>..." }, 1)
+	"rmdir: illegal option -- p", "usage: rmdir <dir>..." }, 1)
 case(state, admin, "rmdir", { "rmdir: usage: rmdir <dir>..." }, 1)
 case(state, admin, "rm -r f g", {}, 0)
 -- A mount point is EBUSY, whatever the disk on it holds.
@@ -133,15 +134,15 @@ case(state, admin, "uname -ns", { "CeroSec OS ksp-front-01" }, 0)
 case(state, admin, "uname -a", { "CeroSec OS ksp-front-01 " .. CeroSecOS.VERSION
 	.. " SYSTEM_VERSION " .. tostring(CeroSecOS.SYSTEM_VERSION) }, 0)
 case(state, admin, "uname -x", {
-	"uname: illegal option -- x", "uname: usage: uname [-asnrv]" }, 1)
+	"uname: illegal option -- x", "usage: uname [-asnrv]" }, 1)
 case(state, admin, "uname foo", { "uname: usage: uname [-asnrv]" }, 1)
 
 --
 -- rm -f: ENOENT forgiven and nothing else.
 --
 case(state, admin, "rm -f nosuch; echo $?", { "0" }, 0)
-case(state, admin, "rm nosuch", { "rm: nosuch: no such file" }, 1)
-case(state, admin, "rm -f /etc/motd", { "rm: /etc/motd: permission denied" }, 1)
+case(state, admin, "rm nosuch", { "rm: nosuch: No such file or directory" }, 1)
+case(state, admin, "rm -f /etc/motd", { "rm: /etc/motd: Permission denied" }, 1)
 case(state, admin, "mkdir d; touch d/a; rm -rf d; ls", {}, 0)
 case(state, admin, "rm -f", { "rm: usage: rm [-rf] <path>..." }, 1)
 
@@ -223,7 +224,7 @@ case(state, admin, "[ -h full ] || echo n", { "n" }, 0)
 --
 case(state, admin, "touch t1 t2 t3; ls t1 t2 t3", { "t1  t2  t3" }, 0)
 case(state, admin, "touch /etc/x t4; echo $?; ls t4", {
-	"touch: /etc/x: permission denied", "1", "t4" }, 0)
+	"touch: /etc/x: Permission denied", "1", "t4" }, 0)
 
 --
 -- The output formats: wc's " %7ld", uniq -c's "%4d ", which's csh line.

@@ -157,14 +157,14 @@ the machine walks the directories named in PATH, left to right, looking
 for a file by that name with x on it, and runs the first it finds. Fresh
 out of the crate PATH holds two directories -- /bin, the machine's own
 commands, and /usr/local/bin, empty and yours -- which is why a word you
-made up is "command not found".
+made up is "not found".
 
 Make a directory of your own, add it to PATH, and your scripts become
 commands with no dot-slash and no sh in front of them:
 
   admin@ksp-04-11:~$ mkdir bin
   admin@ksp-04-11:~$ lights on
-  lights: command not found
+  lights: not found
   admin@ksp-04-11:~$ PATH=$PATH:$HOME/bin
   admin@ksp-04-11:~$ lights on
   lights on
@@ -303,7 +303,7 @@ Leave a quote open and nothing runs at all -- not the good half of the
 line, nothing:
 
   admin@ksp-04-11:~$ echo "unfinished
-  sh: syntax error: unterminated quote]],
+  Syntax error: Unterminated quoted string]],
 
 [[Comments, and two commands on one line.
 
@@ -323,7 +323,7 @@ one. This is the trap the whole page exists for:
 
   admin@ksp-04-11:~$ echo a;b
   a
-  b: command not found
+  b: not found
   admin@ksp-04-11:~$ echo "a;b"
   a;b
 
@@ -376,7 +376,7 @@ what you would have typed at it except read, which chapter 3 covers.
 
 Classic mistake. Writing a line with a space around an equals sign. x = 5
 is not an assignment: it is the command x with two words after it, and the
-machine answers "x: command not found", which reads like nonsense until
+machine answers "x: not found", which reads like nonsense until
 you know this. An assignment is NAME=value with no blanks anywhere near
 the equals sign. It is the single most common line in a broken script.]],
 
@@ -1010,7 +1010,7 @@ One level, and no further, the same for backquotes. A $( ) inside a $( )
 is refused where it is typed, before anything runs:
 
   admin@ksp-04-11:~$ x=$(echo $(date))
-  sh: syntax error: bad substitution
+  Syntax error: Bad substitution
 
 There is no script worth writing on this desk that needs two, in
 either spelling or a mix, and the machine would rather say so than let
@@ -1171,7 +1171,7 @@ $( ) is refused where it is typed, and putting a sum between them does not
 buy you a second one:
 
   admin@ksp-04-11:~$ echo $(( $(echo $(date)) ))
-  sh: syntax error: bad substitution
+  Syntax error: Bad substitution
 
 A catch inside a sum meets the word's ceiling like any other catch, and a
 catch that comes back as something that is not a number counts as nought,
@@ -1335,7 +1335,7 @@ One command sends its output to one file. Two > on a line, or none
 after the sign, and nothing runs:
 
   admin@ksp-04-11:~$ echo x > a > b
-  sh: syntax error: bad redirect]],
+  Syntax error: redirection unexpected]],
 
 [[Errors, and where they go.
 
@@ -1347,7 +1347,7 @@ errors to a file of their own; 2>&1 sends them where the output goes:
   admin@ksp-04-11:~$ cat nosuch 2>/dev/null
   admin@ksp-04-11:~$ cat nosuch > log 2>&1
   admin@ksp-04-11:~$ cat log
-  cat: nosuch: no such file
+  cat: nosuch: No such file or directory
 
 Order counts, left to right: 2>&1 > log sends the errors where the output
 WAS, the glass, and only the output into log. >&2 is the other way round,
@@ -1391,7 +1391,7 @@ word that started it. So one sign catches everything the file prints:
   admin@ksp-04-11:~$ sh nightly.sh > log
   admin@ksp-04-11:~$ cat log
 
-Nothing appears on the screen while it runs. ./nightly.sh and . nightly.sh
+Nothing appears while it runs. ./nightly.sh and . nightly.sh
 do the same, and so does a script that script runs: nothing closed the
 file.
 
@@ -1399,12 +1399,12 @@ Two things still come to the glass. A REFUSAL, because a refusal is not
 output and never goes where output was going:
 
   admin@ksp-04-11:~$ sh nightly.sh > log
-  ls: /nope: no such file
+  ls: /nope: No such file or directory
 
-That line is on the screen; log holds only what was printed. And the end of
-it if the file fills, a file being 4096 bytes:
+That line is on the screen; log holds only what was printed. And sh's
+own word when the file fills at 4096 bytes:
 
-  sh: log: file too large
+  cannot create log: file too large
 
 Use it for the nightly job you want a record of, and >> to make the records
 add up instead of replacing each other.
@@ -2369,29 +2369,24 @@ program, which is handed a copy of the environment and can change nothing
 of yours. Chapter 1 has the pair side by side and chapter 3 has export.]],
 
 [[What the shell says before anything runs. A script that meets one never
-becomes a job: not one line of it happens. A script signs these with its
-own name and line -- broken.sh: line 3: -- a typed line with sh: alone.
+becomes a job. In a script the name and line come first -- broken.sh: 3:
 
-  syntax error: unexpected 'fi'
-      a closing word where a command should be; also
-      'done', 'then', 'else', 'elif', 'do', 'esac',
-      ';;', '}' and '<'
-  syntax error: missing 'done'
-      a loop never closed; also 'fi', 'then', 'do',
-      'esac', 'in', ';;' and ')'
-  syntax error: not a name
+  Syntax error: "fi" unexpected
+      a closing word where a command should be
+  Syntax error: end of file unexpected (expecting "done")
+      a loop never closed; also "fi", "then", "esac",
+      "in", ")" and "}"
+  Syntax error: word unexpected (expecting "do")
+      a word where the grammar wanted another
+  Syntax error: Bad for loop variable
       for wants a name after it
-  syntax error: unterminated quote
-      a quote opened and never closed
-  syntax error: bad substitution
-      a $( ) in a $( ), an unclosed ${ or $(( , or
-      braces round something that is not a name
-  syntax error: bad redirect
-      two > or two 2> on one command, or a bad >&
-  syntax error: missing redirect target
-      a > or >> with no file after it
-  syntax error: missing '{'
-      a NAME() with no block after it; also '}']],
+  Syntax error: Unterminated quoted string
+  Syntax error: Bad substitution
+      a $( ) in a $( ), an unclosed ${ or $((
+  Syntax error: redirection unexpected
+      two > or two 2> on one command, or a <
+  Syntax error: Bad fd number
+      a >& that is not >&1 or >&2]],
 
 [[And what the shell says about a script that is too BIG, which is also said
 before anything runs: these are the machine's own ceilings and not sh's, and
@@ -2426,16 +2421,17 @@ line is named and the script ends there.
   ambiguous redirect
       the name after > came out as two words, or none
   sort: input too large
-      sort and uniq hold all their input first: a
+      sort and uniq hold all input first: a
       hundred lines, four kilobytes, no more
   test: integer expected
-      -eq and its five friends, handed something that
+      -eq and five friends, handed something that
       is not a number
   test: unknown operator
   test: missing ']'
   test: argument expected
   read: not a name
   read: <n>: bad number
+  read: Illegal option -x
   sleep: invalid interval
   sleep: no clock
       test's exit 2, sleep's 1; the script goes on
@@ -2464,7 +2460,7 @@ not a script's to say.
 
 And the ones about finding a program at all:
 
-  <name>: command not found
+  <name>: not found
       nothing on PATH answers; $? is 127
   ./thing: permission denied
       it has no x on it for you; $? is 126
@@ -2506,18 +2502,17 @@ And the one shape no other card carries:
   expr <expression>]],
 
 [[The reasons off the disk, each after the command's name and the path:
-cat: notes: no such file.
+cat: notes: No such file or directory.
 
-  no such file          is a directory
-  not a directory       permission denied
-  invalid characters    invalid destination
-  path too deep         directory not empty
-  file too large        directory full
-  file exists   invalid name   is a device
-  disk full     are identical
+  No such file or directory   Not a directory
+  Is a directory   Permission denied   File exists
+  Directory not empty   File too large
+  No space left on device   invalid characters
+  invalid destination   path too deep   directory full
+  invalid name   is a device   are identical
   /dev: read-only
 
-A device answers in its OWN name and no command's:
+A device answers in its OWN name:
 
   light0: no power       lock0: no such device
   win0: smashed          win0: barricaded

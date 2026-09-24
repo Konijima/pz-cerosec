@@ -285,7 +285,7 @@ do
 	-- The builtin's 2> is a file like any other: its lines end.
 	exec(state, admin, "cat /nosuch 2> err")
 	eq("an error line in a file ends too", data(state, "/home/admin/err"),
-		"cat: /nosuch: no such file\n")
+		"cat: /nosuch: No such file or directory\n")
 end
 
 --

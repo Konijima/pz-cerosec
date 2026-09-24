@@ -1715,7 +1715,7 @@ do
 							end
 							-- EVERY LINE IS A COMMAND THIS MACHINE HAS. The shell's own lookup,
 							-- on this machine, as this account: a word the shell has no file for
-							-- and no word of its own is a line that prints "command not found"
+							-- and no word of its own is a line that prints "not found"
 							-- on the day a player presses Up.
 							for l = 1, #lines do
 								local line = lines[l]
@@ -2642,7 +2642,7 @@ do
 			local bare, bareLines = run(state, session, "./" .. name, env)
 			check(name .. " with no arguments says something", #bareLines > 0)
 			check(name .. " with no arguments does not say sh had an error",
-				string.find(table.concat(bareLines, " "), "syntax error", 1, true) == nil)
+				string.find(table.concat(bareLines, " "), "Syntax error", 1, true) == nil)
 			check(name .. " with no arguments is not a nil call",
 				string.find(table.concat(bareLines, " "), "attempt to", 1, true) == nil)
 			if script.optional then
@@ -2754,7 +2754,7 @@ do
 	-- that only read the lines could not tell a paged screen from an unpaged one.
 	-- Everything every program in this section ever printed, in one place. A
 	-- script is a list of commands and a line that is not one of them is not a
-	-- syntax error: the shell says `command not found`, the line does nothing, and
+	-- syntax error: the shell says `not found`, the line does nothing, and
 	-- the script runs on to its last `echo` and exits 0. So a bench that reads only
 	-- the status of these five would be green with a dead line in the middle of the
 	-- menu. This is what catches that, and it is asked of every line of output the
@@ -2998,8 +2998,9 @@ do
 	-- carry for ever without failing: a word that is not a command, a file it may
 	-- not touch, a line the parser would not take, and a nil call in the engine.
 	local whole = table.concat(said, "\n")
-	for _, bad in ipairs({ "command not found", "permission denied",
-			"syntax error", "attempt to", "no such file" }) do
+	for _, bad in ipairs({ "not found", "permission denied", "Permission denied",
+			"Syntax error", "attempt to", "No such file or directory",
+			"cannot create" }) do
 		check("nothing the board printed says \"" .. bad .. "\"",
 			string.find(whole, bad, 1, true) == nil)
 	end
@@ -3059,8 +3060,8 @@ do
 		local ok, lines = run(state, session, "./" .. name .. " " .. WITH[name], env)
 		local whole = table.concat(lines, " / ")
 		check(name .. " with no devices says something: " .. whole, #lines > 0)
-		for _, bad in ipairs({ "syntax error", "attempt to", "bad arithmetic",
-				"bad substitution", "test: " }) do
+		for _, bad in ipairs({ "Syntax error", "attempt to", "bad arithmetic",
+				"Bad substitution", "test: " }) do
 			check(name .. " with no devices does not say \"" .. bad .. "\": " .. whole,
 				string.find(whole, bad, 1, true) == nil)
 		end

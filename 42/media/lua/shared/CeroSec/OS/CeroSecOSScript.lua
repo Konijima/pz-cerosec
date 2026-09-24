@@ -133,7 +133,7 @@ end
 -- shape that lets a short line ask for an unbounded amount of work, and there is
 -- no script worth writing on a 1993 desk machine that needs two.
 local function readCommandSub(text, i, depth)
-	if depth > 0 then return nil, "syntax error: bad substitution" end
+	if depth > 0 then return nil, "Syntax error: Bad substitution" end
 	local n = #text
 	local j, level, quote = i + 2, 0, nil
 	while j <= n do
@@ -152,7 +152,7 @@ local function readCommandSub(text, i, depth)
 		-- for a sum. Its brackets are balanced, so the level count below carries it.
 		elseif ch == "$" and string.sub(text, j + 1, j + 1) == "("
 				and string.sub(text, j + 2, j + 2) ~= "(" then
-			return nil, "syntax error: bad substitution"
+			return nil, "Syntax error: Bad substitution"
 		elseif ch == "(" then
 			level = level + 1
 		elseif ch == ")" then
@@ -166,7 +166,7 @@ local function readCommandSub(text, i, depth)
 		end
 		j = j + 1
 	end
-	return nil, "syntax error: bad substitution"
+	return nil, "Syntax error: Bad substitution"
 end
 
 -- `command`, from the opening backquote to the matching closing one: the
@@ -190,7 +190,7 @@ end
 -- { t = "sub", prog = ... } node, and every step after parsing, expansion,
 -- budget charging, field splitting, globbing, has one path.
 local function readBackquoteSub(text, i, depth)
-	if depth > 0 then return nil, "syntax error: bad substitution" end
+	if depth > 0 then return nil, "Syntax error: Bad substitution" end
 	local n = #text
 	local j, buf = i + 1, ""
 	while j <= n do
@@ -213,7 +213,7 @@ local function readBackquoteSub(text, i, depth)
 			j = j + 1
 		end
 	end
-	return nil, "syntax error: bad substitution"
+	return nil, "Syntax error: Bad substitution"
 end
 
 -- The inside of a $(( )) as an array of PARTS, when it holds a command
@@ -279,7 +279,7 @@ local function readDollar(text, i, quoted, depth)
 				elseif ch == ")" then
 					if level == 0 then
 						if string.sub(text, j + 1, j + 1) ~= ")" then
-							return nil, "syntax error: bad substitution"
+							return nil, "Syntax error: Bad substitution"
 						end
 						local expr = string.sub(text, i + 3, j - 1)
 						-- The command substitutions in it, lifted out to be run
@@ -294,7 +294,7 @@ local function readDollar(text, i, quoted, depth)
 				end
 				j = j + 1
 			end
-			return nil, "syntax error: bad substitution"
+			return nil, "Syntax error: Bad substitution"
 		end
 
 		local prog, second = readCommandSub(text, i, depth)
@@ -309,8 +309,8 @@ local function readDollar(text, i, quoted, depth)
 			name = name .. string.sub(text, j, j)
 			j = j + 1
 		end
-		if j > n then return nil, "syntax error: bad substitution" end
-		if not CeroSecOS.isVarName(name) then return nil, "syntax error: bad substitution" end
+		if j > n then return nil, "Syntax error: Bad substitution" end
+		if not CeroSecOS.isVarName(name) then return nil, "Syntax error: Bad substitution" end
 		return { t = "var", name = name, q = quoted }, j + 1
 	end
 
@@ -419,7 +419,7 @@ local function tokenize(text, depth)
 					or after == "\n" or after == ";" or after == "&" or after == "|"
 					or after == ">" or after == "<"
 				if (d ~= "1" and d ~= "2") or not ends then
-					return nil, "syntax error: bad redirect", line
+					return nil, "Syntax error: Bad fd number", line
 				end
 				dup = 1
 				if d == "2" then dup = 2 end
@@ -427,7 +427,7 @@ local function tokenize(text, depth)
 			end
 			tokens[#tokens + 1] = { t = "redir", append = append, fd = fd, dup = dup, line = line }
 		elseif c == "<" then
-			return nil, "syntax error: unexpected '<'", line
+			return nil, "Syntax error: redirection unexpected", line
 		else
 			-- One word: bare text, quoted runs and expansions, until a blank or
 			-- an operator ends it.
@@ -454,7 +454,7 @@ local function tokenize(text, depth)
 						i = i + 1
 					end
 					if not closed then
-						return nil, "syntax error: unterminated quote", startLine
+						return nil, "Syntax error: Unterminated quoted string", startLine
 					end
 					-- A single-quoted run is text and only text, empty run
 					-- included: `x=''` is a variable set to nothing, not a word
@@ -473,7 +473,7 @@ local function tokenize(text, depth)
 						elseif q == "\\" then
 							local nx = string.sub(text, i + 1, i + 1)
 							if nx == "" then
-								return nil, "syntax error: unterminated quote", startLine
+								return nil, "Syntax error: Unterminated quoted string", startLine
 							end
 							-- sh(1) of 4.4BSD and ksh88, and POSIX.2 2.2.3:
 							-- within double quotes the backslash keeps its
@@ -519,11 +519,11 @@ local function tokenize(text, depth)
 						end
 					end
 					if not closed then
-						return nil, "syntax error: unterminated quote", startLine
+						return nil, "Syntax error: Unterminated quoted string", startLine
 					end
 				elseif ch == "\\" then
 					local nx = string.sub(text, i + 1, i + 1)
-					if nx == "" then return nil, "syntax error: unterminated quote", startLine end
+					if nx == "" then return nil, "Syntax error: Unterminated quoted string", startLine end
 					if nx == "\n" then
 						-- A backslash at the end of a line joins it to the next.
 						line = line + 1
@@ -583,19 +583,34 @@ local function take(P)
 	return t
 end
 
--- How a token is named in an error, the way a shell names it.
+-- How a token is named in an error: the names 4.4BSD-Lite2's sh gives its
+-- tokens (bin/sh/mktokens, the table synexpect() prints from, parser.c).
+-- An operator and a reserved word in double quotes -- "fi", "|", ";;" --
+-- and the rest by their KIND, not their text: end of file, newline,
+-- redirection, word. So `echo a | | b` is `"|" unexpected` and a stray
+-- `foo` where `then` was wanted is `word unexpected`, as sh said it.
+local QUOTED = { ["{"] = true, ["}"] = true, ["!"] = true }
 local function describe(t)
-	if t.t == "eof" then return "end of file" end
+	if t == nil or t.t == "eof" then return "end of file" end
 	if t.t == "op" then
-		if t.v == "\n" then return "end of line" end
-		return "'" .. t.v .. "'"
+		if t.v == "\n" then return "newline" end
+		return "\"" .. t.v .. "\""
 	end
-	if t.t == "redir" then
-		if t.append then return "'>>'" end
-		return "'>'"
+	if t.t == "redir" then return "redirection" end
+	-- "in" is not one of sh's tokens (mktokens has no TIN): a word.
+	if t.plain ~= nil and t.plain ~= "in"
+			and (CeroSecOS.RESERVED[t.plain] or QUOTED[t.plain]) then
+		return "\"" .. t.plain .. "\""
 	end
-	if t.plain ~= nil then return "'" .. t.plain .. "'" end
 	return "word"
+end
+
+-- synexpect(), parser.c: the token that was there, "unexpected", and the
+-- one that was wanted in brackets when the grammar knew which.
+local function unexpected(t, want)
+	local said = "Syntax error: " .. describe(t) .. " unexpected"
+	if want ~= nil then said = said .. " (expecting \"" .. want .. "\")" end
+	return said
 end
 
 -- Is this token one the caller asked to be left alone? A reserved word in `stops`,
@@ -654,7 +669,7 @@ local function parseSimple(P)
 			-- Reserved words are only reserved where a command starts; every
 			-- other position is an ordinary argument, so `echo done` prints it.
 			if #words == 0 and t.plain ~= nil and CeroSecOS.RESERVED[t.plain] then
-				return nil, "syntax error: unexpected '" .. t.plain .. "'", t.line
+				return nil, unexpected(t), t.line
 			end
 			words[#words + 1] = t.parts
 			P.i = P.i + 1
@@ -663,7 +678,7 @@ local function parseSimple(P)
 			-- things about the same place, and this machine does not guess which.
 			local fd = t.fd or 1
 			if seen[fd] then
-				return nil, "syntax error: bad redirect", t.line
+				return nil, "Syntax error: redirection unexpected", t.line
 			end
 			seen[fd] = true
 			P.i = P.i + 1
@@ -672,7 +687,7 @@ local function parseSimple(P)
 			else
 				local target = wordAt(P)
 				if target == nil then
-					return nil, "syntax error: missing redirect target", t.line
+					return nil, unexpected(peek(P)), t.line
 				end
 				P.i = P.i + 1
 				if fd == 2 then
@@ -689,7 +704,7 @@ local function parseSimple(P)
 	end
 	if #words == 0 and not seen[1] and not seen[2] then
 		local t = peek(P)
-		return nil, "syntax error: unexpected " .. describe(t), t.line
+		return nil, unexpected(t), t.line
 	end
 
 	-- The leading NAME=value words are assignments and are told apart HERE,
@@ -728,14 +743,14 @@ end
 -- until, for and a function's braces is a compound_list (POSIX XCU 2.10.2), and a
 -- compound_list is at least one command: a comment or a blank line is not one.
 -- dash refuses `if true; then fi` with `"fi" unexpected`, and so does this, in the
--- words this shell already says it with. Only a list that stopped on a WORD is
+-- words synexpect() says it with. Only a list that stopped on a WORD is
 -- refused here: one that ran into the end of the file is missing its closing word,
 -- which the caller goes on to say.
 local function emptyList(P, prog)
 	if #prog > 0 then return nil end
 	local t = peek(P)
 	if t.t == "eof" then return nil end
-	return "syntax error: unexpected " .. describe(t), t.line
+	return unexpected(t), t.line
 end
 
 local function parseIf(P, depth)
@@ -750,7 +765,7 @@ local function parseIf(P, depth)
 		if empty ~= nil then return nil, empty, eline end
 		local t = wordAt(P)
 		if t == nil or t.plain ~= "then" then
-			return nil, "syntax error: missing 'then'", peek(P).line
+			return nil, unexpected(peek(P), "then"), peek(P).line
 		end
 		P.i = P.i + 1
 		local body, breason, bwhere =
@@ -774,7 +789,7 @@ local function parseIf(P, depth)
 				nx = wordAt(P)
 			end
 			if nx == nil or nx.plain ~= "fi" then
-				return nil, "syntax error: missing 'fi'", peek(P).line
+				return nil, unexpected(peek(P), "fi"), peek(P).line
 			end
 			P.i = P.i + 1
 			return { k = "if", line = line, clauses = clauses, otherwise = otherwise }
@@ -787,7 +802,7 @@ local function parseDoDone(P, depth)
 	skipSeparators(P)
 	local t = wordAt(P)
 	if t == nil or t.plain ~= "do" then
-		return nil, "syntax error: missing 'do'", peek(P).line
+		return nil, unexpected(peek(P), "do"), peek(P).line
 	end
 	P.i = P.i + 1
 	local body, reason, where = parseProgram(P, { ["done"] = true }, depth + 1)
@@ -796,7 +811,7 @@ local function parseDoDone(P, depth)
 	if empty ~= nil then return nil, empty, eline end
 	local nx = wordAt(P)
 	if nx == nil or nx.plain ~= "done" then
-		return nil, "syntax error: missing 'done'", peek(P).line
+		return nil, unexpected(peek(P), "done"), peek(P).line
 	end
 	P.i = P.i + 1
 	return body
@@ -806,7 +821,7 @@ local function parseFor(P, depth)
 	local line = take(P).line
 	local name = wordAt(P)
 	if name == nil or name.plain == nil or not CeroSecOS.isVarName(name.plain) then
-		return nil, "syntax error: not a name", peek(P).line
+		return nil, "Syntax error: Bad for loop variable", peek(P).line
 	end
 	P.i = P.i + 1
 
@@ -884,12 +899,12 @@ local function parseCase(P, depth)
 	local line = take(P).line
 	local subject = wordAt(P)
 	if subject == nil then
-		return nil, "syntax error: unexpected " .. describe(peek(P)), peek(P).line
+		return nil, unexpected(peek(P)), peek(P).line
 	end
 	P.i = P.i + 1
 	local inWord = wordAt(P)
 	if inWord == nil or inWord.plain ~= "in" then
-		return nil, "syntax error: missing 'in'", peek(P).line
+		return nil, unexpected(peek(P), "in"), peek(P).line
 	end
 	P.i = P.i + 1
 
@@ -904,7 +919,7 @@ local function parseCase(P, depth)
 		-- The file ran out where a pattern or the esac should be, and what is missing
 		-- is the esac -- not the bracket the pattern loop below would name.
 		if peek(P).t == "eof" then
-			return nil, "syntax error: missing 'esac'", peek(P).line
+			return nil, unexpected(peek(P), "esac"), peek(P).line
 		end
 
 		-- The patterns of one clause: words with "|" between them, the last of them
@@ -914,7 +929,7 @@ local function parseCase(P, depth)
 		while true do
 			local w = wordAt(P)
 			if w == nil then
-				return nil, "syntax error: missing ')'", peek(P).line
+				return nil, unexpected(peek(P), ")"), peek(P).line
 			end
 			P.i = P.i + 1
 			if #pats == 0 then takeOpen(w.parts) end
@@ -923,7 +938,7 @@ local function parseCase(P, depth)
 			if closed then break end
 			local sep = peek(P)
 			if not (sep.t == "op" and sep.v == "|") then
-				return nil, "syntax error: missing ')'", sep.line
+				return nil, unexpected(sep, ")"), sep.line
 			end
 			P.i = P.i + 1
 			skipNewlines(P)
@@ -943,9 +958,9 @@ local function parseCase(P, depth)
 			-- file is the other way of getting here and it is a different mistake --
 			-- what is missing there is the esac.
 			if nx.t == "eof" then
-				return nil, "syntax error: missing 'esac'", nx.line
+				return nil, unexpected(nx, "esac"), nx.line
 			end
-			return nil, "syntax error: missing ';;'", nx.line
+			return nil, unexpected(nx, ";;"), nx.line
 		end
 	end
 end
@@ -986,7 +1001,7 @@ local function parseFunc(P, depth, name, tokens, braced)
 		skipNewlines(P)
 		local open = wordAt(P)
 		if open == nil or open.plain ~= "{" then
-			return nil, "syntax error: missing '{'", peek(P).line
+			return nil, unexpected(peek(P), "{"), peek(P).line
 		end
 		P.i = P.i + 1
 	end
@@ -996,7 +1011,7 @@ local function parseFunc(P, depth, name, tokens, braced)
 	if empty ~= nil then return nil, empty, eline end
 	local close = wordAt(P)
 	if close == nil or close.plain ~= "}" then
-		return nil, "syntax error: missing '}'", peek(P).line
+		return nil, unexpected(peek(P), "}"), peek(P).line
 	end
 	P.i = P.i + 1
 	local src = string.sub(P.text or "", at, close.stop or at)
@@ -1052,7 +1067,7 @@ local function parsePiece(P, depth)
 	end
 	local fname, fwords, braced = funcAhead(P)
 	if braced == "bad" then
-		return nil, "syntax error: missing '{'", P.tokens[P.i].line
+		return nil, unexpected(P.tokens[P.i], "{"), P.tokens[P.i].line
 	end
 	if fname ~= nil then return parseFunc(P, depth, fname, fwords, braced) end
 	return parseSimple(P)
@@ -1139,7 +1154,7 @@ parseProgram = function(P, stops, depth)
 		if P.terminated then
 			-- nothing: "&" already closed the statement
 		elseif not (nx.t == "op" and (nx.v == ";" or nx.v == "\n")) then
-			return nil, "syntax error: unexpected " .. describe(nx), nx.line
+			return nil, unexpected(nx), nx.line
 		end
 	end
 	return prog
@@ -1153,7 +1168,7 @@ end
 -- nothing.
 --
 function CeroSecOS.parseScript(text, depth)
-	if type(text) ~= "string" then return nil, "syntax error", 1 end
+	if type(text) ~= "string" then return nil, "Syntax error: end of file unexpected", 1 end
 	depth = depth or 0
 
 	local tokens, reason, line = tokenize(text, depth)
@@ -1165,13 +1180,25 @@ function CeroSecOS.parseScript(text, depth)
 
 	local last = peek(P)
 	if last.t ~= "eof" then
-		return nil, "syntax error: unexpected " .. describe(last), last.line
+		return nil, unexpected(last), last.line
 	end
 	return prog
 end
 
 -- What the shell prints when a script will not parse: the file, the line and
--- the reason, in the order every Unix has printed them.
+-- the reason, in the order every Unix has printed them. A syntax error is
+-- 4.4BSD-Lite2 sh's synerror() to the letter (parser.c: "%s: %d: " and then
+-- "Syntax error: %s"), the line a bare number. Every OTHER error in a file
+-- keeps this machine's "line N:" -- sh's error() printed no line at all,
+-- and a script's author has nothing else to find the line by (the
+-- "sh" entry of CeroSecOS.DEVIATIONS).
+function CeroSecOS.isSyntaxError(reason)
+	return type(reason) == "string" and string.sub(reason, 1, 13) == "Syntax error:"
+end
+
 function CeroSecOS.scriptError(name, reason, line)
+	if CeroSecOS.isSyntaxError(reason) then
+		return tostring(name) .. ": " .. tostring(line or 1) .. ": " .. reason
+	end
 	return tostring(name) .. ": line " .. tostring(line or 1) .. ": " .. tostring(reason)
 end

@@ -576,7 +576,7 @@ local function myCall(state, session, cont, word)
 		CeroSecOS.CALLSIGN_PATH, CeroSecOS.terminated(call), false, nil)
 	if done == nil then
 		return atCmd({ "cu: " .. CeroSecOS.CALLSIGN_PATH .. ": " ..
-			tostring(why) }, cont.to)
+			tostring(CeroSecOS.strerror(why)) }, cont.to)
 	end
 	return atCmd({ "MYCALL " .. call }, cont.to)
 end

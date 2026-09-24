@@ -156,7 +156,7 @@ passé réellement, même quand ça correspond au texte attendu.
 16. `root`, Entrée, mot de passe vide, Entrée → le nom s'affiche à l'écran,
     l'invite devient `password:`, ce qui est tapé montre des `*`, puis la
     bannière revient et l'invite finale est `root@ksp-<x>-<y>:/root# `. [ ]
-17. `exit`, puis `root` / `xyz` → `login incorrect`, retour à `login:`. [ ]
+17. `exit`, puis `root` / `xyz` → `Login incorrect`, retour à `login:`. [ ]
 18. `admin`, mot de passe vide → `admin@ksp-<x>-<y>:/home/admin$ ` (un `$`, pas
     un `#`). [ ]
 19. Fenêtre ouverte, taper `wwww`, `1`, `e`, `i` → le personnage ne marche pas,
@@ -245,10 +245,10 @@ passé réellement, même quand ça correspond au texte attendu.
     retour au shell, `cat` montre l'ancien texte. Escape puis `y` → sauvegardé,
     `cat` montre le nouveau. [ ]
 47. `root`, `chmod 444 /etc/motd`, puis `admin`, `edit /etc/motd` → `[read-only]`
-    au lieu de `[modified]`, Tab répond `Cannot save: permission denied` sur la
+    au lieu de `[modified]`, Tab répond `Cannot save: Permission denied` sur la
     ligne de message, sans rien écrire. [ ]
 48. `root`, `chmod 000 /etc/motd`, puis `admin`, `edit /etc/motd` →
-    `edit: /etc/motd: permission denied` à l'invite, aucun éditeur ne s'ouvre.
+    `edit: /etc/motd: Permission denied` à l'invite, aucun éditeur ne s'ouvre.
     Remettre `chmod 644 /etc/motd`. [ ]
 49. Tenir une touche au-delà de soixante caractères sur une ligne → rien n'est
     refusé, la ligne se replie sur la rangée d'en dessous comme un vrai
@@ -273,11 +273,11 @@ passé réellement, même quand ça correspond au texte attendu.
     `passwd: password updated`. [ ]
 54. `exit`, se reconnecter en `admin` avec le mot de passe vide → `login
     incorrect` ; avec `hunter2` → connecté. [ ]
-55. `passwd`, mauvais ancien mot de passe → `passwd: authentication failure`,
+55. `passwd`, mauvais ancien mot de passe → `passwd: Permission denied`,
     rien de changé. [ ]
 56. `passwd`, bon ancien mot de passe, `abc` puis `abd` aux deux nouveaux →
     `passwd: passwords do not match`. [ ]
-57. `admin`, `cat /etc/passwd` → `cat: /etc/passwd: permission denied`.
+57. `admin`, `cat /etc/passwd` → `cat: /etc/passwd: Permission denied`.
     `sudo cat /etc/passwd`, mauvaise réponse au mot de passe →
     `sudo: authentication failure`, retour direct au shell, pas de deuxième
     essai. [ ]
@@ -318,7 +318,7 @@ passé réellement, même quand ça correspond au texte attendu.
     `wheel:` de nouveau, et `cat /etc/sudoers` n'a jamais eu son nom. Un nom
     laissé dans `wheel` serait `root` qui attend le prochain `dan`. [ ]
 64. `admin`, `su` (mot de passe défini sur `root`) → `Password:` avec des `*` ;
-    mauvais mot de passe → `su: authentication failure`. Bon mot de passe →
+    mauvais mot de passe → `Sorry`. Bon mot de passe →
     `root@<host>:/root#`. `exit` → retour à `admin@<host>:~$`, écran non
     effacé ; `exit` encore → déconnexion complète, écran effacé, `login:`. [ ]
 65. `root`, `su root` quatre fois de suite (chacune libre), une cinquième →
@@ -332,7 +332,7 @@ passé réellement, même quand ça correspond au texte attendu.
 67. `admin`, sans `su`, `echo on > /dev/light0` → la lumière s'allume, aucun mot
     de passe demandé (le groupe `sudo` fait le travail). [ ]
 68. `sudo useradd bob`, `passwd bob`, se reconnecter en `bob`,
-    `echo off > /dev/light0` → `light0: permission denied`, la lumière reste
+    `echo off > /dev/light0` → `light0: Permission denied`, la lumière reste
     allumée. [ ]
 69. `root`, ajouter une ligne `bob` à `/etc/sudoers`, puis `bob`, `id` →
     `groups=bob,sudo`, et `echo off > /dev/light0` fonctionne. Retirer la
@@ -356,7 +356,7 @@ passé réellement, même quand ça correspond au texte attendu.
 
 74. `admin`, `ls -l /bin` → une ligne `-rwxr-xr-x root` par commande ;
     `cat /bin/ls` → `list a directory`. [ ]
-75. `admin`, `cat /etc/passwd` → `cat: /etc/passwd: permission denied`. `root`,
+75. `admin`, `cat /etc/passwd` → `cat: /etc/passwd: Permission denied`. `root`,
     `cat /etc/passwd` → deux lignes, `root:$cs1$…:/root:admin` et
     `admin:$cs1$…:/home/admin:user`, chacune coupée sur deux rangées de
     soixante colonnes. [ ]
@@ -366,7 +366,7 @@ passé réellement, même quand ça correspond au texte attendu.
 77. `root`, `hostname Upper` → `hostname: Upper: invalid name` (majuscule
     refusée) ; même refus pour un nom commençant par un tiret ou dépassant
     seize caractères. [ ]
-78. `root`, `rm /bin/ls` → `ls: command not found`, `help` ne liste plus `ls`.
+78. `root`, `rm /bin/ls` → `ls: not found`, `help` ne liste plus `ls`.
     `echo "list a directory" > /bin/ls`, `chmod 755 /bin/ls` → `ls` refonctionne. [ ]
 79. `root`, garder un fichier sous `/home/admin` puis `rm -r /bin` → `help`
     répond `help: no commands in /bin: the system is damaged.` puis
@@ -592,7 +592,7 @@ passé réellement, même quand ça correspond au texte attendu.
      barricadée : `winN: cannot toggle`, et `dev winN lock` répond toujours
      `winN: smashed` / `winN: barricaded`. En tant qu'un compte hors du
      groupe `sudo` : `dev` affiche le tableau, mais `dev light0 off` répond
-     `light0: permission denied`. [ ]
+     `light0: Permission denied`. [ ]
 
 98b. **Le lampadaire de rue.** Poser un relais sur un lampadaire dehors,
      le câbler à la machine, la nuit, réseau debout. `dev lightN` →
@@ -860,7 +860,7 @@ dessus.
 
 Les étapes 140 à 148 ne passent par aucun fichier : elles se tapent à l'invite,
 parce que l'invite **est** le langage de script depuis le palier 5a.1. C'est la
-capture d'écran prise en jeu qui les a fait écrire (`while: command not found`).
+capture d'écran prise en jeu qui les a fait écrire (`while: not found`).
 
 127. `edit compte.sh`, taper les quatre lignes ci-dessous, `Tab` pour
      enregistrer, `Échap` pour sortir. Puis `cat compte.sh` → les quatre lignes
@@ -884,7 +884,7 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
      n'a le droit d'exécuter, root compris. `chmod 100 compte.sh` (ou `010`, ou
      `001` : un seul bit `x` n'importe où suffit) → `./compte.sh` repart. Puis
      `chmod 755 compte.sh`. [ ]
-130. `compte.sh` tout court (sans `./`) → `compte.sh: command not found` : un
+130. `compte.sh` tout court (sans `./`) → `compte.sh: not found` : un
      nom nu reste une commande de `/bin` et rien d'autre. [ ]
 131. `edit bonjour.sh` avec `read -p "nom? " n` puis `echo "salut $n"` →
      `sh bonjour.sh` affiche `nom? ` à l'invite, ce qui est tapé s'y ajoute
@@ -923,13 +923,13 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
 140. `while true; do echo tick; sleep 1; done &` tapé **directement à
      l'invite** (aucun fichier) → la machine répond `[1] <numéro>` et rend
      l'invite tout de suite, puis `tick` arrive une fois par seconde.
-     **Jamais** `while: command not found`. `jobs` → `[1] sleeping` suivi de la
+     **Jamais** `while: not found`. `jobs` → `[1] sleeping` suivi de la
      ligne telle qu'elle a été tapée. `kill %1` → `[1] killed`. [ ]
 141. Toujours à l'invite : `echo a && echo b`, `false || echo c`,
      `for i in 1 2 3; do echo $i; done`, `echo $((7 * 6))`,
      `echo $(whoami)`, `echo 'un   deux'` → chacun répond comme dans un
      script. `while true; do echo x` (sans `done`) →
-     `sh: syntax error: missing 'done'` et **rien** ne tourne. [ ]
+     `Syntax error: end of file unexpected (expecting "done")` et **rien** ne tourne. [ ]
 141a. **Les dollars dans une somme.** `edit part.sh` avec deux lignes :
      `echo $(($1 / $2)) chacun, $(($1 % $2)) de reste` et
      `echo $# nombres`. Puis `chmod 755 part.sh` et `./part.sh 17 5` →
@@ -954,7 +954,7 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
      avec `y=dedans`, puis `y=dehors`, `./pose.sh`, `echo [$y]` → `[dehors]`.
      Ensuite `. ./pose.sh` puis `echo [$y]` → `[dedans]` : le point lit le
      fichier DANS ce shell-ci. Vérifier aussi `. pose.sh` (sans `./`) →
-     `.: pose.sh: no such file` tant que le dossier n'est pas dans `PATH`, et
+     `.: pose.sh: No such file or directory` tant que le dossier n'est pas dans `PATH`, et
      `chmod 600 pose.sh` → `. ./pose.sh` marche encore (le point veut `r`, pas
      `x`) alors que `./pose.sh` répond `./pose.sh: permission denied`. [ ]
 143. Taper `while true; do echo y; done` sans `&` → les `y` arrivent en filet,
@@ -1010,7 +1010,7 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
 148. Fichiers cachés et `/bin` : `ls -a` dans le home → `.` et `..` en tête,
      puis les noms pointés, puis le reste ; `ls -A` → les mêmes sans `.` ni
      `..` ; `ls -la` et `ls -aF` lisent pareil (`./` et `../` avec `-F`). Puis
-     `sudo rm /bin/sleep` → `sleep 1` répond `sleep: command not found` ;
+     `sudo rm /bin/sleep` → `sleep 1` répond `sleep: not found` ;
      `sudo chmod 600 /bin/echo` → `echo hi` répond `echo: permission denied`
      et `sudo echo hi` est refusé de la même façon (aucun bit `x` : même root
      ne l'exécute pas), puis `sudo chmod 755 /bin/echo` le remet ; `if true; then history; fi`
@@ -1018,7 +1018,7 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
      ni `cd` ni `exit` ni `jobs` ni `wait` -- ce sont des mots du shell, pas des
      fichiers -- et `cd /etc` marche quand meme, `man cd` repond, et `help` les
      nomme sous la table. Enfin
-     `sudo rm /bin/sh` → **toute** ligne tapée répond `sh: command not found`,
+     `sudo rm /bin/sh` → **toute** ligne tapée répond `sh: not found`,
      `exit` fonctionne encore, et éteindre puis rallumer la machine la répare
      par le BIOS. [ ]
 
@@ -1240,7 +1240,7 @@ en observant le jeu réel, pas par un banc de test.
      fruits` → `pomme` puis `figue` ; `grep -c melon fruits` → `0` et rien
      d'autre (le zéro est une réponse, pas un silence) ; `sort -u fruits` →
      `figue`, `poire`, `pomme` sur trois lignes ; `cat fruits | sort -u | wc -l`
-     → `     3`. Puis `wc -q fruits` → `wc: -q: unknown option` et `wc` tout
+     → `     3`. Puis `wc -q fruits` → `wc: illegal option -- q` suivi de `usage: wc [-clw] [file]...` et `wc` tout
      seul → `wc: usage: wc [-clw] [file]...`. [ ]
 
 ## N. Le réseau (palier 6a)
@@ -1366,7 +1366,7 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      d'autre non plus). [ ]
 194. Une commande à soi. `mkdir bin`, `edit bin/hello` avec une seule ligne
      `echo salut`, sauver, `chmod 755 bin/hello`. Puis `hello` →
-     `hello: command not found`. Ensuite `PATH=$PATH:$HOME/bin` → `echo $PATH`
+     `hello: not found`. Ensuite `PATH=$PATH:$HOME/bin` → `echo $PATH`
      dit `/bin:/usr/local/bin:/home/admin/bin`, et `hello` →
      `salut`. `which hello` → `/home/admin/bin/hello`. Enfin mettre la même
      ligne `PATH=$PATH:$HOME/bin` dans `edit .profile`, `exit`, se reconnecter,
@@ -1374,7 +1374,7 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
 195. Le piège de cron. Toujours avec `~/bin` dans le `PATH` de l'invite :
      `crontab -e` et écrire `* * * * * hello`, sauver. Attendre une minute (une
      minute de jeu ; accélérer le temps aide), puis `mail` → le courrier dit
-     `hello: command not found`. Remplacer la ligne par
+     `hello: not found`. Remplacer la ligne par
      `* * * * * /home/admin/bin/hello` → le courrier suivant dit `salut`.
      Terminer par `crontab -r`. [ ]
 196. Les liens. `echo bonjour > notes.txt`, `ln -s notes.txt lien`, puis
@@ -1382,14 +1382,14 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      `lrwxrwxrwx  admin  admin   lien -> notes.txt` ; `ls -F` → `lien@` ;
      La flèche de `ls -l` est **la** façon de voir la cible : il n'y a pas de
      `readlink` sur cette machine (`readlink lien` →
-     `readlink: command not found`). Puis `rm lien` → `notes.txt` est toujours
+     `readlink: not found`). Puis `rm lien` → `notes.txt` est toujours
      là (`cat notes.txt`). Refaire le lien, `mv lien deplace`,
      `ls -l deplace` → la flèche pointe toujours sur `notes.txt`. `ln -s rien casse` puis
-     `cat casse` → `casse: no such file`, mais `ls -l casse` montre encore la
+     `cat casse` → `casse: No such file or directory`, mais `ls -l casse` montre encore la
      flèche. `ln -s a b` et `ln -s b a` puis `cat a` →
      `too many levels of symbolic links`. Enfin `ln notes.txt dur` (sans `-s`)
      → la ligne d'usage `ln: usage: ln -s <target> <name>`, et `ls dur` →
-     `ls: dur: no such file` : rien n'a été créé. [ ]
+     `ls: dur: No such file or directory` : rien n'a été créé. [ ]
 196a. **Et la page des écarts le dit.** Volume 1, chapitre 1, la page
      **One command is narrower here than you remember it: ln** → elle explique
      qu'un vrai `ln` sans drapeau faisait un lien DUR, pourquoi cette machine
@@ -1404,7 +1404,7 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      `find tas -name '*.log' -exec cat {} +` → même résultat en une seule
      commande. Oublier le backslash (`-exec cat {} ;`) → la ligne d'usage
      `find: usage: find <path>... [expression]`. Un mot du shell n'est pas un
-     programme : `find tas -exec cd {} \;` → `cd: command not found`. Enfin
+     programme : `find tas -exec cd {} \;` → `cd: not found`. Enfin
      `find tas -name '*.log' -exec rm {} \;` puis `find tas` → il ne reste que
      `tas` et `tas/c.txt`. [ ]
 196c. **Un balayage qui prend du temps le prend proprement.** `mkdir gros`, puis
@@ -1522,7 +1522,7 @@ coques.
      disquette neuve. `cat /dev/fd0` → `blank`. `echo on > /dev/fd0` →
      `fd0: invalid value`. `rm /dev/fd0` → `rm: /dev/fd0: is a device`. Éjecter
      la disquette puis `ls /dev` → `fd0` a disparu, et `newfs /dev/fd0` →
-     `newfs: /dev/fd0: no such file`. [ ]
+     `newfs: /dev/fd0: No such file or directory`. [ ]
 202. **`newfs` et `mount`.** Disquette remise. `mount /dev/fd0 /mnt` →
      `mount: /dev/fd0 on /mnt: Incorrect super block` (elle est vierge).
      `newfs /dev/fd0` → `/dev/fd0: 4096 bytes, 32 inodes`, et `cat /dev/fd0` →
@@ -1570,7 +1570,7 @@ coques.
      `rm -r travail`, `rm notes.txt`, `tar xvf /mnt/home.tar` → tout revient,
      `cat notes.txt` → `deux`, et `ls -l notes.txt` → le mode `600` est revenu
      aussi. Enfin `df` avant et après un `tar cf` : l'archive **compte** sur le
-     disque, et un home trop gros répond `tar: /mnt/home.tar: file too large`.
+     disque, et un home trop gros répond `tar: /mnt/home.tar: File too large`.
      Pendant un `tar` d'un gros home, marcher et ouvrir une porte : le jeu ne
      saccade pas. [ ]
 208. **Reprendre la machine avec la disquette dedans.**
@@ -1580,7 +1580,7 @@ coques.
      toujours là, rien n'est monté (`mount` ne liste que `hda`), et un seul
      `mount /dev/fd0 /mnt` retrouve les fichiers. [ ]
 209. **Les droits sur le lecteur.** `sudo useradd bob`, `su bob`, puis
-     `newfs /dev/fd0` → `newfs: /dev/fd0: permission denied`, pareil pour
+     `newfs /dev/fd0` → `newfs: /dev/fd0: Permission denied`, pareil pour
      `mount` et `cat /dev/fd0`. `exit`, puis `sudo chmod 666 /dev/fd0` et
      redevenir `bob` : `mount /dev/fd0 /mnt` passe. Le mode reste au **lecteur** :
      éjecter, remettre une autre disquette, `ls -l /dev` montre toujours
@@ -1827,7 +1827,7 @@ avant.
      `144.390 on`. `cat /dev/radio0` → `144.390 on`. Éteindre la radio →
      `144.390 off` ; enlever la pile (ou couper le courant de la pièce) →
      `144.390 no power`. Vérifier qu'on ne peut rien y écrire :
-     `echo 145.010 > /dev/radio0` → `radio0: permission denied`, et
+     `echo 145.010 > /dev/radio0` → `radio0: Permission denied`, et
      `ls -l /dev/radio0` → `cr--r-----`. Enfin le BIOS : éteindre et rallumer
      l'ordinateur, une ligne `Callsign: K?4???` doit apparaître **sous**
      `Phone line:`, et `cat /etc/callsign` doit donner le même indicatif. Les
@@ -1848,7 +1848,7 @@ avant.
      donne `cu: /dev/radio0: no such device` (il n'y a pas de ligne à ouvrir), et
      que `cu -l /dev/null` donne la même chose. Remettre la radio. [ ]
 217a. **MYCALL écrit le fichier.** En `admin`, à `cmd:` : `MYCALL W4ZZZ` →
-     `cu: /etc/callsign: permission denied` et `cat /etc/callsign` est inchangé
+     `cu: /etc/callsign: Permission denied` et `cat /etc/callsign` est inchangé
      (c'est un fichier de `root` : la mémoire du boîtier, c'est ce fichier). En
      `root` : `MYCALL W4ZZZ` → `MYCALL W4ZZZ`, et `cat /etc/callsign` répond
      `W4ZZZ`. `MYCALL kd4axr` → `MYCALL KD4AXR` (mis en majuscules, comme un TNC
@@ -1934,7 +1934,7 @@ avant.
      lignes doivent arriver **deux par seconde**, visiblement plus lentement
      qu'un appel téléphonique (quatre) et rien ne doit manquer à la fin. [ ]
 221a. **`call` a disparu, et la machine d'une vieille partie le perd.** Sur une
-     machine neuve : `call KD4AXR` → `call: command not found`, `ls /bin` ne montre
+     machine neuve : `call KD4AXR` → `call: not found`, `ls /bin` ne montre
      pas `call`, `help` ne le nomme pas, et **Tab** après `cal` ne complète rien.
      Puis la mise à niveau : charger une partie **d'avant** cette version (ou
      recréer le cas à la main en root, `echo "call another machine on the radio" >
@@ -2075,7 +2075,7 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
 230. **Le contact seul : on regarde, on ne touche pas.** Poser un
      `CeroSec.MagneticContact` sur une porte **extérieure**. `ls -l /dev` → la
      ligne de cette porte porte `cr--r-----` (pas de `w`). En `admin` :
-     `echo open > /dev/doorN` → `doorN: permission denied`. Faire `su root`
+     `echo open > /dev/doorN` → `doorN: Permission denied`. Faire `su root`
      puis le même ordre → `doorN: operation not supported`. Dans les deux cas
      la porte **ne bouge pas** dans le monde. `cat /dev/doorN` répond
      `closed`, `open` ou `locked` selon ce qu'on lui fait à la main : ouvrir la
@@ -2582,7 +2582,7 @@ un interrupteur dans la pièce.
      `find arbre -print` → comme `find arbre`. `find` tout seul → la ligne
      d'usage. [ ]
 268. **`find` et ce qu'il ne peut pas lire.** `admin`, `find /` → il nomme
-     `/root` et dit ensuite `find: /root: permission denied`, et la marche
+     `/root` et dit ensuite `find: /root: Permission denied`, et la marche
      continue. La commande est **en échec** : `find / | wc -l` affiche donc les
      chemins au lieu de les compter, exactement comme `cat bon mauvais | wc -l`.
      En `root`, `find / -name "*.txt"` marche partout. [ ]
@@ -2603,7 +2603,7 @@ un interrupteur dans la pièce.
      `wc -l liste` donne le même. `ls /etc | tee liste` → `liste` est
      **remplacé**. `ls /etc | tee -a liste` → il est doublé, sans ligne vide au
      milieu. `cat c.txt | tee /etc/motd` en `admin` →
-     `tee: /etc/motd: permission denied`. [ ]
+     `tee: /etc/motd: Permission denied`. [ ]
 272. **`uptime` et `w`.** `uptime` → une ligne de la forme
      ` 3:14PM  up 2 days,  4:03,  1 user,  load 0.00 0.00 0.00`, tenant dans les
      soixante colonnes. Lancer `sleep 300 &` quatre fois, attendre une dizaine
@@ -2622,7 +2622,7 @@ un interrupteur dans la pièce.
      machine **d'une sauvegarde antérieure à cette version** (ou après
      `sudo rm /bin/hash` sur une neuve, ce qui est la même absence) : `adduser`,
      `deluser`, `gpasswd`, `hash`, `readlink`, `restart` et `write` répondent
-     tous `command not found`, et `ls /bin` n'en montre aucun. `help` non plus.
+     tous `not found`, et `ls /bin` n'en montre aucun. `help` non plus.
      Et ce qu'il faut taper à la place : `useradd`, `userdel`, `usermod -G`,
      `mkpasswd`, `ls -l` pour lire la flèche d'un lien, `reboot`, et
      `echo texte > fichier`. [ ]
@@ -2809,7 +2809,7 @@ qu'on lit sur le papier soit celui que la machine demande.
      - l'invite dit `ksp-` et les coordonnées ;
      - `cat /etc/passwd` montre **exactement deux** lignes, `root` et `admin` ;
      - `su root` avec un mot de passe **vide** passe ;
-     - `cat /var/log/messages` dit `cat: no such file` ;
+     - `cat /var/log/messages` dit `cat: No such file or directory` ;
      - fouiller les tiroirs du même bureau : aucun papier ;
      - les disquettes ramassées sont toutes vierges. [ ]
 
@@ -3060,7 +3060,7 @@ sauvegarde ; rien de ce qui est écrit ici n'est un nom ou un mot de passe à re
        de la plus récente à la plus ancienne ;
      - `history` les affiche numérotées ;
      - prendre **n'importe quelle** ligne de ce fichier et la retaper : aucune ne
-       répond `command not found` (les fautes qu'il a faites sont des fautes de
+       répond `not found` (les fautes qu'il a faites sont des fautes de
        nom de fichier, pas de commande). [ ]
 
 304. **Qui s'est assis là.** Toujours sur la même machine : `last`
@@ -3311,7 +3311,7 @@ tiré avant que le joueur ne regarde.
      ouvert, il suffisait de taper `admin` puis `sudo su` pour être `root` sur
      n'importe quelle machine du comté. Sur un ordinateur garni (n'importe quel
      commerce, modèle d'exposition compris) :
-     - à `login:`, taper `admin` et Entrée au mot de passe → `login incorrect` ;
+     - à `login:`, taper `admin` et Entrée au mot de passe → `Login incorrect` ;
      - se connecter avec un compte de la premises (papier du tiroir, papier d'une
        poche) puis `cat /etc/passwd` → aucune ligne `admin` ;
      - `ls /home` → un dossier par employé, aucun `admin` ;
@@ -3444,7 +3444,7 @@ Tout se tape au prompt d'une seule machine allumée, en `admin`. Les bancs
 sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
 
 339a. **`sudo` signe ce qu'il ne trouve pas.** `sudo lights on` → une seule ligne,
-     `sudo: lights: command not found`, et non `lights: command not found` : c'est
+     `sudo: lights: command not found`, et non `lights: not found` : c'est
      `sudo` qui a cherché. `sudo cd /root` répond pareil
      (`sudo: cd: command not found`). [ ]
 
@@ -3464,7 +3464,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      impossible : `stop=$(( $(date +%s) + 300 ))`, puis `now=$(date +%s)`, puis
      `echo $(( stop - now ))` → `300` (ou 299/300 selon la seconde qui passe).
      Deux prises restent refusées : `echo $(echo $(date))` →
-     `sh: syntax error: bad substitution`. [ ]
+     `Syntax error: Bad substitution`. [ ]
 
 339e. **La sortie d'un script suit la redirection de la ligne.** Avec
      `edit deux.sh` contenant `echo un` et `echo deux`, Tab pour enregistrer :
@@ -3473,7 +3473,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      puis `./deux.sh > out2` → pareil, et `./deux.sh | wc -l` → `2`. Un script
      qui contient `ls /nope` sous un `> fic` : le refus est à l'écran, le fichier
      ne contient que ce qui a été imprimé. Et `sh deux.sh > /etc/nope` →
-     `sh: /etc/nope: permission denied`, le script ne tourne pas. [ ]
+     `cannot create /etc/nope: permission denied`, le script ne tourne pas. [ ]
 
 339f. **`case`.** Au prompt : `case abc in a*) echo star;; esac` → `star` ;
      `case abc in x|abc|y) echo alt;; esac` → `alt` ;
@@ -3483,7 +3483,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `case is a shell keyword`, et `help` liste `case` et `esac` parmi les mots
      du shell. Dans un fichier avec `edit`, la forme sur plusieurs lignes
      marche aussi (`case $1 in`, une clause par bloc, `esac` seul sur sa
-     ligne). Et `echo a;;` → `sh: syntax error: unexpected ';;'`. [ ]
+     ligne). Et `echo a;;` → `Syntax error: ";;" unexpected`. [ ]
 
 339g. **Les fonctions du shell.** Au prompt : `greet() { echo hello $1; }` puis
      `greet world` → `hello world` ; `type greet` → `greet is a function` ;
@@ -3491,7 +3491,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `x=outside`, `f() { x=inside; }`, `f`, `echo $x` → `inside` (pas de
      `local` en 1993). Fermer la fenêtre du terminal et la rouvrir : `greet bob`
      marche encore (c'est la machine qui garde la fonction). `exit` puis se
-     reconnecter : `greet` → `greet: command not found`. Et dans un fichier
+     reconnecter : `greet` → `greet: not found`. Et dans un fichier
      `lib.sh` avec une définition dedans : `sh lib.sh` ne laisse rien,
      `. lib.sh` la laisse (`type` le dit). [ ]
 
@@ -3587,7 +3587,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
 339o. **L'étoile marche enfin.** Mettre une disquette avec des fichiers dans le
      lecteur, `mount /dev/fd0 /mnt`, puis `cp -r /mnt/* /usr/local/bin` :
      tout ce qui est sur la disquette arrive, chaque nom trié. `umount /mnt`
-     puis relancer la même ligne : `cp: /mnt/*: no such file`, comme avant.
+     puis relancer la même ligne : `cp: /mnt/*: No such file or directory`, comme avant.
      Au prompt : `echo *` liste sans les fichiers cachés, `echo .*` les montre,
      et `echo "*"` répond `*`. [ ]
 
@@ -3600,29 +3600,30 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `[a b]`. `` echo '`echo a b`' `` (guillemets simples) répond
      `` `echo a b` `` au lieu de l'exécuter. Et un seul niveau, comme
      pour `$( )` : `` echo `echo \`echo hi\` ` ``, `` echo `echo $(echo hi)` `` et
-     `` echo $(echo `echo hi`) `` répondent tous `sh: syntax error: bad substitution`. [ ]
+     `` echo $(echo `echo hi`) `` répondent tous `Syntax error: Bad substitution`. [ ]
 
 339q. **La redirection s'ouvre avant la commande.** En `admin`, dans `~` :
-     `echo garde > notes`, puis `rm notes > /etc/x` → `rm: /etc/x: permission
-     denied`, et `cat notes` répond toujours `garde` : la commande n'a pas
-     tourné. `touch zz > /etc/hosts` → refusé, et `ls zz` → `no such file`.
+     `echo garde > notes`, puis `rm notes > /etc/x` → `cannot create
+     /etc/x: permission denied` (c'est sh qui parle, pas rm), et `cat notes`
+     répond toujours `garde` : la commande n'a pas tourné. `touch zz >
+     /etc/hosts` → refusé, et `ls zz` → `ls: zz: No such file or directory`.
      `cat nosuch > out` → l'erreur à l'écran, et `ls -l out` montre un fichier
      vide ; `nosuchcmd > out2` laisse aussi un `out2` vide. [ ]
 
 339r. **`2>`, `2>&1` et `>&2`.** `cat notes 2>/dev/null` → `garde`, et rien
-     d'autre (plus de `cat: 2: no such file`). `cat nosuch 2>/dev/null` → rien
-     du tout. `cat nosuch 2>err`, puis `cat err` → `cat: nosuch: no such file`.
+     d'autre (plus de `cat: 2: No such file or directory`). `cat nosuch 2>/dev/null` → rien
+     du tout. `cat nosuch 2>err`, puis `cat err` → `cat: nosuch: No such file or directory`.
      `cat nosuch > log 2>&1` → rien à l'écran, et `cat log` montre l'erreur ;
      `cat nosuch 2>&1 > log2` → l'erreur à l'écran, `log2` vide (l'ordre
      compte). `cat nosuch 2>&1 | wc -l` → `1`. `echo a > b > c` et
-     `cat x 2>y 2>z` → `sh: syntax error: bad redirect`. Et le seul écart
+     `cat x 2>y 2>z` → `Syntax error: redirection unexpected`. Et le seul écart
      déclaré : `cat notes nosuch 2>/dev/null` ne montre rien, pas même
      `garde` (une commande qui échoue à moitié rend un seul flot) ; la page
      *What is not Unix here: errors* du volume 1 le dit. [ ]
 
 339s. **`$( )` n'attrape plus les erreurs.** `x=$(cat nosuch); echo "[$x]"` →
-     `cat: nosuch: no such file` à l'écran, puis `[]`.
-     `x=$(cat nosuch 2>&1); echo "[$x]"` → `[cat: nosuch: no such file]`.
+     `cat: nosuch: No such file or directory` à l'écran, puis `[]`.
+     `x=$(cat nosuch 2>&1); echo "[$x]"` → `[cat: nosuch: No such file or directory]`.
      `x=$(echo oups >&2); echo "[$x]"` → `oups`, puis `[]`. [ ]
 
 339t. **La barre oblique inverse entre guillemets doubles.** `echo "a\nb"` →
@@ -4082,7 +4083,7 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      **sans `sh` ni chemin** → les rideaux se ferment. Dans un crontab, la ligne
      `* * * * * genwatch.sh 10` (nom nu, sans chemin) doit partir aussi : attendre
      une minute de jeu, `mail` → la sortie du programme et **jamais**
-     `genwatch.sh: command not found`. Les lignes du README avec le chemin complet
+     `genwatch.sh: not found`. Les lignes du README avec le chemin complet
      marchent toujours telles quelles. [ ]
 396. **LA PORTE SE REFERME, ET C'EST L'ÉTAPE QUI COMPTE.** Lancer
      `sh /usr/local/bin/autoclose.sh start 5 &` → `[1] 43`. Aller **ouvrir la
@@ -4209,7 +4210,7 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      `sh /mnt/tvguide.sh` → `tvguide.sh: no tv0 in /dev`, `sh /mnt/genwatch.sh` →
      `genwatch.sh: gen0 gave no fuel figure`. Et sans argument :
      `sh /mnt/curtains.sh` → la ligne d'usage. Aucun des six ne dit
-     `syntax error` ni ne laisse une erreur du shell sur l'écran. [ ]
+     `Syntax error` ni ne laisse une erreur du shell sur l'écran. [ ]
 404. **Sur les machines qui l'avaient déjà.** Dans le magasin d'informatique
      (`showroom`) : `ls bin` sur la machine du comptoir → une chance sur trois d'y
      trouver `autoclose.sh` et `curtains.sh`. Chez CeroSec (`cerosec`) :
@@ -4643,7 +4644,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `h() { echo out; cat nosuch; }`, puis `h 2>/dev/null | wc -l` : `1`, et
      `h > o 2>&1 | wc -l` : `0`, `cat o` affiche `out` puis la plainte de
      cat. `k() { echo ran > r; }`, puis `k > /etc/hosts | wc -l` :
-     `k: /etc/hosts: permission denied`, `0`, et `cat r` dit qu'il n'existe
+     `cannot create /etc/hosts: permission denied`, `0`, et `cat r` dit qu'il n'existe
      pas. Pareil pour un script : `sh s.sh > f | wc -l` affiche `0`.
      Quand le lecteur finit d'abord : `echo a > f1 | true`, puis `cat f1`
      affiche `a` ; `g > f2 | true`, puis `cat f2` affiche `a` puis `b`.
@@ -4653,10 +4654,10 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 459b. **Une fonction sans espace avant l'accolade.** Taper `t(){ echo a; }`
      puis `t` : affiche `a`. Idem avec `t (){ echo a; }` et
      `t ( ) { echo a; }`. `t(){echo a;}` répond
-     `sh: syntax error: missing '{'`. [ ]
+     `Syntax error: word unexpected (expecting "{")`. [ ]
 
 459c. **Un corps vide est refusé.** Taper `if true; then fi` : le shell
-     répond `sh: syntax error: unexpected 'fi'`. `if true; then true; fi` :
+     répond `Syntax error: "fi" unexpected`. `if true; then true; fi` :
      aucune erreur. Sur une machine trouvée, avec un compte ordinaire :
      `ls /home` et `last` répondent, `cat /var/log/messages` est refusé. En
      root : `cat /var/log/messages` et `cat /home/<nom>/.sh_history`
@@ -4667,7 +4668,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      verdict goes to the log ». Appuyer une deuxième fois tout de suite : la
      note dit « shell half already running ». Attendre quelques secondes :
      l'onglet **Log** (niveau info) et `console.txt` montrent
-     `CeroSec shell selftest: PASS 214 FAIL 0`, suivi d'une ligne de durée.
+     `CeroSec shell selftest: PASS 221 FAIL 0`, suivi d'une ligne de durée.
      Aucune ligne `warn`. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
@@ -4676,10 +4677,10 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      pages *What is not Unix here* jusqu'à « That is the whole list. » Il y en a
      maintenant dix, dont *errors, continued*, *files and the shell*, *pipes,
      printf and date*, *read, history, and who you are* et *what is missing*. [ ]
-461. **Une affirmation, vérifiée à l'écran.** `set` : `set: command not
+461. **Une affirmation, vérifiée à l'écran.** `set` : `set: not
      found`. Si cette réponse a changé, la page ment : le noter au rapport.
      (Les anciennes, « `wc -c` d'un `echo a` donne `1` » et « IFS n'est pas
-     lu », ne sont plus vraies : voir 461a et 463.) [ ]
+     lu », ne sont plus vraies : voir 461a et 464.) [ ]
 461a. **IFS, la coupure des mots.** `IFS=:`, `x=a:b:c`, `for i in $x; do
      echo "[$i]"; done` : trois lignes, `[a]`, `[b]`, `[c]`. `f(){ echo
      "$*"; }; IFS=:; f a b c` : une ligne, `a:b:c` (le premier caractère
@@ -4689,12 +4690,26 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 462. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
      `grep: [z-a]: bad range`, et la ligne figure au volume 1, annexe,
      *Commands the machine could not run*. Connecté en admin,
-     `passwd root` : `passwd: permission denied`, dans *Logging in, and your
+     `passwd root` : `passwd: Permission denied`, dans *Logging in, and your
      account*. [ ]
+463. **Les messages sont ceux de 1993.** En `admin` : `cat nosuch` →
+     `cat: nosuch: No such file or directory` (majuscule, phrase entière).
+     `cat -z` → deux lignes : `cat: illegal option -- z` puis
+     `usage: cat [-n] [file]...`. `nosuch` → `nosuch: not found`, puis
+     `echo $?` → `127`. `echo hi > /etc/x` → `cannot create /etc/x:
+     permission denied`, en minuscules et sans nom devant. `echo hi >
+     /nulle/part` → `cannot create /nulle/part: directory nonexistent`.
+     `fi` → `Syntax error: "fi" unexpected`. `echo "ouvert` → `Syntax
+     error: Unterminated quoted string`. `su root` avec un mauvais mot de
+     passe → `Sorry`, seul sur sa ligne. `passwd` avec un mauvais ancien
+     mot de passe → `passwd: Permission denied`. Se déconnecter, mauvais
+     mot de passe au login → `Login incorrect`. Volume 1, *What is not Unix
+     here: errors, continued* : il ne reste que la ligne ouverte, les
+     refus sans errno, la signature `sh:` et sudo. [ ]
 
 ## Les fichiers finissent leur dernière ligne
 
-463. **Le saut de ligne est dans le fichier.** `echo a > p` puis `wc -c p` :
+464. **Le saut de ligne est dans le fichier.** `echo a > p` puis `wc -c p` :
      `2`, et `wc -l p` : `1`. `printf a > q` puis `wc -c q` : `1`, et
      `wc -l q` : `0` (wc compte les sauts de ligne). `cat q; echo b` affiche
      `ab` sur une seule ligne, et `printf a | cat; echo b` aussi. `cat q p`
@@ -4702,7 +4717,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      dans l'éditeur : une seule ligne `a`, pas de ligne vide en dessous ;
      sauvegarder sans rien changer : « Saved 2 bytes », et `wc -c p` dit
      toujours `2`. [ ]
-464. **Une ancienne partie, reprise.** Charger une sauvegarde faite avec la
+465. **Une ancienne partie, reprise.** Charger une sauvegarde faite avec la
      version précédente du mod, où un fichier `notes` avait été écrit avec
      `echo`. `ls -l notes` : un octet de plus qu'avant, et `wc -l notes` compte
      maintenant sa dernière ligne. `echo suite >> notes; cat notes` : `suite`
@@ -4713,24 +4728,24 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 
 ## Commandes et options de 4.4BSD
 
-465. **rmdir, expr, uname.** `mkdir e; rmdir e` → rien. `mkdir f; touch f/x;
-     rmdir f` → `rmdir: f: directory not empty`. `rmdir -p f` →
+466. **rmdir, expr, uname.** `mkdir e; rmdir e` → rien. `mkdir f; touch f/x;
+     rmdir f` → `rmdir: f: Directory not empty`. `rmdir -p f` →
      `rmdir: illegal option -- p` puis la ligne d'usage. `expr 2 + 3 \* 4` →
      `14` ; `expr 3 - 3; echo $?` → `0` puis `1` ; `expr 1 / 0; echo $?` →
      `Divide by zero` (sans préfixe, comme expr.y de 4.4BSD) puis `2`. `uname -a` → `CeroSec OS`, le nom de
      la machine, la version. [ ]
-466. **rm -f, kill, tail +N, touch.** `rm -f nosuch; echo $?` → `0`.
+467. **rm -f, kill, tail +N, touch.** `rm -f nosuch; echo $?` → `0`.
      `sleep 60 &`, puis `kill -9 %1` → `[1] killed`. `kill -STOP %1` →
      `kill: stop: not honoured`. `kill -FOO %1` →
      `kill: unknown signal FOO; valid signals:` et la liste. `kill -l` → la
      même liste, en minuscules. `printf 'a\nb\nc\n' > t; tail +2 t` → `b`,
      `c`. `touch t1 t2 t3; ls` → les trois. [ ]
-467. **printf et test.** `printf '[%5s][%-3d][%03x]\n' ab 7 255` →
+468. **printf et test.** `printf '[%5s][%-3d][%03x]\n' ab 7 255` →
      `[   ab][7  ][0ff]`. `printf '%s\n' a b c` → trois lignes.
      `printf 'x\101\n'` → `xA` ; `printf 'a\1b\n'` → `ab` (aucun caractère
      de contrôle). `ln -s t lnk; [ -h lnk ] && echo y` → `y` ;
      `[ -s t ] && echo y` → `y`. [ ]
-468. **Les formats de sortie.** `wc t` → `       3       3       6 t` (huit
+469. **Les formats de sortie.** `wc t` → `       3       3       6 t` (huit
      colonnes par nombre). `printf 'a\na\nb\n' | uniq -c` → `   2 a`, `   1 b`.
      `which nosuch` → `no nosuch in /bin /usr/local/bin` (le PATH, séparé par des
      blancs), et `echo $?` → `0`, comme le script csh de 4.3BSD. `sudo useradd bob` puis `sudo userdel bob` → aucune ligne. [ ]

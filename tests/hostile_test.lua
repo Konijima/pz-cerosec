@@ -2745,7 +2745,7 @@ do
 	local found, reason, walked =
 		CeroSecOS.lookupPath(state, system:sessionOf(console), "ls", forged)
 	eq("the walk finds nothing past the ceiling", found, nil)
-	eq("and says so", reason, "command not found")
+	eq("and says so", reason, "not found")
 	eq("having looked in exactly the ceiling's worth of directories", walked,
 		CeroSecOS.MAX_PATH_DIRS)
 
@@ -2764,7 +2764,7 @@ do
 	note("forged long PATH", result)
 
 	check("every iteration said the same thing",
-		string.find(console.lines[#console.lines] or "", "command not found", 1, true) ~= nil)
+		string.find(console.lines[#console.lines] or "", "not found", 1, true) ~= nil)
 	check("the console never kept more than its hundred lines",
 		#console.lines <= CeroSec.CONSOLE_MAX)
 	check("the machine still boots", CeroSecOS.validate(state) == true)
@@ -2810,7 +2810,7 @@ do
 
 	check("it is still running", job ~= nil and not CeroSecOS.jobIsOver(job))
 	check("saying the same thing every time round",
-		string.find(console.lines[#console.lines] or "", "too many levels", 1, true) ~= nil)
+		string.find(console.lines[#console.lines] or "", "Too many levels", 1, true) ~= nil)
 	check("the console never kept more than its hundred lines",
 		#console.lines <= CeroSec.CONSOLE_MAX)
 	check("the machine still boots with the loop on its disk",
@@ -3425,7 +3425,7 @@ do
 	-- every byte of it, and the write was weighed like any other.
 	local refused = false
 	for i = 1, #console.lines do
-		if string.find(console.lines[i], "file too large", 1, true) ~= nil then
+		if string.find(console.lines[i], "File too large", 1, true) ~= nil then
 			refused = true
 		end
 	end

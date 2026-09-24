@@ -275,9 +275,19 @@ local FS_REASONS = {
 	-- has something in it: rename(2)'s ENOTEMPTY, in this machine's own words.
 	"directory not empty",
 }
+-- Carried the way a command PRINTS them: strerror(3)'s sentence where the
+-- reason has an errno (CeroSecOS.STRERROR), the bare words where it has not.
 for i = 1, #FS_REASONS do
-	check("error appendix carries the reason \"" .. FS_REASONS[i] .. "\"",
-		string.find(errText, FS_REASONS[i], 1, true) ~= nil)
+	local said = CeroSecOS.strerror(FS_REASONS[i])
+	check("error appendix carries the reason \"" .. said .. "\"",
+		string.find(errText, said, 1, true) ~= nil)
+end
+-- And sh's own words for the same reasons at a redirect it could not open
+-- (CeroSecOS.cannotCreate), and at a command it could not run.
+for _, said in ipairs({ "cannot create", "directory nonexistent", "file system full",
+		"permission denied", "is a directory", "not found" }) do
+	check("error appendix carries sh's own \"" .. said .. "\"",
+		string.find(errText, said, 1, true) ~= nil)
 end
 
 -- The bare reasons the shell itself hands to fail(cmd, arg, reason) as a
@@ -301,8 +311,11 @@ end
 check("scanned at least a dozen fail() reasons out of the engine source",
 	#scannedReasons >= 12)
 for i = 1, #scannedReasons do
-	check("error appendix carries the scanned reason \"" .. scannedReasons[i] .. "\"",
-		string.find(errText, scannedReasons[i], 1, true) ~= nil)
+	-- fail() hands every reason through CeroSecOS.strerror, so what the
+	-- glass shows -- and the appendix must carry -- is the sentence.
+	local said = CeroSecOS.strerror(scannedReasons[i])
+	check("error appendix carries the scanned reason \"" .. said .. "\"",
+		string.find(errText, said, 1, true) ~= nil)
 end
 
 -- And the refusals that never pass through fail() at all: the ones the VM,
@@ -324,7 +337,7 @@ end
 --   * the four below are guards against a caller that is not the console and
 --     are never printed; each names where it is caught.
 local INTERNAL_RETURNS = {
-	-- CeroSecOSVM's runner turns this into "<name>: command not found" and
+	-- CeroSecOSVM's runner turns this into "<name>: not found" and
 	-- $? 127 before anything is shown (the `reason == "not a function"` test).
 	["not a function"] = true,
 	-- CeroSecOS.promptJob's type guards: the console always hands it a state
@@ -383,24 +396,24 @@ check("scanned at least thirty returned refusals out of the engine source (" ..
 	#directPieces .. ")", #directPieces >= 30)
 for i = 1, #directPieces do
 	check("error appendix carries the returned refusal \"" .. directPieces[i] .. "\"",
-		inEntry(directPieces[i]))
+		inEntry(directPieces[i]) or inEntry(CeroSecOS.strerror(directPieces[i])))
 end
 
 -- Everything else worth listing is built at runtime -- string concatenation
 -- (a command's own name, ".. reason", a user's own name in the sudoers
--- refusal) or assembled a piece at a time (the parser's three syntax
+-- refusal) or assembled a piece at a time (the parser's syntax
 -- errors, none of which go through fail() at all) -- so there is no bare
 -- literal in the source for a scan to lift. Hand-kept, and exactly as
 -- CeroSecOSShell.lua and SCeroSecSystem.lua produce them.
 local LITERAL_MESSAGES = {
-	"command not found",
+	"not found",
 	"is not in the sudoers file.",
-	"login incorrect",
-	"passwd: authentication failure",
+	"Login incorrect",
+	"passwd: Permission denied",
+	"Sorry",
 	"passwd: passwords do not match",
 	"passwd: password too long",
 	"passwd: no such user",
-	"su: authentication failure",
 	"su: too many levels",
 	"sudo: authentication failure",
 	"useradd: <name>: already exists",
@@ -413,9 +426,13 @@ local LITERAL_MESSAGES = {
 	"help: no commands in " .. CeroSecOS.BIN_PATH .. ": the system is damaged.",
 	"help: switch the computer off and on to repair it.",
 	"cerosec: nothing to answer",
-	"syntax error: bad redirect",
-	"syntax error: unterminated quote",
-	"syntax error: missing redirect target",
+	"Syntax error: redirection unexpected",
+	"Syntax error: Bad fd number",
+	"Syntax error: Unterminated quoted string",
+	"Syntax error: end of file unexpected",
+	"unexpected (expecting",
+	"sudo: <name>: command not found",
+	"<cmd>: illegal option -- <flag>",
 	-- rung 5b: the pipeline's own two, neither of which goes through fail()
 	"too many stages",
 	"input too large",
@@ -470,13 +487,14 @@ for i = 1, #DOOR_LINES do
 		string.find(errText, DOOR_LINES[i], 1, true) ~= nil)
 end
 
--- Confirm the three syntax errors really are in the engine source, spelled
+-- Confirm the syntax errors really are in the engine source, spelled
 -- exactly as the appendix quotes them -- caught by the scan above only if
 -- they went through fail(), and they do not.
 local SYNTAX_ERRORS = {
-	"syntax error: bad redirect",
-	"syntax error: unterminated quote",
-	"syntax error: missing redirect target",
+	"Syntax error: redirection unexpected",
+	"Syntax error: Unterminated quoted string",
+	"Syntax error: Bad fd number",
+	" (expecting ",
 }
 for i = 1, #SYNTAX_ERRORS do
 	check("engine source really contains \"" .. SYNTAX_ERRORS[i] .. "\"",
@@ -648,9 +666,10 @@ end
 -- a regression in any one of them fails with its own message).
 do
 	local MISSING_BEFORE = {
-		"unknown option", "invalid mode", "no manual entry", "no clock",
-		"syntax error: bad redirect", "syntax error: unterminated quote",
-		"syntax error: missing redirect target",
+		"illegal option", "invalid mode", "no manual entry", "no clock",
+		"Syntax error: redirection unexpected",
+		"Syntax error: Unterminated quoted string",
+		"Syntax error: end of file unexpected",
 	}
 	for i = 1, #MISSING_BEFORE do
 		check("previously-missing error string now in the appendix: \""
@@ -932,7 +951,7 @@ do
 	local DELIBERATE = {
 		-- chapter 8 has the reader make this one himself, in ~/bin
 		hello = true,
-		-- chapter 2 types this on purpose, to show "command not found"
+		-- chapter 2 types this on purpose, to show "not found"
 		sl = true,
 	}
 
@@ -1211,7 +1230,7 @@ do
 
 		-- And every name the engine RETIRED whose replacement is not a name of its
 		-- own is on the page too. A player who used `readlink` last week will type
-		-- it and get "command not found" with no hint at all, and this page is
+		-- it and get "not found" with no hint at all, and this page is
 		-- where he finds out where it went. adduser, deluser and gpasswd are not
 		-- on it because their replacements are commands Volume 2 teaches by name.
 		local TAUGHT = { adduser = true, deluser = true, gpasswd = true }
@@ -1481,7 +1500,7 @@ do
 		"light0: no power", "lock0: no such device", "win0: smashed",
 		"win0: barricaded", "lock1: no padlock", "door0: locked",
 		"door0: barricaded", "door0: blocked", "light0: invalid value",
-		"light0: permission denied", "win0: cannot toggle",
+		"light0: Permission denied", "win0: cannot toggle",
 		"door0: operation not supported",
 		"dev: <word>: unknown kind", "dev: <id>: no such device",
 		CeroSecOS.DEV_PATH .. ": read-only",

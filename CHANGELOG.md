@@ -21,7 +21,7 @@ have can notice is in the shell: a script you saved that used `echo "a\nb"` now 
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
-- The debug window's Self-test also runs 214 shell lines on a scratch
+- The debug window's Self-test also runs 221 shell lines on a scratch
   machine, spread over a few seconds, and writes
   `CeroSec shell selftest: PASS n FAIL m` to the log and console.txt.
 - The shell now refuses an `if`, `while`, `until`, `for` or function whose
@@ -144,11 +144,12 @@ and a command whose redirect is refused no longer runs.
   checked both ways against the machine: every difference from a 1993 Unix
   that is kept is on them, and nothing on them is untrue. New are
   `read -p/-s/-n` and `!!` being later shells' words, the passwd file,
-  the `#` prompt, the error wording, a pipe stopping its left side as soon as
+  the `#` prompt, the little left of the old error wording (the shell's
+  `sh:` signature, reasons no errno named), a pipe stopping its left side as soon as
   the right side is done (`sleep 5 | true` ends at once), and the commands and
   flags that are not here (`set`, `trap`, `expr :`, `uname -m`, `printf %f`,
   `sh -c`, the link count in `ls -l`, a time zone in `date`). The
-  error appendix also gained grep's pattern errors, `passwd: permission
+  error appendix also gained grep's pattern errors, `passwd: Permission
   denied`, `export: not a name` and `wait: too many jobs`.
 - New commands `rmdir`, `expr` (sums and comparisons, exit status 0, 1 or 2)
   and `uname`, and the flags scripts reach for first: `rm -f` (a file that is
@@ -162,6 +163,18 @@ and a command whose redirect is refused no longer runs.
   `no nosuch in /bin /usr/local/bin` instead of nothing. `useradd` and
   `userdel` now say nothing when they succeed, like the real ones --
   remember that a new account has an empty password until you run `passwd`.
+- Error messages now read the way a 1993 BSD printed them. A command's
+  refusal is the full sentence (`cat: notes: No such file or directory`,
+  `Permission denied`, `Is a directory`, `File exists`). A flag a command
+  does not have is `cat: illegal option -- z` followed by its usage line.
+  The shell speaks for itself in its own lower-case words: `foo: not found`,
+  `foo: permission denied`, and `cannot create /etc/x: permission denied`
+  for a `>` it could not open. Syntax errors read `Syntax error: "fi"
+  unexpected`, and in a script `broken.sh: 3: Syntax error: ...`. A wrong
+  password to `su` is `Sorry`, and to `passwd` it is `passwd: Permission
+  denied`; the login prompt says `Login incorrect`. A script that looked
+  for the old words in an error (`no such file`, `command not found`)
+  needs the new ones; `$?` is unchanged (127 not found, 126 not runnable).
 
 ## 0.6.1 - 2026-09-21
 

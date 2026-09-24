@@ -10,8 +10,8 @@
 -- the payload of the two orders that carry one ("prompt" and "edit") and nil
 -- for the rest.
 -- Errors read like a 1993 Unix, one line each:
---   cd: /root: permission denied
---   cat: notes.txt: no such file
+--   cd: /root: Permission denied
+--   cat: notes.txt: No such file or directory
 -- Commands never touch the tree themselves; they call the four mutators in
 -- CeroSecOSFS.lua, which own the permissions and the limits.
 --
@@ -238,6 +238,7 @@ end
 --
 
 local function fail(cmd, arg, reason)
+	reason = CeroSecOS.strerror(reason)
 	if arg == nil then return false, { cmd .. ": " .. reason } end
 	return false, { cmd .. ": " .. arg .. ": " .. reason }
 end
@@ -291,14 +292,16 @@ local function usage(cmd)
 	return false, { cmd .. ": usage: " .. (CeroSecOS.commandUsage(cmd) or cmd) }
 end
 
--- getopt(3)'s own refusal, 4.4BSD-Lite2's lib/libc/stdlib/getopt.c: "illegal
--- option -- x" with the letter alone, and then the command's usage() -- the
--- two lines a flag it does not know got in 1993. The commands that came with
--- it say it this way; the older ones still say "unknown option", declared
--- ("getopt" in CeroSecOS.DEVIATIONS).
-local function illegalOption(cmd, flag)
-	return false, { cmd .. ": illegal option -- " .. flag,
-		cmd .. ": usage: " .. (CeroSecOS.commandUsage(cmd) or cmd) }
+-- A flag getopt(3) does not know, 4.3BSD's own two lines: "illegal option --
+-- x" and then the usage a bad getopt() call always prints right after (see the
+-- "getopt" entry above). ch is whatever the caller has at hand for the bad
+-- flag -- a whole word like "-z" or a bare letter out of a "-rf" a loop is
+-- walking one character at a time -- and the leading dashes are stripped
+-- either way, because getopt's own message never carries one.
+local function badOption(cmd, ch)
+	local letter = string.sub(string.gsub(tostring(ch), "^%-+", ""), 1, 1)
+	return false, { cmd .. ": illegal option -- " .. letter,
+		"usage: " .. (CeroSecOS.commandUsage(cmd) or cmd) }
 end
 
 --
@@ -1008,39 +1011,47 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "w", phrase = "prints the clock where a real one prints a weekday",
 		why = "sixty columns: the clock where a weekday was" },
 
-	-- What the machine's WORDING is, where it is not 1993's. Kept rather than
-	-- unified: the strings are pinned in all three volumes and in the
+	-- What is left of the machine's own WORDING, where it is not 1993's. Kept
+	-- because each one says plainly what went wrong, and each says why below.
 	-- self-test's vectors, and each one says plainly what went wrong.
 	--
-	-- 4.4BSD's commands printed strerror(3): "No such file or directory". This
-	-- machine's are lower case and short; the capitalised ones are 4.4BSD's
-	-- own words -- the floppy's "Device busy", mail's, the network's
-	-- (CeroSecOSNet's reasons) and "Operation not permitted" -- and the
-	-- editor's bottom line is the editor's.
-	{ name = "refusal", world = true,
-		phrase = "A refusal here is lower case and cut short",
-		why = "no such file where strerror said No such file or directory" },
-	-- The V7 sh and ksh88 said "X: not found"; "command not found" is bash's.
-	{ name = "sh", phrase = "sh said only not found",
-		why = "command not found is bash's wording, not sh's" },
-	-- getopt(3), 4.3BSD: "illegal option -- z", then the usage line.
-	{ name = "getopt", world = true, phrase = "unknown option, where getopt said",
-		why = "the older commands' word for a flag they do not know" },
-	-- The Bourne shell's "syntax error: `fi' unexpected", and an open quote
-	-- is a line it waits for (PS2); this parser refuses the line.
+	-- The words themselves are 1993's now: strerror(3) for a command's
+	-- refusal (CeroSecOS.STRERROR), getopt(3)'s two lines for a flag,
+	-- sh's own lower-case table for what sh says (CeroSecOS.sherror,
+	-- .execError, .cannotCreate), synerror()'s "Syntax error:", su's
+	-- "Sorry" and login's "Login incorrect". What is left is below.
+	--
+	-- An open quote, or a line that ends in | or &&, is a line sh waited
+	-- for (PS2, bin/sh/parser.c); this parser has one line and refuses it.
 	{ name = "syntax", world = true,
-		phrase = "The syntax errors are this shell's own sentences",
-		why = "the parser's own wording, and an open quote is refused" },
-	-- su and passwd said "Sorry" on 4.4BSD and SVR4; "authentication
-	-- failure" is Linux-PAM's.
-	{ name = "su", phrase = "4.4BSD and System V said Sorry",
-		why = "authentication failure is later Linux wording" },
+		phrase = "a quote left open is refused",
+		why = "one typing line: no PS2 continuation, so the line is refused" },
+	-- Reasons kept in this machine's own words: a device and a name with
+	-- characters the disk will not keep, which no errno named, and a file
+	-- that grows past its size at a ">", where sh's errormsg[] had no row
+	-- for EFBIG and printed "error 27" (a command says File too large).
+	{ name = "errno", world = true,
+		phrase = "is a device, invalid characters and file too large",
+		why = "no errno, or no word in sh's table, so the machine's own" },
+	-- 4.4BSD sh's error() signs with commandname: nothing at the prompt,
+	-- the script's name inside a script, and no line number. This one signs
+	-- its own run-time errors "sh:" at the prompt and "name: line N:" in a
+	-- file, and a redirect it cannot open is never signed.
+	{ name = "sh",
+		phrase = "signs its own complaints sh:",
+		why = "a run-time error names the shell and the line a script stopped on" },
+	-- sudo's own wrong-password line is not pinned down the way su's and
+	-- passwd's are: the 1980s sudo that would have been on a 1993 machine is
+	-- not in circulation to read, and "it probably said X" is exactly the
+	-- guess CONTRIBUTING.md refuses. Kept until a real source turns up.
+	{ name = "sudo", phrase = "authentication failure",
+		why = "sudo's own wrong-password wording has no source to check it against" },
 
 	-- The FILES and the SHELL. (A file's last line used to have no "\n"
 	-- after it, and IFS used to be an ordinary name; both are real
 	-- since 0.7.0 and those deviations are gone.)
 	-- One > (or >>) and one 2> per command, and < is refused by the lexer
-	-- (CeroSecOSScript: "unexpected '<'"). sh took any number of each.
+	-- (CeroSecOSScript: "redirection unexpected"). sh took any number of each.
 	{ name = "redirect", world = true,
 		phrase = "One > and one 2> to a command, and no <",
 		why = "a command has one output, one error and no input redirect" },
@@ -1379,7 +1390,7 @@ commands.uname = function(state, session, args, env)
 		if string.sub(a, 1, 1) ~= "-" or a == "-" then return usage("uname") end
 		for c = 2, #a do
 			local flag = string.sub(a, c, c)
-			if UNAME_FLAGS[flag] == nil then return illegalOption("uname", flag) end
+			if UNAME_FLAGS[flag] == nil then return badOption("uname", flag) end
 			want[flag] = true
 			any = true
 		end
@@ -1624,7 +1635,7 @@ end
 -- nil plus the refusal when it cannot be read.
 local function lsDir(state, session, node, shown, o)
 	if not CeroSecOS.can(state, session, node, "r") then
-		return nil, "ls: " .. shown .. ": permission denied"
+		return nil, "ls: " .. shown .. ": Permission denied"
 	end
 
 	-- One array of what is being listed, so the long form and the columns are
@@ -1706,7 +1717,7 @@ commands.ls = function(state, session, args, env, stdin, sh)
 				elseif flag == "C" then
 					columns = true
 				else
-					return fail("ls", a, "unknown option")
+					return badOption("ls", flag)
 				end
 			end
 		else
@@ -1738,7 +1749,7 @@ commands.ls = function(state, session, args, env, stdin, sh)
 			node, reason = nil, "no such file"
 		end
 		if node == nil then
-			errs[#errs + 1] = "ls: " .. shown .. ": " .. reason
+			errs[#errs + 1] = "ls: " .. shown .. ": " .. CeroSecOS.strerror(reason)
 		elseif node.type ~= "dir" then
 			files[#files + 1] = { name = shown, node = node }
 		else
@@ -1874,7 +1885,7 @@ commands.cat = function(state, session, args, env, stdin)
 			ended = true
 		elseif #paths == 0 and not ended and a ~= "-" and string.sub(a, 1, 1) == "-" then
 			for c = 2, #a do
-				if string.sub(a, c, c) ~= "n" then return fail("cat", a, "unknown option") end
+				if string.sub(a, c, c) ~= "n" then return badOption("cat", string.sub(a, c, c)) end
 			end
 			number = true
 		else
@@ -1949,7 +1960,7 @@ commands.cat = function(state, session, args, env, stdin)
 			if node == nil then
 				carry.bad = true
 				glue, lastOpen = false, false
-				out[#out + 1] = "cat: " .. p .. ": " .. reason
+				out[#out + 1] = "cat: " .. p .. ": " .. CeroSecOS.strerror(reason)
 			elseif CeroSecOS.isDev(node) then
 				-- A device answers with its state, and refuses in its OWN name:
 				-- what a player is being told about is the light switch, not the
@@ -1969,10 +1980,10 @@ commands.cat = function(state, session, args, env, stdin)
 				end
 			elseif node.type ~= "file" then
 				carry.bad = true
-				out[#out + 1] = "cat: " .. p .. ": is a directory"
+				out[#out + 1] = "cat: " .. p .. ": Is a directory"
 			elseif not CeroSecOS.can(state, session, node, "r") then
 				carry.bad = true
-				out[#out + 1] = "cat: " .. p .. ": permission denied"
+				out[#out + 1] = "cat: " .. p .. ": Permission denied"
 			else
 				local lines = CeroSecOS.splitLines(node.data)
 				for j = 1, #lines do put(lines[j]) end
@@ -2331,7 +2342,7 @@ commands.rm = function(state, session, args, env)
 				elseif flag == "f" then
 					force = true
 				else
-					return fail("rm", a, "unknown option")
+					return badOption("rm", flag)
 				end
 			end
 		else
@@ -2346,7 +2357,7 @@ commands.rm = function(state, session, args, env)
 			CeroSecOS.removeNode(state, session, paths[i], recursive, CeroSecOS.clockOf(env))
 		if done == nil and not (force and reason == "no such file") then
 			ok = false
-			out[#out + 1] = "rm: " .. paths[i] .. ": " .. reason
+			out[#out + 1] = "rm: " .. paths[i] .. ": " .. CeroSecOS.strerror(reason)
 		end
 	end
 	return ok, out
@@ -2364,7 +2375,7 @@ commands.rmdir = function(state, session, args, env)
 	for i = 2, #args do
 		local a = args[i]
 		if string.sub(a, 1, 1) == "-" and a ~= "-" then
-			return illegalOption("rmdir", string.sub(a, 2, 2))
+			return badOption("rmdir", string.sub(a, 2, 2))
 		end
 		dirs[#dirs + 1] = a
 	end
@@ -2389,7 +2400,8 @@ commands.rmdir = function(state, session, args, env)
 		end
 		if why ~= nil then
 			ok = false
-			out[#out + 1] = "rmdir: " .. path .. ": " .. why
+			-- rmdir.c's warn(): the path and strerror(3)'s sentence.
+			out[#out + 1] = "rmdir: " .. path .. ": " .. CeroSecOS.strerror(why)
 		end
 	end
 	return ok, out
@@ -2414,7 +2426,7 @@ commands.mv = function(state, session, args, env)
 		local node, reason = CeroSecOS.getNode(state, session, src)
 		if node == nil then
 			ok = false
-			out[#out + 1] = "mv: " .. src .. ": " .. reason
+			out[#out + 1] = "mv: " .. src .. ": " .. CeroSecOS.strerror(reason)
 		-- Said about the SOURCE, before the destination is worked out: what is
 		-- a device is the thing being moved, and mv's other refusals all name
 		-- the target because it is the target they are about.
@@ -2427,7 +2439,7 @@ commands.mv = function(state, session, args, env)
 				local name = baseName(session, src)
 				if name == nil then
 					ok = false
-					out[#out + 1] = "mv: " .. src .. ": permission denied"
+					out[#out + 1] = "mv: " .. src .. ": Permission denied"
 					target = nil
 				else
 					target = dst .. "/" .. name
@@ -2438,7 +2450,7 @@ commands.mv = function(state, session, args, env)
 					CeroSecOS.moveNode(state, session, src, target, CeroSecOS.clockOf(env))
 				if done == nil then
 					ok = false
-					out[#out + 1] = "mv: " .. target .. ": " .. mreason
+					out[#out + 1] = "mv: " .. target .. ": " .. CeroSecOS.strerror(mreason)
 				end
 			end
 		end
@@ -2466,21 +2478,21 @@ end
 -- the count of its operands folded into the middle of it.
 local function cpOne(state, session, src, dst, dstIsDir, recursive, env)
 	local node, reason, srcAbs = CeroSecOS.getNode(state, session, src)
-	if node == nil then return "cp: " .. src .. ": " .. reason end
+	if node == nil then return "cp: " .. src .. ": " .. CeroSecOS.strerror(reason) end
 	-- A device cannot be copied: what would come out is a file holding the word
 	-- "on", which is a lie about a light switch.
 	if CeroSecOS.isDev(node) then return "cp: " .. src .. ": is a device" end
 	if node.type ~= "file" and not recursive then
-		return "cp: " .. src .. ": is a directory"
+		return "cp: " .. src .. ": Is a directory"
 	end
 	if not canCopyTree(state, session, node) then
-		return "cp: " .. src .. ": permission denied"
+		return "cp: " .. src .. ": Permission denied"
 	end
 
 	local target = dst
 	if dstIsDir then
 		local name = baseName(session, src)
-		if name == nil then return "cp: " .. src .. ": permission denied" end
+		if name == nil then return "cp: " .. src .. ": Permission denied" end
 		target = dst .. "/" .. name
 	end
 
@@ -2517,10 +2529,10 @@ local function cpOne(state, session, src, dst, dstIsDir, recursive, env)
 			-- cp.c again: a directory onto a file is `errno = ENOTDIR;
 			-- err(1, "%s", to.p_path)` in 4.4BSD-Lite2's copy(), so the
 			-- target's name and "not a directory".
-			if node.type ~= "file" then return "cp: " .. target .. ": not a directory" end
+			if node.type ~= "file" then return "cp: " .. target .. ": Not a directory" end
 			local done, wreason =
 				CeroSecOS.setData(state, session, target, node.data or "", CeroSecOS.clockOf(env))
-			if done == nil then return "cp: " .. target .. ": " .. wreason end
+			if done == nil then return "cp: " .. target .. ": " .. CeroSecOS.strerror(wreason) end
 			return nil
 		end
 	end
@@ -2530,7 +2542,7 @@ local function cpOne(state, session, src, dst, dstIsDir, recursive, env)
 	local copy = CeroSecOS.copyNode(node, CeroSecOS.userOf(session))
 	local created, creason =
 		CeroSecOS.createNode(state, session, target, copy, CeroSecOS.clockOf(env))
-	if created == nil then return "cp: " .. target .. ": " .. creason end
+	if created == nil then return "cp: " .. target .. ": " .. CeroSecOS.strerror(creason) end
 	return nil
 end
 
@@ -2547,7 +2559,7 @@ commands.cp = function(state, session, args, env)
 		-- and a name that begins with "-" is refused by isValidName anyway.
 		if #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
-				if string.sub(a, c, c) ~= "r" then return fail("cp", a, "unknown option") end
+				if string.sub(a, c, c) ~= "r" then return badOption("cp", string.sub(a, c, c)) end
 			end
 			recursive = true
 		else
@@ -2596,7 +2608,7 @@ commands.ln = function(state, session, args, env)
 		local a = args[i]
 		if #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
-				if string.sub(a, c, c) ~= "s" then return fail("ln", a, "unknown option") end
+				if string.sub(a, c, c) ~= "s" then return badOption("ln", string.sub(a, c, c)) end
 			end
 			symbolic = true
 		else
@@ -2652,10 +2664,10 @@ commands.chmod = function(state, session, args, env)
 		local node, reason = CeroSecOS.getNode(state, session, args[i])
 		if node == nil then
 			ok = false
-			out[#out + 1] = "chmod: " .. args[i] .. ": " .. reason
+			out[#out + 1] = "chmod: " .. args[i] .. ": " .. CeroSecOS.strerror(reason)
 		elseif not isOwnerOrRoot(session, node) then
 			ok = false
-			out[#out + 1] = "chmod: " .. args[i] .. ": permission denied"
+			out[#out + 1] = "chmod: " .. args[i] .. ": Permission denied"
 		else
 			local m = mode
 			if symbolic then m = CeroSecOS.applyModeSpec(node.mode, args[2]) end
@@ -2684,7 +2696,7 @@ commands.chown = function(state, session, args, env)
 		local node, reason = CeroSecOS.getNode(state, session, args[i])
 		if node == nil then
 			ok = false
-			out[#out + 1] = "chown: " .. args[i] .. ": " .. reason
+			out[#out + 1] = "chown: " .. args[i] .. ": " .. CeroSecOS.strerror(reason)
 		-- A device is root's, always. Only the MODE of one is remembered
 		-- across a command (see CeroSecOS.mountDev), so an owner given away
 		-- here would be back to root by the next line, and a change that
@@ -2694,7 +2706,7 @@ commands.chown = function(state, session, args, env)
 			out[#out + 1] = "chown: " .. args[i] .. ": is a device"
 		elseif not isOwnerOrRoot(session, node) then
 			ok = false
-			out[#out + 1] = "chown: " .. args[i] .. ": permission denied"
+			out[#out + 1] = "chown: " .. args[i] .. ": Permission denied"
 		else
 			node.owner = user.name
 			if now ~= nil then node.mtime = now end
@@ -2831,12 +2843,12 @@ end
 -- The node comes back too, because wc counts bytes and not lines.
 local function fileLines(state, session, cmd, path)
 	local node, reason = CeroSecOS.getNode(state, session, path)
-	if node == nil then return nil, cmd .. ": " .. path .. ": " .. reason end
+	if node == nil then return nil, cmd .. ": " .. path .. ": " .. CeroSecOS.strerror(reason) end
 	if node.type ~= "file" then
-		return nil, cmd .. ": " .. path .. ": " .. CeroSecOS.notAFile(node)
+		return nil, cmd .. ": " .. path .. ": " .. CeroSecOS.strerror(CeroSecOS.notAFile(node))
 	end
 	if not CeroSecOS.can(state, session, node, "r") then
-		return nil, cmd .. ": " .. path .. ": permission denied"
+		return nil, cmd .. ": " .. path .. ": Permission denied"
 	end
 	return CeroSecOS.splitLines(node.data or ""), nil, node
 end
@@ -3166,7 +3178,7 @@ end
 
 commands.grep = function(state, session, args, env, stdin, sh)
 	local flags, pats, bad = grepOptions(args)
-	if flags == nil then return fail("grep", bad, "unknown option") end
+	if flags == nil then return badOption("grep", bad) end
 	local ignore, numbered = flags.i == true, flags.n == true
 	local counting, invert = flags.c == true, flags.v == true
 	local rest = bad
@@ -3506,7 +3518,7 @@ end
 
 commands.wc = function(state, session, args, env, stdin)
 	local want, paths = flagsOf(args, "clw")
-	if want == nil then return fail("wc", paths, "unknown option") end
+	if want == nil then return badOption("wc", paths) end
 	-- No flag is every flag. Asked here, once, so that the pipe and the files
 	-- below both count what they were asked for and nothing else.
 	if not (want.l or want.w or want.c) then
@@ -3629,7 +3641,7 @@ end
 
 commands.sort = function(state, session, args, env, stdin)
 	local flags, paths = flagsOf(args, "nru")
-	if flags == nil then return fail("sort", paths, "unknown option") end
+	if flags == nil then return badOption("sort", paths) end
 	local reverse, numeric, unique = flags.r == true, flags.n == true, flags.u == true
 
 	-- With no file, the pipe. Nothing can be printed before the end of it: the
@@ -3702,7 +3714,7 @@ end
 
 commands.uniq = function(state, session, args, env, stdin)
 	local flags, paths = flagsOf(args, "c")
-	if flags == nil then return fail("uniq", paths, "unknown option") end
+	if flags == nil then return badOption("uniq", paths) end
 	local counting = flags.c == true
 
 	-- With no file, the pipe. One line and one count is all uniq ever holds, so
@@ -3864,7 +3876,7 @@ commands.cut = function(state, session, args, env, stdin)
 			if d == nil or #d ~= 1 then return usage("cut") end
 			delim = d
 		elseif #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
-			return fail("cut", a, "unknown option")
+			return badOption("cut", a)
 		else
 			paths[#paths + 1] = a
 			i = i + 1
@@ -3961,7 +3973,7 @@ end
 -- that means a pipe on its left.
 commands.tr = function(state, session, args, env, stdin)
 	local flags, rest = flagsOf(args, "d")
-	if flags == nil then return fail("tr", rest, "unknown option") end
+	if flags == nil then return badOption("tr", rest) end
 	local drop = flags.d == true
 	if drop then
 		if #rest ~= 1 then return usage("tr") end
@@ -4069,7 +4081,7 @@ end
 
 commands.tee = function(state, session, args, env, stdin)
 	local flags, paths = flagsOf(args, "a")
-	if flags == nil then return fail("tee", paths, "unknown option") end
+	if flags == nil then return badOption("tee", paths) end
 	if #paths < 1 then return usage("tee") end
 	-- tee is a filter and its input is the pipe: `tee f` with nothing on its left
 	-- has nothing to copy.
@@ -4110,7 +4122,7 @@ commands.tee = function(state, session, args, env, stdin)
 				not first or flags.a == true, CeroSecOS.clockOf(env))
 			if done == nil then
 				okAll = false
-				out[#out + 1] = "tee: " .. path .. ": " .. reason
+				out[#out + 1] = "tee: " .. path .. ": " .. CeroSecOS.strerror(reason)
 			else
 				carry.wrote[path] = true
 			end
@@ -4264,7 +4276,7 @@ end
 -- of the paths that matched, sorted, which may be empty: an empty answer is
 -- the caller's cue to fall back on the word AS WRITTEN (see CeroSecOS.jobStep's
 -- caller), which is the one and only reason `cp -r /mnt/* x` on an empty /mnt
--- still says "/mnt/*: no such file" -- a shell with nothing to glob to hands
+-- still says "/mnt/*: No such file or directory" -- a shell with nothing to glob to hands
 -- the program the star.
 
 -- What a glob's walk costs, past the flat command charge every field already
@@ -4490,7 +4502,7 @@ local function execRun(state, session, env, sh, argv, names, out)
 	-- execs a PROGRAM, and there is no /bin/cd for it to find. Same answer, in the
 	-- name that was looked up (see sudoRun).
 	if CeroSecOS.isShellWord(args[1]) or CeroSecOS.SHELL_BUILTINS[args[1]] then
-		out[#out + 1] = args[1] .. ": command not found"
+		out[#out + 1] = args[1] .. ": not found"
 		return false, true
 	end
 	local ok, lines, control = CeroSecOS.runArgs(state, session, args, nil, env, nil,
@@ -4503,7 +4515,7 @@ local function execRun(state, session, env, sh, argv, names, out)
 	-- A name nothing answers to is a command find could not run, and the lookup's
 	-- own line is what says so.
 	if not ok and #(lines or {}) == 1
-			and lines[1] == args[1] .. ": command not found" then
+			and lines[1] == args[1] .. ": not found" then
 		return false, true
 	end
 	return ok, false
@@ -4563,6 +4575,9 @@ end
 commands.find = function(state, session, args, env, stdin, sh)
 	local plan, unknown = findParse(args)
 	if plan == nil then
+		-- find is not getopt(3): its primaries are words, and 4.4BSD-Lite2
+		-- usr.bin/find/option.c refuses one it does not know with
+		-- errx(1, "%s: unknown option", *argv) -- the word, and no usage.
 		if unknown ~= nil then return fail("find", unknown, "unknown option") end
 		return usage("find")
 	end
@@ -4601,7 +4616,7 @@ commands.find = function(state, session, args, env, stdin, sh)
 			if node.type ~= "dir" then return end
 			if not CeroSecOS.can(state, session, node, "r") then
 				okAll = false
-				items[#items + 1] = { e = "find: " .. path .. ": permission denied" }
+				items[#items + 1] = { e = "find: " .. path .. ": Permission denied" }
 				return
 			end
 			local names = CeroSecOS.listedNames(node, true)
@@ -4621,10 +4636,10 @@ commands.find = function(state, session, args, env, stdin, sh)
 			local node, reason = CeroSecOS.getNode(state, session, path, true)
 			if node == nil then
 				okAll = false
-				items[#items + 1] = { e = "find: " .. path .. ": " .. reason }
+				items[#items + 1] = { e = "find: " .. path .. ": " .. CeroSecOS.strerror(reason) }
 			elseif node.dead then
 				okAll = false
-				items[#items + 1] = { e = "find: " .. path .. ": no such file" }
+				items[#items + 1] = { e = "find: " .. path .. ": No such file or directory" }
 			else
 				walk(path, node)
 			end
@@ -4815,7 +4830,7 @@ local function atRemove(state, session, args, from, who, env)
 				CeroSecOS.atJobPath(found.n), false, CeroSecOS.clockOf(env))
 			if gone == nil then
 				okAll = false
-				out[#out + 1] = who .. ": " .. args[i] .. ": " .. reason
+				out[#out + 1] = who .. ": " .. args[i] .. ": " .. CeroSecOS.strerror(reason)
 			end
 		end
 	end
@@ -5018,11 +5033,11 @@ local function tarGather(state, session, carry, verbose)
 	carry.i = carry.i + 1
 	local node, reason = CeroSecOS.getNode(state, session, path, true)
 	if node == nil then
-		carry.problems[#carry.problems + 1] = "tar: " .. path .. ": " .. reason
+		carry.problems[#carry.problems + 1] = "tar: " .. path .. ": " .. CeroSecOS.strerror(reason)
 		return
 	end
 	if node.dead then
-		carry.problems[#carry.problems + 1] = "tar: " .. path .. ": no such file"
+		carry.problems[#carry.problems + 1] = "tar: " .. path .. ": No such file or directory"
 		return
 	end
 	local kind = nil
@@ -5031,14 +5046,14 @@ local function tarGather(state, session, carry, verbose)
 	elseif CeroSecOS.isLink(node) then kind = "l" end
 	if kind == nil then
 		carry.problems[#carry.problems + 1] =
-			"tar: " .. path .. ": " .. CeroSecOS.notAFile(node)
+			"tar: " .. path .. ": " .. CeroSecOS.strerror(CeroSecOS.notAFile(node))
 		return
 	end
 
 	local data = ""
 	if kind == "f" then
 		if not CeroSecOS.can(state, session, node, "r") then
-			carry.problems[#carry.problems + 1] = "tar: " .. path .. ": permission denied"
+			carry.problems[#carry.problems + 1] = "tar: " .. path .. ": Permission denied"
 			return
 		end
 		data = node.data or ""
@@ -5052,7 +5067,7 @@ local function tarGather(state, session, carry, verbose)
 
 	if kind ~= "d" then return end
 	if not CeroSecOS.can(state, session, node, "r") then
-		carry.problems[#carry.problems + 1] = "tar: " .. path .. ": permission denied"
+		carry.problems[#carry.problems + 1] = "tar: " .. path .. ": Permission denied"
 		return
 	end
 	local names = CeroSecOS.listedNames(node, true)
@@ -5081,9 +5096,9 @@ local function tarPut(state, session, m, now)
 		if node == nil then
 			local made, reason = CeroSecOS.createNode(state, session, path,
 				CeroSecOS.newDir(who, m.mode, now), now)
-			if made == nil then return "tar: " .. path .. ": " .. reason end
+			if made == nil then return "tar: " .. path .. ": " .. CeroSecOS.strerror(reason) end
 		elseif node.type ~= "dir" then
-			return "tar: " .. path .. ": file exists"
+			return "tar: " .. path .. ": File exists"
 		end
 	elseif m.kind == "l" then
 		-- A link already at that name is REPLACED, which is what tar does with one:
@@ -5091,16 +5106,16 @@ local function tarPut(state, session, m, now)
 		-- and is not something an archive may quietly write over.
 		local node = CeroSecOS.getNode(state, session, path, true)
 		if node ~= nil then
-			if not CeroSecOS.isLink(node) then return "tar: " .. path .. ": file exists" end
+			if not CeroSecOS.isLink(node) then return "tar: " .. path .. ": File exists" end
 			local gone, why = CeroSecOS.removeNode(state, session, path, false, now)
-			if gone == nil then return "tar: " .. path .. ": " .. why end
+			if gone == nil then return "tar: " .. path .. ": " .. CeroSecOS.strerror(why) end
 		end
 		local made, reason = CeroSecOS.createNode(state, session, path,
 			CeroSecOS.newLink(who, m.data, now), now)
-		if made == nil then return "tar: " .. path .. ": " .. reason end
+		if made == nil then return "tar: " .. path .. ": " .. CeroSecOS.strerror(reason) end
 	else
 		local done, reason = CeroSecOS.writeFile(state, session, path, m.data, false, now)
-		if done == nil then return "tar: " .. path .. ": " .. reason end
+		if done == nil then return "tar: " .. path .. ": " .. CeroSecOS.strerror(reason) end
 	end
 	-- And what the member carried about itself, onto the node that is there now.
 	local node = CeroSecOS.getNode(state, session, path, true)
@@ -5130,7 +5145,10 @@ commands.tar = function(state, session, args, env, stdin, sh)
 		elseif c == "f" then
 			wantFile = true
 		else
-			return fail("tar", c, "unknown option")
+			-- Nor is tar: 4.4BSD-Lite2's is pax in tar mode, and
+			-- bin/pax/options.c walks the key letters by hand and answers
+			-- a letter it does not know with tar_usage() alone.
+			return usage("tar")
 		end
 	end
 	if kind == nil or not wantFile then return usage("tar") end
@@ -5183,7 +5201,7 @@ commands.tar = function(state, session, args, env, stdin, sh)
 		local text = CeroSecOS.tarText(carry.members)
 		local done, reason = CeroSecOS.writeFile(state, session, archive, text, false, now)
 		if done == nil then
-			out[#out + 1] = "tar: " .. archive .. ": " .. reason
+			out[#out + 1] = "tar: " .. archive .. ": " .. CeroSecOS.strerror(reason)
 			return false, out
 		end
 		for i = 1, #carry.problems do out[#out + 1] = carry.problems[i] end
@@ -5709,7 +5727,7 @@ commands.passwd = function(state, session, args, env)
 	local name = args[2]
 	if name == nil or name == "" then name = me end
 	if CeroSecOS.getUser(state, name) == nil then return false, { "passwd: no such user" } end
-	if name ~= me and me ~= "root" then return false, { "passwd: permission denied" } end
+	if name ~= me and me ~= "root" then return false, { "passwd: Permission denied" } end
 	if me == "root" then
 		return ask("New password: ", true, { cmd = "passwd", step = "new", user = name })
 	end
@@ -5726,11 +5744,17 @@ continuations.passwd = function(state, session, cont, line, env)
 	-- carry the authority to touch it too: a check that lives only in the
 	-- command is a check one refactor away from being no check at all.
 	local me = CeroSecOS.userOf(session)
-	if name ~= me and me ~= "root" then return false, { "passwd: permission denied" } end
+	if name ~= me and me ~= "root" then return false, { "passwd: Permission denied" } end
 
 	if cont.step == "old" then
+		-- passwd is a real program with its own name, not su's bare prompt:
+		-- 4.4BSD-Lite2 usr.bin/passwd/local_passwd.c sets errno to EACCES and
+		-- calls pw_error(NULL, 1, 1), which warns under the PROGRAM's name
+		-- (passwd, since no account name was given) with strerror(3)'s
+		-- capitalised wording for EACCES -- "passwd: Permission denied", not
+		-- su.c's bare "Sorry".
 		if not CeroSecOS.checkPassword(user, line) then
-			return false, { "passwd: authentication failure" }
+			return false, { "passwd: Permission denied" }
 		end
 		return ask("New password: ", true, { cmd = "passwd", step = "new", user = name })
 	end
@@ -5753,13 +5777,13 @@ continuations.passwd = function(state, session, cont, line, env)
 		end
 		local done, reason =
 			CeroSecOS.setPassword(state, name, line, session.stamp, CeroSecOS.clockOf(env))
-		if done == nil then return false, { "passwd: " .. reason } end
+		if done == nil then return false, { "passwd: " .. CeroSecOS.strerror(reason) } end
 		return true, { "passwd: password updated" }
 	end
 
 	-- A token with a step nobody wrote: refuse the way a wrong answer is
 	-- refused, and change nothing.
-	return false, { "passwd: authentication failure" }
+	return false, { "passwd: Permission denied" }
 end
 
 -- mkpasswd. The same function the passwords go through, on a string you choose,
@@ -6090,7 +6114,7 @@ local function sudoRun(state, session, args, from, env, sh)
 	-- this era reset nothing about the environment either.
 	if not CeroSecOS.BUILTINS[name] then
 		local refusal = CeroSecOS.whyNotRun(state, sub, name, shPath(sh))
-		if refusal ~= nil then return false, { name .. ": " .. refusal } end
+		if refusal ~= nil then return false, { name .. ": " .. CeroSecOS.execError(refusal) } end
 	end
 
 	-- Every command reads args[1] as its own name, so the tail is handed over
@@ -6290,7 +6314,7 @@ commands.useradd = function(state, session, args, env)
 			groups = list
 			i = i + 2
 		elseif name == nil and string.sub(a, 1, 1) == "-" and a ~= "-" then
-			return fail("useradd", a, "unknown option")
+			return badOption("useradd", a)
 		elseif name == nil then
 			name = a
 			i = i + 1
@@ -6368,7 +6392,7 @@ commands.userdel = function(state, session, args, env)
 		local a = args[i]
 		if name == nil and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
-				if string.sub(a, c, c) ~= "r" then return fail("userdel", a, "unknown option") end
+				if string.sub(a, c, c) ~= "r" then return badOption("userdel", string.sub(a, c, c)) end
 			end
 			removeHome = true
 		elseif name == nil then
@@ -6590,11 +6614,11 @@ continuations.su = function(state, session, cont, line, env)
 	-- The account is looked up again at the answer: one taken out of the file
 	-- between the question and the answer is one nobody becomes.
 	local user = CeroSecOS.getUser(state, cont.user)
-	if user == nil then return false, { "su: authentication failure" } end
+	if user == nil then return false, { "Sorry" } end
 	if CeroSecOS.userOf(session) ~= "root" and not CeroSecOS.checkPassword(user, line) then
 		-- One attempt, exactly as sudo gives one, and for the same reason: this
 		-- machine has a physical lock on it.
-		return false, { "su: authentication failure" }
+		return false, { "Sorry" }
 	end
 	return suSwitch(suTarget(session), user)
 end
@@ -6621,7 +6645,7 @@ end
 -- real sh falls back on a path of its own when the variable is not in the
 -- environment, and what keeps a machine saved before there was a PATH on it able
 -- to run a command. An EMPTY value is a value: one empty field, which is the
--- working directory and nothing else, so `PATH= ls` is "command not found".
+-- working directory and nothing else, so `PATH= ls` is "ls: not found".
 function CeroSecOS.pathValue(vars)
 	if type(vars) ~= "table" or type(vars.PATH) ~= "string" then
 		return CeroSecOS.DEFAULT_PATH
@@ -6656,16 +6680,16 @@ end
 -- Where a name is found, walked left to right. absolute path, or nil plus the
 -- bare reason -- the caller puts the name in front of it, so the two lines a
 -- player ever sees are
---   ls: command not found
---   ls: permission denied
+--   ls: not found
+--   ls: Permission denied
 --
 -- POSIX's rule and every sh's: the first candidate that is a file with x on it
 -- for whoever typed it WINS, and a candidate that cannot be run does not stop the
 -- search -- a copy of `ls` in ~/bin with no x on it is a file in the way, not a
 -- command, and /bin/ls behind it still runs. What the walk carries is the best
 -- REFUSAL it met on the way, so a name found everywhere and runnable nowhere
--- says "permission denied", and a name nothing answers to at all says "command
--- not found".
+-- says "Permission denied", and a name nothing answers to at all says "not
+-- found".
 -- The third answer is how many directories were actually looked in, which is
 -- what the walk COST: the shell charges it (see CeroSecOSVM.runSimple), because a
 -- long PATH makes every command on the machine dearer and a budget that could not
@@ -6711,7 +6735,7 @@ function CeroSecOS.lookupPath(state, session, name, path)
 		end
 	end
 	if refusal ~= nil then return nil, refusal, last end
-	return nil, "command not found", last
+	return nil, "not found", last
 end
 
 -- nil when the command may run, or the bare reason it may not. The path it was
@@ -6812,13 +6836,18 @@ end
 -- otherwise. Used by a command's own redirect and by a script's builtins, so
 -- `echo hi > f` writes the same way whoever ran the echo.
 -- true plus the lines, or false plus the refusal.
+-- who is kept for the caller's own bookkeeping but never signs this line: a
+-- real sh opens ">" itself, before the command runs, and says so in its OWN
+-- words whichever command was on the line -- "cannot create /etc/hosts:
+-- permission denied" for `cat nosuch > /etc/hosts`, never "cat:" and never
+-- capitalised (CeroSecOS.cannotCreate has the citation).
 function CeroSecOS.writeRedirect(state, session, who, redirect, text, env)
 	local devOk, devLines = redirectToDevice(state, session, redirect.path, text, env)
 	if devOk ~= nil then return devOk, devLines end
 	local done, reason = CeroSecOS.writeFile(state, session, redirect.path, text,
 		redirect.append, CeroSecOS.clockOf(env))
 	if done == nil then
-		return false, CeroSecOS.fit({ who .. ": " .. redirect.path .. ": " .. reason })
+		return false, CeroSecOS.fit({ CeroSecOS.cannotCreate(redirect.path, reason) })
 	end
 	return true, {}
 end
@@ -6833,6 +6862,8 @@ end
 -- A device is not opened. It has no contents to truncate, only a state to be
 -- put into, and putting it into one is what the write itself does.
 -- true plus the lines, or false plus the refusal, exactly like the write.
+-- who is kept for the caller's own bookkeeping but never signs this line, for
+-- the same reason writeRedirect's does not (see its comment above).
 function CeroSecOS.openRedirect(state, session, who, redirect, env)
 	local node = CeroSecOS.getNode(state, session, redirect.path)
 	if CeroSecOS.isDev(node) then return true, {} end
@@ -6844,7 +6875,7 @@ function CeroSecOS.openRedirect(state, session, who, redirect, env)
 	local done, reason = CeroSecOS.writeFile(state, session, redirect.path, "", false,
 		CeroSecOS.clockOf(env))
 	if done == nil then
-		return false, CeroSecOS.fit({ who .. ": " .. redirect.path .. ": " .. reason })
+		return false, CeroSecOS.fit({ CeroSecOS.cannotCreate(redirect.path, reason) })
 	end
 	return true, {}
 end
@@ -6889,11 +6920,14 @@ function CeroSecOS.promptJob(state, session, line, vars, status, name, exported,
 	if type(line) ~= "string" then return nil, "sh: syntax error" end
 
 	local prog, reason, where = CeroSecOS.parseScript(line)
-	-- No line number for a typed line: it is line one of nothing, and
-	-- "sh: line 1:" in front of every typo would be a number that never says
-	-- anything. A file has lines and is named after itself, like any script.
+	-- No line number for a typed line, and no name either: 4.4BSD-Lite2
+	-- sh's synerror() signs with commandname, which an interactive shell
+	-- never set (bin/sh/options.c sets it only for a script file), so a
+	-- typo at the prompt is the bare "Syntax error: ..." line. A file has
+	-- lines and is named after itself, like any script.
 	if prog == nil then
 		if name ~= nil then return nil, CeroSecOS.scriptError(name, reason, where) end
+		if CeroSecOS.isSyntaxError(reason) then return nil, reason end
 		return nil, "sh: " .. reason
 	end
 
@@ -6960,14 +6994,19 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	local path, tty, keys = shPath(sh), shTty(sh), shKeys(sh)
 	CeroSecOS.expandTilde(state, session, args, redirect)
 
-	-- A bare redirection still creates (or truncates) the file.
+	-- A bare redirection still creates (or truncates) the file, and it is sh
+	-- doing the creating -- the same "cannot create" as writeRedirect and
+	-- openRedirect, because a line with nothing but a ">" on it is still sh
+	-- opening a target before a command that never comes.
 	if #args == 0 then
 		if redirect == nil then return true, {} end
 		local devOk, devLines = redirectToDevice(state, session, redirect.path, "", env)
 		if devOk ~= nil then return devOk, devLines end
 		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, "",
 			redirect.append, CeroSecOS.clockOf(env))
-		if done == nil then return false, CeroSecOS.fit({ redirect.path .. ": " .. wreason }) end
+		if done == nil then
+			return false, CeroSecOS.fit({ CeroSecOS.cannotCreate(redirect.path, wreason) })
+		end
 		return true, {}
 	end
 
@@ -6992,7 +7031,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 			local function endsWith(tail)
 				return #said >= #tail and string.sub(said, #said - #tail + 1) == tail
 			end
-			if endsWith(": no such file") then
+			if endsWith(": not found") then
 				sh.status = 127
 			elseif endsWith(": permission denied") or endsWith(": is a directory") then
 				sh.status = 126
@@ -7010,10 +7049,10 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	-- (CeroSecOS.notRunStatus); a caller that handed no table wants none.
 	local function notRun(reason)
 		if type(sh) == "table" then sh.status = CeroSecOS.notRunStatus(reason) end
-		return false, CeroSecOS.fit({ name .. ": " .. reason })
+		return false, CeroSecOS.fit({ name .. ": " .. CeroSecOS.execError(reason) })
 	end
 	if CeroSecOS.BUILTINS[name] then
-		if fn == nil then return notRun("command not found") end
+		if fn == nil then return notRun("not found") end
 	else
 		local found, refusal, walked, link =
 			CeroSecOS.lookupPath(state, session, name, path)
@@ -7036,7 +7075,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 				rest, table.concat(args, " "), env, true)
 			return ok, lines, control, data
 		end
-		if fn == nil then return notRun("command not found") end
+		if fn == nil then return notRun("not found") end
 	end
 
 	local inner = { path = path, tty = tty, keys = keys }

@@ -620,7 +620,7 @@ end
 -- Every refusal a device makes, worded once: the device's own name and the
 -- reason, with nothing of the command in front of it.
 local function refuse(node, reason)
-	return nil, tostring(node.id) .. ": " .. reason
+	return nil, tostring(node.id) .. ": " .. CeroSecOS.strerror(reason)
 end
 
 --

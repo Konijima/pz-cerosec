@@ -58,7 +58,7 @@ it.
     `no such file`. Every other id is unchanged. Build a new door: it takes the
     **next** number, never the gap.
 11. **The mode.** As `admin` (`exit` out of the su), `cat /dev/light0` says
-    `light0: permission denied`. `su root`, `chmod 666 /dev/light0`, `exit`, and
+    `light0: Permission denied`. `su root`, `chmod 666 /dev/light0`, `exit`, and
     now `admin` reads it and can write it. Save, reload, and the `666` is still
     there.
 12. **Nothing else works on one.** `rm /dev/light0`, `mv /dev/light0 /root/x`,
@@ -344,7 +344,7 @@ Do this on a computer in a base, with two accounts that are not `root`.
     printed. That is `crw-rw----  root  sudo` doing its job.
 36. **And an ordinary account gets nothing.** `sudo adduser bob`, `passwd bob`, then
     log out and log in as `bob`. `echo off > /dev/light0` answers
-    `light0: permission denied` and the light **stays on**. `ls -l /dev` still
+    `light0: Permission denied` and the light **stays on**. `ls -l /dev` still
     lists everything: the listing is the directory's business, not the device's.
 37. **Sudoers is the way in.** As root, `edit /etc/sudoers`, add a line `bob`, save.
     As `bob`: `id` now says `groups=bob,sudo`, and `echo off > /dev/light0` works.

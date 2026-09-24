@@ -176,7 +176,7 @@ A machine somebody was using is not that machine: its accounts are the
 people who worked there, admin is not among them, and each had a
 password. Look where people wrote them in 1993: a drawer, a pocket.
 
-Get either half wrong and it says only "login incorrect", never which
+Get either half wrong and it says only "Login incorrect", never which
 half.]],
 
 [[The screen belongs to the machine, not to you.
@@ -220,7 +220,7 @@ with cat and a greater-than sign instead.
 
 mkpasswd is ours. crypt was a library call in 1993 and nothing in /bin
 wrapped it. It was called hash on this machine until this release; if you
-type that, you will get command not found, and mkpasswd is where it went.]],
+type that, you will get not found, and mkpasswd is where it went.]],
 
 [[What is not Unix here, continued.
 
@@ -262,24 +262,23 @@ ones kept, name the files one command at a time.]],
 
 [[What is not Unix here: errors, continued.
 
-A refusal here is lower case and cut short: no such file, where 4.4BSD
-said No such file or directory. The ones in capitals are 4.4BSD's own
-words: the floppy's Device busy, mail's, the network's, and Operation
-not permitted. The editor's bottom line is the editor's own.
+A syntax error reads as sh's did, but a quote left open is refused
+here, and so is a line that ends in | or &&, or an if with no fi:
+sh waited for the rest at its second prompt, and this screen has one
+typing line. What it says is end of file unexpected.
 
-A name nothing on PATH answers is <name>: command not found, which is
-bash's wording; sh said only not found.
+Some refusals keep this machine's own
+words: is a device, invalid characters and file too large -- the first
+two because no errno named them, the last only at a >, where sh's own
+table had no word for it and printed error 27. So does /dev: read-only.
 
-A flag a command does not know is unknown option, where getopt said
-illegal option -- z and printed the usage line after it. rmdir and
-uname, the newest, say it getopt's way.
+The shell signs its own complaints sh: at the prompt, and name: line
+N: in a script, where 4.4BSD's said nothing at the prompt and gave no
+line. A > it cannot open is cannot create, signed by nobody, even in
+a script, where sh put the script's name in front.
 
-The syntax errors are this shell's own sentences: sh said `fi'
-unexpected where this one says unexpected 'fi', and a quote left open
-is refused here where sh waited for the rest on the next line.
-
-A wrong password to su, passwd or sudo is authentication failure, which
-is later Linux wording: 4.4BSD and System V said Sorry.]],
+A wrong password to sudo says sudo: authentication failure. No source
+for what a 1993 sudo printed has turned up to check it against.]],
 
 [[What is not Unix here: files and the shell.
 
@@ -360,7 +359,7 @@ it, and neither is on this disk. The one line that box prints when the line
 opens is ours as well: a real one printed whatever its maker chose.
 
 There was a call CALLSIGN command here until this release. If you type it
-you will get command not found. It was never Unix -- a packet box was a
+you will get not found. It was never Unix -- a packet box was a
 peripheral on a serial line, and the way to one is cu -l /dev/radio0, which
 Volume 2 chapter 8 teaches.
 
@@ -535,10 +534,10 @@ Worth knowing while the window is open: your keystrokes go to the
 computer and nowhere else. Your hands are on its keyboard. You will not
 walk, open a bag or swing anything until Escape hands them back.]],
 
-[[When the machine says "command not found".
+[[When the machine says "not found".
 
   admin@ksp-04-11:~$ sl
-  sl: command not found
+  sl: not found
 
 That line is not an insult and it is not a fault. It means exactly one
 thing: no command by that name exists on this machine. The machine looked,
@@ -665,7 +664,7 @@ directory without being told twice. cp wants -r for "and everything
 inside it", and rm wants -r for the same reason:
 
   admin@ksp-04-11:~$ rm notes
-  rm: notes: is a directory
+  rm: notes: Is a directory
   admin@ksp-04-11:~$ rm -r notes
 
 Read that second line twice before you press Enter. rm -r does not ask,
@@ -863,7 +862,7 @@ growth is refused.]],
 
 A file you may read but not change opens with [read-only] in the top bar
 instead of [modified]. You can move around it and read it all day. Tab
-answers "Cannot save: permission denied" and touches nothing. Escape
+answers "Cannot save: Permission denied" and touches nothing. Escape
 leaves at once with no question, because nothing unsaved is yours. A file
 you may not even read never opens: the shell refuses it before the editor
 starts.
@@ -995,7 +994,7 @@ You will see this line a great deal, and it does not mean you did anything
 wrong.
 
   admin@ksp-04-11:~$ cd /root
-  cd: /root: permission denied
+  cd: /root: Permission denied
 
 Read it in three pieces, which is how every refusal on this machine is
 built. cd is the command that refused. /root is exactly what it refused
@@ -1063,7 +1062,7 @@ press Enter. New password: is the new one. Retype new password: is the
 same one again, to catch a typo before it becomes the only key to your own
 account.
 
-Get the old one wrong and it says "passwd: authentication failure". Type
+Get the old one wrong and it says "passwd: Permission denied". Type
 the new one two different ways and it says "passwd: passwords do not
 match". Either way nothing changed and you simply start again.]],
 
@@ -1445,7 +1444,7 @@ and leaves the file standing, which is usually what you want.]],
 
 [[Where the machine looks for a command.
 
-Now for the sentence that explains chapter 2's "command not found". Every
+Now for the sentence that explains chapter 2's "not found". Every
 command you type is a real file. ls is a file called /bin/ls, and you can
 read it.
 
@@ -1463,7 +1462,7 @@ called PATH, and on a fresh machine it has two entries. Try it.
 already on the list: a program copied in there is a command anybody can
 type.
 
-So "command not found" really means "I walked PATH and there was no such
+So "not found" really means "I walked PATH and there was no such
 file anywhere on it".
 
 Two commands report on the search. which prints where a name would be
@@ -1682,7 +1681,7 @@ reboot switches it off and straight back on: everybody watching sees the
 firmware count its memory out loud again and lands at a fresh login:.
 shutdown -r now is the longer way of saying the same thing.
 
-As admin you get "shutdown: permission denied", which is not a fault. The
+As admin you get "shutdown: Permission denied", which is not a fault. The
 switch on the case works for everybody, and is what you should use.
 
 shutdown throws the switch off, so the power coming back does not bring the
@@ -2056,23 +2055,23 @@ every time:
   <command>: <what failed>: <why>
 
 The command that refused, then exactly which file or word it refused
-about, then the reason in two or three words. Read it in that order and it
-will tell you what to do next. Below is every reason a user meets, with
-what it actually means.
+about, then the reason, in the words every Unix of 1993 used. Read it
+in that order and it will tell you what to do next. Below is every
+reason a user meets, with what it actually means.
 
-  no such file
+  No such file or directory
       nothing is at that name; check ls and your spelling
-  is a directory
+  Is a directory
       a file command was handed a directory; try -r
-  not a directory
+  Not a directory
       a directory was expected and a file was there
-  permission denied
+  Permission denied
       you may not read, write or step into it
-  file exists
+  File exists
       something is already at that name
   are identical
       cp was handed one file under two names
-  directory not empty
+  Directory not empty
       mv onto a directory with something in it
 
 Classic mistake: skipping the middle piece. It is the only part that tells
@@ -2093,32 +2092,37 @@ you which file the machine is actually complaining about.]],
 
 Running out of room. Chapter 3 has the numbers.
 
-  file too large
+  File too large
       past 4096 bytes for that one file
-  disk full
+  No space left on device
       past 65536 bytes, or past 512 files, on the machine
   directory full
       the parent already holds 96 entries
 
   /dev: read-only
       nothing may be created under /dev; only the machine
-      puts things there]],
+      puts things there
+
+  cannot create <file>: <why>
+      a > the shell could not open; nothing ran. Why is
+      one of: permission denied, is a directory,
+      file system full, directory nonexistent]],
 
 [[Commands the machine could not run.
 
-  command not found
+  not found
       nothing on PATH answers that name; check spelling,
       check capitals, and check help
 
-A command that is there but not yours to run says permission denied
-instead, never command not found. One tells you it is missing, the other
-that it is locked and exactly where.
+One there but not yours to run says permission denied instead.
 
   <cmd>: usage: <the shape of it>
       the right command with the wrong number of parts;
       the line it prints is the answer
-  <cmd>: <flag>: unknown option
-      a flag that command does not have
+  <cmd>: illegal option -- <flag>
+  usage: <the shape of it>
+      a flag it does not have, and the shape it wanted
+  find: <primary>: unknown option
   chmod: <mode>: invalid mode
       neither three digits nor a clause in letters
   man: <name>: no manual entry
@@ -2133,14 +2137,14 @@ that it is locked and exactly where.
 
 [[Typing that the shell could not make sense of. Nothing runs at all.
 
-  syntax error: bad redirect
-      two > or two 2> on one command, or a >& that is
-      not >&1 or >&2
-  syntax error: missing redirect target
-      a greater-than sign with no file name after it
-  syntax error: unterminated quote
-      a double quote opened and never closed, or a line
-      that ends in a backslash
+  Syntax error: redirection unexpected
+      two > or two 2> on one command, or a <
+  Syntax error: Bad fd number
+      a >& that is not >&1 or >&2
+  Syntax error: end of file unexpected
+      a > with no file name, or a | with nothing after
+  Syntax error: Unterminated quoted string
+      a quote never closed, or a trailing backslash
 
 Pipes, from chapter 7.
 
@@ -2164,19 +2168,19 @@ The three new filters, from chapter 7.
 
 [[Logging in, and your account.
 
-  login incorrect
+  Login incorrect
       a wrong name or a wrong password, and it will never
       say which
-  passwd: authentication failure
-      the old password did not match
+  passwd: Permission denied
+      the old password did not match, or the account is
+      another's, which only root may change
   passwd: passwords do not match
       the new one was typed two different ways
   passwd: password too long
   passwd: no such user
-  passwd: permission denied
-      another account's, which only root may change
-  su: authentication failure
-      one wrong answer; there is no second try
+  Sorry
+      su's whole answer to a wrong password; there is no
+      second try
   su: too many levels
       a fifth su, past the four the machine allows
 
@@ -2185,9 +2189,9 @@ The three new filters, from chapter 7.
 
 [[The floppy drive, and the disk in it.
 
-  newfs: /dev/fd0: no such file
+  newfs: /dev/fd0: No such file or directory
       there is no disk in the slot
-  newfs: /dev/fd0: permission denied
+  newfs: /dev/fd0: Permission denied
       the drive is root's and the sudo group's; Volume 2
   newfs: /dev/fd0: Device busy
       unmount it first
@@ -2197,7 +2201,7 @@ The three new filters, from chapter 7.
       the disk is blank; newfs it
   mount: /mnt: Device busy
       something is already mounted there
-  mount: /mnt: not a directory
+  mount: /mnt: Not a directory
       a disk mounts on a directory and nothing else
   umount: /mnt: not mounted
       nothing is mounted there
@@ -2221,7 +2225,7 @@ prompt.
       the file's own ceiling
   Buffer full: 2000 typed characters
       the typing box's ceiling for one sitting
-  Cannot save: permission denied
+  Cannot save: Permission denied
       the file is [read-only] to you; nothing was written
   Cannot save: disk full
       no room left; nothing was written, so nothing is

@@ -380,7 +380,7 @@ and `/usr/local/bin` — empty, root's at 755, seeded on every machine by
 `CeroSecOS.ensureLocalBin` at `SYSTEM_VERSION` 21 — is the second and last unless
 somebody widens `PATH`: nothing there, no `/bin` at all, `/bin` a
 file, a directory called `/bin/ls`, or a file with no Lua command behind it are all
-`<name>: command not found`; a file without `x` for this user, or a `/bin` he cannot
+`<name>: not found`; a file without `x` for this user, or a `/bin` he cannot
 read, is `<name>: permission denied`. A **link** at a name in `/bin` is not one of
 the machine's executables — what runs is the file it points at, as a script. The words with no file are the shell's own —
 `cd`, `exit`, `fg`, `jobs`, `wait` (marked `shell` in `COMMAND_INFO`, so `binNames`
@@ -810,7 +810,7 @@ sudo says about one, in its own name. The test is the shell's own
 machine has no command for at all is signed the same way — `sudo: lights: command
 not found` — because sudo is the program that went looking; what stays signed with
 the command's own name is the **PATH lookup's** refusal (`whyNotRun`), so `sudo ls`
-on a machine whose `/bin/ls` root deleted is still `ls: command not found`. Until
+on a machine whose `/bin/ls` root deleted is still `ls: not found`. Until
 `SYSTEM_VERSION 18` only `exit` was named, so `sudo cd /root` fell through to
 `commands.cd`, moved the borrowed session sudo had just made, and printed nothing
 at all — a line that said nothing and did nothing, on a page of the manual that

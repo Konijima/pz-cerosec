@@ -1361,7 +1361,7 @@ do
 	-- Tab on it refuses at the door rather than at the write.
 	bench.window:onOtherKey(Keyboard.KEY_TAB)
 	bench.frame()
-	check("saving is refused", bench.painted("Cannot save: permission denied"))
+	check("saving is refused", bench.painted("Cannot save: Permission denied"))
 end
 
 -- A directory is not a file, and the refusal stays in the shell.
@@ -1371,7 +1371,7 @@ do
 	bench.enter("edit /etc")
 	bench.frame()
 	eq("a directory does not open an editor", bench.window.mode, "shell")
-	check("and the shell says why", bench.painted("is a directory"))
+	check("and the shell says why", bench.painted("edit: /etc: Is a directory"))
 end
 
 --
@@ -1583,7 +1583,7 @@ do
 	-- the thing that would have read the line `ls` was on.
 	bench.enter("ls")
 	bench.frame()
-	check("the shell itself is gone", bench.painted("sh: command not found"))
+	check("the shell itself is gone", bench.painted("sh: not found"))
 	bench.enter("help")
 	bench.frame()
 	check("help says the system is damaged", bench.painted("the system is damaged"))
@@ -2042,7 +2042,7 @@ do
 	bench.login("admin")
 	bench.enter("shutdown")
 	bench.frame()
-	check("admin is refused", bench.painted("shutdown: permission denied"))
+	check("admin is refused", bench.painted("shutdown: Permission denied"))
 	eq("and the machine is still on", bench.object.on, true)
 	check("and the window is still open", not bench.window.closing)
 end
@@ -4984,7 +4984,7 @@ do
 	bench.frame()
 	eq("the shell is still a shell", bench.window.mode, "shell")
 	check("nothing was asked for", not bench.painted("[sudo] password for admin: "))
-	check("and nothing was refused", not bench.painted("light1: permission denied"))
+	check("and nothing was refused", not bench.painted("light1: Permission denied"))
 	eq("the light is on", kit.light1.activated, true)
 	eq("and the world was told", kit.light1.syncs, 1)
 
@@ -5002,7 +5002,7 @@ do
 	eq("bob is at the glass", bench.object.console.user, "bob")
 	bench.enter("echo off > /dev/light1")
 	bench.frame()
-	check("bob is refused", bench.painted("light1: permission denied"))
+	check("bob is refused", bench.painted("light1: Permission denied"))
 	eq("and the switch did not move", kit.light1.activated, true)
 
 	_G.__world = nil
@@ -5947,7 +5947,7 @@ do
 	bench.enter("cat /dev/sensor0")
 	bench.frame()
 	check("and naming one is a path nothing answers to",
-		bench.painted("cat: /dev/sensor0: no such file"))
+		bench.painted("cat: /dev/sensor0: No such file or directory"))
 
 	-- The same room, one bare module in it.
 	world.drop(world.squares["10,10,0"], fakeSensor())
@@ -6495,7 +6495,7 @@ do
 	bench.enter("cat /var/spool/at/1")
 	bench.frame()
 	check("an ordinary account cannot read it",
-		bench.painted("/var/spool/at/1: permission denied"))
+		bench.painted("/var/spool/at/1: Permission denied"))
 
 	-- atq lists it, and it is still there: a listing runs nothing.
 	bench.enter("atq")
@@ -6660,7 +6660,7 @@ do
 
 	bench.enter("while true; do echo tick; sleep 1; done &")
 	bench.frame()
-	check("the loop is not an unknown command", not bench.painted("while: command not found"))
+	check("the loop is not an unknown command", not bench.painted("while: not found"))
 	eq("the prompt came straight back", bench.window.mode, "shell")
 	check("and the machine announced a job", bench.painted("[1] "))
 
@@ -6917,7 +6917,7 @@ do
 	bench.login("admin")
 	bench.frame()
 	check("it names the file and the line",
-		bench.painted(".profile: line 2: syntax error: unexpected 'fi'"))
+		bench.painted(".profile: 2: Syntax error: \"fi\" unexpected"))
 	eq("and the account is at a prompt", bench.window.mode, "shell")
 end
 
@@ -7387,7 +7387,7 @@ do
 	-- And the file is still out of the account's reach: crontab is the way in.
 	bench.enter("cat /var/spool/cron/admin")
 	bench.frame()
-	check("the spool is nobody's to read", bench.painted("permission denied"))
+	check("the spool is nobody's to read", bench.painted("Permission denied"))
 
 	bench.enter("crontab -r")
 	bench.enter("crontab -l")
@@ -7682,7 +7682,7 @@ do
 	-- it, in the mail, because that is where a cron job's output goes.
 	local mail = bench.fileText("/var/mail/admin")
 	check("the mail carries sh's own refusal", mail ~= nil and
-		string.find(mail, "sh: line 1: syntax error: missing 'then'", 1, true) ~= nil)
+		string.find(mail, "\nSyntax error: end of file unexpected (expecting \"then\")", 1, true) ~= nil)
 	local log = bench.fileText("/var/log/cron")
 	check("the log says the orphan was not run",
 		string.find(log, "(ghost) ORPHAN (no passwd entry)", 1, true) ~= nil)
@@ -8629,7 +8629,7 @@ do
 	net.enter("admin")
 	net.enter("wrong")
 	net.tick(2)
-	check("the far machine refuses", net.heard("login incorrect"))
+	check("the far machine refuses", net.heard("Login incorrect"))
 	check("and asks again", net.glass("login:"))
 	eq("the pty is still open while it asks", CeroSecOS.ptyCount(net.gate.ptys), 1)
 	-- A remote login prompt with nothing typed at it is not the machine being in
@@ -9355,7 +9355,7 @@ do
 	net.enter("rcp notes.txt gate:/home/admin/big.txt")
 	net.tick(4)
 	check("the far machine refuses what will not fit a file",
-		net.glass("rcp: /home/admin/big.txt: file too large"))
+		net.glass("rcp: /home/admin/big.txt: File too large"))
 	eq("and nothing landed", net.text(net.gate, "/home/admin/big.txt"), nil)
 
 	-- A machine that does not trust this one refuses the copy outright.
@@ -9833,7 +9833,7 @@ do
 	local ok, lines = CeroSecOS.runArgs(net.here:osState(),
 		{ user = "root", cwd = "/root" }, { "cat", "/etc/phone" }, nil, { now = 0 })
 	eq("and there is no file to read it out of", ok, false)
-	check("no such file", string.find(lines[1], "no such file", 1, true) ~= nil)
+	check("no such file", string.find(lines[1], "No such file or directory", 1, true) ~= nil)
 
 	-- AN OLDER SAVE. Every machine written before the line belonged to the premises
 	-- carries the building bytes and no exchange, and such a machine has NO
@@ -10818,7 +10818,7 @@ do
 	-- A ~. at one's own prompt is an ordinary line and gets an ordinary refusal.
 	net.enter("~.")
 	net.tick(3)
-	check("off a call it is just a word", net.glass("~.: command not found"))
+	check("off a call it is just a word", net.glass("~.: not found"))
 end
 
 -- ONE LINE PER MODEM: a third machine dialling a line that is in use, the machine
@@ -11525,7 +11525,7 @@ do
 	say(net, "echo 145.010 > /dev/radio0")
 	net.tick(3)
 	check("nothing may be written to an aerial",
-		net.glass("radio0: permission denied"))
+		net.glass("radio0: Permission denied"))
 	say(net, "ls -l /dev/radio0")
 	net.tick(3)
 	check("and the mode says so", net.glass("cr--r-----"))
@@ -11580,7 +11580,7 @@ do
 	say(net, "cat /dev/radio0")
 	net.tick(3)
 	check("and nothing was ever mounted at that name",
-		net.glass("cat: /dev/radio0: no such file"))
+		net.glass("cat: /dev/radio0: No such file or directory"))
 	_G.__world = nil
 
 	local other = newRadioNet()
@@ -12564,7 +12564,7 @@ do
 	check("a machine with an empty slot has no drive file", not bench.painted("fd0"))
 	bench.enter("newfs /dev/fd0")
 	bench.frame()
-	check("and newfs says so", bench.painted("newfs: /dev/fd0: no such file"))
+	check("and newfs says so", bench.painted("newfs: /dev/fd0: No such file or directory"))
 
 	-- A blank disk out of an office drawer.
 	local disk = inv:add("CeroSec.FloppyRed")
@@ -13191,7 +13191,7 @@ do
 	check("df says what is wrong with it", bench.painted("fd0"))
 	bench.enter("echo x > /mnt/c")
 	bench.frame()
-	check("and every write says so", bench.painted("disk full"))
+	check("and every write says so", bench.painted("file system full"))
 
 	-- But it does not come out.
 	bench.sounds = {}
@@ -13961,7 +13961,7 @@ do
 	bench.enter("echo open > /dev/door1")
 	bench.frame()
 	check("an ordinary account is refused by the mode",
-		bench.painted("door1: permission denied"))
+		bench.painted("door1: Permission denied"))
 	eq("and the door was never asked", kit.front.silentToggles, 0)
 
 	-- root walks past the mode, the way root walks past every mode on this
@@ -26323,7 +26323,7 @@ do
 	bench.enter("sh err.sh > eout")
 	bench.tick(30)
 	bench.frame()
-	eq("the refusal is on the screen", bench.painted("/nope: no such file"), true)
+	eq("the refusal is on the screen", bench.painted("/nope: No such file or directory"), true)
 	eq("and the file holds only what was printed",
 		bench.fileText("/home/admin/eout"), "good\n")
 end
@@ -27006,8 +27006,8 @@ do
 	check("the line fired", mail ~= nil)
 	check("and the program it named ran (" .. tostring(mail) .. ")",
 		mail ~= nil and string.find(mail, "curtains: open", 1, true) ~= nil)
-	check("with nothing said about a command not found",
-		mail == nil or string.find(mail, "command not found", 1, true) == nil)
+	check("with nothing said about a not found",
+		mail == nil or string.find(mail, "not found", 1, true) == nil)
 	local log = bench.fileText("/var/log/cron")
 	check("and the log names the line as it was written",
 		string.find(log, "(admin) CMD (curtains.sh)", 1, true) ~= nil)

@@ -897,7 +897,7 @@ CeroSecContent.SCRIPTS["audit.sh"] = {
 		"  exit 1",
 		"fi",
 		"if [ ! -f $1 ]; then",
-		"  echo \"audit.sh: $1: no such file\"",
+		"  echo \"audit.sh: $1: No such file or directory\"",
 		"  exit 1",
 		"fi",
 		"n=$(grep -c $2 $1)",
@@ -923,7 +923,7 @@ CeroSecContent.SCRIPTS["total.sh"] = {
 		"  exit 1",
 		"fi",
 		"if [ ! -f $1 ]; then",
-		"  echo \"total.sh: $1: no such file\"",
+		"  echo \"total.sh: $1: No such file or directory\"",
 		"  exit 1",
 		"fi",
 		"t=0",
@@ -951,7 +951,7 @@ CeroSecContent.SCRIPTS["rounds.sh"] = {
 		"  exit 1",
 		"fi",
 		"if [ ! -f $1 ]; then",
-		"  echo \"rounds.sh: $1: no such file\"",
+		"  echo \"rounds.sh: $1: No such file or directory\"",
 		"  exit 1",
 		"fi",
 		"cut -d : -f 1 $1 | sort",
@@ -1092,7 +1092,7 @@ CeroSecContent.SCRIPTS["hangman.sh"] = {
 		"  exit 1",
 		"fi",
 		"if [ ! -f $1 ]; then",
-		"  echo \"hangman.sh: $1: no such file\"",
+		"  echo \"hangman.sh: $1: No such file or directory\"",
 		"  exit 1",
 		"fi",
 		"c=$(cat $1 | wc -l)",
@@ -1586,7 +1586,7 @@ CeroSecContent.SCRIPTS["setup.sh"] = {
 --
 --   * A PIPELINE'S REFUSAL LANDS IN THE CAPTURE, not in the pipe. `f=$(cat
 --     /dev/gen0 | cut -d' ' -f3)` on a machine with no generator comes back as
---     the whole of `cat: /dev/gen0: no such file` -- errLine writes to the job's
+--     the whole of `cat: /dev/gen0: No such file or directory` -- errLine writes to the job's
 --     door and skips the pipe -- and `[ $f -ge 10 ]` on that is
 --     `test: argument expected`. So genwatch.sh sifts the field through a `case`
 --     with `*[!0-9]*` in it before it does arithmetic on it.
