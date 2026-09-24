@@ -1167,8 +1167,16 @@ do
 	-- before it held theirs -- a fifth clear, the way 1440 stood a fifth over 1299 --
 	-- and `late - early`, growth over nine hundred passes, which is the assertion
 	-- that catches a LEAK, did not move at all.
-	check("and the whole bench holds well under 2560K (" ..
-		string.format("%.0f", late) .. "K)", late < 2560)
+	--
+	-- A sixth time, for the same reason: 0.7.0 put a shell's worth of source
+	-- into the engine files -- IFS, set/unset/exec/trap and the ${...} forms,
+	-- brace groups and subshells, rmdir, expr, uname and printf's widths, the
+	-- 1993 wording table -- and the 261-case shell self-test table, which the
+	-- server file requires. Measured at 2560K, which is what 2560 was catching; 3072
+	-- holds it with the fifth of room every number before it had, and
+	-- `late - early` measured 0K over nine hundred passes.
+	check("and the whole bench holds well under 3072K (" ..
+		string.format("%.0f", late) .. "K)", late < 3072)
 	report[#report + 1] = string.format("  %-22s %.0fK after 100 passes, %.0fK after 1000",
 		"memory", early, late)
 	local _ = before
