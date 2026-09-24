@@ -17,6 +17,7 @@ lua5.1 tests/builtins_test.lua
 # the one bench that reads bytes a real build wrote instead of building its own.
 lua5.1 tests/migrate_test.lua
 lua5.1 tests/newline_test.lua
+lua5.1 tests/jobs_compat_test.lua
 lua5.1 tests/content_test.lua
 lua5.1 tests/manual_test.lua
 lua5.1 tests/terminal_test.lua
