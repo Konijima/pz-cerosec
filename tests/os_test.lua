@@ -17067,17 +17067,22 @@ do
 	-- One > per command, and no <.
 	bad(state, admin, "echo a > q > r", "sh: syntax error: bad redirect")
 	bad(state, admin, "cat < p", "sh: syntax error: unexpected '<'")
-	-- ${name} and nothing else inside braces.
-	bad(state, admin, "x=; echo ${x:-y}", "sh: syntax error: bad substitution")
-	bad(state, admin, "x=abc; echo ${#x}", "sh: syntax error: bad substitution")
+	-- ${x:-y}, ${#x} and the rest of the Bourne and ksh88 forms now work
+	-- (builtins.set's neighbours in CeroSecOSVM.lua); only a positional
+	-- parameter inside braces is still refused (${1:-y}), because isVarName
+	-- never accepted a name starting with a digit.
+	ok(state, admin, "x=; echo ${x:-y}", { "y" })
+	ok(state, admin, "x=abc; echo ${#x}", { "3" })
+	bad(state, admin, "echo ${1:-y}", "sh: syntax error: bad substitution")
 	-- The wording.
 	bad(state, admin, "nosuch", "nosuch: command not found")
 	bad(state, admin, "ls -z", "ls: -z: unknown option")
 	bad(state, admin, "cat nosuch", "cat: nosuch: no such file")
 	-- id has names and a flag.
 	ok(state, admin, "id", { "uid=admin flag=user groups=admin,sudo,users" })
-	-- What is absent, and the flags that are.
-	for _, name in ipairs({ "set", "unset", "exec", "trap", "rmdir", "expr", "uname" }) do
+	-- What is absent, and the flags that are: set, unset, exec and trap are
+	-- real words now (see the loop just below and tests/builtins_test.lua).
+	for _, name in ipairs({ "rmdir", "expr", "uname" }) do
 		bad(state, admin, name .. " x", name .. ": command not found")
 	end
 	bad(state, admin, "rm -f p", "rm: -f: unknown option")
