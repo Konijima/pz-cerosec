@@ -1205,7 +1205,10 @@ function CeroSec.repairConsole(console)
 					-- The name is safe in a pattern by construction: isVarName above lets
 					-- through letters, digits and the underscore and nothing else, so
 					-- there is no metacharacter in it to escape.
-					and string.find(src, "^" .. name .. "[ \t]*%(%)") ~= nil
+					-- Blanks are free inside the brackets too: `f ( ) {` is a
+					-- definition the parser takes (funcAhead reads three tokens),
+					-- so it is one a save hands back.
+					and string.find(src, "^" .. name .. "[ \t]*%([ \t]*%)") ~= nil
 					and n < CeroSecOS.MAX_FUNCS then
 				kept[name] = src
 				n = n + 1

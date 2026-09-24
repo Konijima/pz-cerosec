@@ -785,6 +785,9 @@ does. return leaves it, with a number if you give one:
   ok() { if [ -f "$1" ]; then return 0; fi; return 1; }
   if ok notes.txt; then echo it is there; fi
 
+A bare return gives back the status of the last command run, so
+`f() { false; return; }` answers 1.
+
 exit is not return. exit inside a function ends the whole script, the way
 it would anywhere else; return ends the function and nothing more.]],
 
@@ -1311,7 +1314,10 @@ shell:
   kate
 
 Remember the rule as a sentence: a pipe carries text out, never variables
-back. If you need the value, catch it.]],
+back. If you need the value, catch it.
+
+A catch hands back its status too: a line that is only assignments
+answers with it, so x=$(false); echo $? prints 1.]],
 
 [[Braces and brackets: a list as one command.
 

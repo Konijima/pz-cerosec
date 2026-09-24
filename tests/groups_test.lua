@@ -21,6 +21,14 @@ for i = 1, #FILES do
 	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
 	chunk()
 end
+-- And the console's own repair, which is the path a save comes back by: the
+-- functions a shell holds are handed back through CeroSec.repairConsole.
+do
+	local path = "42/media/lua/shared/CeroSec/CeroSecDefs.lua"
+	local chunk, err = loadfile(path)
+	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+	chunk()
+end
 
 local count = 0
 local function check(what, cond)
@@ -275,6 +283,61 @@ do
 	job, reason = CeroSecOS.promptJob(state, admin, braces, {}, 0)
 	eq("forty braces deep never becomes a job", job, nil)
 	eq("and says why", reason, "sh: too deeply nested")
+end
+
+--
+-- 9. A line with no command name answers with the status of its last
+-- command substitution (POSIX.2 XCU 2.9.1), and a bare return with the
+-- status of the last command run (XCU return). dash printed each of these.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "x=$(exit 4); echo $?", { "4" })
+	ok(state, admin, "x=$(false); echo $?", { "1" })
+	ok(state, admin, "x=`false`; echo $?", { "1" })
+	ok(state, admin, "$(false); echo $?", { "1" })
+	ok(state, admin, "x=$(true) y=$(false); echo $?", { "1" })
+	ok(state, admin, "x=$(false) y=$(true); echo $?", { "0" })
+	ok(state, admin, "x=$(false) > g; echo $?", { "1" })
+	-- A command name still has the last word, and no substitution is 0.
+	ok(state, admin, "x=$(false) true; echo $?", { "0" })
+	ok(state, admin, "false; x=1; echo $?", { "0" })
+	ok(state, admin, "f() { false; return; }; f; echo $?", { "1" })
+	ok(state, admin, "f() { true; return; }; false; f; echo $?", { "0" })
+	ok(state, admin, "f() { false; return 0; }; f; echo $?", { "0" })
+end
+
+--
+-- 10. Every spelling of a definition the parser takes survives a save: the
+-- text the shell kept goes back through CeroSec.repairConsole, the way a
+-- console comes back out of modData, and each one still runs.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local forms = {
+		{ "a", "a(){ echo a; }", { "a" } },
+		{ "b", "b (){ echo b; }", { "b" } },
+		{ "c", "c ( ) { echo c; }", { "c" } },
+		{ "d", "d\t(\t)\t{ echo d; }", { "d" } },
+		{ "e", "e()\n{ echo e; }", { "e" } },
+		{ "s", "s() ( echo s )", { "s" } },
+		{ "r", "r() ( echo r; cat nosuch ) 2>&1", { "r",
+			"cat: nosuch: No such file or directory" }, "r > o; cat o" },
+		{ "t", "t() { echo t > tf; cat tf; }", { "t" } },
+	}
+	for i = 1, #forms do ok(state, admin, forms[i][2], {}) end
+	local held = CeroSec.repairConsole({ lines = {}, shfuncs = admin.shfuncs })
+	eq("every one of them comes back", #CeroSecOS.funcNames(held.shfuncs), #forms)
+	local back = open(state, "admin")
+	back.shfuncs = held.shfuncs
+	for i = 1, #forms do
+		local f = forms[i]
+		eq("`" .. f[2] .. "` is kept as it was typed", held.shfuncs[f[1]],
+			admin.shfuncs[f[1]])
+		ok(state, back, f[4] or f[1], f[3])
+	end
 end
 
 print("groups_test: " .. count .. " assertions passed")

@@ -2667,8 +2667,12 @@ end
 -- With neither around it, it is `exit`: POSIX leaves that case unspecified, a real
 -- sh of 1993 took it as the end of the script, and so does every script already
 -- written on every machine in the county.
+--
+-- With no n, the status of the last command run, as exit's is (POSIX.2 XCU
+-- return: "the value of the special parameter ?" -- 4.4BSD-Lite2 eval.c
+-- returncmd), so `f() { false; return; }; f; echo $?` prints 1.
 builtins["return"] = function(job, args)
-	local n = 0
+	local n = job.status or 0
 	if args[2] ~= nil then n = CeroSecOS.intOf(args[2]) or 0 end
 	job.sig = { k = "return", n = n }
 	return n
@@ -3585,6 +3589,13 @@ local function runSimple(state, job, f, env)
 	if errTarget ~= nil then CeroSecOS.expandTilde(state, job.session, {}, errTarget) end
 
 	if #args == 0 and node.k ~= "group" then
+		-- No command name: the status is 0, or the last command substitution's
+		-- when there was one (POSIX.2 XCU 2.9.1, "the exit status of the last
+		-- command substitution performed"), so `x=$(false); echo $?` prints 1,
+		-- as dash does. Nothing has run since the capture came back, so
+		-- job.status is still its status.
+		local quiet = 0
+		if f.subRan then quiet = job.status or 0 end
 		if errTarget ~= nil then
 			local openOk, openLines =
 				CeroSecOS.openRedirect(state, job.session, "sh", errTarget, env)
@@ -3598,14 +3609,14 @@ local function runSimple(state, job, f, env)
 			local ok, lines = CeroSecOS.runArgs(state, job.session, {}, redirect, env, nil,
 				{ path = CeroSecOS.pathValue(job.vars), tty = false })
 			errLines(job, lines)
-			if ok then job.status = 0 else job.status = 1 end
+			if ok then job.status = quiet else job.status = 1 end
 			return CeroSecOS.STEP_COST_COMMAND
 		end
 		if errTarget ~= nil then
-			job.status = 0
+			job.status = quiet
 			return CeroSecOS.STEP_COST_COMMAND
 		end
-		job.status = 0
+		job.status = quiet
 		return 1
 	end
 
@@ -4893,7 +4904,12 @@ stepOnce = function(state, job, env)
 				if reason ~= nil then jobError(job, reason) end
 				return 0
 			end
-			if how == "sub" then return 0 end
+			-- A $( ) is being run for this command: marked, because a line
+			-- with no command name left answers with its status (runSimple).
+			if how == "sub" then
+				f.subRan = true
+				return 0
+			end
 			if f.phase == "assign" then f.phase = "expand" else f.phase = "run" end
 			return 0
 		end

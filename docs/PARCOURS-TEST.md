@@ -4708,6 +4708,13 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      guillemets, `echo '(a)'` affiche `(a)`. `{ }` : `Syntax error: "}"
      unexpected`. [ ]
 
+459i. **Le statut d'une affectation, return, et les fonctions gardées.**
+     `x=$(exit 4); echo $?` : `4`. `x=$(false); echo $?` : `1`.
+     `x=$(true) y=$(false); echo $?` : `1`. `f() { false; return; }; f;
+     echo $?` : `1`. Définir `c ( ) { echo c; }` et `s() ( echo s )`,
+     sauvegarder, quitter la partie, la recharger, se reconnecter
+     (sans `exit` entre les deux) : `c` affiche `c` et `s` affiche `s`. [ ]
+
 ## Le manuel dit tout ce qui n'est pas Unix
 
 460. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les

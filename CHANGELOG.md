@@ -227,6 +227,11 @@ and a command whose redirect is refused no longer runs.
   denied`; the login prompt says `Login incorrect`. A script that looked
   for the old words in an error (`no such file`, `command not found`)
   needs the new ones; `$?` is unchanged (127 not found, 126 not runnable).
+- `x=$(false); echo $?` prints 1, as on a real sh: a line that is only
+  assignments answers with the status of its last `$( )`. A `return`
+  with no number gives the status of the last command instead of 0. And
+  a function written `f ( ) { ...; }`, with blanks between the brackets,
+  is no longer lost when the world is saved and loaded again.
 
 ## 0.6.1 - 2026-09-21
 

@@ -17349,7 +17349,9 @@ do
 	ok(state, admin, "echo \"[$x]\"", { "[]" })
 	-- The file on the call, and in it both descriptors.
 	ok(state, admin, "h() { echo out; cat nosuch; }", {})
-	ok(state, admin, "x=$(h > c7.txt 2>&1)", {})
+	-- Not ok: h's last command is the cat that failed, and a line that is
+	-- only an assignment answers with its substitution's status (XCU 2.9.1).
+	expect(state, admin, "x=$(h > c7.txt 2>&1)", false, {})
 	ok(state, admin, "echo \"[$x]\"", { "[]" })
 	ok(state, admin, "cat c7.txt", { "out", "cat: nosuch: No such file or directory" })
 	-- A capture opened INSIDE the redirected call still catches: it is the

@@ -41,7 +41,7 @@ local ALLOWED = {
 	["CeroSecOSUsers.lua|\"^%$\" .. CeroSecOS.HASH_TAG .. \"%$([0-9a-z]+)%$([0-9a-f]+)$\""] = true,
 	-- A player's function NAME, but only after CeroSecOS.isVarName passed it on
 	-- the line above: letters, digits and "_", nothing a pattern reads.
-	["CeroSecDefs.lua|\"^\" .. name .. \"[ \\t]*%(%)\""] = true,
+	["CeroSecDefs.lua|\"^\" .. name .. \"[ \\t]*%([ \\t]*%)\""] = true,
 }
 
 local function listFiles()
