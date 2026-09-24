@@ -25,7 +25,19 @@ CeroSecOS = CeroSecOS or {}
 --    they had already been done: state.users -> /etc/passwd with hashed
 --    passwords (CeroSecOS.migrateUsers), and the `nq` flag swept off every node
 --    of the filesystem (the exemption is a PATH now, CeroSecOS.exemptPaths).
-CeroSecOS.STATE_VERSION = 2
+-- 3: what a stored file's own bytes MEAN. A file used to be its lines joined by
+--    "\n" with nothing after the last one -- CeroSecOS.DEVIATIONS carried the
+--    declared deviation, "a file keeps no newline after its last line" -- and
+--    now "\n" terminates a line the way a real Unix's does, so `echo a > f`
+--    leaves "a\n" behind and `wc -l` counts the byte and not the line. Every
+--    file already on a machine was written under the old rule, which means
+--    every one of them is now a file whose LAST line is missing its
+--    terminator -- not a file that reads wrong (CeroSecOS.splitLines answers
+--    the same lines either way, docs/notes/ has no note for this because
+--    nothing about the SHAPE changed) but a file that would glue its last
+--    line to whatever `>>` next puts after it. CeroSecOS.MIGRATIONS[3] closes
+--    every one of them the same way a `>>` from here on would find them.
+CeroSecOS.STATE_VERSION = 3
 
 -- What the machine's own system files are expected to hold, as opposed to what
 -- shape the state is in. STATE_VERSION is the schema, and a save written in an
@@ -446,11 +458,21 @@ end
 
 -- Split a blob of text into display lines. An empty file has no lines at all,
 -- which is what cat on an empty file should print.
+--
+-- "\n" TERMINATES a line rather than separating two of them, the way a real
+-- Unix reads a text file: "a\n" and "a" are both the one line "a", and only a
+-- SECOND "\n" makes an empty line appear between two others ("a\n\nb" is
+-- three lines, the middle one empty). A trailing "\n" never manufactures an
+-- empty line after the last one -- that used to be how this engine stored a
+-- file (CeroSecOS.DEVIATIONS carried the deviation; see writeFile), and it is
+-- why an old save's data, which never ends in "\n", splits exactly as it did
+-- before: this only changes what a file that DOES end in "\n" means.
 function CeroSecOS.splitLines(text)
 	local out = {}
 	if text == nil or text == "" then return out end
+	local len = #text
 	local start = 1
-	while true do
+	while start <= len do
 		local p = string.find(text, "\n", start, true)
 		if p == nil then
 			out[#out + 1] = string.sub(text, start)
@@ -459,6 +481,61 @@ function CeroSecOS.splitLines(text)
 		out[#out + 1] = string.sub(text, start, p - 1)
 		start = p + 1
 	end
+	return out
+end
+
+-- Whether a blob of text ends with a newline -- a file's own answer to "is
+-- its last line complete" -- so a consumer that stores or re-emits it whole
+-- (cat, cp, a redirect's sink) can carry the same answer forward instead of
+-- guessing from the split lines, which look identical either way.
+function CeroSecOS.endsLine(text)
+	return type(text) == "string" and text ~= "" and string.sub(text, -1) == "\n"
+end
+
+-- A shipped file's own text, with the final "\n" a real one has -- CeroSec's
+-- generators (CeroSecContent.lua) hold their literals the old way, one line
+-- joined to the next with nothing after the last, because that is how a
+-- stored file read until now. Wrapping every one of them here, at the two
+-- places a machine or a floppy actually gets a file (CeroSecContent.place
+-- and its disk-file twin), means the literals never have to change one by
+-- one -- a script, a README, a log, a mailbox: whatever text a profile
+-- writes comes out newline-terminated, the same file a survivor's own
+-- `echo` would have left.
+function CeroSecOS.terminated(text)
+	if type(text) ~= "string" or text == "" then return text end
+	if CeroSecOS.endsLine(text) then return text end
+	return text .. "\n"
+end
+
+-- Every regular file under a tree, given the final "\n" a real one has, where
+-- it has at least one line and does not already carry one. Idempotent by the
+-- same check that makes CeroSecOS.terminated one: a file already ending in
+-- "\n" is left untouched, so a second walk changes nothing. Shared by the
+-- state's own migration (CeroSecOS.MIGRATIONS) and a floppy's
+-- (CeroSecOS.DISK_MIGRATIONS), which is why it takes a bare tree and not a
+-- state or a disk -- neither owns the shape, the filesystem under it does.
+function CeroSecOS.terminateFiles(node)
+	if type(node) ~= "table" then return end
+	if node.type == "file" then
+		node.data = CeroSecOS.terminated(node.data)
+		return
+	end
+	if type(node.children) ~= "table" then return end
+	for _, child in pairs(node.children) do CeroSecOS.terminateFiles(child) end
+end
+
+-- A list of lines, joined the way a real file holds them: every line ends in
+-- "\n", including the last one, UNLESS the list is marked `open` (cat's own
+-- and the /bin printf door's, when what they read had no final newline
+-- either). Used wherever a whole buffer of lines becomes the text a redirect
+-- or a device write hands to writeFile -- error lines and refusals are never
+-- `open`, so they always come out newline-terminated, which is what a real
+-- shell's stderr does.
+function CeroSecOS.linesToText(lines)
+	if type(lines) ~= "table" or #lines == 0 then return "" end
+	local text = table.concat(lines, "\n")
+	if not lines.open then text = text .. "\n" end
+	return text
 end
 
 -- Last gate before output leaves the core: one array entry is one screen line.

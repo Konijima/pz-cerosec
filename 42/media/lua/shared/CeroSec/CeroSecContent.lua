@@ -3739,7 +3739,7 @@ function CeroSecContent.diskData(entry, now, variant)
 		if file.dir then
 			node = CeroSecOS.newDir("root", mode or 755)
 		elseif type(text) == "string" then
-			node = CeroSecOS.newFile("root", mode or 644, text)
+			node = CeroSecOS.newFile("root", mode or 644, CeroSecOS.terminated(text))
 		end
 		if node ~= nil and CeroSecContent.diskNameOk(file.name) then
 			local path = CeroSecOS.MNT_PATH .. "/" .. file.name
@@ -4598,7 +4598,7 @@ CeroSecContent.LOG_DAYS = 7
 -- That is the trimming rule, in one function, so no caller can forget it.
 local function place(state, session, path, owner, mode, text, now)
 	if type(text) ~= "string" then return false end
-	local node = CeroSecOS.newFile(owner, mode or 644, text)
+	local node = CeroSecOS.newFile(owner, mode or 644, CeroSecOS.terminated(text))
 	return CeroSecOS.createNode(state, session, path, node, now) ~= nil
 end
 

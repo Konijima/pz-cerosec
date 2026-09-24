@@ -278,7 +278,13 @@ local routeErr
 -- skips the pipe -- `ls /nope > f` puts the refusal on the screen and not in the
 -- file, and a script whose standard output the shell pointed at a file is the same
 -- rule one level up.
-local function outLine(job, text, notFile)
+-- partial is true only when this line is the LAST byte the writer had and
+-- carried no newline behind it (flushPartial, below) -- `printf a` at the end
+-- of a job, not a line a command actually terminated. It is how the sink
+-- (a file's own bytes, or the next stage of a pipe) learns whether to close
+-- with "\n" of its own: unset on every other call, so any further output
+-- clears it again and only the true last write of a target decides.
+local function outLine(job, text, notFile, partial)
 	-- A job that has ENDED writes nowhere. One door, because a dead process has
 	-- one: whatever was still being handed over when it died is not something
 	-- anybody is owed.
@@ -343,6 +349,7 @@ local function outLine(job, text, notFile)
 			return
 		end
 		to.buf[#to.buf + 1] = text
+		to.open = partial == true
 		return
 	end
 	-- A stage of a pipeline writes into the pipe, and a pipe is not a screen:
@@ -354,6 +361,7 @@ local function outLine(job, text, notFile)
 		local buf = job.pipe
 		buf.lines[#buf.lines + 1] = text
 		buf.bytes = buf.bytes + #text + 1
+		buf.open = partial == true
 		return
 	end
 	-- The screen's own rule, applied once, here: a job's line is at most sixty
@@ -491,15 +499,33 @@ end
 
 local function flushPartial(job)
 	if job.partial ~= nil and job.partial ~= "" then
-		outLine(job, job.partial)
+		-- partial=true: this line carries no newline behind it. It is the
+		-- LAST thing this job wrote if nothing else follows, which is what
+		-- lets the sink decide whether to close with a "\n" of its own.
+		outLine(job, job.partial, nil, true)
 	end
 	job.partial = ""
 end
 
+-- A command's returned lines, same door a builtin's writeText uses. `lines`
+-- may carry an `open` field (cat, and the /bin printf and echo doors): true
+-- when its own last line had no newline behind it -- read straight off the
+-- source, a file or a pipe that ended without one -- so a command whose
+-- INPUT is unterminated hands the same fact to whoever it writes to,
+-- exactly the way `printf a | cat; echo b` glues onto one line on a real sh.
 local function writeLines(job, lines)
 	if type(lines) ~= "table" then return end
 	if #lines > 0 then flushPartial(job) end
-	for i = 1, #lines do outLine(job, lines[i]) end
+	local n = #lines
+	if lines.open == true and n > 0 then
+		for i = 1, n - 1 do outLine(job, lines[i]) end
+		-- The last line goes through writeText's own partial, which folds it
+		-- at the pipe/file/screen width the same way any other unterminated
+		-- text does, and leaves it open for whatever writes next.
+		writeText(job, lines[n])
+		return
+	end
+	for i = 1, n do outLine(job, lines[i]) end
 end
 
 -- The same, for the lines of a command that FAILED: they go where an error
@@ -1590,7 +1616,7 @@ builtins["."] = function(job, args, state, env, redirect, sinks)
 		errLines(job, { line })
 		job.errRd = outer
 		if erd ~= nil and erd.buf ~= nil and #erd.buf > 0 then
-			local text = table.concat(erd.buf, "\n")
+			local text = CeroSecOS.linesToText(erd.buf)
 			erd.buf = {}
 			local ok, lines = CeroSecOS.writeRedirect(state, job.session, ".",
 				{ path = erd.path, append = true }, text, env)
@@ -2387,7 +2413,7 @@ local function resumeCont(state, job, text, env)
 		errLines(job, lines)
 		job.errRd = outer
 		if erd ~= nil and erd.buf ~= nil and #erd.buf > 0 then
-			local text = table.concat(erd.buf, "\n")
+			local text = CeroSecOS.linesToText(erd.buf)
 			erd.buf = {}
 			local errOk, errWrote = CeroSecOS.writeRedirect(state, job.session, erd.who,
 				{ path = erd.path, append = true }, text, env)
@@ -2702,14 +2728,14 @@ local function runSimple(state, job, f, env)
 		if not ownRedirect and errSpec ~= nil and errSpec.buf ~= nil
 				and #errSpec.buf > 0 then
 			sinkOk, sinkLines = CeroSecOS.writeRedirect(state, job.session, name,
-				{ path = errSpec.path, append = true }, table.concat(errSpec.buf, "\n"), env)
+				{ path = errSpec.path, append = true }, CeroSecOS.linesToText(errSpec.buf), env)
 		end
 		if catch then
 			local buf = job.caps[#job.caps]
 			job.caps[#job.caps] = nil
 			if outFile ~= nil then
 				local ok, lines = CeroSecOS.writeRedirect(state, job.session, name,
-					{ path = outFile.path, append = true }, table.concat(buf, "\n"), env)
+					{ path = outFile.path, append = true }, CeroSecOS.linesToText(buf), env)
 				if not ok then sinkOk, sinkLines = ok, lines end
 			else
 				errLines(job, buf)
@@ -2740,8 +2766,12 @@ local function runSimple(state, job, f, env)
 	local stdin = nil
 	if job.stdinBuf ~= nil then
 		if f.rd == nil then f.rd = { carry = {} } end
+		-- open: the writer on the other end of the pipe ended its last line
+		-- with no "\n" behind it -- `printf a | cat` -- so a reader that
+		-- passes the bytes on (cat) can leave the same line open instead of
+		-- closing it with a terminator nothing on the real pipe ever wrote.
 		stdin = { lines = job.stdinBuf.lines, eof = job.stdinBuf.eof,
-			carry = f.rd.carry, want = false, done = false }
+			open = job.stdinBuf.open, carry = f.rd.carry, want = false, done = false }
 	end
 
 	-- A command that reads a pipe is run more than once, and a redirect on one
@@ -2815,7 +2845,7 @@ local function runSimple(state, job, f, env)
 		-- contents for the open to empty, only a state the write puts it into.
 		if #lines > 0 or not wrote then
 			local wroteOk, wroteLines = CeroSecOS.writeRedirect(state, job.session, name,
-				{ path = outFile.path, append = true }, table.concat(lines, "\n"), env)
+				{ path = outFile.path, append = true }, CeroSecOS.linesToText(lines), env)
 			if f.rd ~= nil then f.rd.wrote = true end
 			lines = wroteLines
 			if not wroteOk then
@@ -2834,7 +2864,7 @@ local function runSimple(state, job, f, env)
 	-- file now, after it, and `>&2`'s output goes to the errors the line found.
 	job.errRd = outerErr
 	if errSpec ~= nil and errSpec.buf ~= nil and #errSpec.buf > 0 then
-		local text = table.concat(errSpec.buf, "\n")
+		local text = CeroSecOS.linesToText(errSpec.buf)
 		errSpec.buf = {}
 		local errOk, errWrote = CeroSecOS.writeRedirect(state, job.session, name,
 			{ path = errSpec.path, append = true }, text, env)
@@ -3010,8 +3040,19 @@ end
 local function drainTail(job, buf)
 	local lines = buf.lines
 	if #lines == 0 then return end
+	local open = buf.open == true
 	buf.lines = {}
 	buf.bytes = 0
+	buf.open = false
+	if open then
+		-- The pipeline's own last line had no newline behind it: leave it
+		-- open on the job draining the pipe too, through the same partial a
+		-- builtin's writeText uses, instead of closing it with a "\n" the
+		-- pipe never carried (`printf a | cat; echo b` glues onto one line).
+		for i = 1, #lines - 1 do outLine(job, lines[i]) end
+		writeText(job, lines[#lines])
+		return
+	end
 	for i = 1, #lines do outLine(job, lines[i]) end
 end
 
@@ -3148,7 +3189,7 @@ function CeroSecOS.jobRemote(job, lines, status, failed, state, env)
 			errLines(target, lines)
 			target.errRd = outer
 			if erd ~= nil and erd.buf ~= nil and #erd.buf > 0 and type(state) == "table" then
-				local text = table.concat(erd.buf, "\n")
+				local text = CeroSecOS.linesToText(erd.buf)
 				erd.buf = {}
 				local errOk, errWrote = CeroSecOS.writeRedirect(state, target.session, erd.who,
 					{ path = erd.path, append = true }, text, env)
@@ -3156,7 +3197,7 @@ function CeroSecOS.jobRemote(job, lines, status, failed, state, env)
 			end
 		elseif pending ~= nil and type(state) == "table" then
 			local ok, refusal = CeroSecOS.writeRedirect(state, target.session, pending.who,
-				pending, table.concat(lines, "\n"), env)
+				pending, CeroSecOS.linesToText(lines), env)
 			if not ok then
 				errLines(target, refusal)
 				status = 1
@@ -3871,8 +3912,15 @@ end
 -- where every other refusal about a redirect goes.
 local function flushOne(state, job, to, env)
 	if #to.buf == 0 then return true end
+	-- Every line in this chunk gets its own "\n" behind it -- writeFile's
+	-- append is a raw concat now the file carries its own terminators -- and
+	-- so does the LAST one, unless it is truly the job's own unterminated
+	-- last line (to.open, set by outLine's partial flush): `printf a > f`
+	-- leaves f without one, `echo a > f` does not.
 	local text = table.concat(to.buf, "\n")
+	if not to.open then text = text .. "\n" end
 	to.buf = {}
+	to.open = false
 	local ok, lines = CeroSecOS.writeRedirect(state, job.session, to.who,
 		{ path = to.path, append = true }, text, env)
 	if ok then return true end
@@ -4589,7 +4637,12 @@ end
 commands.printf = function(state, session, args, env)
 	local text = CeroSecOS.printfText(args)
 	if text == nil then return false, {} end
-	return true, CeroSecOS.splitLines(text)
+	local lines = CeroSecOS.splitLines(text)
+	-- printf writes only what its own format asked for -- no "\n" unless one
+	-- is in it -- so `sudo printf a` leaves its line open exactly as the
+	-- builtin's own writeText does (builtins.printf, above).
+	if not CeroSecOS.endsLine(text) then lines.open = true end
+	return true, lines
 end
 
 local function testCommand(state, session, args, env)
