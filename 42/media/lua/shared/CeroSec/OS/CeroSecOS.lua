@@ -728,4 +728,3 @@ function CeroSecOS.strerror(reason)
 	if type(reason) ~= "string" then return reason end
 	return CeroSecOS.STRERROR[reason] or reason
 end
-end
