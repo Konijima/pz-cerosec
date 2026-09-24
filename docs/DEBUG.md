@@ -635,7 +635,7 @@ own:
   self-test that quietly ran half of itself would be a pass that proved less than the
   one before it.
 
-  And then the **shell half** (`CeroSecSelfTestShell.lua`): 261 typed lines, each
+  And then the **shell half** (`CeroSecSelfTestShell.lua`): 355 typed lines, each
   run on a scratch machine the runner makes with `CeroSecOS.newState` and copies
   once per case, with a fixed clock and no world under it, and weighed against
   what the screen should show, what `$?` should be and what a file should hold.

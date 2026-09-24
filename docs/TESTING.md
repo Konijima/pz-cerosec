@@ -506,7 +506,7 @@ any kind, and therefore the world, the save file, the wire and the sync.
   every read, while `v`, `on` and `facing` ride into the save file weighed by
   nothing — drop `facing` and a computer picked up and put down faces the wrong
   way, with a green suite behind it.
-- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 261 cases, each a
+- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 355 cases, each a
   line typed at a prompt on a scratch machine — `CeroSecOS.newState`, the
   constructor a first power-on uses, made once and deep-copied for every case —
   with what the screen must show, what `$?` must be and, where the point is a
@@ -514,7 +514,10 @@ any kind, and therefore the world, the save file, the wire and the sync.
   world, errors included, every rule of this release's shell (`2>`, `2>&1` in both
   orders, `>&2`, the redirect opened before the command, a stage's redirect over
   the pipe, `read` with several names, `-r` and `-n`, `$*`, `$@`, `$!`, 126 and
-  127) and the basics of pipes, redirects, `$(( ))` and control flow. Each answer
+  127) and the basics of pipes, redirects, `$(( ))` and control flow. Its last
+  section is the lines `docs/PARCOURS-TEST.md` had a player type for 0.7.0 and
+  that need no real login, machine, screen or job book: the same answers word
+  for word, as root in `/root` instead of admin in `~`. Each answer
   is 1993's or names the entry of `CeroSecOS.DEVIATIONS` it leans on, and
   `tests/selftest_shell_test.lua` holds every such name to the table. The press
   starts it and the server's `Events.OnTick` carries it, a few milliseconds a
