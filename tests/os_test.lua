@@ -17062,8 +17062,6 @@ do
 	ok(state, admin, "echo -n x > f", {})
 	ok(state, admin, "echo y >> f", {})
 	ok(state, admin, "cat f", { "x", "y" })
-	-- IFS is an ordinary name.
-	ok(state, admin, "IFS=:; x=a:b; for i in $x; do echo $i; done", { "a:b" })
 	-- One > per command, and no <.
 	bad(state, admin, "echo a > q > r", "sh: syntax error: bad redirect")
 	bad(state, admin, "cat < p", "sh: syntax error: unexpected '<'")

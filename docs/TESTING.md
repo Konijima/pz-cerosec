@@ -14,6 +14,12 @@ The suites, in the order they run:
 
 - `defs_test.lua` — the shared definitions (sprites, facings, state).
 - `os_test.lua` — the OS core: filesystem, permissions, users, shell, passwords.
+- `ifs_test.lua` — IFS field splitting (POSIX.2 2.6.5): the default, unset vs.
+  empty, whitespace vs. non-whitespace delimiters, a delimiter split across two
+  parts of the same word, `"$*"`'s join character, and `read`'s last-name-gets-
+  the-remainder rule. Every expected value was checked against `dash` first.
+  The hostile shape of it -- a word that is nothing but delimiters -- is in
+  `hostile_test.lua` instead, because its calibration lives in that process.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `compat_computermod_test.lua`: living beside the Workshop mod *Computer Mod*:
   who owns a desktop, and which of the two fillers gets the right-click. Against
