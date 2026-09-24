@@ -599,6 +599,13 @@ function CeroSecOS.bufferOf(data)
 	return text
 end
 
+-- And the save's half: every line of the buffer goes back followed by its
+-- "\n", the last one included. An empty buffer is an empty file.
+function CeroSecOS.bufferBytes(buffer)
+	if type(buffer) ~= "string" or buffer == "" then return "" end
+	return buffer .. "\n"
+end
+
 -- A list of lines, joined the way a real file holds them: every line ends in
 -- "\n", including the last one, UNLESS the list is marked `open` (cat's own
 -- and the /bin printf door's, when what they read had no final newline

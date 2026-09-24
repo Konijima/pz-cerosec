@@ -15033,9 +15033,9 @@ do
 	local admin = open(state, "admin")
 	local USAGE = "find: usage: find <path>... [expression]"
 	okAt(state, admin, "mkdir tree", {})
-	put(state, admin, "/home/admin/tree/a.log", "one")
-	put(state, admin, "/home/admin/tree/b.log", "two")
-	put(state, admin, "/home/admin/tree/c.txt", "three")
+	put(state, admin, "/home/admin/tree/a.log", "one\n")
+	put(state, admin, "/home/admin/tree/b.log", "two\n")
+	put(state, admin, "/home/admin/tree/c.txt", "three\n")
 
 	-- Once per name found, in walk order, and the command's output is find's.
 	okAt(state, admin, "find tree -name '*.log' -exec cat {} ';'", { "one", "two" })
@@ -15114,8 +15114,8 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	okAt(state, admin, "mkdir tree", {})
-	put(state, admin, "/home/admin/tree/a.log", "one")
-	put(state, admin, "/home/admin/tree/b.log", "two")
+	put(state, admin, "/home/admin/tree/a.log", "one\n")
+	put(state, admin, "/home/admin/tree/b.log", "two\n")
 	local function steps(line)
 		local _, _, _, _, job = exec(state, admin, line, { jobs = {} })
 		return job.steps

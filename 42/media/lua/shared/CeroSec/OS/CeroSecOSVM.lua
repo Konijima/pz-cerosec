@@ -323,6 +323,10 @@ local function outLine(job, text, notFile, partial)
 		if #buf > 0 then buf.bytes = (buf.bytes or 0) + 1 end
 		buf.bytes = (buf.bytes or 0) + #text
 		buf[#buf + 1] = text
+		-- The same open-or-closed fact the file door keeps (to.open, below): a
+		-- builtin's `> f` is caught here and written by linesToText, which
+		-- ends the last line only when the writer did -- `printf a > f`.
+		buf.open = partial == true
 		return
 	end
 	-- The FILE the shell opened for the script this job is running. A redirect is

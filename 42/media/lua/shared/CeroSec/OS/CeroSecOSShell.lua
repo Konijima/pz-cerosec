@@ -1663,7 +1663,18 @@ commands.cat = function(state, session, args, env, stdin)
 	-- cat's own last line with none either, which is what lets `cat noeol`
 	-- and `cat noeol | cat` print the same missing newline a real one does.
 	local lastOpen = false
+	-- And while the last source's last line is open, the next line cat reads
+	-- is the REST of it: cat copies bytes, so `cat noeol f` prints the two
+	-- glued together, exactly as a real one does (cat(1), 4.4BSD: the files
+	-- are "read sequentially" onto the standard output and nothing between).
+	local glue = false
 	local function put(line)
+		if glue and #out > 0 then
+			out[#out] = out[#out] .. line
+			glue = false
+			return
+		end
+		glue = false
 		if number then
 			carry.n = carry.n + 1
 			local num = tostring(carry.n)
@@ -1684,11 +1695,13 @@ commands.cat = function(state, session, args, env, stdin)
 				if not input.eof then return not carry.bad, out end
 				carry.drained = true
 				lastOpen = input.open == true
+				glue = lastOpen
 			end
 		else
 			local node, reason = CeroSecOS.getNode(state, session, p)
 			if node == nil then
 				carry.bad = true
+				glue, lastOpen = false, false
 				out[#out + 1] = "cat: " .. p .. ": " .. reason
 			elseif CeroSecOS.isDev(node) then
 				-- A device answers with its state, and refuses in its OWN name:
@@ -1705,7 +1718,7 @@ commands.cat = function(state, session, args, env, stdin)
 					-- empty file has none.
 					local said = CeroSecOS.splitLines(text)
 					for j = 1, #said do put(said[j]) end
-					if text ~= "" then lastOpen = false end
+					if text ~= "" then glue, lastOpen = false, false end
 				end
 			elseif node.type ~= "file" then
 				carry.bad = true
@@ -1716,7 +1729,10 @@ commands.cat = function(state, session, args, env, stdin)
 			else
 				local lines = CeroSecOS.splitLines(node.data)
 				for j = 1, #lines do put(lines[j]) end
-				if node.data ~= "" then lastOpen = not CeroSecOS.endsLine(node.data) end
+				if node.data ~= "" then
+					lastOpen = not CeroSecOS.endsLine(node.data)
+					glue = lastOpen
+				end
 			end
 		end
 		carry.pos = carry.pos + 1
@@ -3018,22 +3034,29 @@ commands.head = function(state, session, args, env, stdin)
 		local carry = input.carry
 		if carry.n == nil then carry.n = 0 end
 		local out = {}
+		local all = true
 		for i = 1, #input.lines do
-			if carry.n >= n then break end
+			if carry.n >= n then all = false break end
 			carry.n = carry.n + 1
 			out[#out + 1] = input.lines[i]
 		end
+		-- The input's own last line, and it had no newline: head copies
+		-- bytes, so it has none on the way out either.
+		if all and input.eof and input.open and #out > 0 then out.open = true end
 		if carry.n >= n then input.done = true end
 		return true, out
 	end
 
 	if #rest ~= 1 then return usage("head") end
-	local lines, refusal = fileLines(state, session, "head", rest[1])
+	local lines, refusal, node = fileLines(state, session, "head", rest[1])
 	if lines == nil then return false, { refusal } end
 	local out = {}
 	for i = 1, #lines do
 		if i > n then break end
 		out[#out + 1] = lines[i]
+	end
+	if #out > 0 and #out == #lines and not CeroSecOS.endsLine(node.data) then
+		out.open = true
 	end
 	return true, out
 end
@@ -3067,16 +3090,21 @@ commands.tail = function(state, session, args, env, stdin)
 			return fail("tail", nil, "input too large")
 		end
 		if not input.eof then return true, {} end
-		return true, carry.keep
+		-- The kept lines end where the input did: open, if it was.
+		local out = {}
+		for i = 1, #carry.keep do out[i] = carry.keep[i] end
+		if input.open and #out > 0 then out.open = true end
+		return true, out
 	end
 
 	if #rest ~= 1 then return usage("tail") end
-	local lines, refusal = fileLines(state, session, "tail", rest[1])
+	local lines, refusal, node = fileLines(state, session, "tail", rest[1])
 	if lines == nil then return false, { refusal } end
 	local first = #lines - n + 1
 	if first < 1 then first = 1 end
 	local out = {}
 	for i = first, #lines do out[#out + 1] = lines[i] end
+	if #out > 0 and not CeroSecOS.endsLine(node.data) then out.open = true end
 	return true, out
 end
 

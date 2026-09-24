@@ -2476,7 +2476,7 @@ Commands.editsave = function(self, playerObj, x, y, z, token, args)
 	-- by its "\n", the last one included (POSIX ex(1), "Write"; the edit
 	-- command took that one off when it opened the file). An empty buffer is an
 	-- empty file, which has no line to end.
-	local bytes = CeroSecOS.terminated(text)
+	local bytes = CeroSecOS.bufferBytes(text)
 	-- The editor's save is a write like any other, clock included: a file saved
 	-- out of the editor is stamped the minute it was saved.
 	local done, reason = CeroSecOS.writeFile(state, session, console.edit.path, bytes, false,
