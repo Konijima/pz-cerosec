@@ -395,7 +395,7 @@ end
 local LITERAL_MESSAGES = {
 	"not found",
 	"is not in the sudoers file.",
-	"login incorrect",
+	"Login incorrect",
 	"passwd: authentication failure",
 	"passwd: passwords do not match",
 	"passwd: password too long",

@@ -156,7 +156,7 @@ passé réellement, même quand ça correspond au texte attendu.
 16. `root`, Entrée, mot de passe vide, Entrée → le nom s'affiche à l'écran,
     l'invite devient `password:`, ce qui est tapé montre des `*`, puis la
     bannière revient et l'invite finale est `root@ksp-<x>-<y>:/root# `. [ ]
-17. `exit`, puis `root` / `xyz` → `login incorrect`, retour à `login:`. [ ]
+17. `exit`, puis `root` / `xyz` → `Login incorrect`, retour à `login:`. [ ]
 18. `admin`, mot de passe vide → `admin@ksp-<x>-<y>:/home/admin$ ` (un `$`, pas
     un `#`). [ ]
 19. Fenêtre ouverte, taper `wwww`, `1`, `e`, `i` → le personnage ne marche pas,
@@ -3311,7 +3311,7 @@ tiré avant que le joueur ne regarde.
      ouvert, il suffisait de taper `admin` puis `sudo su` pour être `root` sur
      n'importe quelle machine du comté. Sur un ordinateur garni (n'importe quel
      commerce, modèle d'exposition compris) :
-     - à `login:`, taper `admin` et Entrée au mot de passe → `login incorrect` ;
+     - à `login:`, taper `admin` et Entrée au mot de passe → `Login incorrect` ;
      - se connecter avec un compte de la premises (papier du tiroir, papier d'une
        poche) puis `cat /etc/passwd` → aucune ligne `admin` ;
      - `ls /home` → un dossier par employé, aucun `admin` ;

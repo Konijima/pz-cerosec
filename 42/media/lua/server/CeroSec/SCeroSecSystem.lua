@@ -2096,8 +2096,9 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			profile = true
 		else
 			-- One answer for a bad name and for a bad password alike: the
-			-- machine does not say which half was wrong.
-			CeroSec.consolePush(console, "login incorrect")
+			-- machine does not say which half was wrong, capitalised exactly
+			-- as 4.4BSD-Lite2's usr.bin/login/login.c prints it.
+			CeroSec.consolePush(console, "Login incorrect")
 			CeroSec.log("login refused: " .. tostring(reason))
 		end
 	elseif waiting == "prompt" then

@@ -8626,7 +8626,7 @@ do
 	net.enter("admin")
 	net.enter("wrong")
 	net.tick(2)
-	check("the far machine refuses", net.heard("login incorrect"))
+	check("the far machine refuses", net.heard("Login incorrect"))
 	check("and asks again", net.glass("login:"))
 	eq("the pty is still open while it asks", CeroSecOS.ptyCount(net.gate.ptys), 1)
 	-- A remote login prompt with nothing typed at it is not the machine being in

@@ -60,7 +60,7 @@ machine's console and stays there until the machine goes dark.
     `root@ksp-<x>-<y>:/root# `.
 13. **Wrong password.** Log out (`exit`), log in as `root` with `xyz`: `login
     incorrect`, and back to `login:`.
-14. **No such user.** `nobody` / anything: the same `login incorrect`, never "no such
+14. **No such user.** `nobody` / anything: the same `Login incorrect`, never "no such
     user" — the machine does not say which half was wrong. It is answered only at
     the **password** prompt, so an unknown name looks exactly like a known one on
     the way in.
@@ -831,7 +831,7 @@ away and coming back.
      `deluser: bob: removed`. `ls -l /home` still shows `bob`, still owned by
      `bob` — a name the machine no longer knows, which is the truth about whose
      files those were. `id bob` → `no such user`, and logging in as `bob` is
-     `login incorrect`.
+     `Login incorrect`.
 186. **With `-r` they go.** `deluser -r carl`, then `ls /home`: no `carl`.
 187. **The sudoers line goes too.** As root, `edit /etc/sudoers`, add a line
      `dan NOPASSWD`, save. `adduser dan`, `id dan` → `groups=sudo`. Then

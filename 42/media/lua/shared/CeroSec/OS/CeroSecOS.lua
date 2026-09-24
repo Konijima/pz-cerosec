@@ -706,11 +706,14 @@ end
 -- lower-case codes. Every caller still SIGNS a refusal with the short code
 -- below -- getNode, can and the rest go on returning "no such file" and the
 -- like, and every comparison against those codes (CeroSecOSShell's `reason ~=
--- "no such file"`, the exit-status table) is unchanged -- and only the two
--- places a code becomes a LINE on the glass, CeroSecOSShell's fail and
--- CeroSecOSDev's refuse, pass it through the table below first. One table
--- instead of a strerror() at every call site, so the wording cannot drift
--- between a `cat`, a `cd` and a `cp` that hit the same errno.
+-- "no such file"`, the exit-status table) is unchanged -- and only where a
+-- code becomes a LINE on the glass (CeroSecOSShell's fail, CeroSecOSDev's
+-- refuse, and every command that builds its own "cmd: file: reason" instead
+-- of calling fail) does it pass through the table below first. One table
+-- instead of a strerror() written out at every call site, so the wording
+-- cannot drift between a `cat`, a `cd` and a `cp` that hit the same errno.
+-- The shell's OWN redirect errors are the one exception: see
+-- CeroSecOS.sherror below, which is not this table at all.
 CeroSecOS.STRERROR = {
 	["no such file"]         = "No such file or directory",
 	["not a directory"]      = "Not a directory",
@@ -727,4 +730,22 @@ CeroSecOS.STRERROR = {
 function CeroSecOS.strerror(reason)
 	if type(reason) ~= "string" then return reason end
 	return CeroSecOS.STRERROR[reason] or reason
+end
+
+-- What the SHELL itself says about a redirect it could not open, which is not
+-- what a command says about the same errno: sh does not call strerror(3), it
+-- carries its own table (4.4BSD-Lite2 bin/sh/error.c, the errormsg[] array)
+-- and it is lower-case and shorter -- "permission denied", not "Permission
+-- denied", and a missing parent on a create is "directory nonexistent", not
+-- "no such file" (bin/sh/redir.c: NTO and NAPPEND call errmsg(errno,
+-- E_CREAT), and E_CREAT's ENOENT/ENOTDIR row says "directory nonexistent";
+-- E_OPEN's row, for "<", says "no such file", the same words this machine's
+-- getNode already signs a lookup with). CeroSecOSShell.writeRedirect and
+-- .openRedirect are always a CREATE (">" truncates or makes; there is no "<"
+-- on this shell), so only the E_CREAT row applies here.
+function CeroSecOS.sherror(reason)
+	if reason == "no such file" or reason == "not a directory" then
+		return "directory nonexistent"
+	end
+	return reason
 end

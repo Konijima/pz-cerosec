@@ -176,7 +176,7 @@ A machine somebody was using is not that machine: its accounts are the
 people who worked there, admin is not among them, and each had a
 password. Look where people wrote them in 1993: a drawer, a pocket.
 
-Get either half wrong and it says only "login incorrect", never which
+Get either half wrong and it says only "Login incorrect", never which
 half.]],
 
 [[The screen belongs to the machine, not to you.
@@ -266,10 +266,11 @@ The syntax errors are this shell's own sentences: sh said `fi'
 unexpected where this one says missing 'fi', and a quote left open
 is refused here where sh waited for the rest on the next line.
 
-A wrong password to su or passwd is Sorry, as 4.4BSD and System V
-said it. sudo's own wrong-password line here is still
-authentication failure: no source for what a 1993 sudo really
-printed has turned up to check that against.]],
+A wrong password to su is Sorry, as 4.4BSD's su said it; a wrong
+one to passwd is passwd: Permission denied, EACCES under its own
+name. sudo's own wrong-password line here is still authentication
+failure: no source for what a 1993 sudo really printed has turned
+up to check that against.]],
 
 [[What is not Unix here: files and the shell.
 
@@ -2147,7 +2148,7 @@ The three new filters, from chapter 7.
 
 [[Logging in, and your account.
 
-  login incorrect
+  Login incorrect
       a wrong name or a wrong password, and it will never
       say which
   passwd: authentication failure

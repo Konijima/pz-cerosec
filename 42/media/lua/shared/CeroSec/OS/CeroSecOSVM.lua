@@ -1771,12 +1771,13 @@ builtins.read = function(job, args, state, env)
 			end
 			i = i + 2
 		elseif string.sub(a, 1, 1) == "-" and #a > 1 then
-			-- getopt(3), 4.3BSD: "illegal option -- x" (see the "getopt" entry
-			-- in CeroSecOS.DEVIATIONS). read has no usage line of its own to
-			-- follow it with -- it is a shell word, not a file in /bin -- so
-			-- this is the one line a real getopt(3) caller with no usage()
-			-- would print.
-			return nil, "read: illegal option -- " .. string.sub(a, 2, 2)
+			-- read is a shell WORD, not a file in /bin, so it is not
+			-- getopt(3)'s "illegal option -- x": it is nextopt()'s, the
+			-- Bourne shell's own flag parser for its builtins (4.4BSD-Lite2
+			-- bin/sh/options.c), which prints "Illegal option -x" -- capital
+			-- I, one dash, no usage() line after it, because a builtin has
+			-- none of its own.
+			return nil, "read: Illegal option -" .. string.sub(a, 2, 2)
 		else
 			names[#names + 1] = a
 			i = i + 1

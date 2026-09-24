@@ -2043,7 +2043,7 @@ when you leave for the night -- after who.
   admin@ksp-04-11:~$ exit
 
 What a stranger at your keyboard can then do: try names at login: and be
-told only login incorrect, which never says which half was wrong; read
+told only Login incorrect, which never says which half was wrong; read
 /etc/group and /etc/hosts, public on purpose; and read last, and see
 himself in it.
 

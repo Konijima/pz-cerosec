@@ -2424,16 +2424,17 @@ line is named and the script ends there.
   ambiguous redirect
       the name after > came out as two words, or none
   sort: input too large
-      sort and uniq hold all their input first: a
+      sort and uniq hold all input first: a
       hundred lines, four kilobytes, no more
   test: integer expected
-      -eq and its five friends, handed something that
+      -eq and five friends, handed something that
       is not a number
   test: unknown operator
   test: missing ']'
   test: argument expected
   read: not a name
   read: <n>: bad number
+  read: Illegal option -x
   sleep: invalid interval
   sleep: no clock
       test's exit 2, sleep's 1; the script goes on
