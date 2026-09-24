@@ -57,7 +57,7 @@ rot13() { printf '%s' "$1" | tr 'A-Za-z' 'N-ZA-Mn-za-m'; }
 # path on a REAL machine, so the account names the simulated world uses are
 # listed here and every other one is a failure. A new in-game account means one
 # more name on this line, which is a decision somebody makes on purpose.
-GAME_HOMES='admin adminx root bob sam carl kate dave eve other dispatch x alice carol'
+GAME_HOMES='admin adminx root bob sam carl kate dave eve other dispatch x alice carol u1'
 
 files=0
 
