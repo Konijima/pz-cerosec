@@ -622,25 +622,49 @@ function CeroSecOS.bufferBytes(buffer)
 	return buffer .. "\n"
 end
 
--- What the editor's save writes: bufferBytes, except where the final "\n"
--- ALONE is what would carry the file past MAX_FILE_BYTES. Then the last
--- line goes back open, and the second answer is true so the save can say
--- so. Such a file is real: an old save's file of exactly the ceiling with
--- no newline, which the v2->v3 walk (terminateFiles) had no room to close
--- -- and opening it and saving it unchanged said "file too large". A save
--- of what the file already holds must never be refused.
+-- The editor's save: the buffer written to `path` as bufferBytes makes it,
+-- with two exceptions, both for one rule -- a save of what the file already
+-- holds must never be refused, and must never change it.
+--
+--   * An unchanged buffer over a file that ends its line writes the file's
+--     own bytes. That is bufferBytes everywhere but one file: "\n", one empty
+--     line (`echo > f`), whose buffer is "" -- the same as an empty file's --
+--     and which bufferBytes would save as nothing at all.
+--   * Where the final "\n" ALONE is what the disk refuses -- "file too large"
+--     past MAX_FILE_BYTES, "disk full" on a machine at its quota or a floppy
+--     at its FLOPPY_BYTES -- the last line goes back open, and the fourth
+--     answer is true so the save can say so. Such a file is real: a file the
+--     v2->v3 walk (terminateFiles) had no room to close, opened and saved
+--     unchanged, was refused over the one byte it never had. An edited buffer
+--     at the same limit gets the same rule rather than a refusal.
+--
+-- The refusal is the filesystem's own (CeroSecOS.writeFile), asked first
+-- with the newline and then without: both refusals are made before anything
+-- is touched (setData puts the old bytes back; createNode refuses before it
+-- links), so the second try is a first try.
 --
 -- No 1993 editor wrote a file without its newline (nvi 1.43, 4.4BSD-Lite2
 -- contrib, ex/ex_write.c puts one after every line), so this is a
 -- declared deviation ("edit", CeroSecOS.DEVIATIONS). What it SAYS is
 -- borrowed from vi 3.7, 4.3BSD ucb/ex/ex_io.c getfile(), which printed
 -- " [Incomplete last line]" for a file read without one.
-function CeroSecOS.saveBytes(buffer)
+--
+-- done, reason, the bytes written (or tried), incomplete.
+function CeroSecOS.saveBuffer(state, session, path, buffer, now)
 	local bytes = CeroSecOS.bufferBytes(buffer)
-	if #bytes > CeroSecOS.MAX_FILE_BYTES and #bytes - 1 <= CeroSecOS.MAX_FILE_BYTES then
-		return buffer, true
+	local node = CeroSecOS.getNode(state, session, path)
+	if type(node) == "table" and node.type == "file" and type(node.data) == "string"
+			and CeroSecOS.endsLine(node.data) and CeroSecOS.bufferOf(node.data) == buffer then
+		bytes = node.data
 	end
-	return bytes, false
+	local done, reason = CeroSecOS.writeFile(state, session, path, bytes, false, now)
+	if done == nil and (reason == "disk full" or reason == "file too large")
+			and buffer ~= "" and bytes == buffer .. "\n" then
+		local open, why = CeroSecOS.writeFile(state, session, path, buffer, false, now)
+		if open ~= nil then return open, nil, buffer, true end
+		return nil, why, buffer, false
+	end
+	return done, reason, bytes, false
 end
 
 -- A list of lines, joined the way a real file holds them: every line ends in

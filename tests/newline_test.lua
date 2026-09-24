@@ -436,4 +436,120 @@ do
 		data(state, "/bin/ls"), CeroSecOS.commandDesc("ls"))
 end
 
+--
+-- 6. The editor's save: what a file already holds is never refused
+--
+-- CeroSecOS.saveBuffer, which the server's editsave calls. The buffer is
+-- lines and the file is bytes, and between the two a save of an untouched
+-- buffer must write the file back as it was -- including the two files the
+-- plain rule gets wrong: one empty line ("\n", whose buffer is the empty
+-- file's), and an open last line on a disk with no byte left for its "\n".
+--
+local function saved(state, session, path, buffer)
+	return CeroSecOS.saveBuffer(state, session, path, buffer, nil)
+end
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local path = "/home/admin/rt"
+	-- Every ending there is, opened and saved untouched. Only the open file
+	-- changes, and that is vi's own rule: it adds the newline a file lacked.
+	for _, pair in ipairs({ { "", "" }, { "\n", "\n" }, { "a", "a\n" },
+			{ "a\n", "a\n" }, { "a\n\n", "a\n\n" } }) do
+		put(state, admin, path, pair[1])
+		local at = string.format("%q", pair[1])
+		local done, why, bytes, incomplete = saved(state, admin, path,
+			CeroSecOS.bufferOf(pair[1]))
+		check(at .. " saves (" .. tostring(why) .. ")", done ~= nil)
+		eq(at .. " saved untouched is " .. string.format("%q", pair[2]),
+			data(state, path), pair[2])
+		eq(at .. ": the bytes it reports are the bytes it wrote", bytes, pair[2])
+		eq(at .. ": and the last line is complete", incomplete, false)
+		-- And again, which is what a second Tab does.
+		saved(state, admin, path, CeroSecOS.bufferOf(data(state, path)))
+		eq(at .. ": twice is once", data(state, path), pair[2])
+	end
+	-- `echo > f` stores one empty line, and an untouched save keeps it one.
+	ok(state, admin, "echo > /home/admin/blank", {})
+	eq("echo > f is one empty line", data(state, "/home/admin/blank"), "\n")
+	saved(state, admin, "/home/admin/blank", CeroSecOS.bufferOf("\n"))
+	eq("which an untouched save leaves one empty line", data(state, "/home/admin/blank"), "\n")
+	-- An empty buffer over NO file is an empty file, as it always was.
+	saved(state, admin, "/home/admin/new", "")
+	eq("an empty buffer makes an empty file", data(state, "/home/admin/new"), "")
+end
+
+-- The machine at its quota, and the file an old save left open on it: the
+-- v2->v3 walk had no byte to close it with, so its "\n" is exactly what the
+-- disk refuses.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local home = CeroSecOS.systemNode(state, "/home/admin")
+	local old = string.rep("x", 99) .. "y"
+	local _, used = CeroSecOS.usage(state)
+	local left = CeroSecOS.MAX_TOTAL_BYTES - used - #old
+	local n = 0
+	while left > 0 do
+		n = n + 1
+		local size = math.min(left, CeroSecOS.MAX_FILE_BYTES)
+		home.children["fill" .. n] = CeroSecOS.newFile("admin", 644, string.rep("f", size))
+		left = left - size
+	end
+	home.children.old = CeroSecOS.newFile("admin", 644, old)
+	local _, now = CeroSecOS.usage(state)
+	eq("the machine is at its quota", now, CeroSecOS.MAX_TOTAL_BYTES)
+	local path = "/home/admin/old"
+	local _, plain = CeroSecOS.writeFile(state, admin, path, old .. "\n", false, nil)
+	eq("the plain rule's bytes are refused", plain, "disk full")
+
+	local done, why, bytes, incomplete = saved(state, admin, path, CeroSecOS.bufferOf(old))
+	check("saved untouched, it is not refused (" .. tostring(why) .. ")", done ~= nil)
+	eq("it is the same bytes", data(state, path), old)
+	eq("and it says so", bytes, old)
+	eq("with the last line open", incomplete, true)
+
+	-- Edited, same length: the same rule and not a refusal.
+	local edited = "z" .. string.sub(old, 2)
+	done, why, bytes, incomplete = saved(state, admin, path, edited)
+	check("edited at the limit, it saves (" .. tostring(why) .. ")", done ~= nil)
+	eq("the edited bytes, open", data(state, path), edited)
+	eq("and says so", incomplete, true)
+
+	-- A buffer that grows by more than its newline is refused, as any write
+	-- past the quota is, and the file is left as it was.
+	done, why = saved(state, admin, path, edited .. "zz")
+	eq("a buffer that grows is still refused", why, "disk full")
+	eq("and the file is untouched", data(state, path), edited)
+end
+
+-- The same on a floppy at its 4096 bytes: the disk the file is on is the one
+-- that is full, whatever room the machine has.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy("WORK")
+	-- Formatted first, as os_test's floppies are: newfs makes the disk's root
+	-- the formatter's own, which is what lets admin mount and write it.
+	ok(state, admin, "newfs /dev/fd0", { "/dev/fd0: " .. CeroSecOS.FLOPPY_BYTES
+		.. " bytes, " .. CeroSecOS.FLOPPY_NODES .. " inodes" })
+	ok(state, admin, "mount /dev/fd0 /mnt", {})
+	local root = CeroSecOS.floppyRoot(state)
+	local old = string.rep("n", 2095) .. "m"
+	root.children.fill = CeroSecOS.newFile("admin", 644,
+		string.rep("f", CeroSecOS.FLOPPY_BYTES - #old))
+	root.children.note = CeroSecOS.newFile("admin", 644, old)
+	local _, full = CeroSecOS.subtreeUsage(root)
+	eq("the floppy is full", full, CeroSecOS.FLOPPY_BYTES)
+	local _, plain = CeroSecOS.writeFile(state, admin, "/mnt/note", old .. "\n", false, nil)
+	eq("the plain rule's bytes are refused", plain, "disk full")
+
+	local done, why, bytes, incomplete = saved(state, admin, "/mnt/note", CeroSecOS.bufferOf(old))
+	check("saved untouched on the floppy, not refused (" .. tostring(why) .. ")", done ~= nil)
+	eq("the same bytes", CeroSecOS.floppyRoot(state).children.note.data, old)
+	eq("with the last line open", incomplete, true)
+	eq("and nothing else", bytes, old)
+end
+
 print("newline_test: " .. count .. " assertions passed")
