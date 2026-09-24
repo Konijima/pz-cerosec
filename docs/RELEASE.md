@@ -196,8 +196,12 @@ file shows one byte more in `ls -l` and `df`, and `wc -l` now counts its last
 line. `SYSTEM_VERSION` moves 21 → 22: old worlds gain `/bin/expr`,
 `/bin/uname` and `/bin/rmdir` and nothing else (`CeroSecOS.BIN_SINCE`), so a
 command or file a player deleted stays deleted. A diagnostics floppy handed
-out before this release keeps its old `selftest.sh`, which now reports 4
-failures on `wc`'s new eight-column padding; give a new disk. The fixture for
+out before this release keeps its old `selftest.sh`, which now fails the 3
+checks that read a `wc -l` count (`sort-u`, `wc`, `more`) on `wc`'s new
+eight-column padding, and prints `PASS 23 FAIL        3`: it counts its own
+failures with a bare `wc -l` too. The shipped script reads each count through
+`$(( ))`, so a new disk prints `PASS 26 FAIL 0` (content_test 7c pins the
+line); give a new disk. The fixture for
 the shape this meets is `tests/fixtures/state-v2.lua`, which the capture tool
 run on the build before the bump reproduces byte for byte, so it was kept.
 Otherwise nothing changes shape. `system.auto[...].later` is a new optional list, written only when an
