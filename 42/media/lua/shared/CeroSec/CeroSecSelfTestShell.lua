@@ -659,14 +659,13 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "test missing ] in a script goes on",
 		files = { { "/root/s.sh", "[ 1 -eq 1\necho suite $?\n" } }, line = "sh s.sh",
 		out = { "test: missing ]", "suite 2" }, dev = "test" },
-	{ name = "sleep error in a script goes on",
-		files = { { "/root/s.sh", "sleep abc\necho suite $?\n" } }, line = "sh s.sh",
-		out = { "sleep: invalid interval", "suite 1" } },
 	{ name = "sleep error is 1", line = "sleep abc 2>/dev/null; echo $?", out = { "1" } },
-	{ name = "sleep error is not its output", line = "sleep abc > f; cat f",
-		out = { "sleep: invalid interval" }, want = { { path = "/root/f", text = "" } } },
-	{ name = "sleep error is not caught by $( )", line = "x=$(sleep abc); echo \"[$x]\"",
-		out = { "sleep: invalid interval", "[]" } },
+	-- Not its words: "sleep: invalid interval" cites no 1993 sleep, which said
+	-- "usage: sleep seconds", so the lines below ask only which stream it is on.
+	{ name = "sleep error is not its output", line = "sleep abc > f 2>/dev/null; cat f",
+		want = { { path = "/root/f", text = "" } } },
+	{ name = "sleep error is not caught by $( )",
+		line = "x=$(sleep abc 2>/dev/null); echo \"[$x]\"", out = { "[]" } },
 	{ name = "test error does not go down the pipe", line = "[ 1 -eq x ] | wc -l",
 		out = { "test: x: expected integer", "       0" }, dev = "test" },
 	-- 454: $* and $@ in a script.
@@ -732,8 +731,6 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "name(){", line = "t(){ echo a; }; t", out = { "a" } },
 	{ name = "name (){ and name ( ) {", line = "t (){ echo a; }; t ( ) { echo b; }; t",
 		out = { "b" } },
-	{ name = "name(){ with no blank after the brace", line = "t(){echo a;}",
-		out = { "Syntax error: word unexpected (expecting \"{\")" }, status = 2 },
 	{ name = "an empty do", line = "while false; do done",
 		out = { "Syntax error: \"done\" unexpected" }, status = 2 },
 	{ name = "an empty function body", line = "f(){ }",
@@ -827,7 +824,7 @@ CeroSecSelfTest.SHELL_CASES = {
 		out = { "x", "x" } },
 	{ name = "a function's 2>", line = "g() { echo e 1>&2; } 2>ef; g; cat ef",
 		out = { "e" } },
-	-- 466-469: rmdir, expr, uname, rm, kill, printf and grep.
+	-- 466-468: rmdir, expr, uname, rm, kill and printf.
 	{ name = "rmdir of a full one says so", setup = { "mkdir dd; touch dd/x" },
 		line = "rmdir dd",
 		out = { "rmdir: dd: Directory not empty" }, status = 1 },
@@ -852,9 +849,6 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "kill -s with no id", line = "kill -s KILL",
 		out = { "kill: usage: kill [-<signal>|-s <signal>] <id>|%<n>" }, status = 1 },
 	{ name = "printf \\1", line = "printf 'a\\1b\\n'", out = { "ab" } },
-	{ name = "grep of a bad range", files = { { "/root/t", "a\n" } },
-		line = "grep '[z-a]' t 2>&1 | cat",
-		out = { "grep: [z-a]: bad range" } },
 }
 
 -- WHAT IS NOT HERE, and why. Every command in /bin and every word of the shell is

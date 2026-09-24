@@ -4686,7 +4686,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      verdict goes to the log ». Appuyer une deuxième fois tout de suite : la
      note dit « shell half already running ». Attendre quelques secondes :
      l'onglet **Log** (niveau info) et `console.txt` montrent
-     `CeroSec shell selftest: PASS 355 FAIL 0`, suivi d'une ligne de durée.
+     `CeroSec shell selftest: PASS 352 FAIL 0`, suivi d'une ligne de durée.
      Aucune ligne `warn`. [ ]
 
 459g. **Les nombres, IFS et set.** `printf %x 1e999` répond tout de suite
