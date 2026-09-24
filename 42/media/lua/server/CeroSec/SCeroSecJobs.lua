@@ -811,15 +811,10 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 			job.waitFor = nil
 			job.state = "running"
 		end
-		-- `kill` asked; the deed is done here, where the screen can be told. Only
-		-- a signal other than the default TERM is worth a word about -- `kill %1`
-		-- still ends in the plain "killed" it always did.
+		-- `kill` asked; the deed is done here, where the screen can be told.
 		if job.killReq ~= nil and not CeroSecOS.jobIsOver(job) then
-			local reason = nil
-			if job.killSig ~= nil then reason = "signal " .. job.killSig end
-			CeroSecOS.killJob(job, reason)
+			CeroSecOS.killJob(job, nil)
 			job.killReq = nil
-			job.killSig = nil
 		end
 		-- The runaway ceiling. Continuous processor time with no wait in it:
 		-- a job asleep, waiting on an answer or held back by the screen has

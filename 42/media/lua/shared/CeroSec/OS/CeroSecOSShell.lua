@@ -291,6 +291,16 @@ local function usage(cmd)
 	return false, { cmd .. ": usage: " .. (CeroSecOS.commandUsage(cmd) or cmd) }
 end
 
+-- getopt(3)'s own refusal, 4.4BSD-Lite2's lib/libc/stdlib/getopt.c: "illegal
+-- option -- x" with the letter alone, and then the command's usage() -- the
+-- two lines a flag it does not know got in 1993. The commands that came with
+-- it say it this way; the older ones still say "unknown option", declared
+-- ("getopt" in CeroSecOS.DEVIATIONS).
+local function illegalOption(cmd, flag)
+	return false, { cmd .. ": illegal option -- " .. flag,
+		cmd .. ": usage: " .. (CeroSecOS.commandUsage(cmd) or cmd) }
+end
+
 --
 -- Standard input
 --
@@ -779,9 +789,8 @@ CeroSecOS.COMMAND_INFO = {
 	rlogin   = { desc = "log in on another machine", usage = "rlogin <host|address> [-l user]" },
 	rm       = { desc = "remove a file or a directory", usage = "rm [-rf] <path>..." },
 	-- 4.4BSD's rmdir(1): a directory that already has nothing in it, or `rm -r`
-	-- for one that has not. -p climbs and removes every parent that is empty
-	-- behind it too, rmdir.c's own rm_path (see the head of commands.rmdir).
-	rmdir    = { desc = "remove an empty directory", usage = "rmdir [-p] <dir>..." },
+	-- for one that has not. No -p: see the head of commands.rmdir.
+	rmdir    = { desc = "remove an empty directory", usage = "rmdir <dir>..." },
 	rsh      = { desc = "run one command on another machine",
 		usage = "rsh <host|address> [-l user] <command>..." },
 	ruptime  = { desc = "list the machines on the wire", usage = "ruptime" },
@@ -1104,9 +1113,20 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "kill", phrase = "kill -9 and kill -s KILL, TERM, HUP, INT or QUIT end a job",
 		why = "STOP and CONT are refused: a job cannot be paused and resumed here" },
 	-- CeroSecOS.printfText knows %s, %c, %d, %x, %o and %%, with a width, a
-	-- precision and the "-" and "0" flags, but no %f.
-	{ name = "printf", phrase = "no %f: no floating point conversion is trusted here",
-		why = "no floating point conversion is trusted here" },
+	-- precision and the "-" and "0" flags, but no %f; and its \NNN makes no
+	-- control byte (printfPass), where printf.c stored whatever byte it named.
+	{ name = "printf", phrase = "printf has no %f",
+		why = "no floating point conversion is trusted here, and no control byte" },
+	-- 4.4BSD's bin/ls/print.c printlong: "%s %*u %-*s  %-*s  " -- the mode, the
+	-- link count, owner and group. longLine has no count: sixty columns hold
+	-- the name or the count, and it keeps the name.
+	{ name = "ls", phrase = "ls -l has no link count",
+		why = "the column is the name's on a sixty-column screen" },
+	-- 4.4BSD's bin/date/date.c: its default format puts the zone, %Z,
+	-- before the year. The world's clock carries no zone, and nothing on
+	-- the machine sets TZ.
+	{ name = "date", phrase = "date prints no time zone",
+		why = "no zone was ever set on this machine" },
 }
 
 --
@@ -1345,10 +1365,11 @@ commands.hostname = function(state, session, args, env)
 	return true, {}
 end
 
--- uname [-asnrvm], 4.4BSD's own five letters and the fixed order -a prints
--- them in (sysname, nodename, release, version, machine -- uname.c calls
--- uname(2) once and picks fields off the one struct it fills). With no flag
--- at all it is -s alone, uname(1)'s own default.
+-- uname [-amnrsv], 4.4BSD-Lite2's usr.bin/uname/uname.c: getopt on
+-- "amnrsv", no operand, and the fields always printed in one order whatever
+-- order the flags came in -- sysname, nodename, release, version, machine,
+-- each read by sysctl (kern.ostype, kern.hostname, kern.osrelease,
+-- kern.version, hw.machine) and joined by one blank. No flag at all is -s.
 --
 -- sysname is CeroSecOS.issueText's own words for this machine, "CeroSec OS";
 -- nodename is CeroSecOS.hostname, the same name `hostname` prints; release is
@@ -1365,7 +1386,7 @@ commands.uname = function(state, session, args, env)
 		if string.sub(a, 1, 1) ~= "-" or a == "-" then return usage("uname") end
 		for c = 2, #a do
 			local flag = string.sub(a, c, c)
-			if UNAME_FLAGS[flag] == nil then return fail("uname", a, "unknown option") end
+			if UNAME_FLAGS[flag] == nil then return illegalOption("uname", flag) end
 			want[flag] = true
 			any = true
 		end
@@ -1454,11 +1475,11 @@ exprMul = function(t, i, hi)
 		end
 		local a, b = tonumber(v), tonumber(w)
 		if op == "*" then
-			v = tostring(a * b)
+			v = tostring(math.floor(a * b))
 		else
 			if b == 0 then return nil, "expr: division by zero", nj end
 			if op == "/" then v = tostring(exprDiv(a, b))
-			else v = tostring(a - exprDiv(a, b) * b) end
+			else v = tostring(math.floor(a - exprDiv(a, b) * b)) end
 		end
 		ni = nj
 	end
@@ -1476,7 +1497,7 @@ exprAdd = function(t, i, hi)
 			return nil, "expr: non-numeric argument", nj
 		end
 		local a, b = tonumber(v), tonumber(w)
-		if op == "+" then v = tostring(a + b) else v = tostring(a - b) end
+		if op == "+" then v = tostring(math.floor(a + b)) else v = tostring(math.floor(a - b)) end
 		ni = nj
 	end
 	return v, nil, ni
@@ -1521,8 +1542,10 @@ exprOr = function(t, i, hi)
 end
 
 commands.expr = function(state, session, args, env, stdin, sh)
-	if #args < 2 then return usage("expr") end
-	local v, err, ni = exprOr(args, 2, #args)
+	-- No operand at all is a grammar with nothing to parse: yacc's
+	-- "syntax error" and 2, the same as any other malformed line.
+	local v, err, ni = nil, "expr: syntax error", 2
+	if #args >= 2 then v, err, ni = exprOr(args, 2, #args) end
 	if err == nil and ni ~= #args + 1 then err = "expr: syntax error" end
 	if err ~= nil then
 		if type(sh) == "table" then sh.status = 2 end
@@ -2259,11 +2282,11 @@ commands.dev = function(state, session, args, env, stdin, sh)
 	return done, { line }
 end
 
--- -f, rm.c's own: it never prompts (this machine's rm never did, having no -i
--- to prompt for) and a name that was never there is not an error -- 4.4BSD's
--- rm.c checks `access` first under -f and skips the file silently when it
--- fails. A missing OPERAND is a different question, asked by getopt before -f
--- is ever read, so `rm -f` alone still gets the usage line.
+-- -f, 4.4BSD-Lite2's bin/rm/rm.c: a name that was never there is not an
+-- error (`if (rval && (!fflag || errno != ENOENT))` -- only ENOENT is
+-- forgiven, a permission refusal is still said), and it never prompts, which
+-- this rm never did, having no -i. A missing OPERAND is asked before any of
+-- it (`if (argc < 1) usage();`), so `rm -f` alone still gets the usage line.
 commands.rm = function(state, session, args, env)
 	local recursive, force, paths = false, false, {}
 	for i = 2, #args do
@@ -2297,66 +2320,39 @@ commands.rm = function(state, session, args, env)
 	return ok, out
 end
 
--- rmdir [-p] DIR... -- 4.4BSD's rmdir(1): each name has to be a directory of
--- its own, and it has to be empty, or the whole line answers about that one
--- name and moves no other node. rmdir(2)'s own two reasons are ENOTDIR and
--- ENOTEMPTY (CeroSecOSFS.lua's rename shares the second wording already), so
--- both are asked here before removeNode is ever called, rather than let a
--- non-empty directory be answered by rm's "is a directory" instead.
---
--- -p is 4.4BSD's own too (rmdir.c's rm_path): once a name comes off, its
--- parent is tried the same way, and its parent's, up to the first one that is
--- not empty or is the root -- climbing is silent about a parent that already
--- has something else in it (that is success, not a second error), but not
--- about the named directory itself.
+-- rmdir DIR... -- 4.4BSD-Lite2's bin/rmdir/rmdir.c: getopt with no letters
+-- at all, then rmdir(2) on each operand in turn, warn() for one that fails
+-- and on to the next, exit 1 if any did. There is no -p in that file (usage:
+-- "rmdir directory ..."); POSIX.2 added one and 4.4BSD had not taken it.
+-- rmdir(2)'s own two refusals, ENOTDIR and ENOTEMPTY, are asked here before
+-- removeNode is called, rather than let a directory with something in it be
+-- answered with rm's "is a directory" instead.
 commands.rmdir = function(state, session, args, env)
-	local climb, dirs = false, {}
+	local dirs = {}
 	for i = 2, #args do
 		local a = args[i]
-		if a == "-p" then
-			climb = true
-		elseif string.sub(a, 1, 1) == "-" and a ~= "-" then
-			return fail("rmdir", a, "unknown option")
-		else
-			dirs[#dirs + 1] = a
+		if string.sub(a, 1, 1) == "-" and a ~= "-" then
+			return illegalOption("rmdir", string.sub(a, 2, 2))
 		end
+		dirs[#dirs + 1] = a
 	end
 	if #dirs == 0 then return usage("rmdir") end
 	local out, ok = {}, true
 	for i = 1, #dirs do
 		local path = dirs[i]
 		local node, reason = CeroSecOS.getNode(state, session, path, true)
-		if node == nil then
-			ok = false
-			out[#out + 1] = "rmdir: " .. path .. ": " .. reason
-		elseif node.type ~= "dir" then
-			ok = false
-			out[#out + 1] = "rmdir: " .. path .. ": not a directory"
-		elseif CeroSecOS.countEntries(node) > 0 then
-			ok = false
-			out[#out + 1] = "rmdir: " .. path .. ": directory not empty"
+		local why = nil
+		if node == nil then why = reason
+		elseif node.type ~= "dir" then why = "not a directory"
+		elseif CeroSecOS.countEntries(node) > 0 then why = "directory not empty"
 		else
 			local done, rreason =
 				CeroSecOS.removeNode(state, session, path, true, CeroSecOS.clockOf(env))
-			if done == nil then
-				ok = false
-				out[#out + 1] = "rmdir: " .. path .. ": " .. rreason
-			elseif climb then
-				local _, parts = CeroSecOS.resolve(session, path)
-				while #parts > 1 do
-					parts[#parts] = nil
-					local ppath = "/" .. table.concat(parts, "/")
-					local pnode = CeroSecOS.getNode(state, session, ppath, true)
-					if pnode == nil or pnode.type ~= "dir"
-							or CeroSecOS.countEntries(pnode) > 0 then
-						break
-					end
-					if CeroSecOS.removeNode(state, session, ppath, true,
-							CeroSecOS.clockOf(env)) == nil then
-						break
-					end
-				end
-			end
+			if done == nil then why = rreason end
+		end
+		if why ~= nil then
+			ok = false
+			out[#out + 1] = "rmdir: " .. path .. ": " .. why
 		end
 	end
 	return ok, out
@@ -3407,11 +3403,11 @@ end
 -- rule and not a choice. No flag at all is all three, which is the one place the
 -- default is written down.
 --
--- A number is 6 columns and a space, so three of them is 21 of the screen's 60
--- and the name has the 39 left; ask for one number and the name has 53. The row
--- is the same width whatever was asked for, which is what keeps a column of them
--- a column.
-local W_NUM, W_ROW = 6, 60
+-- Each number is " %7ld", 4.4BSD-Lite2's usr.bin/wc/wc.c: a blank and seven
+-- columns, the name after one more blank (" %s\n"), and a line counted off a
+-- pipe is the numbers and nothing after them. Three numbers are 24 of the
+-- screen's 60 and the name has the 35 left after its blank.
+local W_NUM, W_ROW = 7, 60
 local WC_ORDER = { "l", "w", "c" }
 
 -- The numbers on their own, which is the whole line when what was counted came
@@ -3423,8 +3419,7 @@ local function wcCounts(want, counts)
 	for i = 1, #WC_ORDER do
 		local key = WC_ORDER[i]
 		if want[key] then
-			if shown > 0 then out = out .. " " end
-			out = out .. CeroSecOS.padLeft(tostring(counts[key] or 0), W_NUM)
+			out = out .. " " .. CeroSecOS.padLeft(tostring(counts[key] or 0), W_NUM)
 			shown = shown + 1
 		end
 	end
@@ -3433,7 +3428,7 @@ end
 
 local function wcLine(want, counts, name)
 	local out, shown = wcCounts(want, counts)
-	return out .. " " .. CeroSecOS.truncate(name, W_ROW - 7 * shown)
+	return out .. " " .. CeroSecOS.truncate(name, W_ROW - (W_NUM + 1) * shown - 1)
 end
 
 -- A word is a run of anything that is not a blank. Newlines count as blanks:
@@ -3609,7 +3604,8 @@ end
 -- the width uniq has counted in for as long as it has had a -c.
 local function uniqLine(count, line, counting)
 	if not counting then return line end
-	return CeroSecOS.padLeft(tostring(count), 7) .. " " .. line
+	-- 4.4BSD-Lite2's usr.bin/uniq/uniq.c, show(): "%4d %s".
+	return CeroSecOS.padLeft(tostring(count), 4) .. " " .. line
 end
 
 -- One line into uniq's running state, and whatever that finishes. ADJACENT
@@ -6283,13 +6279,10 @@ commands.useradd = function(state, session, args, env)
 		if gOk ~= nil then return gOk, gLines end
 	end
 
-	-- The password is empty, and an empty password is a way in. Said out loud
-	-- on the line after, because a machine that quietly ships an open account
-	-- is a machine nobody remembers to close.
-	return true, {
-		"useradd: " .. name .. ": created",
-		"useradd: set a password with passwd " .. name,
-	}
+	-- Nothing on the screen: SVR4's useradd(1M) printed no line for an
+	-- account it made, and neither does this. The open, empty password is
+	-- the manual's to warn about (Volume 2, useradd).
+	return true, {}
 end
 
 commands.userdel = function(state, session, args, env)
@@ -6351,7 +6344,8 @@ commands.userdel = function(state, session, args, env)
 	local swept, greason = CeroSecOS.removeGroupMember(state, name, now)
 	if swept == nil then return fail("userdel", CeroSecOS.GROUP_PATH, greason) end
 
-	return true, { "userdel: " .. name .. ": removed" }
+	-- And nothing said for it, as SVR4's userdel(1M) said nothing.
+	return true, {}
 end
 
 -- usermod -G crew,wheel bob. SVR4's -G, which SETS the list: bob is in crew and
@@ -6667,9 +6661,11 @@ end
 --
 -- which: where a name would be found, and nothing else.
 --
--- It says nothing when it has nothing to say: a name no PATH entry answers to
--- prints no line at all and comes back unsuccessful, which is what makes
--- `which thing > /dev/null` the test it has been used as since csh shipped it.
+-- A name no PATH entry answers to is the csh script's own line, 4.3BSD's
+-- ucb/which: `echo no $arg in $path`, where csh's $path is the directories
+-- with blanks between -- so it is output, not an error, and `which thing >
+-- /dev/null` still says nothing on the screen. The status is 1 all the same,
+-- so the test it has been used as keeps working.
 --
 -- It answers about FILES, because that is all a PATH holds: `which cd` finds
 -- nothing, exactly as it finds nothing on a real machine, and `type` is the word
@@ -6677,7 +6673,12 @@ end
 commands.which = function(state, session, args, env, stdin, sh)
 	if #args ~= 2 then return usage("which") end
 	local found = CeroSecOS.lookupPath(state, session, args[2], shPath(sh))
-	if found == nil then return false, {} end
+	if found == nil then
+		if type(sh) == "table" then sh.outOnFail = true end
+		-- A plain ":" to find, never a pattern built from what was typed.
+		local dirs = string.gsub(shPath(sh), ":", " ")
+		return false, { "no " .. args[2] .. " in " .. dirs }
+	end
 	return true, { found }
 end
 

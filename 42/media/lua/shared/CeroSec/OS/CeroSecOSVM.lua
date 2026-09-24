@@ -1313,11 +1313,10 @@ local testExpr
 local function testUnary(state, session, op, arg)
 	if op == "-z" then return #arg == 0 end
 	if op == "-n" then return #arg > 0 end
-	-- -h and -L are the same test under two names -- 4.3BSD had -h, and POSIX.2
-	-- added -L as the letter that matches -f/-d/-p's own scheme; test(1) has
-	-- carried both ever since. The one test here that must NOT follow the link,
-	-- so it asks getNode with noFollow rather than the node every other letter
-	-- below shares.
+	-- -h is 4.4BSD's (bin/test/operators.c lists it; test.c answers it with
+	-- lstat, not stat) and -L is the same question under POSIX.2's letter.
+	-- The one test here that must NOT follow the link, so it asks getNode with
+	-- noFollow rather than the node every other letter below shares.
 	if op == "-h" or op == "-L" then
 		local lnode = CeroSecOS.getNode(state, session, arg, true)
 		return lnode ~= nil and lnode.type == "link"
@@ -1326,8 +1325,14 @@ local function testUnary(state, session, op, arg)
 	if op == "-e" then return node ~= nil end
 	if op == "-f" then return node ~= nil and node.type == "file" end
 	if op == "-d" then return node ~= nil and node.type == "dir" end
-	-- -s: exists and has a size greater than zero (test(1)'s own wording).
-	if op == "-s" then return node ~= nil and node.type == "file" and #(node.data or "") > 0 end
+	-- -s: there, and st_size greater than zero (test.c's ISSIZE). A directory
+	-- on a 4.4BSD disk is never size zero -- it holds . and .. at least, a
+	-- block of them -- so one answers true whatever is in it.
+	if op == "-s" then
+		if node == nil then return false end
+		if node.type == "dir" then return true end
+		return #(node.data or "") > 0
+	end
 	if node == nil then return false end
 	if op == "-r" then return CeroSecOS.can(state, session, node, "r") end
 	if op == "-w" then return CeroSecOS.can(state, session, node, "w") end
@@ -1506,7 +1511,16 @@ local function printfPass(format, args, from)
 					j = j + 1
 					n = n + 1
 				end
-				out = out .. string.char(val % 256)
+				-- The byte, unless it is a control byte: nothing typed at
+				-- this machine may put one on a screen or a disk (the line
+				-- itself is refused with one in it, and writeFile refuses
+				-- them too -- docs/SECURITY.md), so \NNN naming anything
+				-- below a blank other than a tab or a newline, or DEL,
+				-- makes nothing. A declared deviation ("printf").
+				val = val % 256
+				if val == 9 or val == 10 or (val >= 32 and val ~= 127) then
+					out = out .. string.char(val)
+				end
 				i = j
 			else out = out .. "\\" .. nx; i = i + 2 end
 		elseif c == "%" then
@@ -4677,81 +4691,107 @@ end
 -- what is running and to watch it. What he may not do is stop another account's
 -- work, which is Unix's rule and not this machine's.
 --
--- THE SIGNAL. kill(1) took `-<number>` and `-s <name>`, both of 4.4BSD's own
--- kill.c, and the numbers below are 4.4BSD's <sys/signal.h> table -- not this
--- engine's invention. There is no process under a job, only a script the
--- scheduler steps, so the only thing a signal can do here is end it, which is
--- the default ACTION signal(3) gives HUP, INT, QUIT, KILL and TERM alike. Those
--- five are honoured; a real signal this machine cannot act on -- STOP and TSTP
--- suspend a job this engine never learned to hold half-run, CONT resumes one
--- that was never stopped, CHLD and the rest are reported by a kernel this
--- machine does not have underneath it -- is refused by name, in
--- CeroSecOS.DEVIATIONS, rather than faking a pause or a resume nothing behind
--- it could honour. A number or name outside the whole table is what kill(1)
--- itself calls "unknown signal".
-local KILL_SIGNALS = {
-	HUP = 1, INT = 2, QUIT = 3, ILL = 4, TRAP = 5, ABRT = 6, EMT = 7, FPE = 8,
-	KILL = 9, BUS = 10, SEGV = 11, SYS = 12, PIPE = 13, ALRM = 14, TERM = 15,
-	URG = 16, STOP = 17, TSTP = 18, CONT = 19, CHLD = 20, TTIN = 21, TTOU = 22,
-	IO = 23, XCPU = 24, XFSZ = 25, VTALRM = 26, PROF = 27, WINCH = 28,
-	INFO = 29, USR1 = 30, USR2 = 31,
+-- THE SIGNAL. 4.4BSD-Lite2's bin/kill/kill.c: `-s name`, `-name` and
+-- `-number`, and `-l` to list them. A name is matched without regard to case
+-- and with or without "sig" in front (signame_to_signum: strncasecmp(sig,
+-- "sig", 3), then strcasecmp against sys_signame), and the names are
+-- lib/libc/gen/siglist.c's sys_signame, lower case, in number order -- so
+-- this table is that one and not this engine's invention.
+--
+-- There is no process under a job, only a script the scheduler steps, so the
+-- one thing a signal can do here is end it, which is the default action
+-- sigaction(2)'s table gives HUP, INT, QUIT, KILL and TERM alike. Those five
+-- are honoured. A signal that would stop, resume or merely be reported --
+-- STOP, TSTP and CONT among them -- is refused by name, a declared deviation
+-- (CeroSecOS.DEVIATIONS, "kill"), rather than faking a pause nothing behind
+-- it could hold. Signal 0 is kill(2)'s own "is it there": the job is looked
+-- up and left alone.
+local KILL_NAMES = {
+	"hup", "int", "quit", "ill", "trap", "abrt", "emt", "fpe",
+	"kill", "bus", "segv", "sys", "pipe", "alrm", "term", "urg",
+	"stop", "tstp", "cont", "chld", "ttin", "ttou", "io", "xcpu",
+	"xfsz", "vtalrm", "prof", "winch", "info", "usr1", "usr2",
 }
--- The default action of these five, and only these five, is to end the job
--- outright (signal(3)'s table again): the others either stop it, resume it or
--- are reported to a parent, none of which this engine has a process under a
--- job to do.
 local KILL_HONOURED = { [1] = true, [2] = true, [3] = true, [9] = true, [15] = true }
-local KILL_NAME_OF = {}
-for name, num in pairs(KILL_SIGNALS) do KILL_NAME_OF[num] = name end
 
--- Reads the signal off the front of the line, if there is one. Answers the
--- number, the text kill(1) would echo back in a refusal, and the words left
--- after it -- or nil for a line that named no signal at all, which is TERM,
--- kill(1)'s own default.
-local function killSignalOf(args)
-	local first = args[2]
-	if first == nil then return nil, nil, 2 end
-	if first == "-s" then
-		return args[3], args[3], 4
+-- printsignals(): NSIG is 32, and kill.c breaks the line after NSIG / 2 and
+-- after NSIG - 1, so the list is always these two lines.
+local function killSignalLines()
+	local a, b = {}, {}
+	for n = 1, #KILL_NAMES do
+		if n <= 16 then a[#a + 1] = KILL_NAMES[n] else b[#b + 1] = KILL_NAMES[n] end
 	end
-	if string.sub(first, 1, 1) == "-" then
-		local rest = string.sub(first, 2)
-		if string.match(rest, "^%d+$") ~= nil then
-			return tonumber(rest), rest, 3
-		end
-		if string.match(rest, "^%u+$") ~= nil then
-			return rest, rest, 3
-		end
+	return table.concat(a, " "), table.concat(b, " ")
+end
+
+-- nosig(): warnx's line, then the list, both on the error side.
+local function killNoSig(name)
+	local a, b = killSignalLines()
+	return false, { "kill: unknown signal " .. name .. "; valid signals:", a, b }
+end
+
+-- The number for a name, or nil: string.lower on both sides is strcasecmp,
+-- and a plain comparison, never a pattern, is what reads the typed word.
+local function killNumberOf(name)
+	local low = string.lower(name)
+	if string.sub(low, 1, 3) == "sig" then low = string.sub(low, 4) end
+	for n = 1, #KILL_NAMES do
+		if KILL_NAMES[n] == low then return n end
 	end
-	return nil, nil, 2
+	return nil
 end
 
 commands.kill = function(state, session, args, env)
-	local sig, sigText, wantLen = killSignalOf(args)
-	if #args ~= wantLen then return false, { "kill: usage: " .. CeroSecOS.commandUsage("kill") } end
-	local signum = 15
-	if sig ~= nil then
-		if type(sig) == "string" then
-			signum = KILL_SIGNALS[sig]
-		elseif KILL_NAME_OF[sig] ~= nil then
-			signum = sig
+	local usageLines = { "kill: usage: " .. CeroSecOS.commandUsage("kill") }
+	if args[2] == nil then return false, usageLines end
+	local signum, at = 15, 2
+	local first = args[2]
+	if first == "-l" then
+		-- kill -l: the list, on the output side (printsignals(stdout)).
+		if #args > 2 then return false, usageLines end
+		local a, b = killSignalLines()
+		return true, { a, b }
+	elseif first == "-s" then
+		if args[3] == nil then
+			return false, { "kill: option requires an argument -- s", usageLines[1] }
+		end
+		if args[3] == "0" then signum = 0 else
+			signum = killNumberOf(args[3])
+			if signum == nil then return killNoSig(args[3]) end
+		end
+		at = 4
+	elseif string.sub(first, 1, 1) == "-" then
+		local rest = string.sub(first, 2)
+		local c = string.sub(rest, 1, 1)
+		if string.match(c, "^%a$") ~= nil then
+			signum = killNumberOf(rest)
+			if signum == nil then return killNoSig(rest) end
+		elseif string.match(c, "^%d$") ~= nil then
+			-- strtol and `*ep`: every character a digit, or the number is
+			-- illegal outright; then 1..NSIG-1, or unknown.
+			if string.match(rest, "^%d+$") == nil then
+				return false, { "kill: illegal signal number: " .. rest }
+			end
+			signum = tonumber(rest)
+			if signum < 1 or signum > #KILL_NAMES then return killNoSig(rest) end
 		else
-			signum = nil
+			return killNoSig(rest)
 		end
-		if signum == nil then return false, { "kill: " .. tostring(sigText) .. ": unknown signal" } end
-		if not KILL_HONOURED[signum] then
-			return false, { "kill: " .. (KILL_NAME_OF[signum] or tostring(signum)) .. ": not honoured" }
-		end
+		at = 3
+	end
+	if #args ~= at then return false, usageLines end
+	if signum ~= 0 and not KILL_HONOURED[signum] then
+		return false, { "kill: " .. KILL_NAMES[signum] .. ": not honoured" }
 	end
 	local jobs = CeroSecOS.jobsOf(env)
-	local want = args[wantLen]
+	local want = args[at]
 	local bySlot = false
 	if string.sub(want, 1, 1) == "%" then
 		want = string.sub(want, 2)
 		bySlot = true
 	end
 	local n = tonumber(want)
-	if n == nil then return false, { "kill: " .. args[wantLen] .. ": no such job" } end
+	if n == nil then return false, { "kill: " .. args[at] .. ": no such job" } end
 	for i = 1, #jobs do
 		local job = jobs[i]
 		local matches = false
@@ -4760,17 +4800,15 @@ commands.kill = function(state, session, args, env)
 			local me = CeroSecOS.userOf(session)
 			local owner = (job.session or {}).user
 			if me ~= "root" and owner ~= nil and owner ~= me then
-				return false, { "kill: " .. args[wantLen] .. ": Operation not permitted" }
+				return false, { "kill: " .. args[at] .. ": Operation not permitted" }
 			end
-			job.killReq = "user"
-			-- Only a signal other than the default is worth the scheduler saying
-			-- anything about: `kill %1` still ends in the plain "killed" it always
-			-- did (tests/os_test.lua pins job.killReq == "user" for that line).
-			if signum ~= 15 then job.killSig = signum end
+			-- Whichever of the five it was, the job ends the one way this
+			-- scheduler ends one, and says "killed" as it always has.
+			if signum ~= 0 then job.killReq = "user" end
 			return true, {}
 		end
 	end
-	return false, { "kill: " .. args[wantLen] .. ": no such job" }
+	return false, { "kill: " .. args[at] .. ": no such job" }
 end
 
 --

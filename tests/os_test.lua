@@ -1043,7 +1043,7 @@ do
 	ok(state, admin, "cat was.txt", {})
 	ok(state, admin, "echo hi > hi.txt 2>&1", {})
 	ok(state, admin, "cat hi.txt", { "hi" })
-	ok(state, admin, "cat nosuch 2>&1 | wc -l", { "     1" })
+	ok(state, admin, "cat nosuch 2>&1 | wc -l", { "       1" })
 	ok(state, admin, "echo a2>a2.txt", {})
 	ok(state, admin, "cat a2.txt", { "a2" })
 	expect(state, admin, "cd /nope 2>/dev/null", false, {})
@@ -1080,7 +1080,7 @@ do
 	ok(state, admin, 'x=$(grep -c zzz keep.txt); echo "[$x]"', { "[0]" })
 	expect(state, admin, "grep -c zzz keep.txt > c.txt", false, {})
 	ok(state, admin, "cat c.txt", { "0" })
-	ok(state, admin, "grep -c zzz keep.txt | wc -l", { "     1" })
+	ok(state, admin, "grep -c zzz keep.txt | wc -l", { "       1" })
 	-- The dot's own refusals are errors too.
 	expect(state, admin, ". nosuch.sh 2>/dev/null", false, {})
 	local _, dotLines = exec(state, admin, 'x=$(. nosuch.sh); echo "[$x]"')
@@ -1685,7 +1685,11 @@ do
 	-- single digit 1, which names the byte 0x01 -- not the two characters
 	-- backslash and one that reached it. (printf.c's chkfields/escape table,
 	-- shared with the C escape K&R A2.5.2 names it after.)
-	ok(state, admin, 'printf "\\1"', { string.char(1) })
+	-- printf's own \NNN names a byte, but never a control byte: \1 makes
+	-- nothing at all, so no escape can manufacture one (a declared
+	-- deviation, "printf"). \101 is an A.
+	ok(state, admin, 'printf "\\1"', {})
+	ok(state, admin, 'printf "\\101"', { "A" })
 
 	-- Newline and tab still go in, through printf, and come back out.
 	ok(state, admin, 'printf "a\\nb\\tc\\n" > good.txt', {})
@@ -3851,35 +3855,35 @@ do
 	badAt(state, admin, "tail /etc", "tail: /etc: is a directory")
 
 	-- wc: lines, words, bytes, name, and a total when there is more than one.
-	okAt(state, admin, "wc dots.txt", { "     2      2      7 dots.txt" })
-	okAt(state, admin, "wc empty.txt", { "     0      0      0 empty.txt" })
+	okAt(state, admin, "wc dots.txt", { "       2       2       7 dots.txt" })
+	okAt(state, admin, "wc empty.txt", { "       0       0       0 empty.txt" })
 	okAt(state, admin, "wc dots.txt empty.txt", {
-		"     2      2      7 dots.txt",
-		"     0      0      0 empty.txt",
-		"     2      2      7 total",
+		"       2       2       7 dots.txt",
+		"       0       0       0 empty.txt",
+		"       2       2       7 total",
 	})
 	local counted = okAt(state, admin, "wc a.txt", nil)
-	eq("wc counts a.txt", counted[1], "    12     14     " .. #text .. " a.txt")
+	eq("wc counts a.txt", counted[1], "      12      14      " .. #text .. " a.txt")
 
 	-- -l, -w and -c: only what was asked for, and always in POSIX's order
 	-- whatever order the flags were written in. The row is the same width, so
 	-- the name has 7 more columns for every number left out.
-	okAt(state, admin, "wc -l a.txt", { "    12 a.txt" })
-	okAt(state, admin, "wc -w a.txt", { "    14 a.txt" })
-	okAt(state, admin, "wc -c dots.txt", { "     7 dots.txt" })
-	okAt(state, admin, "wc -lc dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -cl dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -c -l dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -wc dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -lw dots.txt", { "     2      2 dots.txt" })
+	okAt(state, admin, "wc -l a.txt", { "      12 a.txt" })
+	okAt(state, admin, "wc -w a.txt", { "      14 a.txt" })
+	okAt(state, admin, "wc -c dots.txt", { "       7 dots.txt" })
+	okAt(state, admin, "wc -lc dots.txt", { "       2       7 dots.txt" })
+	okAt(state, admin, "wc -cl dots.txt", { "       2       7 dots.txt" })
+	okAt(state, admin, "wc -c -l dots.txt", { "       2       7 dots.txt" })
+	okAt(state, admin, "wc -wc dots.txt", { "       2       7 dots.txt" })
+	okAt(state, admin, "wc -lw dots.txt", { "       2       2 dots.txt" })
 	-- All three, asked for, is what all three are by default.
-	okAt(state, admin, "wc -lwc dots.txt", { "     2      2      7 dots.txt" })
-	okAt(state, admin, "wc -ll dots.txt", { "     2 dots.txt" })
+	okAt(state, admin, "wc -lwc dots.txt", { "       2       2       7 dots.txt" })
+	okAt(state, admin, "wc -ll dots.txt", { "       2 dots.txt" })
 	-- The total row carries the same columns as the rows above it.
 	okAt(state, admin, "wc -l dots.txt empty.txt",
-		{ "     2 dots.txt", "     0 empty.txt", "     2 total" })
+		{ "       2 dots.txt", "       0 empty.txt", "       2 total" })
 	okAt(state, admin, "wc -c dots.txt empty.txt",
-		{ "     7 dots.txt", "     0 empty.txt", "     7 total" })
+		{ "       7 dots.txt", "       0 empty.txt", "       7 total" })
 
 	badAt(state, admin, "wc", "wc: usage: wc [-clw] [file]...")
 	badAt(state, admin, "wc -q dots.txt", "wc: -q: unknown option")
@@ -4063,10 +4067,7 @@ do
 	badAt(state, rootSession, "useradd admin", "useradd: admin: already exists")
 	badAt(state, rootSession, "useradd root", "useradd: root: already exists")
 
-	okAt(state, rootSession, "useradd bob", {
-		"useradd: bob: created",
-		"useradd: set a password with passwd bob",
-	})
+	okAt(state, rootSession, "useradd bob", {})
 
 	local bob = CeroSecOS.getUser(state, "bob")
 	check("the account is in the file", bob ~= nil)
@@ -4099,10 +4100,7 @@ do
 	-- -G wheel is what `adduser -a` was: the membership 4.4BSD gates su on, the
 	-- group the shipped /etc/sudoers grants, and the flag on the /etc/passwd line
 	-- written from it.
-	okAt(state, rootSession, "useradd -G wheel kate", {
-		"useradd: kate: created",
-		"useradd: set a password with passwd kate",
-	})
+	okAt(state, rootSession, "useradd -G wheel kate", {})
 	eq("the flag is on the line", CeroSecOS.getUser(state, "kate").admin, true)
 	check("and she really is in wheel",
 		CeroSecOS.inGroup(state, "kate", CeroSecOS.WHEEL_GROUP))
@@ -4135,10 +4133,7 @@ do
 	okAt(state, rootSession, "chmod 700 /home/carl", {})
 	okAt(state, rootSession, "echo \"keep me\" > /home/carl/notes.txt", {})
 
-	okAt(state, rootSession, "useradd carl", {
-		"useradd: carl: created",
-		"useradd: set a password with passwd carl",
-	})
+	okAt(state, rootSession, "useradd carl", {})
 	local home = CeroSecOS.systemNode(state, "/home/carl")
 	eq("it changed hands", home.owner, "carl")
 	eq("and kept the mode it had", home.mode, 700)
@@ -4170,7 +4165,8 @@ do
 	eq("sudo asks for admin's password", asked.data.text, "[sudo] password for admin: ")
 	local made = answer(state, admin, asked.data.cont, "")
 	eq("it succeeds", made.ok, true)
-	eq("and says so", made.lines[1], "useradd: bob: created")
+	-- and says nothing, as SVR4's useradd(1M) said nothing
+	eq("and says nothing", #made.lines, 0)
 	eq("the account is there", CeroSecOS.getUser(state, "bob").admin, true)
 	eq("the home is his", CeroSecOS.systemNode(state, "/home/bob").owner, "bob")
 	eq("and the console is still admin's", admin.user, "admin")
@@ -4205,7 +4201,7 @@ do
 
 	-- Without -r the home stays exactly where it is, owned by a name the
 	-- machine no longer knows.
-	okAt(state, rootSession, "userdel bob", { "userdel: bob: removed" })
+	okAt(state, rootSession, "userdel bob", {})
 	eq("the account is gone", CeroSecOS.getUser(state, "bob"), nil)
 	check("and cannot log in", CeroSecOS.login(state, "bob", "") == nil)
 	local home = CeroSecOS.systemNode(state, "/home/bob")
@@ -4216,7 +4212,7 @@ do
 
 	-- With -r it goes, and everything under it.
 	okAt(state, rootSession, "echo hello > /home/carl/notes.txt", {})
-	okAt(state, rootSession, "userdel -r carl", { "userdel: carl: removed" })
+	okAt(state, rootSession, "userdel -r carl", {})
 	eq("the account is gone", CeroSecOS.getUser(state, "carl"), nil)
 	eq("and so is the home", CeroSecOS.systemNode(state, "/home/carl"), nil)
 	eq("the machine still validates", CeroSecOS.validate(state), true)
@@ -4231,7 +4227,7 @@ do
 		"# who may\nadmin\nbob NOPASSWD")
 	eq("bob may sudo", CeroSecOS.sudoer(state, "bob").nopasswd, true)
 
-	okAt(state, rootSession, "userdel bob", { "userdel: bob: removed" })
+	okAt(state, rootSession, "userdel bob", {})
 	eq("and now he is nobody", CeroSecOS.sudoer(state, "bob"), nil)
 	eq("admin kept his line", CeroSecOS.sudoer(state, "admin").name, "admin")
 	eq("and the comment is still in the file",
@@ -4240,7 +4236,7 @@ do
 	-- A machine with no /etc/sudoers at all has nothing to take out of it.
 	okAt(state, rootSession, "useradd dan", nil)
 	okAt(state, rootSession, "rm /etc/sudoers", {})
-	okAt(state, rootSession, "userdel dan", { "userdel: dan: removed" })
+	okAt(state, rootSession, "userdel dan", {})
 end
 
 -- `sudo userdel` on the account at the glass: the borrowed session knows who
@@ -4253,7 +4249,7 @@ do
 	check("and he is still there", CeroSecOS.getUser(state, "admin") ~= nil)
 	-- Somebody else, though, goes.
 	okAt(state, admin, "sudo useradd bob", nil)
-	okAt(state, admin, "sudo userdel bob", { "userdel: bob: removed" })
+	okAt(state, admin, "sudo userdel bob", {})
 end
 
 -- id.
@@ -6971,7 +6967,7 @@ do
 	expect(state, admin, "sleep abc 2>se.txt", false, {})
 	eq("and it is in the file 2> named", data("/home/admin/se.txt"), "sleep: invalid interval")
 	ok(state, admin, "[ 1 -eq x ] 2>/dev/null; echo $?", { "2" })
-	ok(state, admin, "[ 1 -eq x ] | wc -l", { "test: integer expected", "     0" })
+	ok(state, admin, "[ 1 -eq x ] | wc -l", { "test: integer expected", "       0" })
 	ok(state, admin, "test 1 -eq x > t.txt; echo $?", { "test: integer expected", "2" })
 	eq("test's complaint is not in the file", data("/home/admin/t.txt"), "")
 	ok(state, admin, 'x=$([ 1 -eq 1); echo "[$x]"', { "test: missing ']'", "[]" })
@@ -7011,9 +7007,9 @@ do
 	-- A redirect is closed when its command is over, and the next command
 	-- reads it whole -- the same pass or not.
 	ok(state, admin, "h() { i=0; while [ $i -lt 100 ]; do echo o; i=$((i+1)); done; }", {})
-	ok(state, admin, "h > o.txt; wc -l o.txt", { "   100 o.txt" })
+	ok(state, admin, "h > o.txt; wc -l o.txt", { "     100 o.txt" })
 	ok(state, admin, "f() { i=0; while [ $i -lt 100 ]; do cat nosuch; i=$((i+1)); done; }", {})
-	ok(state, admin, "f 2> e.txt; wc -l e.txt", { "   100 e.txt" })
+	ok(state, admin, "f 2> e.txt; wc -l e.txt", { "     100 e.txt" })
 
 	-- cat ends its options at "--", as getopt(3) ends them for cat.c.
 	-- (A name may not begin with "-" on this disk, so the flag after it is
@@ -8863,12 +8859,12 @@ do
 	ok(state, admin, "cat fruit | grep -n pear", { "1:pear", "3:pear" })
 	ok(state, admin, "cat fruit | head -n 2", { "pear", "apple" })
 	ok(state, admin, "cat fruit | tail -n 1", { "fig" })
-	ok(state, admin, "cat fruit | wc", { "     4      4     19" })
+	ok(state, admin, "cat fruit | wc", { "       4       4      19" })
 	-- The flags work on a pipe exactly as they work on a file: there is no name
 	-- to put after the numbers, and wc has never invented one.
-	ok(state, admin, "cat fruit | wc -l", { "     4" })
-	ok(state, admin, "cat fruit | wc -c", { "    19" })
-	ok(state, admin, "cat fruit | wc -lc", { "     4     19" })
+	ok(state, admin, "cat fruit | wc -l", { "       4" })
+	ok(state, admin, "cat fruit | wc -c", { "      19" })
+	ok(state, admin, "cat fruit | wc -lc", { "       4      19" })
 	ok(state, admin, "cat fruit | grep -v pear", { "apple", "fig" })
 	ok(state, admin, "cat fruit | grep -c pear", { "2" })
 	ok(state, admin, "cat fruit | grep -cv pear", { "2" })
@@ -8879,7 +8875,7 @@ do
 	-- Three stages, and the middle one really is in the middle.
 	ok(state, admin, "cat fruit | sort | uniq", { "apple", "fig", "pear" })
 	ok(state, admin, "cat fruit | sort | uniq -c",
-		{ "      1 apple", "      1 fig", "      2 pear" })
+		{ "   1 apple", "   1 fig", "   2 pear" })
 	ok(state, admin, "cat fruit | sort | head -n 1", { "apple" })
 
 	-- -u: the repeats dropped, which on a sorted list is what uniq does after it
@@ -8887,7 +8883,7 @@ do
 	ok(state, admin, "sort -u fruit", { "apple", "fig", "pear" })
 	ok(state, admin, "cat fruit | sort -u", { "apple", "fig", "pear" })
 	ok(state, admin, "sort -ur fruit", { "pear", "fig", "apple" })
-	ok(state, admin, "sort -u fruit | wc -l", { "     3" })
+	ok(state, admin, "sort -u fruit | wc -l", { "       3" })
 	-- What counts as a repeat is a line the comparison cannot tell from the one
 	-- before it, and that comparison ends in the bytes: two spellings of the same
 	-- number are two lines.
@@ -8907,7 +8903,7 @@ do
 	-- uniq drops the line it has just seen and nothing else: it does not sort.
 	ok(state, admin, "uniq fruit", { "pear", "apple", "pear", "fig" })
 	ok(state, admin, "uniq -c fruit",
-		{ "      1 pear", "      1 apple", "      1 pear", "      1 fig" })
+		{ "   1 pear", "   1 apple", "   1 pear", "   1 fig" })
 	bad(state, admin, "sort -q nums", "sort: -q: unknown option")
 	bad(state, admin, "uniq -q fruit", "uniq: -q: unknown option")
 	bad(state, admin, "sort nope", "sort: nope: no such file")
@@ -8921,12 +8917,12 @@ do
 	-- The status of a pipeline is the LAST stage's.
 	ok(state, admin, "cat fruit | grep pear && echo yes", { "pear", "pear", "yes" })
 	ok(state, admin, "cat fruit | grep plum || echo no", { "no" })
-	ok(state, admin, "cat nope | wc", { "cat: nope: no such file", "     0      0      0" })
+	ok(state, admin, "cat nope | wc", { "cat: nope: no such file", "       0       0       0" })
 	ok(state, admin, "echo $?", { "0" })
 	-- A stage's REFUSAL is not output: it goes to the screen and not down the
 	-- pipe, exactly as it stays on the screen when output is redirected.
 	ok(state, admin, "ls /nope | wc",
-		{ "ls: /nope: no such file", "     0      0      0" })
+		{ "ls: /nope: no such file", "       0       0       0" })
 
 	-- Every stage is a subshell. `read` in one really does read the pipe -- it
 	-- answers 0, which is a line read and not end of file -- and the variable it
@@ -9070,7 +9066,7 @@ do
 		"i=0\nwhile [ $i -lt 200 ]; do echo line$i; i=$((i+1)); done | wc\n",
 		nil, nil, { passes = 2000 })
 	eq("wc counts a flood it will never hold", counted.out[#counted.out],
-		"   200    200   1489")
+		"     200     200    1489")
 end
 
 --
@@ -11070,12 +11066,11 @@ do
 	-- /bin is off the PATH, so the walk cannot even find which: the refusal is
 	-- about the command that was typed, as every refusal here is.
 	bad(state, admin, "which ls", "which: command not found")
-	-- Back on a PATH that holds it, `which` says nothing at all about a name it
-	-- cannot answer for and comes back unsuccessful -- which is what
-	-- `which x > /dev/null` has always been used as.
+	-- Back on a PATH that holds it, `which` answers a name it cannot find
+	-- with the csh script's own line, on the output side, and comes back
+	-- unsuccessful -- so `which x > /dev/null` is still the test it was.
 	ok(state, admin, "PATH=/bin", {})
-	local silent = expect(state, admin, "which nosuch", false, {})
-	eq("which prints nothing when it finds nothing", #silent, 0)
+	expect(state, admin, "which nosuch", false, { "no nosuch in /bin" })
 	ok(state, admin, "PATH=/home/admin/bin", {})
 
 	-- An empty field is the working directory. Standing in the directory the
@@ -11140,8 +11135,9 @@ do
 		end
 		return true
 	end)())
-	local silent = expect(state, admin, "which cd", false, {})
-	eq("which finds nothing for a shell word", #silent, 0)
+	local silent = expect(state, admin, "which cd", false,
+		{ "no cd in " .. string.gsub(CeroSecOS.DEFAULT_PATH, ":", " ") })
+	eq("which finds no file for a shell word", #silent, 1)
 	ok(state, admin, "which which", { "/bin/which" })
 
 	-- Both take one name and say so otherwise.
@@ -11688,7 +11684,7 @@ do
 	-- screen, and the one on the right is.
 	ok(state, admin, "ls / | cat", { "bin", "dev", "etc", "home", "mnt", "root", "usr", "var" })
 	ok(state, admin, "ls / | grep e", { "dev", "etc", "home" })
-	ok(state, admin, "ls / | wc -l", { "     8" })
+	ok(state, admin, "ls / | wc -l", { "       8" })
 	-- Which is the whole point: a loop over a listing gets the names and not the
 	-- rows they were packed into.
 	ok(state, admin, "for f in $(ls /); do echo [$f]; done",
@@ -11883,7 +11879,7 @@ do
 	okAt(state, admin, "ls /mnt", { "notes.txt  sub" })
 	okAt(state, admin, "cat /mnt/sub/copy.txt", { "hello" })
 	okAt(state, admin, "grep hello /mnt/notes.txt", { "hello" })
-	okAt(state, admin, "wc -l /mnt/notes.txt", { "     1 /mnt/notes.txt" })
+	okAt(state, admin, "wc -l /mnt/notes.txt", { "       1 /mnt/notes.txt" })
 	okAt(state, admin, "mv /mnt/notes.txt /mnt/renamed.txt", {})
 	okAt(state, admin, "ls /mnt", { "renamed.txt  sub" })
 	okAt(state, admin, "rm -r /mnt/sub", {})
@@ -14675,7 +14671,7 @@ do
 		"one\ntwo\nthree\none\ntwo\nthree")
 	-- It is a filter and it passes the lines ON, which is what makes a tee in the
 	-- middle of a pipeline worth writing.
-	okAt(state, admin, "cat src | tee kept | wc -l", { "     3" })
+	okAt(state, admin, "cat src | tee kept | wc -l", { "       3" })
 	eq("and still wrote the file", state.fs.children.home.children.admin.children.kept.data,
 		"one\ntwo\nthree")
 
@@ -14708,12 +14704,12 @@ do
 	put(state, admin, "/home/admin/wide", WIDE)
 
 	-- DOWN A PIPE. One line in, one line out, whole, whatever is on the right.
-	okAt(state, admin, "cat wide | wc -l", { "     1" })
-	okAt(state, admin, "cat wide | wc -c", { "    84" })
+	okAt(state, admin, "cat wide | wc -l", { "       1" })
+	okAt(state, admin, "cat wide | wc -c", { "      84" })
 	okAt(state, admin, "cat wide | cut -d: -f1", { "alpha" })
 	okAt(state, admin, "cat wide | grep -c MARKER", { "1" })
-	okAt(state, admin, "cat wide | head -1 | wc -l", { "     1" })
-	okAt(state, admin, "cat wide | sort | wc -l", { "     1" })
+	okAt(state, admin, "cat wide | head -1 | wc -l", { "       1" })
+	okAt(state, admin, "cat wide | sort | wc -l", { "       1" })
 	-- And through two stages, because the fold was applied at every one of them.
 	okAt(state, admin, "cat wide | cat | cut -d: -f1", { "alpha" })
 
@@ -14728,17 +14724,17 @@ do
 	okAt(state, admin, "cat wide | cat > staged", {})
 	eq("and so does one on a stage", contents(state, "/home/admin/staged"), WIDE)
 	-- The T-piece writes the file and passes the line on; both halves are whole.
-	okAt(state, admin, "cat wide | tee kept | wc -c", { "    84" })
+	okAt(state, admin, "cat wide | tee kept | wc -c", { "      84" })
 	eq("and the tee's file is whole", contents(state, "/home/admin/kept"), WIDE)
 
 	-- INTO A WORD. A capture is substituted into the line being built, so a fold
 	-- in it is a second word nobody typed.
-	okAt(state, admin, "x=$(cat wide); echo -n \"$x\" | wc -c", { "    84" })
-	okAt(state, admin, "echo -n \"$(cat wide)\" | wc -c", { "    84" })
+	okAt(state, admin, "x=$(cat wide); echo -n \"$x\" | wc -c", { "      84" })
+	okAt(state, admin, "echo -n \"$(cat wide)\" | wc -c", { "      84" })
 
 	-- OUT OF A SCRIPT, which reaches the pipe through the job's own output.
 	put(state, admin, "/home/admin/show.sh", "cat /home/admin/wide")
-	okAt(state, admin, "sh show.sh | wc -l", { "     1" })
+	okAt(state, admin, "sh show.sh | wc -l", { "       1" })
 	okAt(state, admin, "sh show.sh > fromsh", {})
 	eq("and a script's redirect is whole too",
 		contents(state, "/home/admin/fromsh"), WIDE)
@@ -15670,7 +15666,7 @@ do
 	okAt(state, admin, "more big > out", {})
 	eq("everything went into the file",
 		#CeroSecOS.splitLines(state.fs.children.home.children.admin.children.out.data), 45)
-	okAt(state, admin, "echo hi | more | wc -l", { "     1" })
+	okAt(state, admin, "echo hi | more | wc -l", { "       1" })
 	okAt(state, admin, "x=$(more short); echo $x", { "one two" })
 end
 
@@ -15915,7 +15911,7 @@ do
 
 	-- The pipe and the capture, which already worked: the count is the script's
 	-- lines and the word is the script's output.
-	okAt(state, admin, "./two.sh | wc -l", { "     2" })
+	okAt(state, admin, "./two.sh | wc -l", { "       2" })
 	ok(state, admin, "z=$(sh two.sh)", {})
 	okAt(state, admin, "echo \"[$z]\"", { "[one two]" })
 
@@ -15972,7 +15968,7 @@ do
 	-- catch nothing and leave the file writing to the glass.
 	okAt(state, admin, ". two.sh > dotout", {})
 	okAt(state, admin, "cat dotout", { "one", "two" })
-	okAt(state, admin, ". ./two.sh | wc -l", { "     2" })
+	okAt(state, admin, ". ./two.sh | wc -l", { "       2" })
 end
 
 -- 50d. A redirected script that floods meets the FILE's ceiling, once, and stops.
@@ -16171,7 +16167,7 @@ do
 	okAt(state, admin, "cat fout", { "one", "two" })
 	-- And it works as a pipeline stage and inside a catch, because a subshell is
 	-- handed the functions its parent held.
-	okAt(state, admin, "pair | wc -l", { "     2" })
+	okAt(state, admin, "pair | wc -l", { "       2" })
 	okAt(state, admin, "echo $(greet zoe)", { "hi zoe" })
 
 	-- A definition inside a SUBSHELL dies with it.
@@ -17064,7 +17060,7 @@ do
 	local admin = open(state, "admin")
 	-- No newline after the last line: one byte, and >> starts a line.
 	ok(state, admin, "echo a > p", {})
-	ok(state, admin, "wc -c p", { "     1 p" })
+	ok(state, admin, "wc -c p", { "       1 p" })
 	ok(state, admin, "echo -n x > f", {})
 	ok(state, admin, "echo y >> f", {})
 	ok(state, admin, "cat f", { "x", "y" })
@@ -17083,12 +17079,11 @@ do
 	-- id has names and a flag.
 	ok(state, admin, "id", { "uid=admin flag=user groups=admin,sudo,users" })
 	-- What is absent, and the flags that are.
-	for _, name in ipairs({ "set", "unset", "exec", "trap", "rmdir", "expr", "uname" }) do
+	for _, name in ipairs({ "set", "unset", "exec", "trap" }) do
 		bad(state, admin, name .. " x", name .. ": command not found")
 	end
-	bad(state, admin, "rm -f p", "rm: -f: unknown option")
-	bad(state, admin, "kill -9 %1", "kill: usage: " .. CeroSecOS.commandUsage("kill"))
-	bad(state, admin, "tail +2 p", "tail: usage: " .. CeroSecOS.commandUsage("tail"))
+	-- rmdir, expr, uname, rm -f, kill -9 and tail +N are here now; what they
+	-- answer is tests/commands_test.lua's. What is still absent is %f.
 	ok(state, admin, "printf '%5.2f|%d|%s\\n' 5 6", { "%5.2f|5|6" })
 end
 
@@ -17102,40 +17097,40 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	ok(state, admin, "g() { echo a; echo b; }", {})
-	ok(state, admin, "g > z.txt | wc -l", { "     0" })
+	ok(state, admin, "g > z.txt | wc -l", { "       0" })
 	ok(state, admin, "cat z.txt", { "a", "b" })
-	ok(state, admin, "g >> z.txt | wc -l", { "     0" })
+	ok(state, admin, "g >> z.txt | wc -l", { "       0" })
 	ok(state, admin, "cat z.txt", { "a", "b", "a", "b" })
 	-- The last stage, whose pipe drains onto the screen: nothing reaches it.
 	ok(state, admin, "echo x | g > y.txt", {})
 	ok(state, admin, "cat y.txt", { "a", "b" })
 	-- `2>` on the call: the error in the file or nowhere, the output down the pipe.
 	ok(state, admin, "h() { echo out; cat nosuch; }", {})
-	ok(state, admin, "h 2>/dev/null | wc -l", { "     1" })
-	ok(state, admin, "h 2> e.txt | wc -l", { "     1" })
+	ok(state, admin, "h 2>/dev/null | wc -l", { "       1" })
+	ok(state, admin, "h 2> e.txt | wc -l", { "       1" })
 	ok(state, admin, "cat e.txt", { "cat: nosuch: no such file" })
 	-- Both into the file, in the order they were said; and `2>&1 > f` sends the
 	-- error where the output WAS -- the pipe -- read left to right.
-	ok(state, admin, "h > o.txt 2>&1 | wc -l", { "     0" })
+	ok(state, admin, "h > o.txt 2>&1 | wc -l", { "       0" })
 	ok(state, admin, "cat o.txt", { "out", "cat: nosuch: no such file" })
-	ok(state, admin, "h 2>&1 > o2.txt | wc -l", { "     1" })
+	ok(state, admin, "h 2>&1 > o2.txt | wc -l", { "       1" })
 	ok(state, admin, "cat o2.txt", { "out" })
 	-- `>&2`: the output goes where the errors go, the screen, and not down the pipe.
-	ok(state, admin, "g >&2 | wc -l", { "a", "b", "     0" })
+	ok(state, admin, "g >&2 | wc -l", { "a", "b", "       0" })
 	-- A redirect that cannot be opened is a call that never runs.
 	ok(state, admin, "k() { echo ran > ran.txt; }", {})
 	ok(state, admin, "k > /etc/hosts | wc -l",
-		{ "k: /etc/hosts: permission denied", "     0" })
+		{ "k: /etc/hosts: permission denied", "       0" })
 	bad(state, admin, "cat ran.txt", "cat: ran.txt: no such file")
 	-- A stage that ends inside the call still leaves the file whole.
 	ok(state, admin, "m() { echo a; exit 3; }", {})
-	ok(state, admin, "m > ex.txt | wc -l", { "     0" })
+	ok(state, admin, "m > ex.txt | wc -l", { "       0" })
 	ok(state, admin, "cat ex.txt", { "a" })
 	-- A script and the dot, the same.
 	ok(state, admin, "echo 'echo s1; echo s2' > s.sh", {})
-	ok(state, admin, "sh s.sh > sf.txt | wc -l", { "     0" })
+	ok(state, admin, "sh s.sh > sf.txt | wc -l", { "       0" })
 	ok(state, admin, "cat sf.txt", { "s1", "s2" })
-	ok(state, admin, ". ./s.sh > df.txt | wc -l", { "     0" })
+	ok(state, admin, ". ./s.sh > df.txt | wc -l", { "       0" })
 	ok(state, admin, "cat df.txt", { "s1", "s2" })
 	-- And what the call writes is going to a FILE, not a screen: ls in one name a
 	-- line, in the last stage exactly as outside a pipeline.

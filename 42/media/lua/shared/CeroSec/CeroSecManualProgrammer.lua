@@ -2479,7 +2479,28 @@ carries:
 
   sh <file> [args]        test <expression>
   [ <expression> ]        wait [id]...
-  printf <format> [arg...]    true    false
+  printf <format> [arg...]    true    false]],
+
+[[What the newer tools say when a line is wrong.
+
+  rmdir: illegal option -- p
+      getopt's words, and then the usage line;
+      uname says it the same way
+  expr: syntax error
+  expr: non-numeric argument
+  expr: division by zero
+      $? is 2; 0 and 1 are expr's answer
+  kill: unknown signal <x>; valid signals:
+      and then the list, as kill -l prints it
+  kill: illegal signal number: <x>
+  kill: option requires an argument -- s
+  kill: stop: not honoured
+      a signal that would only pause a job
+  no <name> in /bin /usr/local/bin
+      which, finding nothing; $? is 1
+
+And the one shape no other card carries:
+
   expr <expression>]],
 
 [[The reasons off the disk, each after the command's name and the path:
