@@ -4684,8 +4684,15 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      verdict goes to the log ». Appuyer une deuxième fois tout de suite : la
      note dit « shell half already running ». Attendre quelques secondes :
      l'onglet **Log** (niveau info) et `console.txt` montrent
-     `CeroSec shell selftest: PASS 235 FAIL 0`, suivi d'une ligne de durée.
+     `CeroSec shell selftest: PASS 252 FAIL 0`, suivi d'une ligne de durée.
      Aucune ligne `warn`. [ ]
+
+459e. **Les nombres, IFS et set.** `printf %x 1e999` répond tout de suite
+     (pas de gel), `printf %d 123456789012345` affiche ses chiffres,
+     `printf 'a\nb\nc\nd\n' | tail -n +3` affiche `c` puis `d`.
+     `echo ${#IFS}` : `3`. `set a b; set +e; echo $# $1` : pas `1 +e`.
+     `echo x > -f; rm -- -f` supprime le fichier `-f`. Sur une vieille
+     partie : `expr 1 + 1` répond `2`, `uname` et `rmdir` existent. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
 

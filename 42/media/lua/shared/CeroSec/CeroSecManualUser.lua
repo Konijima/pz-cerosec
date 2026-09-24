@@ -300,8 +300,9 @@ ls -l has no link count: the column a real ls put between the mode and
 the owner is not there, and the name has the room instead.
 
 edit ends what it saves with a newline, as vi did, but it
-saves a file of 4096 bytes without its last newline: that one byte
-would carry it past the ceiling. The save says [Incomplete last line].]],
+saves a file without its last newline when that one byte would not
+fit, past the 4096-byte ceiling or on a full disk or floppy. The save
+says [Incomplete last line].]],
 
 [[What is not Unix here: pipes, printf and date.
 

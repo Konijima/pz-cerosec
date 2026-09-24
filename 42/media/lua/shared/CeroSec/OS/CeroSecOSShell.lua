@@ -1178,7 +1178,7 @@ CeroSecOS.DEVIATIONS = {
 	-- CeroSecOS.saveBytes: a buffer of exactly MAX_FILE_BYTES is saved with
 	-- no final newline, where nvi (4.4BSD-Lite2 contrib, ex/ex_write.c)
 	-- always wrote one; the message is vi 3.7's (4.3BSD ucb/ex/ex_io.c).
-	{ name = "edit", phrase = "saves a file of 4096 bytes without its last newline",
+	{ name = "edit", phrase = "saves a file without its last newline",
 		why = "the newline would carry the file past the ceiling" },
 }
 

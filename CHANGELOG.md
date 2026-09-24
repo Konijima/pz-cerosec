@@ -21,7 +21,7 @@ have can notice is in the shell: a script you saved that used `echo "a\nb"` now 
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
-- The debug window's Self-test also runs 235 shell lines on a scratch
+- The debug window's Self-test also runs 252 shell lines on a scratch
   machine, spread over a few seconds, and writes
   `CeroSec shell selftest: PASS n FAIL m` to the log and console.txt.
 - The shell now refuses an `if`, `while`, `until`, `for` or function whose
@@ -44,9 +44,20 @@ and a command whose redirect is refused no longer runs.
   never pushed past what it holds, and saved scripts run as before. An older
   version of the mod will refuse to open a computer or a floppy this one has
   touched, rather than show its files wrong.
-- Saving a file of exactly 4096 bytes whose last line has no newline (a file
-  from an older save could be one) no longer fails with "file too large": the
-  editor saves it as it is and says `[Incomplete last line]`.
+- The editor never refuses or changes a file you save unchanged. When the
+  final newline is the one byte that doesn't fit (the 4096-byte file limit, a
+  full machine, a full floppy), the last line is saved open and the editor
+  says `[Incomplete last line]`. A file holding one empty line stays that way.
+- Old worlds now get `expr`, `uname` and `rmdir`, and an update no longer puts
+  back a command or file you deleted.
+- Numbers typed to `printf`, `expr`, `$(( ))`, `test`, `kill`, `tail`,
+  `head`, `sleep`, `read -n` and `shift` are read the way 4.4BSD read them:
+  `printf %x 1e999` no longer hangs the machine, `printf %d 123456789012345`
+  prints its digits, and `tail -n +3` starts at line 3.
+- Every shell starts with `IFS` set to space, tab and newline, so the usual
+  `OIFS="$IFS" ... IFS="$OIFS"` puts splitting back as it was. Bare `$@`
+  splits like `$*`, `set +e` no longer replaces `$1`, and `--` ends the
+  options of every command.
 - A few refusals now read as 4.4BSD's did: `cd nosuch` says `cd: can't cd to
   nosuch`, `sh nosuch.sh` says `nosuch.sh: Can't open nosuch.sh`, `. nosuch`
   says `.: Can't open nosuch`, a wrong old password to `passwd` is followed by

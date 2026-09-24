@@ -193,7 +193,11 @@ and never past it: a machine over its quota, a file already at 4096 bytes and
 a floppy with no byte left keep those files open, which reads the same. The
 `/bin` stand-ins are binaries and are left as they are. So every migrated text
 file shows one byte more in `ls -l` and `df`, and `wc -l` now counts its last
-line. `SYSTEM_VERSION` does not move: nothing new is seeded. The fixture for
+line. `SYSTEM_VERSION` moves 21 → 22: old worlds gain `/bin/expr`,
+`/bin/uname` and `/bin/rmdir` and nothing else (`CeroSecOS.BIN_SINCE`), so a
+command or file a player deleted stays deleted. A diagnostics floppy handed
+out before this release keeps its old `selftest.sh`, which now reports 4
+failures on `wc`'s new eight-column padding; give a new disk. The fixture for
 the shape this meets is `tests/fixtures/state-v2.lua`, which the capture tool
 run on the build before the bump reproduces byte for byte, so it was kept.
 Otherwise nothing changes shape. `system.auto[...].later` is a new optional list, written only when an
