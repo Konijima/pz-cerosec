@@ -4612,13 +4612,15 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 451. **cat - et cat -n.** `echo haut | cat - p` affiche `haut` puis `neuf`.
      `cat -n p` affiche `     1` puis une tabulation et `neuf`. [ ]
 452. **[ et sleep ne tuent plus le script.** Script `[ 1 -eq 1` puis
-     `echo suite $?` : `test: missing ']'` puis `suite 2`. Même chose avec
+     `echo suite $?` : `test: missing ]` puis `suite 2`. Même chose avec
      `sleep abc` : `sleep: invalid interval` puis `suite 1`. [ ]
 453. **127 et 126.** `nosuchcmd; echo $?` affiche `127`. Un fichier sans x
      lancé par `./fichier` puis `echo $?` affiche `126`. `false; echo $?`
      affiche toujours `1`. [ ]
-454. **$* et $!.** Script `for i in $*; do echo [$i]; done` lancé avec
-     `"a b" c` : `[a]`, `[b]`, `[c]`. `sleep 5 &` puis `echo $!` affiche le
+454. **$* et $!.** Script `for i in $*; do echo "[$i]"; done` lancé avec
+     `"a b" c` : `[a]`, `[b]`, `[c]` (les guillemets comptent : `a` et `b`
+     sont des répertoires depuis l'étape 450, et `[a]` sans guillemets
+     serait un motif qui les trouve). `sleep 5 &` puis `echo $!` affiche le
      numéro du travail que `jobs` montre. [ ]
 455. **Les plaintes de sleep et de [ vont sur la sortie d'erreur.**
      `sleep abc 2>/dev/null; echo $?` n'affiche que `1`. `sleep abc > f`
@@ -4633,7 +4635,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `[]`, `[xy]`, `[]` (comme bash). [ ]
 458. **Un fichier redirigé est complet pour la commande suivante.**
      `h() { i=0; while [ $i -lt 100 ]; do echo o; i=$((i+1)); done; }`, puis
-     `h > o; wc -l o` : `100 o`. Même chose avec une fonction qui fait
+     `h > o; wc -l o` : `     100 o` (le nombre sur huit colonnes). Même chose avec une fonction qui fait
      `cat nosuch` cent fois et `2> e; wc -l e`. Se déconnecter après
      `sleep 5 &`, se reconnecter : `echo "[$!]"` affiche `[]`. `cat -- p`
      affiche `neuf`. [ ]
@@ -4674,8 +4676,8 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 459d. **Les accolades de sh et de ksh.** `x=; echo ${x:-d} ${x+oui}` :
      `d oui`. `unset y; echo ${y:?}` : `sh: y: parameter null or not set`.
      `v=/usr/lib/a.tar.gz; echo ${v##*/} ${v%%.*} ${#v}` :
-     `a.tar.gz /usr/lib/a 17`. `v='a*b'; echo ${v#"a*"} ${v#a*}` :
-     `b *b`. `set -- un; echo ${1:-d} ${2:-d}` : `un d`. [ ]
+     `a.tar.gz /usr/lib/a 17`. `v='a*b'; echo ${v#"a*"} "${v#a*}"` :
+     `b *b` (entre guillemets, sinon `*b` trouve le répertoire `b`). `set -- un; echo ${1:-d} ${2:-d}` : `un d`. [ ]
 459e. **Seul ce qui est exporté passe dans un tuyau.** `Q=1; env | cat` :
      aucune ligne `Q=1`. `export Q; env | cat` : la ligne `Q=1`
      apparaît. [ ]
@@ -4687,7 +4689,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `CeroSec shell selftest: PASS 252 FAIL 0`, suivi d'une ligne de durée.
      Aucune ligne `warn`. [ ]
 
-459e. **Les nombres, IFS et set.** `printf %x 1e999` répond tout de suite
+459g. **Les nombres, IFS et set.** `printf %x 1e999` répond tout de suite
      (pas de gel), `printf %d 123456789012345` affiche ses chiffres,
      `printf 'a\nb\nc\nd\n' | tail -n +3` affiche `c` puis `d`.
      `echo ${#IFS}` : `3`. `set a b; set +e; echo $# $1` : pas `1 +e`.
@@ -4734,13 +4736,14 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 ## Les fichiers finissent leur dernière ligne
 
 464. **Le saut de ligne est dans le fichier.** `echo a > p` puis `wc -c p` :
-     `2`, et `wc -l p` : `1`. `printf a > q` puis `wc -c q` : `1`, et
-     `wc -l q` : `0` (wc compte les sauts de ligne). `cat q; echo b` affiche
+     `       2 p`, et `wc -l p` : `       1 p`. `printf a > q` puis `wc -c q` :
+     `       1 q`, et `wc -l q` : `       0 q` (wc compte les sauts de ligne,
+     chaque nombre sur huit colonnes). `cat q; echo b` affiche
      `ab` sur une seule ligne, et `printf a | cat; echo b` aussi. `cat q p`
      affiche `aa`. `echo -n x > r; echo y >> r; cat r` : `xy`. Ouvrir `p`
      dans l'éditeur : une seule ligne `a`, pas de ligne vide en dessous ;
      sauvegarder sans rien changer : « Saved 2 bytes », et `wc -c p` dit
-     toujours `2`. [ ]
+     toujours `       2 p`. [ ]
 465. **Une ancienne partie, reprise.** Charger une sauvegarde faite avec la
      version précédente du mod, où un fichier `notes` avait été écrit avec
      `echo`. `ls -l notes` : un octet de plus qu'avant, et `wc -l notes` compte
@@ -4762,13 +4765,16 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `sleep 60 &`, puis `kill -9 %1` → `[1] killed`. `kill -STOP %1` →
      `kill: stop: not honoured`. `kill -FOO %1` →
      `kill: unknown signal FOO; valid signals:` et la liste. `kill -l` → la
-     même liste, en minuscules. `printf 'a\nb\nc\n' > t; tail +2 t` → `b`,
+     même liste, en minuscules, sur quatre lignes : `alrm term urg` et
+     `info usr1 usr2` passent à la ligne entiers, sans nom coupé. `printf 'a\nb\nc\n' > t; tail +2 t` → `b`,
      `c`. `touch t1 t2 t3; ls` → les trois. [ ]
 468. **printf et test.** `printf '[%5s][%-3d][%03x]\n' ab 7 255` →
      `[   ab][7  ][0ff]`. `printf '%s\n' a b c` → trois lignes.
      `printf 'x\101\n'` → `xA` ; `printf 'a\1b\n'` → `ab` (aucun caractère
      de contrôle). `ln -s t lnk; [ -h lnk ] && echo y` → `y` ;
-     `[ -s t ] && echo y` → `y`. [ ]
+     `[ -s t ] && echo y` → `y`. `[ 1 -eq x ]` → `test: x: expected
+     integer` ; `[ 12ab -lt 3 ]` → `test: 12ab: trailing non-numeric
+     characters` ; `[ 3 -foo 4 ]` → `test: syntax error`. [ ]
 469. **Les formats de sortie.** `wc t` → `       3       3       6 t` (huit
      colonnes par nombre). `printf 'a\na\nb\n' | uniq -c` → `   2 a`, `   1 b`.
      `which nosuch` → `no nosuch in /bin /usr/local/bin` (le PATH, séparé par des

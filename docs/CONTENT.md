@@ -1196,7 +1196,7 @@ touching any of the six, and the same list is over `CeroSecContent.SCRIPTS["auto
 - **A pipeline's refusal lands in the capture, not in the pipe.** `f=$(cat /dev/gen0 |
   cut -d' ' -f3)` on a machine with no generator comes back as the whole of
   `cat: /dev/gen0: No such file or directory`, and `[ $f -ge 10 ]` on that is
-  `test: argument expected`. So `genwatch.sh` sifts the field through a `case` with
+  `test: syntax error`. So `genwatch.sh` sifts the field through a `case` with
   `*[!0-9]*` in it before any arithmetic touches it, and its threshold test is written
   `-lt` rather than `-ge` so that a threshold which is not a number fails **safe**.
 

@@ -173,13 +173,17 @@ do
 	j = job(42)
 	case(state, admin, "kill -s 0 %1", {}, 0, env)
 	eq("signal 0 only looks", j.killReq, nil)
-	local list1 = "hup int quit ill trap abrt emt fpe kill bus segv sys pipe alrm term urg"
-	local list2 = "stop tstp cont chld ttin ttou io xcpu xfsz vtalrm prof winch info usr1 usr2"
-	case(state, admin, "kill -l", { list1, list2 }, 0, env)
+	-- kill.c's two lines, each folded at the last blank that fits sixty
+	-- columns, never inside a name (the "kill" deviation).
+	local list1 = "hup int quit ill trap abrt emt fpe kill bus segv sys pipe"
+	local list1b = "alrm term urg"
+	local list2 = "stop tstp cont chld ttin ttou io xcpu xfsz vtalrm prof winch"
+	local list2b = "info usr1 usr2"
+	case(state, admin, "kill -l", { list1, list1b, list2, list2b }, 0, env)
 	case(state, admin, "kill -FOO %1", {
-		"kill: unknown signal FOO; valid signals:", list1, list2 }, 1, env)
+		"kill: unknown signal FOO; valid signals:", list1, list1b, list2, list2b }, 1, env)
 	case(state, admin, "kill -99 %1", {
-		"kill: unknown signal 99; valid signals:", list1, list2 }, 1, env)
+		"kill: unknown signal 99; valid signals:", list1, list1b, list2, list2b }, 1, env)
 	case(state, admin, "kill -9x %1", { "kill: illegal signal number: 9x" }, 1, env)
 	case(state, admin, "kill -s", { "kill: option requires an argument -- s",
 		"kill: usage: kill [-<signal>|-s <signal>] <id>|%<n>" }, 1, env)

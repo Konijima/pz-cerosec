@@ -19,14 +19,24 @@ function CeroSecOS.isValidName(name)
 	return true
 end
 
--- The same rule, for a name on the DISK. One exception, and it is Unix's own:
--- the test command has been two files since the seventies, `test` and `[`, and
--- a machine that could not hold /bin/[ would be a machine where `[ -f f ]` is
--- a builtin with no file behind it while every other command has one. Nothing
--- else punctuational is allowed in, and an account or a group is still
--- isValidName's -- there is no user called "[".
+-- The same rule, for a name on the DISK, with two exceptions that are Unix's
+-- own. The test command has been two files since the seventies, `test` and
+-- `[`, and a machine that could not hold /bin/[ would be a machine where
+-- `[ -f f ]` is a builtin with no file behind it while every other command has
+-- one. And a file may begin with "-": 4.4BSD's namei refuses only "/" and NUL
+-- in a name, and `rm -- -f` (getopt(3)'s "--") and `rm ./-f` are how a Unix
+-- user has always got rid of one. The flag worry isValidName answers is a
+-- worry about LOGINS and hostnames, which are written into lines other
+-- programs read; nothing in the engine builds a command line out of a file's
+-- name. Nothing else punctuational is allowed in (the "errno" entry of
+-- CeroSecOS.DEVIATIONS, "invalid characters"), and an account or a group is
+-- still isValidName's -- there is no user called "[" or "-f".
 function CeroSecOS.isValidFileName(name)
 	if name == "[" then return true end
+	if type(name) == "string" and string.sub(name, 1, 1) == "-" then
+		-- The same length and characters, the dash let through in front.
+		return CeroSecOS.isValidName("x" .. string.sub(name, 2))
+	end
 	return CeroSecOS.isValidName(name)
 end
 

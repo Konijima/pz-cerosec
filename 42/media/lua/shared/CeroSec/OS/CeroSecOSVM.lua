@@ -1957,22 +1957,35 @@ end
 local NUMERIC = { ["-eq"] = true, ["-ne"] = true, ["-lt"] = true, ["-le"] = true,
 	["-gt"] = true, ["-ge"] = true }
 
+-- One operand of -eq and the rest, read the way 4.4BSD-Lite2 test.c's
+-- get_int reads it: blanks skipped in front, strtol, then
+--   errx(2, "%s: trailing non-numeric characters", v)  anything after
+--   errx(2, "%s: overflow" / "%s: underflow", v)        past the long
+--   errx(2, "%s: expected integer", v)                  no digit at all
+-- Read by strtol and never tonumber, which took "inf" and "1e5". get_int
+-- wants a digit first and so refused "-5"; POSIX.2 test takes a negative
+-- integer ("algebraically equal"), and so does this one.
+local function testInt(v)
+	local n, stop, range = CeroSecOS.strtol(v)
+	if stop == 1 then return nil, "test: " .. v .. ": expected integer" end
+	if stop <= #v then return nil, "test: " .. v .. ": trailing non-numeric characters" end
+	if range then
+		if n < 0 then return nil, "test: " .. v .. ": underflow" end
+		return nil, "test: " .. v .. ": overflow"
+	end
+	return n
+end
+
 local function testBinary(left, op, right)
 	if op == "=" then return left == right end
 	if op == "!=" then return left ~= right end
 	if NUMERIC[op] then
-		-- Read by strtol and never tonumber, which took "inf" and "1e5".
-		-- Past the word it is 4.4BSD test.c's get_int: errx(2, "%s:
-		-- overflow") at LONG_MAX and "%s: underflow" at LONG_MIN.
-		local a, b = CeroSecOS.intOf(left), CeroSecOS.intOf(right)
-		if a == nil or b == nil then return nil, "test: integer expected" end
-		for _, v in ipairs({ left, right }) do
-			local _, _, range = CeroSecOS.strtol(v)
-			if range then
-				if CeroSecOS.intOf(v) < 0 then return nil, "test: " .. v .. ": underflow" end
-				return nil, "test: " .. v .. ": overflow"
-			end
-		end
+		-- The left operand whole, then the right: test.c's get_int is
+		-- called once for each, in that order.
+		local a, aerr = testInt(left)
+		if a == nil then return nil, aerr end
+		local b, berr = testInt(right)
+		if b == nil then return nil, berr end
 		if op == "-eq" then return a == b end
 		if op == "-ne" then return a ~= b end
 		if op == "-lt" then return a < b end
@@ -2016,18 +2029,18 @@ testExpr = function(state, session, args, lo, hi)
 	if n == 1 then return args[lo] ~= "" end
 	if n == 2 then
 		local v = testUnary(state, session, args[lo], args[lo + 1])
-		if v == nil then return nil, "test: unknown operator" end
+		if v == nil then return nil, "test: syntax error" end
 		return v
 	end
 	if n == 3 then
 		local v, err = testBinary(args[lo], args[lo + 1], args[lo + 2])
 		if v == nil then
 			if err ~= nil then return nil, err end
-			return nil, "test: unknown operator"
+			return nil, "test: syntax error"
 		end
 		return v
 	end
-	return nil, "test: argument expected"
+	return nil, "test: syntax error"
 end
 
 --
@@ -2933,14 +2946,18 @@ end
 -- of refusals.
 -- true/false, or nil plus the line to print. test and [ are a program on a real
 -- machine (/bin/test, /bin/[ -- 4.4BSD test.c), and a program that cannot judge
--- its expression prints why and exits 2: a missing ']' included, which test.c
--- reports through the same syntax() as every other malformed expression. The
--- script that ran it goes on. Why is on the standard error, where test.c's
--- err() writes it: `[ 1 -eq x ] | wc -l` counts nought, `2>/dev/null` hushes it.
+-- its expression prints why and exits 2. 4.4BSD-Lite2 test.c 8.3's words:
+-- errx(2, "missing ]") for a [ with no ], and syntax(), err(2, "syntax
+-- error"), for every other malformed expression -- an operator it does not
+-- know, a word too many, an operand missing. err() also printed strerror of
+-- whatever errno was lying about, and errx() signed with the name it was
+-- called by, [ as well as test; both are left out here (the "test" entry of
+-- CeroSecOS.DEVIATIONS). The script that ran it goes on. Why is on the
+-- standard error: `[ 1 -eq x ] | wc -l` counts nought, `2>/dev/null` hushes it.
 function CeroSecOS.evalTest(state, session, args)
 	local hi = #args
 	if args[1] == "[" then
-		if args[hi] ~= "]" then return nil, "test: missing ']'" end
+		if args[hi] ~= "]" then return nil, "test: missing ]" end
 		hi = hi - 1
 	end
 	return testExpr(state, session, args, 2, hi)
@@ -5800,20 +5817,42 @@ local KILL_NAMES = {
 }
 local KILL_HONOURED = { [1] = true, [2] = true, [3] = true, [9] = true, [15] = true }
 
--- printsignals(): NSIG is 32, and kill.c breaks the line after NSIG / 2 and
--- after NSIG - 1, so the list is always these two lines.
+-- printsignals(), 4.4BSD-Lite2 kill.c 8.4: NSIG is 32, and it breaks the
+-- line after NSIG / 2 and after NSIG - 1 -- two lines, of 71 and 75
+-- columns, measured by nothing. The glass is sixty wide and would cut them
+-- in the middle of a name (`...pipe al` / `rm term urg`), so each of the
+-- two is folded at the last blank that fits: four lines, where kill.c
+-- printed two (the "kill" entry of CeroSecOS.DEVIATIONS).
 local function killSignalLines()
-	local a, b = {}, {}
+	local rows, lines = { {}, {} }, {}
 	for n = 1, #KILL_NAMES do
-		if n <= 16 then a[#a + 1] = KILL_NAMES[n] else b[#b + 1] = KILL_NAMES[n] end
+		local r = rows[1]
+		if n > 16 then r = rows[2] end
+		r[#r + 1] = KILL_NAMES[n]
 	end
-	return table.concat(a, " "), table.concat(b, " ")
+	for i = 1, 2 do
+		local line = ""
+		for _, name in ipairs(rows[i]) do
+			if line ~= "" and #line + 1 + #name > CeroSecOS.COLS then
+				lines[#lines + 1] = line
+				line = name
+			elseif line == "" then
+				line = name
+			else
+				line = line .. " " .. name
+			end
+		end
+		lines[#lines + 1] = line
+	end
+	return lines
 end
 
 -- nosig(): warnx's line, then the list, both on the error side.
 local function killNoSig(name)
-	local a, b = killSignalLines()
-	return false, { "kill: unknown signal " .. name .. "; valid signals:", a, b }
+	local lines = { "kill: unknown signal " .. name .. "; valid signals:" }
+	local list = killSignalLines()
+	for i = 1, #list do lines[#lines + 1] = list[i] end
+	return false, lines
 end
 
 -- The number for a name, or nil: string.lower on both sides is strcasecmp,
@@ -5851,8 +5890,7 @@ commands.kill = function(state, session, args, env)
 			if numsig <= 0 or numsig > #KILL_NAMES then return killNoSig(word) end
 			return true, { KILL_NAMES[numsig] }
 		end
-		local a, b = killSignalLines()
-		return true, { a, b }
+		return true, killSignalLines()
 	elseif first == "-s" then
 		if args[3] == nil then
 			return false, { "kill: option requires an argument -- s", usageLines[1] }

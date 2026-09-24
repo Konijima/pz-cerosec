@@ -1588,7 +1588,7 @@ CeroSecContent.SCRIPTS["setup.sh"] = {
 --     /dev/gen0 | cut -d' ' -f3)` on a machine with no generator comes back as
 --     the whole of `cat: /dev/gen0: No such file or directory` -- errLine writes to the job's
 --     door and skips the pipe -- and `[ $f -ge 10 ]` on that is
---     `test: argument expected`. So genwatch.sh sifts the field through a `case`
+--     `test: syntax error`. So genwatch.sh sifts the field through a `case`
 --     with `*[!0-9]*` in it before it does arithmetic on it.
 --
 -- WHAT THE POLLING COSTS, and it is not what a reader would guess. The walk of
@@ -1884,7 +1884,7 @@ CeroSecContent.SCRIPTS["genwatch.sh"] = {
 	-- (docs/DEVICES.md) -- and it is sifted through a `case` before any arithmetic
 	-- touches it, for the reason at the head of this block: a machine with no
 	-- generator puts `cat`'s whole refusal in the capture, and `[ $f -ge 10 ]` on
-	-- that is `test: argument expected` rather than a clean line.
+	-- that is `test: syntax error` rather than a clean line.
 	--
 	-- It does not START the generator, deliberately. A generator that starts itself
 	-- is a noise in an empty street, which is the same sentence CeroSecAuto.lua is
@@ -1892,7 +1892,7 @@ CeroSecContent.SCRIPTS["genwatch.sh"] = {
 	--
 	-- THE THRESHOLD TEST IS WRITTEN `-lt` AND NOT `-ge`, and that is the one line in
 	-- here that is about failing safe. `test` on a threshold that is not a number
-	-- answers `test: integer expected` and FALSE, so `-ge` would have dropped a
+	-- answers `test: -h: expected integer` and FALSE, so `-ge` would have dropped a
 	-- `genwatch.sh -h` straight into the warning -- a broadcast on every screen and
 	-- a letter to root because somebody typed a flag this shell has not got. Round
 	-- this way the same mistake prints the tank and says the threshold was not a

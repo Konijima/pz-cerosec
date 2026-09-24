@@ -602,7 +602,7 @@ The bracket is a command, exactly like ls, and a command has to be a word
 of its own. The closing bracket is an argument it insists on:
 
   admin@ksp-04-11:~$ [ 3 -lt 4 ; echo $?
-  test: missing ']'
+  test: missing ]
   2
 
 Two, not one: the question could not be asked. A script goes on.
@@ -682,9 +682,9 @@ test signs its refusals with its own name, and each one says what it could
 not do rather than guessing:
 
   admin@ksp-04-11:~$ [ a -eq 3 ]
-  test: integer expected
+  test: a: expected integer
   admin@ksp-04-11:~$ [ 3 -foo 4 ]
-  test: unknown operator
+  test: syntax error
 
 The first is the important one. -eq and its five friends read numbers, and
 "a" is not one. Use = for text and -eq for numbers, and remember that a
@@ -2471,12 +2471,11 @@ line is named and the script ends there.
   sort: input too large
       sort and uniq hold all input first: a
       hundred lines, four kilobytes, no more
-  test: integer expected
+  test: <x>: expected integer
       -eq and five friends, handed something that
       is not a number
-  test: unknown operator
-  test: missing ']'
-  test: argument expected
+  test: syntax error
+  test: missing ]
   read: not a name
   read: <n>: bad number
   read: Illegal option -x
@@ -2568,6 +2567,7 @@ carries:
       printf stops there, and $? is 1
   test: <x>: overflow
       or underflow: past the machine's word
+  test: <x>: trailing non-numeric characters
   kill: stop: not honoured
       a signal that would only pause a job
   no <name> in /bin /usr/local/bin

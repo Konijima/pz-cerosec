@@ -24,6 +24,16 @@ and a command whose redirect is refused no longer runs.
 - The debug window's Self-test also runs 252 shell lines on a scratch
   machine, spread over a few seconds, and writes
   `CeroSec shell selftest: PASS n FAIL m` to the log and console.txt.
+- `test` and `[` refuse a bad number the way 4.4BSD did:
+  `test: x: expected integer`, or `test: 12ab: trailing non-numeric
+  characters`. An expression it cannot read is `test: syntax error`, and a
+  `[` with no `]` says `test: missing ]`. A script that looked for the old
+  `integer expected` wording needs the new one; `$?` is still 2.
+- A file name may begin with `-`, as on any Unix: `echo x > -f` makes it,
+  and `rm -- -f` or `rm ./-f` takes it away. Account and group names still
+  may not.
+- `kill -l` folds its list at a space to fit the screen, so no signal's name
+  is cut in half across two lines.
 - The shell now refuses an `if`, `while`, `until`, `for` or function whose
   body is empty (`if true; then fi`), as sh does; write `true` for a body
   that does nothing.

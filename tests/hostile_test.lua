@@ -4531,7 +4531,7 @@ do
 		"9007199254740991 9007199254740991 -9007199254740991")
 	says("and 1e999 is a 1 and then junk", "big.sh: line 13: bad arithmetic")
 	says("expr holds there too", "9007199254740991|1286742750677284")
-	says("test refuses inf", "test: integer expected|t2")
+	says("test refuses inf", "test: inf: expected integer|t2")
 	says("and says overflow past the word", "9999: overflow|t2")
 	says("sleep takes neither", "sleep: invalid interval|sleep: invalid interval|w1")
 	says("cut refuses a list past its line", "cut: 1-99999999: invalid list")

@@ -299,6 +299,9 @@ A pattern is at most 32 pieces, a piece being a character, a ? or a
 ls -l has no link count: the column a real ls put between the mode and
 the owner is not there, and the name has the room instead.
 
+kill -l prints its list on four lines: kill.c's two were
+too wide for the glass, and each is folded at a space.
+
 edit ends what it saves with a newline, as vi did, but it
 saves a file without its last newline when that one byte would not
 fit, past the 4096-byte ceiling or on a full disk or floppy. The save
@@ -327,7 +330,7 @@ At the prompt, each line is a shell of its own: set -- and a trap
 last for that line, exec ends the line, not the login, and exec >
 file with no command is refused.]],
 
-[[What is not Unix here: read, history, and who you are.
+[[What is not Unix here: read, test, history, who you are.
 
 read -p, read -s and read -n are taught here, and they are bash's: a
 prompt, a hidden answer, N characters. In ksh88 -p read from a
@@ -336,6 +339,10 @@ a line read joins nothing.
 
 !!, !n and history -c are csh's and bash's; ksh88 had fc and r. Here !!
 and !n work only when they are the whole line.
+
+test signs every refusal test:, [ too, and its syntax error
+has nothing after it: 4.4BSD's used the name it ran as and
+added an old errno's text.
 
 /etc/passwd has four fields, the hash one of them, and is mode 600. A
 1993 one was mode 644 with seven fields, and the hash lived in

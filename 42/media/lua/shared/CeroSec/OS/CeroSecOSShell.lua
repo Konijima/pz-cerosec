@@ -1094,6 +1094,16 @@ CeroSecOS.DEVIATIONS = {
 	-- sh(1) took -c and a command string; commands.sh takes a file only.
 	{ name = "sh", phrase = "sh -c is not here",
 		why = "sh runs a script file, never a string" },
+	-- 4.4BSD-Lite2 test.c 8.3 refuses through errx(), which signs with
+	-- __progname -- "[" when it was run as [ -- and its syntax() through
+	-- err(), which adds strerror(errno) of whatever errno was left. This
+	-- one signs test: and says "syntax error" alone (CeroSecOS.evalTest).
+	{ name = "test", phrase = "test signs every refusal test:",
+		why = "one name for test and [, and no stale strerror after syntax error" },
+	-- kill.c's printsignals() prints two lines of 71 and 75 columns; each
+	-- is folded at a blank to the sixty-column glass (killSignalLines).
+	{ name = "kill", phrase = "kill -l prints its list on four lines",
+		why = "kill.c's two lines are wider than the glass and are folded at a blank" },
 
 	-- ACCOUNTS. /etc/passwd is name:hash:home:flag, root's, mode 600
 	-- (CeroSecOS.passwdLine); a 1993 one was seven fields at mode 644 with the
@@ -2641,8 +2651,8 @@ commands.cp = function(state, session, args, env)
 	for i = 2, #args do
 		local a = args[i]
 		-- Only before the first path: "cp -r a -b" has no second flag in it,
-		-- and a name that begins with "-" is refused by isValidName anyway.
-		-- "--" ends them too (getopt(3)).
+		-- and -b there is a file. "--" ends them too (getopt(3)), which is
+		-- how `cp -- -f g` copies a file whose name begins with a dash.
 		if #paths == 0 and not ended and a == "--" then
 			ended = true
 		elseif #paths == 0 and not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
@@ -6166,7 +6176,7 @@ commands.edit = function(state, session, args, env)
 	-- Refused here rather than at the save: nano lets you type into a buffer it
 	-- can never write, this does not, and /dev can never take a file.
 	if underDev(session, path) then return devReadOnly() end
-	if not CeroSecOS.isValidName(parts[#parts]) then return fail("edit", path, "invalid name") end
+	if not CeroSecOS.isValidFileName(parts[#parts]) then return fail("edit", path, "invalid name") end
 	local parentPath = CeroSecOS.parentOf(parts)
 	local parent, preason = CeroSecOS.getNode(state, session, parentPath)
 	if parent == nil then return fail("edit", path, preason) end

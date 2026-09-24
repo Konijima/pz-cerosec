@@ -2283,7 +2283,7 @@ do
 	bad(state, session, "edit /", "edit: /: Is a directory")
 	bad(state, session, "edit notes.txt/x", "edit: notes.txt/x: Not a directory")
 	-- A name the machine cannot create is refused at the name, not at the save.
-	bad(state, session, "edit -bad", "edit: -bad: invalid name")
+	bad(state, session, "edit a:b", "edit: a:b: invalid name")
 	bad(state, session, "edit " .. string.rep("a", 33), "edit: " .. string.rep("a", 33) .. ": invalid name")
 	bad(state, session, "edit", "edit: usage: edit <file>")
 	bad(state, session, "edit a b", "edit: usage: edit <file>")
@@ -6907,15 +6907,25 @@ do
 
 	-- A malformed test says so and is neither true nor false.
 	local run = runScript(state, admin, "[ a -zz b ]\necho $?")
-	eq("an unknown operator says so", run.out[1], "test: unknown operator")
+	-- 4.4BSD-Lite2 test.c 8.3: an expression it cannot read is syntax(),
+	-- err(2, "syntax error"); an operand of -eq is get_int's to refuse.
+	eq("an unknown operator says so", run.out[1], "test: syntax error")
 	eq("and the status is 2", run.out[2], "2")
 	run = runScript(state, admin, "[ 1 -eq x ]\necho $?")
-	eq("and a number that is not one says that", run.out[1], "test: integer expected")
-	-- The bracket wants its other half, and a [ with none says so the way
-	-- every other malformed expression does: 4.4BSD test.c's syntax(), exit 2,
+	eq("and a number that is not one says that", run.out[1], "test: x: expected integer")
+	run = runScript(state, admin, "[ 12ab -lt 3 ]\necho $?")
+	eq("digits and then junk are get_int's other refusal", run.out[1],
+		"test: 12ab: trailing non-numeric characters")
+	-- get_int reads the left operand whole before the right one.
+	run = runScript(state, admin, "[ 99999999999999999999 -eq x ]\n[ x -eq 99999999999999999999 ]")
+	eq("the left operand is judged first", run.out[1], "test: 99999999999999999999: overflow")
+	eq("whichever way round", run.out[2], "test: x: expected integer")
+	eq("too many words is a syntax error", runScript(state, admin, "[ 1 2 3 4 ]").out[1],
+		"test: syntax error")
+	-- The bracket wants its other half: test.c's errx(2, "missing ]"), exit 2,
 	-- and the script goes on, since [ is a program and not the shell.
 	run = runScript(state, admin, "[ 1 -eq 1\necho after=$?")
-	eq("a [ with no ] says so", run.out[1], "test: missing ']'")
+	eq("a [ with no ] says so", run.out[1], "test: missing ]")
 	eq("and the script goes on, status 2", run.out[2], "after=2")
 	eq("to its end", run.job.state, "done")
 	-- A command that could not be run at all has a status of its own: 127 for
@@ -7056,10 +7066,21 @@ do
 	expect(state, admin, "sleep abc 2>se.txt", false, {})
 	eq("and it is in the file 2> named", data("/home/admin/se.txt"), "sleep: invalid interval\n")
 	ok(state, admin, "[ 1 -eq x ] 2>/dev/null; echo $?", { "2" })
-	ok(state, admin, "[ 1 -eq x ] | wc -l", { "test: integer expected", "       0" })
-	ok(state, admin, "test 1 -eq x > t.txt; echo $?", { "test: integer expected", "2" })
+	ok(state, admin, "[ 1 -eq x ] | wc -l", { "test: x: expected integer", "       0" })
+	ok(state, admin, "test 1 -eq x > t.txt; echo $?", { "test: x: expected integer", "2" })
 	eq("test's complaint is not in the file", data("/home/admin/t.txt"), "")
-	ok(state, admin, 'x=$([ 1 -eq 1); echo "[$x]"', { "test: missing ']'", "[]" })
+	ok(state, admin, 'x=$([ 1 -eq 1); echo "[$x]"', { "test: missing ]", "[]" })
+	-- A name may begin with a dash: 4.4BSD's namei refuses "/" and NUL and
+	-- nothing else, and getopt(3)'s "--" is how such a file is handed over.
+	ok(state, admin, "echo x > -f; cat -- -f; cat ./-f", { "x", "x" })
+	eq("a file named -f is on the disk", data("/home/admin/-f"), "x\n")
+	ok(state, admin, "rm -- -f; echo $?", { "0" })
+	eq("and rm -- took it away", data("/home/admin/-f"), nil)
+	ok(state, admin, "mkdir -- -d; touch -- -d/-t; ls -- -d; rm -r -- -d", { "-t" })
+	-- An ACCOUNT still may not: a login is written into lines other
+	-- programs read, where a leading dash would be a flag.
+	check("a login that begins with a dash is still refused",
+		not CeroSecOS.isValidName("-f"))
 	-- No clock: the same stream.
 	local _, noClock = exec(state, admin, "sleep 1 > nc.txt")
 	eq("no clock is said on the glass", noClock[1], "sleep: no clock")
@@ -11556,8 +11577,11 @@ do
 	badAt(state, admin, "ln -s " .. tooLong .. " big", "ln: big: File too large")
 	eq("nothing was made", CeroSecOS.getNode(state, admin, "/home/admin/big"), nil)
 	-- The name is a name like any other, and a flag after the first operand is a
-	-- name too -- which isValidName refuses, the way it refuses one everywhere.
-	badAt(state, admin, "ln -s x -bad", "ln: -bad: invalid name")
+	-- name too (4.4BSD getopt stops at the first operand): -bad is made, a
+	-- name with a character the disk will not keep is refused.
+	okAt(state, admin, "ln -s x -bad", {})
+	eq("and -bad is the link", CeroSecOS.getNode(state, admin, "/home/admin/-bad", true).type, "link")
+	badAt(state, admin, "ln -s x a:b", "ln: a:b: invalid name")
 	badAtLines(state, admin, "ln -z x y", { "ln: illegal option -- z",
 		"usage: ln -s <target> <name>" })
 	ok(state, admin, 'echo "x" > taken.txt', {})
