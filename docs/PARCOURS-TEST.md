@@ -4686,7 +4686,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      verdict goes to the log ». Appuyer une deuxième fois tout de suite : la
      note dit « shell half already running ». Attendre quelques secondes :
      l'onglet **Log** (niveau info) et `console.txt` montrent
-     `CeroSec shell selftest: PASS 260 FAIL 0`, suivi d'une ligne de durée.
+     `CeroSec shell selftest: PASS 261 FAIL 0`, suivi d'une ligne de durée.
      Aucune ligne `warn`. [ ]
 
 459g. **Les nombres, IFS et set.** `printf %x 1e999` répond tout de suite
@@ -4714,6 +4714,15 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      echo $?` : `1`. Définir `c ( ) { echo c; }` et `s() ( echo s )`,
      sauvegarder, quitter la partie, la recharger, se reconnecter
      (sans `exit` entre les deux) : `c` affiche `c` et `s` affiche `s`. [ ]
+
+459j. **La redirection d'une fonction.** `f() { echo a; } > o` : pas
+     d'erreur, et `ls o` → `ls: o: No such file or directory` (rien n'est
+     ouvert avant l'appel). `f; cat o` : `a`. `f > p; cat p` : rien, `p`
+     est vide, et `cat o` : `a` (la redirection de la fonction passe
+     avant celle de l'appel, comme dans dash). `h() { echo x; } >> ap; h;
+     h; cat ap` : `x` deux fois. `g() { echo e 1>&2; } 2>ef; g; cat ef` :
+     `e`. Sauvegarder, quitter, recharger, se reconnecter : `f; cat o`
+     affiche encore `a`. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
 

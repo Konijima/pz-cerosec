@@ -21,7 +21,7 @@ have can notice is in the shell: a script you saved that used `echo "a\nb"` now 
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
-- The debug window's Self-test also runs 260 shell lines on a scratch
+- The debug window's Self-test also runs 261 shell lines on a scratch
   machine, spread over a few seconds, and writes
   `CeroSec shell selftest: PASS n FAIL m` to the log and console.txt.
 - `test` and `[` refuse a bad number the way 4.4BSD did:
@@ -38,6 +38,9 @@ and a command whose redirect is refused no longer runs.
   a copy of the shell: `(cd /etc; ls)` leaves you where you were, and
   `(exit 3)` ends only the brackets, with 3 in `$?`. A function's body may
   be any of these too: `f() ( cd /; ls )`.
+- A redirect after a function's closing brace is the function's own, as
+  in sh: `log() { echo ran; } >> ~/log` appends to the file every time
+  `log` runs. It used to be refused with `redirection unexpected`.
 - Because of that, `(` and `)` are part of the shell's grammar now, and
   `{` and `}` are where a command starts. `echo (hi)` is a syntax error, as
   on sh: quote the brackets, `echo '(hi)'`. A case pattern that is a set

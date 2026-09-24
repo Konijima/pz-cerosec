@@ -1340,7 +1340,11 @@ a stage of a pipe. What it changes stays inside it:
 
 And exit leaves the brackets and nothing more: (exit 3); echo $?
 prints 3, and you are still logged in. A bracket is grammar now,
-so echo (a) is a syntax error: quote it, echo '(a)'.]],
+so echo (a) is a syntax error: quote it, echo '(a)'.
+
+A function's body takes a redirect the same way, and it is opened at
+every call: after f() { echo a; } > o, each f writes o, and f > p
+still does, leaving p empty.]],
 
 [[Sending output to a file, and to nowhere.
 

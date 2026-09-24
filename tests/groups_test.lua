@@ -326,6 +326,9 @@ do
 		{ "r", "r() ( echo r; cat nosuch ) 2>&1", { "r",
 			"cat: nosuch: No such file or directory" }, "r > o; cat o" },
 		{ "t", "t() { echo t > tf; cat tf; }", { "t" } },
+		-- A redirect after the brace: the source ends on its target.
+		{ "u", "u() { echo u; } > uf", { "u" }, "u; cat uf" },
+		{ "v", "v() { echo v; echo w 1>&2; } 2>vf", { "v", "w" }, "v; cat vf" },
 	}
 	for i = 1, #forms do ok(state, admin, forms[i][2], {}) end
 	local held = CeroSec.repairConsole({ lines = {}, shfuncs = admin.shfuncs })
@@ -338,6 +341,32 @@ do
 			admin.shfuncs[f[1]])
 		ok(state, back, f[4] or f[1], f[3])
 	end
+end
+
+--
+-- 11. A redirect after a function's closing brace is the function's (XCU
+-- 2.9.5 `function_body : compound_command redirect_list`; 4.4BSD-Lite2
+-- parser.c wraps the brace list in an NREDIR): opened at every call, and
+-- inside the call's own, so `f > p` still writes o and leaves p empty.
+-- dash printed each of these.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "f() { echo a; } > o; f; cat o", { "a" })
+	ok(state, admin, "f > p; echo [$(cat o)] [$(cat p)]", { "[a] []" })
+	ok(state, admin, "g() { echo b; echo e 1>&2; } 2>ef; g; cat ef", { "b", "e" })
+	ok(state, admin, "h() { echo x; } >> ap; h; h; cat ap", { "x", "x" })
+	ok(state, admin, "k() ( echo s ) >> sa; k; k > sp; echo [$(cat sa)] [$(cat sp)]",
+		{ "[s s] []" })
+	-- Opened at the call, not at the definition: the target is not made
+	-- until the function runs, and a bad one fails the call.
+	ok(state, admin, "d() { echo d; } > df; ls df", { "ls: df: No such file or directory" })
+	ok(state, admin, "y() { echo y; } > /nope/x; y; echo $?",
+		{ "cannot create /nope/x: directory nonexistent", "1" })
+	-- One redirect per descriptor, as on every other command here.
+	bad(state, admin, "n() { echo a; } > o > q", "Syntax error: redirection unexpected")
+	bad(state, admin, "z() { echo z; } foo", "Syntax error: word unexpected")
 end
 
 print("groups_test: " .. count .. " assertions passed")

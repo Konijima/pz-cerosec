@@ -1225,6 +1225,7 @@ local function parseFunc(P, depth, name, tokens, braced)
 		end
 		P.i = P.i + 1
 	end
+	local brace = P.i - 1
 	local body, reason, where = parseProgram(P, { ["}"] = true }, depth + 1)
 	if body == nil then return nil, reason, where end
 	local empty, eline = emptyList(P, body)
@@ -1234,6 +1235,20 @@ local function parseFunc(P, depth, name, tokens, braced)
 		return nil, unexpected(peek(P), "}"), peek(P).line
 	end
 	P.i = P.i + 1
+	-- `f() { list; } > o`: XCU 2.9.5 `function_body : compound_command
+	-- redirect_list`, and 4.4BSD-Lite2 parser.c's command() reads the
+	-- redirects after the TEND and wraps the brace list in an NREDIR, so
+	-- they are the body's and are opened at every call, inside any the
+	-- call itself names (`f > p` still writes o, as on dash). Here the
+	-- body is read again as the brace group it is, which takes them; the
+	-- source ends on the last one, so a save hands them back.
+	if peek(P).t == "redir" then
+		P.i = brace
+		local node, reason, where = parseGroup(P, depth)
+		if node == nil then return nil, reason, where end
+		body = { node }
+		close = P.tokens[P.i - 1]
+	end
 	local src = string.sub(P.text or "", at, close.stop or at)
 	if #src > CeroSecOS.MAX_FUNC_BYTES then
 		return nil, "function too large", line

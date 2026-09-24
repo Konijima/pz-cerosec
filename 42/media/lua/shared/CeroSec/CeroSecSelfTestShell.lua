@@ -299,6 +299,11 @@ CeroSecSelfTest.SHELL_CASES = {
 		out = { "0", "a", "b" } },
 	{ name = "a redirect wins over $( )",
 		line = "g() { echo hi; }; x=$(g > f); echo \"[$x]\"; cat f", out = { "[]", "hi" } },
+	-- XCU 2.9.5: a redirect after the body is the function's, inside the
+	-- call's, so the call's p stays empty.
+	{ name = "a function's own redirect",
+		line = "f() { echo a; } > o; f > p; echo \"[$(cat o)] [$(cat p)]\"",
+		out = { "[a] []" } },
 	{ name = "echo a > f | true", line = "echo a > f | true; cat f", out = { "a" } },
 	{ name = "a file named -f", line = "echo x > -f; cat ./-f; rm -- -f; ls",
 		out = { "x" } },
