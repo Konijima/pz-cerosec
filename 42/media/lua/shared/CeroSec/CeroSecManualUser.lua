@@ -258,7 +258,11 @@ all of it.
   admin@ksp-04-11:~$
 
 A real Unix would have printed notes there. When you want the good
-ones kept, name the files one command at a time.]],
+ones kept, name the files one command at a time.
+
+Numbers stop at 9007199254740991, where a 1993 long stopped at
+2147483647 and wrapped round. $(( )) and expr hold their numbers at
+the top; printf says Result too large, and test says overflow.]],
 
 [[What is not Unix here: errors, continued.
 

@@ -4486,6 +4486,61 @@ do
 		string.find(said, "status 2", 1, true) ~= nil)
 end
 
+-- 30. Numbers nobody can hold. Every numeric path that reads a player's
+-- word -- printf's %d %x %o and its widths, $(( )), expr, test -eq, sleep,
+-- cut's list, tail's count, kill -l, read -n, shift -- handed infinity, NaN
+-- and four hundred nines. `printf %x 1e999` was a digit loop over an
+-- infinity: one command step that never returned, which no budget can stop
+-- because the budget is only asked BETWEEN steps. Each must answer, and
+-- answer what 4.4BSD answered (CeroSecOS.strtol, CeroSecOSVM.lua).
+--
+do
+	local machine, state, console = newMachine()
+	local nines = string.rep("9", 400)
+	put(state, "/home/admin/big.sh", "n=" .. nines .. "\n"
+		.. "printf '%x\\n' 1e999; echo s$?\n"
+		.. "printf '%o\\n' $n; echo s$?\n"
+		.. "printf '%x %d\\n' inf; printf '%d\\n' nan; printf '%999999999999999999999d|\\n' 1\n"
+		.. "echo $(( n * n )) $(( n + 1 )) $(( -n - 1 ))\n"
+		.. "expr $n \\* $n; expr $n / 7\n"
+		.. "test inf -eq inf; echo t$?; test $n -eq 1; echo t$?\n"
+		.. "sleep inf; sleep nan; echo w$?\n"
+		.. "echo abc | cut -c 1-$n; echo abc | cut -c 1-99999999\n"
+		.. "echo x | tail -n 1e999; echo y | tail -n $n; echo z | head -n $n\n"
+		.. "kill -l $n; set -- a; shift $n; echo sh$?\n"
+		.. "echo done\n"
+		.. "echo $(( 1e999 ))\n")
+	typeLine(system, machine, state, console, "sh big.sh")
+	local result = drive(machine, 80)
+	timely("numbers nobody can hold", result)
+	note("big numbers", result)
+	local said = table.concat(console.lines, "|")
+	if os.getenv("HOSTILE_DUMP") then print(said) end
+	local function says(what, text)
+		check(what .. " (" .. string.sub(said, 1, 60) .. "...)",
+			string.find(said, text, 1, true) ~= nil)
+	end
+	says("printf refuses 1e999 as getlong did", "printf: 1e999: illegal number|s1")
+	-- The line is wider than the glass: the refusal wraps after "too".
+	says("and four hundred nines as strtol's ERANGE", "Result too| large|s1")
+	-- inf and nan do not start with one of "+-.0123456789", so getlong
+	-- reads them as asciicode(): 'i' and 'n', and a missing operand is 0.
+	says("inf and nan are characters to printf", "69 0|110")
+	says("$(( )) holds at the top of the word",
+		"9007199254740991 9007199254740991 -9007199254740991")
+	says("and 1e999 is a 1 and then junk", "big.sh: line 13: bad arithmetic")
+	says("expr holds there too", "9007199254740991|1286742750677284")
+	says("test refuses inf", "test: integer expected|t2")
+	says("and says overflow past the word", "9999: overflow|t2")
+	says("sleep takes neither", "sleep: invalid interval|sleep: invalid interval|w1")
+	says("cut refuses a list past its line", "cut: 1-99999999: invalid list")
+	says("tail refuses 1e999, holds the nines", "tail: usage")
+	says("and the lines still come", "y|z")
+	says("kill -l on the nines is nosig", "; valid signals:")
+	says("shift past $# is 1", "sh1")
+	says("and the script reaches its end", "done")
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

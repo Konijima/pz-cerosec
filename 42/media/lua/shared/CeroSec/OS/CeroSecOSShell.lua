@@ -1149,6 +1149,11 @@ CeroSecOS.DEVIATIONS = {
 	-- CeroSecOS.printfText knows %s, %c, %d, %x, %o and %%, with a width, a
 	-- precision and the "-" and "0" flags, but no %f; and its \NNN makes no
 	-- control byte (printfPass), where printf.c stored whatever byte it named.
+	-- The machine's integer is the double's exact range (CeroSecOS.INT_MAX,
+	-- CeroSecOSVM.lua), and a result past it saturates: 4.4BSD's long was 32
+	-- bits and its sums wrapped in silence. Named "numbers" in the list.
+	{ name = "numbers", world = true, phrase = "Numbers stop at 9007199254740991",
+		why = "a double is exact that far; past it a sum stops rather than wraps" },
 	{ name = "printf", phrase = "printf has no %f",
 		why = "no floating point conversion is trusted here, and no control byte" },
 	-- 4.4BSD's bin/ls/print.c printlong: "%s %*u %-*s  %-*s  " -- the mode, the
@@ -1477,17 +1482,21 @@ local function exprIsInt(s)
 	return string.match(s, "^%-?%d+$") ~= nil
 end
 
--- Truncated toward zero, the way C's / and % (and so expr(1)'s) work --
--- floor would answer -1 for -7 / 2 where C and expr both say -3.
-local function exprDiv(a, b)
-	local q = a / b
-	if q < 0 then return -math.floor(-q) end
-	return math.floor(q)
+-- An operand's value: expr.y's atol(), strtol clamped at the top of the
+-- word (CeroSecOS.strtol) -- never tonumber, which on both VMs read a wall
+-- of nines as an infinity. And a result the way expr.y's sprintf("%ld")
+-- printed it: digits, pulled back inside the word where 4.4BSD's long
+-- wrapped round in silence (the "numbers" deviation).
+local function exprNum(s)
+	return (CeroSecOS.strtol(s))
+end
+local function exprText(v)
+	return CeroSecOS.intText(CeroSecOS.intClamp(v))
 end
 
 local function exprCompare(op, a, b)
 	local na, nb = nil, nil
-	if exprIsInt(a) and exprIsInt(b) then na, nb = tonumber(a), tonumber(b) end
+	if exprIsInt(a) and exprIsInt(b) then na, nb = exprNum(a), exprNum(b) end
 	local x, y = na or a, nb or b
 	if op == "=" then return x == y end
 	if op == "!=" then return x ~= y end
@@ -1521,14 +1530,15 @@ exprMul = function(t, i, hi)
 		if not exprIsInt(v) or not exprIsInt(w) then
 			return nil, "non-numeric argument", nj
 		end
-		local a, b = tonumber(v), tonumber(w)
+		local a, b = exprNum(v), exprNum(w)
 		if op == "*" then
-			v = tostring(math.floor(a * b))
+			v = exprText(a * b)
 		else
 			if b == 0 and op == "/" then return nil, "Divide by zero", nj end
 			if b == 0 then return nil, "Remainder by zero", nj end
-			if op == "/" then v = tostring(exprDiv(a, b))
-			else v = tostring(math.floor(a - exprDiv(a, b) * b)) end
+			-- Truncated toward zero, C's / and % (and so expr.y's).
+			local q, r = CeroSecOS.intDiv(a, b)
+			if op == "/" then v = exprText(q) else v = exprText(r) end
 		end
 		ni = nj
 	end
@@ -1545,8 +1555,8 @@ exprAdd = function(t, i, hi)
 		if not exprIsInt(v) or not exprIsInt(w) then
 			return nil, "non-numeric argument", nj
 		end
-		local a, b = tonumber(v), tonumber(w)
-		if op == "+" then v = tostring(math.floor(a + b)) else v = tostring(math.floor(a - b)) end
+		local a, b = exprNum(v), exprNum(w)
+		if op == "+" then v = exprText(a + b) else v = exprText(a - b) end
 		ni = nj
 	end
 	return v, nil, ni
@@ -3350,21 +3360,45 @@ end
 
 -- -n N, or the older -N: `head -1` and `tail -5` are how the two of them were
 -- spelled before -n existed, they are still what a pair of hands types, and
--- every Unix still takes them. Nothing else. Answers the count and the paths, or
--- nil for a line that is not one -- which the caller turns into the usage
--- string.
-local function lineCount(args)
-	local n, rest = 10, {}
+-- every Unix still takes them. Answers the count, the paths, and whether the
+-- count was signed "+" -- or nil for a line that is not one, which the caller
+-- turns into the usage string.
+--
+-- The count is read the way 4.4BSD's tail.c reads one (its ARG() macro):
+-- strtol, the whole word or nothing, and its SIGN is what it means -- "+N"
+-- counts from the top of the file, "-N" and a bare N from the bottom -- so
+-- `tail -n +3` starts at the third line. head.c's strtol reads the same
+-- sign and refuses a negative count. Never tonumber: "+3" is not a number to every VM
+-- this runs on, and "1e999" and "inf" are numbers to both.
+local function lineCount(args, isTail)
+	local n, rest, plus = 10, {}, false
 	local i = 2
 	while i <= #args do
 		local a = args[i]
-		if a == "-n" then
-			local value = tonumber(args[i + 1] or "")
-			if value == nil or value < 0 or value ~= math.floor(value) then return nil end
+		if #rest == 0 and a == "--" then
+			-- getopt(3): "--" ends the options and is not an operand.
+			for k = i + 1, #args do rest[#rest + 1] = args[k] end
+			break
+		elseif #rest == 0 and string.sub(a, 1, 2) == "-n" then
+			local word = string.sub(a, 3)
+			if word == "" then
+				word = args[i + 1]
+				i = i + 2
+			else
+				i = i + 1
+			end
+			if word == nil then return nil end
+			local value = CeroSecOS.intOf(word)
+			if value == nil or string.find(word, "^[ \t\n]") ~= nil then return nil end
+			plus = string.sub(word, 1, 1) == "+"
+			if value < 0 then
+				if not isTail then return nil end
+				value = -value
+			end
 			n = value
-			i = i + 2
 		elseif #rest == 0 and string.match(a, "^%-%d+$") ~= nil then
-			n = tonumber(string.sub(a, 2))
+			n = (CeroSecOS.strtol(string.sub(a, 2)))
+			plus = false
 			i = i + 1
 		elseif #rest == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			return nil
@@ -3373,7 +3407,7 @@ local function lineCount(args)
 			i = i + 1
 		end
 	end
-	return n, rest
+	return n, rest, plus
 end
 
 commands.head = function(state, session, args, env, stdin)
@@ -3425,7 +3459,7 @@ end
 local function tailPlus(args)
 	local a = args[2]
 	if a == nil or string.match(a, "^%+%d+$") == nil then return nil end
-	local from = tonumber(string.sub(a, 2))
+	local from = (CeroSecOS.strtol(string.sub(a, 2)))
 	if from < 1 then from = 1 end
 	local rest = {}
 	for i = 3, #args do rest[#rest + 1] = args[i] end
@@ -3434,6 +3468,16 @@ end
 
 commands.tail = function(state, session, args, env, stdin)
 	local from, plusRest = tailPlus(args)
+	if from == nil then
+		-- -n +N is the same starting point as the older +N (tail.c's
+		-- ARG(): off -= units, style = forward), and +0 is the first line
+		-- as +1 is.
+		local n, rest, plus = lineCount(args, true)
+		if n ~= nil and plus then
+			from, plusRest = n, rest
+			if from < 1 then from = 1 end
+		end
+	end
 	if from ~= nil then
 		local input = stdinOf(stdin, plusRest)
 		if input ~= nil then
@@ -3454,7 +3498,7 @@ commands.tail = function(state, session, args, env, stdin)
 		return true, out
 	end
 
-	local n, rest = lineCount(args)
+	local n, rest = lineCount(args, true)
 	if n == nil then return usage("tail") end
 
 	-- With no file, the pipe. Which lines were the last ones is not known until
@@ -3785,6 +3829,7 @@ end
 -- POSIX.2's own grammar for -c and -f: numbers and ranges, separated by commas,
 -- and a range with no number after the "-" runs to the end of the line ("3-").
 -- nil for a list that is not one, which the caller words its own refusal about.
+local CUT_MAX = 2048
 local function cutList(text)
 	if type(text) ~= "string" or text == "" then return nil end
 	local want, high, toEnd = {}, 0, nil
@@ -3807,15 +3852,19 @@ local function cutList(text)
 				lo, hi = one, one
 			end
 		end
-		lo = tonumber(lo)
-		if lo < 1 then return nil end
+		-- Read by strtol, and bounded where 4.4BSD cut.c's get_list bounded
+		-- a list, at _POSIX2_LINE_MAX: every position below the top is a
+		-- slot in `want`, filled one at a time, and `cut -c 1-99999999999`
+		-- was that many turns of the loop under it.
+		lo = (CeroSecOS.strtol(lo))
+		if lo < 1 or lo > CUT_MAX then return nil end
 		if hi == "" then
 			-- To the end of the line. Remembered as a floor rather than a set,
 			-- because a line's length is not known here.
 			if toEnd == nil or lo < toEnd then toEnd = lo end
 		else
-			hi = tonumber(hi)
-			if hi < lo then return nil end
+			hi = (CeroSecOS.strtol(hi))
+			if hi < lo or hi > CUT_MAX then return nil end
 			for i = lo, hi do
 				want[i] = true
 				if i > high then high = i end
@@ -4855,7 +4904,7 @@ local function atRemove(state, session, args, from, who, env)
 	local jobs = CeroSecOS.atJobs(state)
 	local out, okAll = {}, true
 	for i = from, #args do
-		local n = tonumber(args[i])
+		local n = CeroSecOS.intOf(args[i])
 		local found = nil
 		for k = 1, #jobs do
 			if n ~= nil and jobs[k].n == n then found = jobs[k] end

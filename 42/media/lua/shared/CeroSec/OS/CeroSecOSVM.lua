@@ -655,7 +655,7 @@ local function wordPartText(job, p)
 		return job.args[p.n] or ""
 	end
 	if p.t == "count" then return tostring(#job.args) end
-	if p.t == "status" then return tostring(job.status) end
+	if p.t == "status" then return CeroSecOS.intText(job.status) end
 	if p.t == "job" then return tostring(job.id) end
 	if p.t == "star" or p.t == "all" then return table.concat(job.args, " ") end
 	if p.t == "bang" then
@@ -1236,6 +1236,128 @@ local function pushFrame(job, frame)
 end
 
 --
+-- The machine's integer
+--
+-- Every number a player types -- printf's operands, expr's, $(( ))'s, test's,
+-- a count, a job number -- is read HERE and printed HERE, and never by
+-- tonumber or tostring. Both VMs' tonumber take "inf", "nan", "Infinity" and
+-- "1e999" (measured on lua5.1 and on the game's Kahlua, 2026-09-24), and a
+-- digit loop handed an infinity never ends: `printf %x 1e999` hung the
+-- machine. Kahlua also answers nil for "0x10" where lua5.1 answers 16, and
+-- prints 123456789012345 as "1.23456789012345E14" where lua5.1 prints
+-- "1.2345678901234e+14" -- neither of them digits.
+--
+-- The word is the double's exact range, +-9007199254740991, where a 1993
+-- long held 2147483647: a declared deviation ("numbers"). Past it a number
+-- saturates, the way strtol(3) clamps at LONG_MAX with ERANGE, and the
+-- callers that 4.4BSD had report ERANGE report it.
+CeroSecOS.INT_MAX = 9007199254740991
+
+-- strtol(3) in base 10, by hand: leading blanks, one sign, the digits. The
+-- value, the index of the first byte not read (1 when nothing was converted,
+-- as strtol leaves endptr at the start), and true when the value was clamped
+-- -- strtol's ERANGE. Bounded by the length of the text and never by what
+-- the digits add up to.
+function CeroSecOS.strtol(s)
+	s = tostring(s or "")
+	local n, i = #s, 1
+	while i <= n do
+		local c = string.sub(s, i, i)
+		if c ~= " " and c ~= "\t" and c ~= "\n" then break end
+		i = i + 1
+	end
+	local neg, c = false, string.sub(s, i, i)
+	if c == "-" or c == "+" then
+		neg = c == "-"
+		i = i + 1
+	end
+	local v, range, digits = 0, false, 0
+	while i <= n do
+		local b = string.byte(s, i)
+		if b < 48 or b > 57 then break end
+		if not range then
+			v = v * 10 + (b - 48)
+			if v > CeroSecOS.INT_MAX then
+				v = CeroSecOS.INT_MAX
+				range = true
+			end
+		end
+		digits = digits + 1
+		i = i + 1
+	end
+	if digits == 0 then return 0, 1, false end
+	if neg then v = -v end
+	return v, i, range
+end
+
+-- The whole text as one integer, blanks allowed round it, or nil: what sh's
+-- own number() and a count want. Clamped, like strtol.
+function CeroSecOS.intOf(s)
+	local v, stop = CeroSecOS.strtol(s)
+	if stop == 1 then return nil end
+	s = tostring(s)
+	while stop <= #s do
+		local c = string.sub(s, stop, stop)
+		if c ~= " " and c ~= "\t" and c ~= "\n" then return nil end
+		stop = stop + 1
+	end
+	return v
+end
+
+-- A result pulled back inside the word: saturated, never wrapped, and a
+-- NaN (inf - inf) is nought. The deviation above.
+function CeroSecOS.intClamp(v)
+	if type(v) ~= "number" or v ~= v then return 0 end
+	if v > CeroSecOS.INT_MAX then return CeroSecOS.INT_MAX end
+	if v < -CeroSecOS.INT_MAX then return -CeroSecOS.INT_MAX end
+	return v
+end
+
+-- An integer as its decimal digits, printf's %ld: a remainder at a time,
+-- never %d or %g (the two VMs format a big double differently, above), and
+-- never the "%" operator (CeroSecOS.mod: Kahlua's clamps at 2^31). At most
+-- sixteen turns of the loop, the word being what it is.
+function CeroSecOS.intText(v)
+	v = CeroSecOS.intClamp(v)
+	if v < 0 then v = -math.floor(-v) else v = math.floor(v) end
+	if v == 0 then return "0" end
+	local neg = v < 0
+	if neg then v = -v end
+	local s = ""
+	while v > 0 do
+		local q = math.floor(v / 10)
+		local d = v - q * 10
+		-- v / 10 is rounded before it is floored; this puts a digit the
+		-- rounding moved back where it belongs.
+		if d < 0 then q, d = q - 1, d + 10 elseif d > 9 then q, d = q + 1, d - 10 end
+		s = string.char(48 + d) .. s
+		v = q
+	end
+	if neg then s = "-" .. s end
+	return s
+end
+
+-- a / b and a % b the way C (and so sh and expr) have them: the quotient
+-- truncated toward zero, the remainder with a's sign. The quotient is
+-- corrected by one where a / b was rounded across a whole number, which a
+-- double does near the top of the word.
+function CeroSecOS.intDiv(a, b)
+	local q = a / b
+	if q < 0 then q = -math.floor(-q) else q = math.floor(q) end
+	local r = a - b * q
+	local babs = b
+	if babs < 0 then babs = -babs end
+	if r ~= 0 and (r < 0) ~= (a < 0) then
+		if (a < 0) == (b < 0) then q = q - 1 else q = q + 1 end
+		r = a - b * q
+	elseif r >= babs or -r >= babs then
+		if (a < 0) == (b < 0) then q = q + 1 else q = q - 1 end
+		r = a - b * q
+	end
+	return q, r
+end
+
+--
 -- Arithmetic, $(( ))
 --
 -- Read here, by hand, on integers. There is no eval on this machine and there
@@ -1255,9 +1377,7 @@ local arithSum
 -- ends here -- a variable, an argument, ${name} -- and the rule an empty
 -- variable is nought by is the rule an empty argument has to be nought by.
 local function argNumber(text)
-	local v = tonumber(text)
-	if v == nil then return 0 end
-	return math.floor(v)
+	return CeroSecOS.intOf(text) or 0
 end
 
 -- A number, a variable, a parenthesised sum, or a unary minus.
@@ -1316,7 +1436,8 @@ local function arithUnit(job, s, i)
 	if string.find(c, "^[0-9]") ~= nil then
 		local j = i
 		while j <= #s and string.find(string.sub(s, j, j), "^[0-9]") ~= nil do j = j + 1 end
-		return tonumber(string.sub(s, i, j - 1)), j
+		-- arith_lex.l's atol(yytext): strtol, clamped at the top of the word.
+		return (CeroSecOS.strtol(string.sub(s, i, j - 1))), j
 	end
 	if string.find(string.sub(s, i, i), "^[A-Za-z_]") ~= nil then
 		local j = i
@@ -1336,14 +1457,15 @@ local function arithProduct(job, s, i)
 		if c ~= "*" and c ~= "/" and c ~= "%" then return left, j end
 		local right, k, rerr = arithUnit(job, s, j + 1)
 		if rerr ~= nil then return nil, k, rerr end
+		-- Every result is pulled back inside the word (CeroSecOS.intClamp):
+		-- 4.4BSD's int wrapped round in silence, this one stops at the top.
 		if c == "*" then
-			left = left * right
+			left = CeroSecOS.intClamp(left * right)
 		else
 			if right == 0 then return nil, k, "divide by zero" end
 			-- Truncated towards zero, the way C and every shell divide.
-			local q = left / right
-			if q < 0 then q = math.ceil(q) else q = math.floor(q) end
-			if c == "/" then left = q else left = left - right * q end
+			local q, r = CeroSecOS.intDiv(left, right)
+			if c == "/" then left = CeroSecOS.intClamp(q) else left = r end
 		end
 		j = k
 	end
@@ -1359,17 +1481,19 @@ arithSum = function(job, s, i)
 		local right, k, rerr = arithProduct(job, s, j + 1)
 		if rerr ~= nil then return nil, k, rerr end
 		if c == "+" then left = left + right else left = left - right end
+		left = CeroSecOS.intClamp(left)
 		j = k
 	end
 end
 
--- value as a string, or nil plus the reason.
+-- value as a string, or nil plus the reason. Digits, never tostring's
+-- exponent (CeroSecOS.intText).
 local function arithEval(job, expr)
 	local v, j, err = arithSum(job, expr, 1)
 	if err ~= nil then return nil, err end
 	j = arithSkip(expr, j)
 	if j <= #expr then return nil, "bad arithmetic" end
-	return tostring(math.floor(v))
+	return CeroSecOS.intText(v)
 end
 
 --
@@ -1547,7 +1671,7 @@ local function expandStep(job, state, ex, env)
 			elseif part.t == "count" then
 				text = tostring(#job.args)
 			elseif part.t == "status" then
-				text = tostring(job.status)
+				text = CeroSecOS.intText(job.status)
 			elseif part.t == "job" then
 				text = tostring(job.id)
 			elseif part.t == "star" then
@@ -1803,8 +1927,18 @@ local function testBinary(left, op, right)
 	if op == "=" then return left == right end
 	if op == "!=" then return left ~= right end
 	if NUMERIC[op] then
-		local a, b = tonumber(left), tonumber(right)
+		-- Read by strtol and never tonumber, which took "inf" and "1e5".
+		-- Past the word it is 4.4BSD test.c's get_int: errx(2, "%s:
+		-- overflow") at LONG_MAX and "%s: underflow" at LONG_MIN.
+		local a, b = CeroSecOS.intOf(left), CeroSecOS.intOf(right)
 		if a == nil or b == nil then return nil, "test: integer expected" end
+		for _, v in ipairs({ left, right }) do
+			local _, _, range = CeroSecOS.strtol(v)
+			if range then
+				if CeroSecOS.intOf(v) < 0 then return nil, "test: " .. v .. ": underflow" end
+				return nil, "test: " .. v .. ": overflow"
+			end
+		end
 		if op == "-eq" then return a == b end
 		if op == "-ne" then return a ~= b end
 		if op == "-lt" then return a < b end
@@ -1929,7 +2063,8 @@ end
 -- rule). Clamped to zero instead of guessing a width: a survivor typing
 -- `printf %x -1` gets 0, not a wrong answer dressed as a right one.
 local function toBase(v, base, digits)
-	v = math.floor(v)
+	-- Inside the word or nothing: an infinity here was a loop with no end.
+	v = math.floor(CeroSecOS.intClamp(v))
 	if v < 0 then v = 0 end
 	if v == 0 then return "0" end
 	local s = ""
@@ -1941,10 +2076,37 @@ local function toBase(v, base, digits)
 	return s
 end
 
+-- The operand of %d, %o and %x: 4.4BSD-Lite2 usr.bin/printf/printf.c's
+-- getlong(), which hands every operand that starts with one of
+-- "+-.0123456789" (or is empty) to strtol and refuses what strtol did not
+-- read all of -- warnx("%s: illegal number") -- or had to clamp --
+-- warnx("%s: %s", strerror(ERANGE)), "Result too large" (errlst.c) -- and
+-- reads any other operand as its first character's code (asciicode(), which
+-- skips one leading quote: `printf %d "'A"` is 65). Either refusal is
+-- `return (1)` in main(): printf stops where it stands. Base 10 only, where
+-- getlong's strtol took 0x and a leading 0 too.
+local PRINTF_NUMBER = "+-.0123456789"
+local function printfLong(arg)
+	if arg == nil then return 0 end
+	local c = string.sub(arg, 1, 1)
+	if c ~= "" and string.find(PRINTF_NUMBER, c, 1, true) == nil then
+		if c == "'" or c == "\"" then c = string.sub(arg, 2, 2) end
+		if c == "" then return 0 end
+		return string.byte(c)
+	end
+	local v, stop, range = CeroSecOS.strtol(arg)
+	if stop <= #arg or (stop == 1 and arg ~= "") then
+		return nil, "printf: " .. arg .. ": illegal number"
+	end
+	if range then return nil, "printf: " .. arg .. ": Result too large" end
+	return v
+end
+
 -- One pass over the format, from args[from]. Answers the text and the next
 -- unread argument index, so the caller can tell whether the pass consumed
 -- anything -- which is what decides whether the format is reused (see the
--- head of CeroSecOS.printfText).
+-- head of CeroSecOS.printfText) -- and, when an operand was refused, the
+-- refusal as a third answer.
 local function printfPass(format, args, from)
 	local out, i, a = "", 1, from
 	while i <= #format do
@@ -1991,14 +2153,14 @@ local function printfPass(format, args, from)
 			local width = nil
 			local wDigits = string.match(format, "^%d+", j)
 			if wDigits ~= nil then
-				width = tonumber(wDigits)
+				width = (CeroSecOS.strtol(wDigits))
 				j = j + #wDigits
 			end
 			local prec = nil
 			if string.sub(format, j, j) == "." then
 				j = j + 1
 				local pDigits = string.match(format, "^%d+", j) or "0"
-				prec = tonumber(pDigits)
+				prec = (CeroSecOS.strtol(pDigits))
 				j = j + #pDigits
 			end
 			if width ~= nil and width > PRINTF_MAX_FIELD then width = PRINTF_MAX_FIELD end
@@ -2016,12 +2178,12 @@ local function printfPass(format, args, from)
 				a = a + 1
 				out = out .. printfPad(v, width, left, false)
 			elseif conv == "d" then
-				local v = tonumber(args[a] or "0") or 0
+				local v, bad = printfLong(args[a])
+				if v == nil then return out, a, bad end
 				a = a + 1
-				v = math.floor(v)
 				local sign = ""
 				if v < 0 then sign = "-"; v = -v end
-				local digits = tostring(v)
+				local digits = CeroSecOS.intText(v)
 				-- Precision on a numeric conversion is a MINIMUM digit count
 				-- (printf(3)), not a truncation: `%.4d` on 3 is "0003", and
 				-- `%.0d` on 0 is nothing at all -- no digit, not even a zero.
@@ -2031,7 +2193,8 @@ local function printfPass(format, args, from)
 				end
 				out = out .. printfPad(digits, width, left, zero and prec == nil, sign)
 			elseif conv == "x" or conv == "o" then
-				local v = tonumber(args[a] or "0") or 0
+				local v, bad = printfLong(args[a])
+				if v == nil then return out, a, bad end
 				a = a + 1
 				local digits = toBase(v, conv == "x" and 16 or 8, "0123456789abcdef")
 				if prec ~= nil and #digits < prec then
@@ -2073,16 +2236,24 @@ function CeroSecOS.printfText(args)
 	repeat
 		local before = a
 		local piece
-		piece, a = printfPass(format, args, a)
+		local bad
+		piece, a, bad = printfPass(format, args, a)
 		out = out .. piece
+		-- A refused operand ends printf where it stood, what it printed
+		-- before it printed (getlong's `return (1)` in main).
+		if bad ~= nil then return out, bad end
 	until a > #args or a == before
 	return out
 end
 
 builtins.printf = function(job, args)
-	local text = CeroSecOS.printfText(args)
+	local text, bad = CeroSecOS.printfText(args)
 	if text == nil then return 1 end
 	writeText(job, text)
+	if bad ~= nil then
+		errLines(job, { bad })
+		return 1
+	end
 	return 0
 end
 
@@ -2115,7 +2286,7 @@ end
 builtins.shift = function(job, args)
 	local n = 1
 	if args[2] ~= nil then
-		n = tonumber(args[2])
+		n = CeroSecOS.intOf(args[2])
 		if n == nil or n < 0 then return 1 end
 		n = math.floor(n)
 	end
@@ -2396,7 +2567,7 @@ end
 
 builtins.exit = function(job, args)
 	local n = 0
-	if args[2] ~= nil then n = math.floor(tonumber(args[2]) or 0) end
+	if args[2] ~= nil then n = CeroSecOS.intOf(args[2]) or 0 end
 	job.sig = { k = "exit", n = n }
 	return n
 end
@@ -2409,7 +2580,7 @@ end
 -- written on every machine in the county.
 builtins["return"] = function(job, args)
 	local n = 0
-	if args[2] ~= nil then n = math.floor(tonumber(args[2]) or 0) end
+	if args[2] ~= nil then n = CeroSecOS.intOf(args[2]) or 0 end
 	job.sig = { k = "return", n = n }
 	return n
 end
@@ -2417,7 +2588,7 @@ end
 local function loopSignal(job, args, kind)
 	local n = 1
 	if args[2] ~= nil then
-		n = tonumber(args[2])
+		n = CeroSecOS.intOf(args[2])
 		if n == nil or n < 1 then return 1 end
 		n = math.floor(n)
 	end
@@ -2582,7 +2753,7 @@ builtins.read = function(job, args, state, env)
 			-- -n N: the first N characters of the answer. A count that is not a
 			-- whole number above nought is ksh's "bad number".
 			local want = args[i + 1] or ""
-			count = tonumber(want)
+			count = CeroSecOS.intOf(want)
 			if count == nil or count < 1 or count ~= math.floor(count)
 					or string.find(want, "^[0-9]+$") == nil then
 				return nil, "read: " .. want .. ": bad number"
@@ -2668,10 +2839,21 @@ end
 -- `sleep abc > f` leaves f empty, `x=$(sleep abc)` leaves x empty, and
 -- `2>/dev/null` hushes it.
 builtins.sleep = function(job, args, state, env)
-	local n = tonumber(args[2] or "")
-	if n == nil or n < 0 then
+	-- Whole seconds and a fraction, read digit by digit: tonumber took
+	-- "inf" and "nan", and a wake-up time of infinity is a job that never
+	-- wakes and a number no save can hold. The seconds are sleep.c's own
+	-- atoi(), which cannot say more than an int's 2147483647.
+	local text = args[2] or ""
+	local whole, frac = string.match(text, "^(%d*)%.?(%d*)$")
+	if whole == nil or (whole == "" and frac == "") then
 		errLines(job, { "sleep: invalid interval" })
 		return 1
+	end
+	local n = CeroSecOS.strtol(whole)
+	if n > 2147483647 then n = 2147483647 end
+	if frac ~= "" then
+		frac = string.sub(frac, 1, 3)
+		n = n + CeroSecOS.strtol(frac) / ({ 10, 100, 1000 })[#frac]
 	end
 	local now = CeroSecOS.nowMsOf(env)
 	-- A machine with no clock cannot sleep; it says so rather than sleeping
@@ -2723,7 +2905,7 @@ builtins.wait = function(job, args, state, env)
 	for i = 2, #args do
 		local id = args[i]
 		if string.sub(id, 1, 1) == "%" then id = string.sub(id, 2) end
-		id = tonumber(id)
+		id = CeroSecOS.intOf(id)
 		if id == nil then return nil, "wait: " .. args[i] .. ": no such job" end
 		local found = false
 		for k = 1, #jobs do
@@ -5479,7 +5661,7 @@ commands.fg = function(state, session, args, env)
 			want = string.sub(want, 2)
 			bySlot = true
 		end
-		local n = tonumber(want)
+		local n = CeroSecOS.intOf(want)
 		if n == nil then return false, { "fg: " .. args[2] .. ": no such job" } end
 		for i = 1, #jobs do
 			local job = jobs[i]
@@ -5570,7 +5752,23 @@ commands.kill = function(state, session, args, env)
 	local first = args[2]
 	if first == "-l" then
 		-- kill -l: the list, on the output side (printsignals(stdout)).
-		if #args > 2 then return false, usageLines end
+		-- With one operand, kill.c's own branch: a number and nothing else
+		-- (`if (!isdigit(**argv)) usage();`, so `kill -l TERM` is the usage
+		-- line), read by strtol and refused whole if anything trails it;
+		-- 128 and up is an exit status and loses its 128; then the name, as
+		-- sys_signame spells it, or nosig().
+		if #args > 3 then return false, usageLines end
+		if #args == 3 then
+			local word = args[3]
+			if string.find(word, "^%d") == nil then return false, usageLines end
+			local numsig, stop = CeroSecOS.strtol(word)
+			if stop <= #word then
+				return false, { "kill: illegal signal number: " .. word }
+			end
+			if numsig >= 128 then numsig = numsig - 128 end
+			if numsig <= 0 or numsig > #KILL_NAMES then return killNoSig(word) end
+			return true, { KILL_NAMES[numsig] }
+		end
 		local a, b = killSignalLines()
 		return true, { a, b }
 	elseif first == "-s" then
@@ -5594,7 +5792,7 @@ commands.kill = function(state, session, args, env)
 			if string.match(rest, "^%d+$") == nil then
 				return false, { "kill: illegal signal number: " .. rest }
 			end
-			signum = tonumber(rest)
+			signum = CeroSecOS.intOf(rest)
 			if signum < 1 or signum > #KILL_NAMES then return killNoSig(rest) end
 		else
 			return killNoSig(rest)
@@ -5612,7 +5810,7 @@ commands.kill = function(state, session, args, env)
 		want = string.sub(want, 2)
 		bySlot = true
 	end
-	local n = tonumber(want)
+	local n = CeroSecOS.intOf(want)
 	if n == nil then return false, { "kill: " .. args[at] .. ": no such job" } end
 	for i = 1, #jobs do
 		local job = jobs[i]
@@ -5656,9 +5854,13 @@ commands["false"] = function(state, session, args, env)
 end
 
 commands.printf = function(state, session, args, env)
-	local text = CeroSecOS.printfText(args)
+	local text, bad = CeroSecOS.printfText(args)
 	if text == nil then return false, {} end
 	local lines = CeroSecOS.splitLines(text)
+	if bad ~= nil then
+		lines[#lines + 1] = bad
+		return false, lines
+	end
 	-- printf writes only what its own format asked for -- no "\n" unless one
 	-- is in it -- so `sudo printf a` leaves its line open exactly as the
 	-- builtin's own writeText does (builtins.printf, above).

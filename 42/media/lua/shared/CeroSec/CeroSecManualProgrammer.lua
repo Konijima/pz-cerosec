@@ -2553,6 +2553,11 @@ carries:
       and then the list, as kill -l prints it
   kill: illegal signal number: <x>
   kill: option requires an argument -- s
+  printf: <x>: illegal number
+  printf: <x>: Result too large
+      printf stops there, and $? is 1
+  test: <x>: overflow
+      or underflow: past the machine's word
   kill: stop: not honoured
       a signal that would only pause a job
   no <name> in /bin /usr/local/bin
