@@ -558,6 +558,85 @@ local function setVar(job, name, value)
 	return nil
 end
 
+-- The word inside ${name:-word}, ${name#word} and the rest of them, flattened
+-- to one string. readBraceWord (CeroSecOSScript.lua) already refused every
+-- part that could recurse or wait on a capture -- no $( ), no `` ``, no
+-- second ${x:-y} -- so what is left is exactly the plain parameters
+-- expandStep resolves everywhere else, and none of them can yield. That is
+-- what lets this run straight through instead of through expandStep's own
+-- step machine.
+local function resolveWordText(job, parts)
+	local buf = ""
+	for i = 1, #parts do
+		local p = parts[i]
+		local t
+		if p.t == "lit" then
+			t = p.s
+		elseif p.t == "var" then
+			t = getVar(job, p.name)
+		elseif p.t == "arg" then
+			if p.n == 0 then t = job.name else t = job.args[p.n] or "" end
+		elseif p.t == "count" then
+			t = tostring(#job.args)
+		elseif p.t == "status" then
+			t = tostring(job.status)
+		elseif p.t == "job" then
+			t = tostring(job.id)
+		elseif p.t == "star" or p.t == "all" then
+			t = table.concat(job.args, " ")
+		elseif p.t == "bang" then
+			if job.lastBg ~= nil then t = tostring(job.lastBg) else t = "" end
+		else
+			t = ""
+		end
+		buf = buf .. t
+		if #buf > CeroSecOS.MAX_VAR_BYTES then return nil, "word too large" end
+	end
+	return buf
+end
+
+-- ${name#pattern} / ${name##pattern}: the shortest, or the longest, prefix
+-- of value that CeroSecOS.globMatch holds against pattern, cut away. ksh88's
+-- and POSIX.2's own reading of it -- "the smallest/largest such pattern" --
+-- worked out by trying candidate prefixes in the matching order rather than
+-- by walking the pattern by hand, which is the same shell glob globMatch
+-- already gives `case` and nothing written twice.
+local function trimPrefix(value, pattern, longest)
+	if longest then
+		for len = #value, 0, -1 do
+			if CeroSecOS.globMatch(string.sub(value, 1, len), pattern) then
+				return string.sub(value, len + 1)
+			end
+		end
+	else
+		for len = 0, #value do
+			if CeroSecOS.globMatch(string.sub(value, 1, len), pattern) then
+				return string.sub(value, len + 1)
+			end
+		end
+	end
+	return value
+end
+
+-- ${name%pattern} / ${name%%pattern}: the same, off the end.
+local function trimSuffix(value, pattern, longest)
+	local n = #value
+	if longest then
+		for len = n, 0, -1 do
+			if CeroSecOS.globMatch(string.sub(value, n - len + 1), pattern) then
+				return string.sub(value, 1, n - len)
+			end
+		end
+	else
+		for len = 0, n do
+			if CeroSecOS.globMatch(string.sub(value, n - len + 1), pattern) then
+				return string.sub(value, 1, n - len)
+			end
+		end
+	end
+	return value
+end
+
 -- Mark a name as being in the environment. nil, or the reason it may not be.
 -- The set is made on demand, because a job that never exports anything is a job
 -- whose environment is what it was handed.
@@ -1187,6 +1266,68 @@ local function expandStep(job, state, ex, env)
 			elseif part.t == "bang" then
 				-- Empty until an `&` has started something, as in any sh.
 				if job.lastBg ~= nil then text = tostring(job.lastBg) else text = "" end
+			elseif part.t == "vare" then
+				-- System V sh's ${name:-word} family and ksh88's ${#name},
+				-- ${name#pat} and the rest -- POSIX.2 2.6.2's parameter
+				-- expansion, read by readDollar's "{" arm (CeroSecOSScript.lua)
+				-- into the operator and, for every kind but "len", the WORD
+				-- that follows it. "unset" there means POSIX's own test: the
+				-- name has never been given a value; a colon widens it to
+				-- "unset or set to the empty string" -- ${x:-w} where x=""
+				-- answers w, ${x-w} answers "".
+				if part.kind == "len" then
+					text = tostring(#getVar(job, part.name))
+				else
+					local val = getVar(job, part.name)
+					local isNil = job.vars[part.name] == nil
+					local unset = isNil or (part.colon and val == "")
+					if part.kind == "default" or part.kind == "assign" then
+						if unset then
+							local w, werr = resolveWordText(job, part.word)
+							if w == nil then return nil, werr end
+							if part.kind == "assign" then
+								local reason = setVar(job, part.name, w)
+								if reason ~= nil then return nil, reason end
+							end
+							text = w
+						else
+							text = val
+						end
+					elseif part.kind == "error" then
+						if unset then
+							local w, werr = resolveWordText(job, part.word)
+							if w == nil then return nil, werr end
+							-- POSIX.2 2.6.2's own wording for an omitted word.
+							if w == "" then w = "parameter null or not set" end
+							return nil, part.name .. ": " .. w
+						end
+						text = val
+					elseif part.kind == "alt" then
+						if unset then
+							text = ""
+						else
+							local w, werr = resolveWordText(job, part.word)
+							if w == nil then return nil, werr end
+							text = w
+						end
+					else
+						-- The trims: ${name#p} ${name##p} ${name%p} ${name%%p}.
+						-- The pattern is a word too -- $HOME and the like are
+						-- read in it -- flattened the same way, then handed to
+						-- the same glob CeroSecOS.globMatch gives `case`.
+						local pat, perr = resolveWordText(job, part.word)
+						if pat == nil then return nil, perr end
+						if part.kind == "trimPre" then
+							text = trimPrefix(val, pat, false)
+						elseif part.kind == "trimPreLong" then
+							text = trimPrefix(val, pat, true)
+						elseif part.kind == "trimSuf" then
+							text = trimSuffix(val, pat, false)
+						else
+							text = trimSuffix(val, pat, true)
+						end
+					end
+				end
 			elseif part.t == "arith" then
 				-- The expansions in POSIX.2's order: command substitution first, the
 				-- sum afterwards. A sum with no $( ) in it has no `parts` and is read
@@ -1513,6 +1654,82 @@ builtins.shift = function(job, args)
 	local kept = {}
 	for i = n + 1, #job.args do kept[#kept + 1] = job.args[i] end
 	job.args = kept
+	return 0
+end
+
+-- set: with no operand, every variable this shell holds, one a line as
+-- NAME=value and sorted -- POSIX.2's own words for it, "in a format that can
+-- be reused as input", the same re-inputtable shape export's bare form
+-- already prints, but every name and not only the exported ones.
+--
+-- `set -- word...` and, since none of this shell's own words starts with
+-- "-", the shorter `set word...` (POSIX.2 12.2's "If no options are given...
+-- and the first operand begins with a character other than -") replace the
+-- positional parameters: $1.. and $#. $0 is untouched -- POSIX.2 is explicit
+-- that set never sets it -- which is why job.name does not move.
+--
+-- A NEW table and never a mutation of the old one: `job.args` may be the
+-- table a caller up the stack is still holding (shift makes the same
+-- choice, just above), and `f(){ set -- z; }; set -- a b; f; echo $1` has to
+-- come back "a" -- the function's own `set --` must not reach through to
+-- the shell that called it.
+--
+-- No 1993 sh had -e, -x or -u to refuse in so many words; this one refuses
+-- any flag the getopt-style deviation already covers everywhere else (`ls
+-- -z`'s "unknown option"), because nothing here traces a script, stops it on
+-- a failed command, or treats an unset variable as one -- and a refusal that
+-- pretended to turn one of those on would be worse than saying so.
+builtins.set = function(job, args)
+	if #args == 1 then
+		local names = CeroSecOS.envNames(job.vars, nil)
+		for i = 1, #names do
+			writeText(job, names[i] .. "=" .. job.vars[names[i]] .. "\n")
+		end
+		return 0
+	end
+	local start = 2
+	if args[2] == "--" then
+		start = 3
+	elseif string.sub(args[2], 1, 1) == "-" then
+		return nil, "set: " .. args[2] .. ": unknown option"
+	end
+	local kept = {}
+	for i = start, #args do kept[#kept + 1] = args[i] end
+	job.args = kept
+	return 0
+end
+
+-- unset NAME...: drops each variable, sh(1) of the seventh edition; unset -f
+-- NAME... drops a function instead, and -v NAME... says "a variable" in as
+-- many words as the default already means, both POSIX.2's. A name that was
+-- never set is not an error, the way NAME= on an unset variable never was.
+--
+-- job.nvars is the ceiling setVar counts variables against as they are
+-- MADE (CeroSecOS.MAX_VARS, above); a variable unset has to give its seat
+-- back the same way, or `for i in ...; do x=$i; unset x; done` run enough
+-- times reads "too many variables" for a shell holding none. job.exported
+-- loses the name too -- a variable gone cannot still be in the environment.
+builtins.unset = function(job, args)
+	local i, doFuncs = 2, false
+	if args[2] == "-f" then
+		doFuncs = true
+		i = 3
+	elseif args[2] == "-v" then
+		i = 3
+	end
+	for k = i, #args do
+		local name = args[k]
+		if not CeroSecOS.isVarName(name) then return nil, "unset: not a name" end
+		if doFuncs then
+			if type(job.funcs) == "table" then job.funcs[name] = nil end
+		else
+			if job.vars[name] ~= nil then
+				job.vars[name] = nil
+				job.nvars = job.nvars - 1
+			end
+			if type(job.exported) == "table" then job.exported[name] = nil end
+		end
+	end
 	return 0
 end
 
@@ -2977,6 +3194,14 @@ local function newStage(job, node, out, into, last)
 		-- is handed a copy of the variables: `greet | cat` calls the greet the shell
 		-- holds, and a definition inside a stage dies with the stage.
 		funcs = CeroSecOS.copyFuncs(job.funcs),
+		-- And of the exported SET, the same copy pushCapture hands a $( ):
+		-- job.exported == nil reads as "everything is exported" (the honest
+		-- reading a machine saved before export existed has to get), and
+		-- copyExported(nil) is nil, so that reading survives into the stage
+		-- too. Without this a fresh login's stage started with exported left
+		-- at nil read as "everything", and `Q=1; env | cat` put Q where a
+		-- real sh's execve for cat never would have.
+		exported = CeroSecOS.copyExported(job.exported),
 	})
 	stage.pipe = out
 	stage.stdinBuf = into

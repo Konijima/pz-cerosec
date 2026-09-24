@@ -1033,10 +1033,14 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "redirect", world = true,
 		phrase = "One > and one 2> to a command, and no <",
 		why = "a command has one output, one error and no input redirect" },
-	-- ${name} is the only brace form; System V sh's :- := :? :+ and ksh88's
-	-- # are refused as a bad substitution.
-	{ name = "braces", world = true, phrase = "${x:-y}, ${#x} and the rest",
-		why = "${name} is the only form inside braces" },
+	-- System V sh's :- := :? :+ and ksh88's ${#x} and #/##/%/%% now read
+	-- inside braces (readDollar's "{" arm, CeroSecOSScript.lua); what is
+	-- still refused is a SECOND substitution inside the word or the pattern
+	-- -- a $( ), a backquote or another ${x:-y} -- one level deep, the same
+	-- ceiling a catch inside a catch already meets (readCommandSub).
+	{ name = "braces", world = true,
+		phrase = "the ceiling a catch inside a catch already has",
+		why = "the word after :- := :? :+ # ## % %% may hold no second substitution" },
 	-- read's flags are bash's (2.0 for -n): in ksh88 -p read from the
 	-- co-process and -s saved the line to the history file.
 	{ name = "read", shell = true, phrase = "read -p, read -s and read -n",
@@ -1074,13 +1078,15 @@ CeroSecOS.DEVIATIONS = {
 	-- says so; these are named because a script reaches for them first.
 	-- `absent` marks a name that is neither a command, a word of the shell
 	-- nor a retired one.
-	{ name = "set", absent = true, phrase = "set, unset, exec and trap are not in this shell",
-		why = "variables are NAME=value and nothing more" },
-	{ name = "unset", absent = true, phrase = "set, unset, exec and trap are not in this shell",
-		why = "a variable is emptied with NAME=" },
-	{ name = "exec", absent = true, phrase = "set, unset, exec and trap are not in this shell",
+	-- set lists variables and set -- replaces $1.. now (builtins.set,
+	-- CeroSecOSVM.lua); -e, -x and -u are refused, because nothing here
+	-- traces a script, stops it on a failed command, or flags an unset
+	-- variable, and claiming one of those turned on would be a lie.
+	{ name = "set", shell = true, phrase = "set has no -e, -x or -u",
+		why = "nothing here traces a script, stops on failure or flags an unset variable" },
+	{ name = "exec", absent = true, phrase = "exec cannot replace this shell",
 		why = "a job cannot replace its shell" },
-	{ name = "trap", absent = true, phrase = "set, unset, exec and trap are not in this shell",
+	{ name = "trap", absent = true, phrase = "trap is not in this shell",
 		why = "there are no signals to catch" },
 	{ name = "rmdir", absent = true, phrase = "rmdir, expr and uname are not on the disk",
 		why = "rm -r takes a directory" },
@@ -1223,7 +1229,8 @@ CeroSecOS.BUILTIN_FILES = {
 -- files. Reserved words first, then the builtins that change the shell.
 CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done case esac"
 CeroSecOS.HELP_BUILTINS =
-	"cd . export exit fg jobs wait read shift break continue history type"
+	"cd . export exit fg jobs wait read shift break continue history type" ..
+	" set unset"
 
 -- The same words as a set, derived from the line `help` prints rather than
 -- listed a second time beside it: a word `help` says is the shell's own is one

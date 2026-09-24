@@ -260,6 +260,12 @@ local function arithParts(text, depth)
 	return parts
 end
 
+-- The word after :- := :? :+ # ## % %%, defined below readDollar because the
+-- two call each other: a name inside the braces may itself hold a bare $x or
+-- ${x}, and readDollar's own "{" arm reads that word once it has the operator.
+-- Forward-declared so the mutual recursion compiles.
+local readBraceWord
+
 -- Everything from "$" onwards. Returns the part and the index just past it,
 -- or nil plus a reason.
 local function readDollar(text, i, quoted, depth)
@@ -303,15 +309,71 @@ local function readDollar(text, i, quoted, depth)
 	end
 
 	if c == "{" then
+		-- ${#name}: the length, ksh88's own form and POSIX.2's. Read first
+		-- because "#" cannot start a name (isVarName says so), so it can
+		-- never be mistaken for one.
+		if string.sub(text, i + 2, i + 2) == "#" then
+			local k = i + 3
+			local name = ""
+			while k <= n and isNameChar(string.sub(text, k, k)) do
+				name = name .. string.sub(text, k, k)
+				k = k + 1
+			end
+			if string.sub(text, k, k) == "}" and CeroSecOS.isVarName(name) then
+				return { t = "vare", kind = "len", name = name, q = quoted }, k + 1
+			end
+			return nil, "syntax error: bad substitution"
+		end
+
 		local j = i + 2
 		local name = ""
-		while j <= n and string.sub(text, j, j) ~= "}" do
+		while j <= n and isNameChar(string.sub(text, j, j)) do
 			name = name .. string.sub(text, j, j)
 			j = j + 1
 		end
-		if j > n then return nil, "syntax error: bad substitution" end
-		if not CeroSecOS.isVarName(name) then return nil, "syntax error: bad substitution" end
-		return { t = "var", name = name, q = quoted }, j + 1
+		if name == "" or not CeroSecOS.isVarName(name) then
+			return nil, "syntax error: bad substitution"
+		end
+		local nc = string.sub(text, j, j)
+		if nc == "}" then
+			return { t = "var", name = name, q = quoted }, j + 1
+		end
+
+		-- System V sh's :- := :? :+, and ksh88's # ## % %% -- the same set
+		-- CeroSecOS.globMatch already gives `case` and the shell's own
+		-- pathname expansion, so # and % read a PATTERN and never a Lua one.
+		local colon = false
+		if nc == ":" then
+			colon = true
+			j = j + 1
+			nc = string.sub(text, j, j)
+		end
+		local kind = nil
+		if nc == "-" then kind = "default"
+		elseif nc == "=" then kind = "assign"
+		elseif nc == "?" then kind = "error"
+		elseif nc == "+" then kind = "alt"
+		elseif not colon and nc == "#" then
+			if string.sub(text, j + 1, j + 1) == "#" then
+				kind = "trimPreLong"
+				j = j + 1
+			else
+				kind = "trimPre"
+			end
+		elseif not colon and nc == "%" then
+			if string.sub(text, j + 1, j + 1) == "%" then
+				kind = "trimSufLong"
+				j = j + 1
+			else
+				kind = "trimSuf"
+			end
+		end
+		if kind == nil then return nil, "syntax error: bad substitution" end
+		j = j + 1
+		local word, j2 = readBraceWord(text, j, depth)
+		if word == nil then return nil, j2 end
+		return { t = "vare", kind = kind, name = name, word = word, colon = colon,
+			q = quoted }, j2
 	end
 
 	if isNameStart(c) then
@@ -338,6 +400,96 @@ local function readDollar(text, i, quoted, depth)
 
 	-- A dollar in front of anything else is a dollar.
 	return nil, nil, true
+end
+
+-- The word that follows :- := :? :+ # ## % %%, up to the "}" that closes it.
+-- Read like an ordinary word -- quotes, a bare $name and a bare ${name} all
+-- work -- but ONE level: $( ), `` `` and a second ${x:-y} inside it are each
+-- refused as a bad substitution, the same ceiling readCommandSub already
+-- holds $( ) inside $( ) to (one catch is bounded work; two is unbounded
+-- behind a single dollar sign). That is what lets this word be read straight
+-- through, with no capture to wait for and nothing that can recurse.
+readBraceWord = function(text, i, depth)
+	local n = #text
+	local parts = {}
+	-- A "$" met anywhere in this word: readDollar reads it, and only a
+	-- plain parameter (var, arg, count, star, bang, status, job, all) may
+	-- come back -- "sub", "arith" and a nested "vare" are refused here.
+	local function dollar(quoted)
+		local part, second, literal = readDollar(text, i, quoted, depth)
+		if literal then
+			addLit(parts, "$", true, false)
+			i = i + 1
+			return true
+		end
+		if part == nil then return nil, second end
+		if part.t == "sub" or part.t == "arith" or part.t == "vare" then
+			return nil, "syntax error: bad substitution"
+		end
+		parts[#parts + 1] = part
+		i = second
+		return true
+	end
+	while i <= n do
+		local c = string.sub(text, i, i)
+		if c == "}" then
+			return parts, i + 1
+		elseif c == "'" then
+			i = i + 1
+			local buf, closed = "", false
+			while i <= n do
+				local q = string.sub(text, i, i)
+				if q == "'" then
+					closed = true
+					i = i + 1
+					break
+				end
+				buf = buf .. q
+				i = i + 1
+			end
+			if not closed then return nil, "syntax error: unterminated quote" end
+			parts[#parts + 1] = { t = "lit", s = buf, q = true, bare = false }
+		elseif c == "\"" then
+			i = i + 1
+			local closed = false
+			parts[#parts + 1] = { t = "lit", s = "", q = true, bare = false }
+			while i <= n do
+				local q = string.sub(text, i, i)
+				if q == "\"" then
+					closed = true
+					i = i + 1
+					break
+				elseif q == "\\" then
+					local nx = string.sub(text, i + 1, i + 1)
+					if nx == "" then return nil, "syntax error: unterminated quote" end
+					if nx == "$" or nx == "`" or nx == "\"" or nx == "\\" then
+						addLit(parts, nx, true, false)
+					else
+						addLit(parts, "\\" .. nx, true, false)
+					end
+					i = i + 2
+				elseif q == "$" then
+					local ok, reason = dollar(true)
+					if ok == nil then return nil, reason end
+				elseif q == "`" then
+					return nil, "syntax error: bad substitution"
+				else
+					addLit(parts, q, true, false)
+					i = i + 1
+				end
+			end
+			if not closed then return nil, "syntax error: unterminated quote" end
+		elseif c == "$" then
+			local ok, reason = dollar(false)
+			if ok == nil then return nil, reason end
+		elseif c == "`" then
+			return nil, "syntax error: bad substitution"
+		else
+			addLit(parts, c, true, false)
+			i = i + 1
+		end
+	end
+	return nil, "syntax error: bad substitution"
 end
 
 -- text -> array of tokens, or nil plus a reason and the line it is on.

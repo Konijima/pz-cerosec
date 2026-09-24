@@ -293,9 +293,10 @@ One > and one 2> to a command, and no < at all: a second > is a bad
 redirect, and < is refused. Hand a file to a command by naming it, or
 with cat file | command.
 
-${x:-y}, ${#x} and the rest of sh's and ksh's forms inside braces are
-not here: ${x} is the whole of it, and anything else is a bad
-substitution.]],
+${x:-y}, ${#x}, ${x#p} and the rest of sh's and ksh's forms inside
+braces work now, but the word after :- := :? :+ # ## % %% may not
+hold a $( ) of its own, nor another ${x:-y}: one substitution deep is
+the ceiling a catch inside a catch already has.]],
 
 [[What is not Unix here: pipes.
 
@@ -332,13 +333,14 @@ ls /bin is the whole list of what this machine can run, and a program a
 real Unix had and this one has not is simply not in it. A few are named
 here because a script reaches for them first.
 
-set, unset, exec and trap are not in this shell: a variable is set with
-NAME=value and emptied with NAME=, and nothing else touches it.
+exec cannot replace this shell, because no job here stands in front of
+the one that started it, and trap is not in this shell: there are no
+signals to catch.
 
 rmdir, expr and uname are not on the disk. rm -r takes a directory,
 $(( )) does sums, and hostname names the machine.
 
-rm has no -f, and kill takes no signal: kill %1 is the whole of it, and
+set has no -e, -x or -u. rm has no -f, and kill takes no signal: kill %1 is the whole of it, and
 kill -9 %1 is a usage error. tail +N is not here; tail -n N is. printf
 knows %s, %d and %%, and prints anything else as it stands: %5.2f comes
 out as %5.2f.]],

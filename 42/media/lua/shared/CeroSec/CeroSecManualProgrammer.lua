@@ -2337,10 +2337,10 @@ character. A pound sign starts a comment.]],
 
 [[The shell's own words.
 
-Thirteen words the shell runs itself, with no file in /bin needed:
+Fifteen words the shell runs itself, with no file in /bin needed:
 
-  . break cd continue export exit fg
-  history jobs read shift type wait
+  . break cd continue exit export fg history
+  jobs read set shift type unset wait
 
 Everything else you type is a FILE, found by walking PATH: echo, printf
 and test are files in /bin, which is why ls /bin is the honest list of
@@ -2361,6 +2361,10 @@ what this machine can do.]],
       read the file in THIS shell, so what it sets is
       still set afterwards. It wants r on the file and
       not x, because nothing runs it
+  set, unset
+      set alone lists every variable the same way; set --
+      word... replaces $1.. and $#. unset NAME... drops a
+      variable, unset -f NAME... a function
 
 sh <file> is the other half of the last one: that runs the file as a
 program, which is handed a copy of the environment and can change nothing
@@ -2425,7 +2429,7 @@ line is named and the script ends there.
       the name after > came out as two words, or none
   sort: input too large
       sort and uniq hold all their input first: a
-      hundred lines, four kilobytes, no more
+      hundred lines, four kilobytes
   test: integer expected
       -eq and its five friends, handed something that
       is not a number
@@ -2433,6 +2437,7 @@ line is named and the script ends there.
   test: missing ']'
   test: argument expected
   read: not a name
+  unset: not a name
   read: <n>: bad number
   sleep: invalid interval
   sleep: no clock
