@@ -251,7 +251,7 @@ end
 local jobError
 
 -- How big the open capture has become: the value it would hand back if it
--- closed now, which is its lines joined by one separator, plus whatever is held
+-- closed now, which is its lines joined by "\n", plus whatever is held
 -- part way through a line. Kept as a running total on the buffer rather than
 -- measured, because it is asked on every write a captured job makes.
 local function captureBytes(job, extra)
@@ -433,12 +433,13 @@ end
 -- bounds what is held to one row.
 --
 -- Only on the way to the screen. Inside a $(...) the text is not going to a
--- screen and must not be folded as if it were: the capture joins its lines with
--- a space, so a wrap there would push spaces into the middle of the captured
--- value. What bounds it there is the capture's byte ceiling, measured on what
--- is held as well as on what has been caught -- the same flood written into a
--- substitution instead of onto a screen must meet a ceiling of its own, or it
--- is the same unbounded string one door along.
+-- screen and must not be folded as if it were: the capture joins its lines
+-- with "\n" (POSIX.2 2.6.3), so a wrap there would push newlines into the
+-- middle of the captured value. What bounds it there is the capture's byte
+-- ceiling, measured on what is held as well as on what has been caught --
+-- the same flood written into a substitution instead of onto a screen must
+-- meet a ceiling of its own, or it is the same unbounded string one door
+-- along.
 local function wrapPartial(job)
 	if capturing(job) then
 		if captureBytes(job, job.partial) > CeroSecOS.MAX_VAR_BYTES then

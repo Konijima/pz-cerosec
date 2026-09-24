@@ -6552,11 +6552,12 @@ do
 		runScript(state, admin, "y=$(printf %s " .. string.rep("c", 1023) ..
 			")\necho done").out[1], "bench.sh: line 1: word too large")
 
-	-- Two lines, to prove the separator is counted: what a capture hands back is
-	-- its lines joined by one space, and that space is a byte of the value like
-	-- any other.
+	-- Two lines, to prove the separator is counted: what a capture hands back
+	-- keeps the newline BETWEEN its lines (POSIX.2 2.6.3, Command
+	-- Substitution: only trailing newlines are removed), and that newline is
+	-- a byte of the value like any other.
 	local pair = runScript(state, admin, "y=$(printf '%s\\n%s' one two)\necho done")
-	eq("a two-line capture is joined by one space", pair.job.vars.y, "one two")
+	eq("a two-line capture keeps its internal newline", pair.job.vars.y, "one\ntwo")
 
 	-- A capture is bounded by the BYTES and by nothing else. There was a
 	-- hundred-line ceiling here as well and the two did not agree: a capture past
@@ -6568,9 +6569,9 @@ do
 	for i = 1, 150 do rows[#rows + 1] = "r" .. i end
 	put(state, admin, "/home/admin/rows", table.concat(rows, "\n"))
 	check("150 short lines still fit a word",
-		#table.concat(rows, " ") <= CeroSecOS.MAX_VAR_BYTES - 2)
+		#table.concat(rows, "\n") <= CeroSecOS.MAX_VAR_BYTES - 2)
 	local lots = runScript(state, admin, "y=$(cat /home/admin/rows)\necho done")
-	eq("a 150-line capture comes back whole", lots.job.vars.y, table.concat(rows, " "))
+	eq("a 150-line capture comes back whole", lots.job.vars.y, table.concat(rows, "\n"))
 	eq("and the script ran on", lots.out[1], "done")
 
 	-- And 150 lines that do NOT fit a word are refused, which is the answer a
@@ -15910,8 +15911,11 @@ do
 	-- The pipe and the capture, which already worked: the count is the script's
 	-- lines and the word is the script's output.
 	okAt(state, admin, "./two.sh | wc -l", { "     2" })
+	-- z keeps the internal newline (POSIX.2 2.6.3), so the quoted echo's own
+	-- text is two lines: the newline inside "$z" is a byte like any other and
+	-- ends the first one wherever it falls.
 	ok(state, admin, "z=$(sh two.sh)", {})
-	okAt(state, admin, "echo \"[$z]\"", { "[one two]" })
+	okAt(state, admin, "echo \"[$z]\"", { "[one", "two]" })
 
 	-- A NESTED script inherits it, because nothing closed the file: the shell that
 	-- opened it is still the one running.

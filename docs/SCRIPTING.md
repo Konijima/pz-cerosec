@@ -225,14 +225,18 @@ command.
 
 The language is the one you already know from a 1993 `/bin/sh`, cut to what fits on
 a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$*`, `$?`,
-`$$`, `$!` (`"$@"` is one field per argument, `"$*"` one field in all, and bare
-`$@`/`$*` are split on blanks like any unquoted expansion; where nothing is split,
-`x=$@`, `x="$@"` and `case "$@" in`, `$@` is one word joined by blanks as in dash and
-bash; `$!` is the id of the last job an `&` started, empty until one has, and a new
-login starts with none; there is no IFS); `read` with several names (a word each, the
-rest of the line to the last; `-r` keeps backslashes, `-n N` keeps N characters, and
-from a pipe leaves the rest of the line, newline included, to the next read as bash
-does); a command not found sets `$?` to 127
+`$$`, `$!` (`"$@"` is one field per argument, `"$*"` one field in all, joined by
+`IFS`'s first byte -- a blank when `IFS` is unset, nothing at all when it is set
+empty (POSIX.2 2.5.3); bare `$@`/`$*` are split on `IFS` like any unquoted
+expansion -- blanks, tabs and newlines by default, and whatever else `IFS` holds
+besides; where nothing is split, `x=$@`, `x="$@"` and `case "$@" in`, `$@` is one
+word joined the same way as `$*`; `$!` is the id of the last job an `&` started,
+empty until one has, and a new login starts with none); `IFS` (POSIX.2 2.6.5: unset
+reads as space, tab and newline; a script that never sets it is unchanged); `read`
+with several names (splits on `IFS` too, a word each, the rest of the line to the
+last; `-r` keeps backslashes, `-n N` keeps N characters, and from a pipe leaves the
+rest of the line, newline included, to the next read as bash does); a command not
+found sets `$?` to 127
 and one found but not executable to 126; `test`/`[` and `sleep` are programs, so
 their errors print, set `$?` (2 and 1) and the script goes on; single and double quotes and backslash (inside double quotes a backslash
 is special only before `$`, `` ` ``, `"`, `\` and a newline, and is kept before

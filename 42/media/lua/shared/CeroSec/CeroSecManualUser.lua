@@ -286,9 +286,6 @@ A file keeps no newline after its last line. echo a > p makes a file of
 one byte where a real one makes two, so wc -c counts one short; and
 echo -n x > f then echo y >> f is two lines here, not xy.
 
-IFS is not read: a line is cut into words at blanks, tabs and newlines,
-whatever IFS holds.
-
 One > and one 2> to a command, and no < at all: a second > is a bad
 redirect, and < is refused. Hand a file to a command by naming it, or
 with cat file | command.

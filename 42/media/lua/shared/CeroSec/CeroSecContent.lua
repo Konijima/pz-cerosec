@@ -3395,14 +3395,20 @@ CeroSecContent.DISKS = {
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"n=sort; e=a; g=$(printf \"c\\na\\nb\\n\" | sort | head -n 1)",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				-- wc -l's count is a fixed-width field (see wc(1) here), so a
+				-- straight $(...) of it carries leading blanks; $(( )) reads
+				-- it as a number and drops them, same as `expr $(...)` would.
 				"n=sort-u; e=2; g=$(printf \"b\\na\\nb\\n\" | sort -u | wc -l)",
+				"g=$((g))",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"n=wc; e=3; g=$(printf \"a\\nb\\nc\\n\" | wc -l)",
+				"g=$((g))",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"printf \"a\\nba\\nc\\n\" >~/st.t",
 				"n=grep; e=2; g=$(grep -c a ~/st.t)",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"n=more; e=3; g=$(cat ~/st.t | more | wc -l)",
+				"g=$((g))",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"n=tee; e=\"z z\"; g=\"$(echo z | tee ~/st.u) $(cat ~/st.u)\"",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
@@ -3460,6 +3466,7 @@ CeroSecContent.DISKS = {
 				"n=sleep; e=0; g=$?",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"f=$(cat $F | wc -l)",
+				"f=$((f))",
 				"s=\"PASS $p FAIL $f\"",
 				"cat $F",
 				"echo \"$s\"",

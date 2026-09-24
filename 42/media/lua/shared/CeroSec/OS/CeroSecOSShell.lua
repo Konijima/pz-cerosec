@@ -1024,10 +1024,6 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "newline", world = true,
 		phrase = "A file keeps no newline after its last line",
 		why = "the text is its lines joined; nothing follows the last" },
-	-- Field splitting is blanks, tabs and newlines (CeroSecOSVM's readFields
-	-- and the word expander); IFS is an ordinary name.
-	{ name = "IFS", world = true, phrase = "IFS is not read",
-		why = "field splitting is blank, tab and newline only" },
 	-- One > (or >>) and one 2> per command, and < is refused by the lexer
 	-- (CeroSecOSScript: "unexpected '<'"). sh took any number of each.
 	{ name = "redirect", world = true,
