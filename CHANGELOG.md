@@ -185,7 +185,9 @@ and a command whose redirect is refused no longer runs.
 - A `[` missing its `]`, or a `sleep` with no number, no longer stops a
   script: the error is printed, `$?` is 2 (or 1 for sleep), and the script
   carries on. `sleep abc` reads its word as 4.4BSD's did, as nought: it
-  sleeps no time and says nothing. Their errors go where errors go:
+  sleeps no time and says nothing. sleep counts whole seconds, as 4.4BSD's
+  did: `sleep 0.5` no longer waits at all, and `sleep 1.5` waits one
+  second, so a loop that paused on a fraction wants `sleep 1`. Their errors go where errors go:
   `2>/dev/null` hides them, and they no longer land in a `> file`, a `$( )`
   or down a pipe.
 - `$?` after a command that is not found is now 127, and 126 for a file you may not
