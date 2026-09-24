@@ -657,7 +657,11 @@ local function wordPartText(job, p)
 	if p.t == "count" then return tostring(#job.args) end
 	if p.t == "status" then return CeroSecOS.intText(job.status) end
 	if p.t == "job" then return tostring(job.id) end
-	if p.t == "star" or p.t == "all" then return table.concat(job.args, " ") end
+	-- $* joins on IFS's first byte here as it does everywhere (POSIX.2
+	-- 2.5.2), so "${y:-$*}" is "$*"; $@ in a word that is one string is
+	-- the blank-joined string it is on the right of `x=`.
+	if p.t == "star" then return table.concat(job.args, ifsJoinChar(job)) end
+	if p.t == "all" then return table.concat(job.args, " ") end
 	if p.t == "bang" then
 		if job.lastBg ~= nil then return tostring(job.lastBg) end
 		return ""
@@ -1644,6 +1648,22 @@ local function addSplit(ex, text, glob)
 	end
 end
 
+-- Bare $@ and $*: every positional parameter is a field of its own, and
+-- then IFS splits inside each (POSIX.2 2.5.2). The boundary between two is
+-- a field boundary whatever IFS holds, and it starts a fresh run for
+-- wsClosed, as a new word does -- `set -- 'a ' ':b'` with IFS=' :' is a,
+-- "" and b, the ":" delimiting on its own. An empty parameter adds no
+-- field, the way any empty unquoted expansion adds none.
+local function splitParams(ex, params)
+	for a = 1, #params do
+		if a > 1 then
+			if ex.open then closeField(ex) end
+			ex.wsClosed = false
+		end
+		addSplit(ex, params[a], true)
+	end
+end
+
 -- "done" when every word is expanded, "sub" when a $(...) has been pushed and
 -- the walker must run it first, or nil plus the reason.
 local function expandStep(job, state, ex, env)
@@ -1678,11 +1698,20 @@ local function expandStep(job, state, ex, env)
 				text = CeroSecOS.intText(job.status)
 			elseif part.t == "job" then
 				text = tostring(job.id)
+			elseif part.t == "star" and not part.q and not ex.nosplit then
+				-- Bare, $* is $@: each positional parameter a field, and
+				-- then each field split on IFS (POSIX.2 2.5.2, "expands to
+				-- the positional parameters, starting from one", and 2.6.5
+				-- on the result). Not the joined string split again: with
+				-- IFS=: an argument "a b" stays one field, and with IFS
+				-- empty every argument stays its own.
+				splitParams(ex, job.args)
+				ex.pi = ex.pi + 1
+				text = nil
 			elseif part.t == "star" then
 				-- One string, joined by IFS's first byte -- a blank if IFS is
 				-- unset, nothing if it is set empty (POSIX.2 2.5.3). Quoted it
-				-- is one field; bare it is split like any other expansion,
-				-- below, on the very same IFS.
+				-- is one field, and so it is where nothing splits.
 				text = table.concat(job.args, ifsJoinChar(job))
 			elseif part.t == "bang" then
 				-- Empty until an `&` has started something, as in any sh.
@@ -1821,7 +1850,7 @@ local function expandStep(job, state, ex, env)
 					ex.buf = ex.buf .. joined
 					ex.mask = ex.mask .. string.rep("l", #joined)
 					ex.open = true
-				elseif allGlob then addSplit(ex, table.concat(job.args, " "), true) end
+				elseif allGlob then splitParams(ex, job.args) end
 				for a = 1, #job.args do
 					if allGlob or ex.nosplit then break end
 					if a > 1 then closeField(ex) end

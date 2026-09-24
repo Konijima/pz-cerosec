@@ -234,5 +234,28 @@ do
 		{ "0", "[a]", "[b]" })
 end
 
+--
+-- N+1. Bare $@ splits exactly as bare $* does: each positional parameter a
+-- field, then IFS inside each (POSIX.2 2.5.2). $@ used to be the arguments
+-- joined by a blank and split again, so with IFS=: "c d" became one field
+-- only by luck and "a:b c" was never two; with IFS empty every argument is
+-- still its own field. And "${y:-$*}" joins on IFS's first byte like "$*".
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, 'f(){ IFS=:; for w in $@; do echo "[$w]"; done; '
+		.. 'for w in $*; do echo "<$w>"; done; }; f "a:b" "c d"',
+		{ "[a]", "[b]", "[c d]", "<a>", "<b>", "<c d>" })
+	ok(state, admin, 'f(){ IFS=; for w in $@; do echo "[$w]"; done; '
+		.. 'for w in $*; do echo "<$w>"; done; }; f "a b" c',
+		{ "[a b]", "[c]", "<a b>", "<c>" })
+	ok(state, admin, 'f(){ IFS=" :"; for w in $@; do echo "[$w]"; done; }; f "a " ":b"',
+		{ "[a]", "[]", "[b]" })
+	ok(state, admin, 'f(){ IFS=-; echo "${y:-$*}" "$*"; }; f a b', { "a-b a-b" })
+	ok(state, admin, 'unset IFS; f(){ for w in pre$@post; do echo "[$w]"; done; }; f x "" y',
+		{ "[prex]", "[ypost]" })
+end
+
 print("ifs_test: " .. count .. " checks passed")
 
