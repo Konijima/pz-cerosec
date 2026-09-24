@@ -3751,6 +3751,18 @@ do
 	-- and the account running the suite is not.
 	eq("because the stub ships world-writable", results.mode, 666)
 
+	-- The floppy's 4096 bytes, measured and not assumed: every text file on the
+	-- disk ends its last line with a newline since FLOPPY_VERSION 2, a byte each,
+	-- and the RESULTS.TXT the suite writes has to fit beside the script and the
+	-- README it shipped with, or the survivor's run ends on "disk full".
+	local _, shipped = CeroSecOS.subtreeUsage(CeroSecContent.diskData(entry, START).fs)
+	local _, used = CeroSecOS.subtreeUsage(state.floppy.fs)
+	check("the disk as shipped fits its bytes (" .. shipped .. ")",
+		shipped <= CeroSecOS.FLOPPY_BYTES)
+	check("and with its results written (" .. used .. ")", used <= CeroSecOS.FLOPPY_BYTES)
+	print("content_test: the diagnostics floppy holds " .. shipped .. " of "
+		.. CeroSecOS.FLOPPY_BYTES .. " bytes shipped, " .. used .. " after a run")
+
 	-- It took its scratch files away with it, both because a suite that fills a
 	-- survivor's home is a suite nobody runs twice and because the disk quota is
 	-- the one thing a script can break on a real machine.

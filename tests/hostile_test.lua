@@ -4337,6 +4337,80 @@ do
 	eq("and so does one down a line", far.lastBg, nil)
 end
 
+--
+-- A file's last line carries its newline (STATE_VERSION 3), and two new
+-- shapes of work came with it.
+--
+-- cat GLUES an open last line onto the next file's first, which is a string
+-- that grows with every file on the line: sixty copies of a 4K file with no
+-- newline in it is one quarter-megabyte line, built by concatenation. It is
+-- the terminal's to fold and the scheduler's to pace, and it must be neither a
+-- stall nor a line past the screen's width.
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/big", string.rep("y", CeroSecOS.MAX_FILE_BYTES))
+	local names = {}
+	for i = 1, 60 do names[i] = "big" end
+	put(state, "/home/admin/glue.sh",
+		"while true; do cat " .. table.concat(names, " ") .. "; done\n")
+	local job = typeLine(system, machine, state, console, "sh glue.sh")
+	local result = drive(machine, 300)
+	flat("cat glues 60 open 4K files", result)
+	timely("cat glues 60 open 4K files", result)
+	check("the gluing job is alive and merely slow", not CeroSecOS.jobIsOver(job))
+	for i = 1, #console.lines do
+		check("no glued line passes the screen's width",
+			#tostring(console.lines[i]) <= CeroSecOS.COLS + 16)
+	end
+	note("cat glues open 4K", result)
+end
+
+-- The MIGRATION walks every file on a machine once: a machine at its node
+-- ceiling, every file open and 4K-1 long, is the most it can be asked to do,
+-- and it is asked on the way in, before the first command. So it has a wall
+-- ceiling of its own, scaled by the calibration like every other.
+do
+	local state = CeroSecOS.newState("ksp")
+	local nodes = CeroSecOS.usage(state)
+	local home = state.fs.children.home.children.admin
+	local dirN, made = 0, 0
+	local dir = nil
+	while nodes < CeroSecOS.MAX_NODES do
+		if dir == nil or CeroSecOS.countEntries(dir) >= CeroSecOS.MAX_DIR_ENTRIES - 1 then
+			dirN = dirN + 1
+			dir = CeroSecOS.newDir("admin", 755)
+			home.children["d" .. dirN] = dir
+			nodes = nodes + 1
+		else
+			made = made + 1
+			dir.children["f" .. made] = CeroSecOS.newFile("admin", 644,
+				string.rep("z\n", 2046) .. "zz")
+			nodes = nodes + 1
+		end
+	end
+	state.v = 2
+	local t0 = os.clock()
+	CeroSecOS.migrate(state, "ksp")
+	local ms = (os.clock() - t0) * 1000
+	local limit = ceiling(60)
+	check("a full machine migrates under " .. string.format("%.1f", limit) ..
+		" ms (" .. string.format("%.2f", ms) .. ")", ms < limit)
+	eq("and it is at this build's shape", state.v, CeroSecOS.STATE_VERSION)
+	-- The byte is paid out of the disk's room and never past it: this machine
+	-- is far over its quota already (a save can be), so it has no room and
+	-- the walk closes nothing at all -- not even the smallest file.
+	local closed = 0
+	for name, d in pairs(home.children) do
+		if string.sub(name, 1, 1) == "d" and d.type == "dir" then
+			for _, f in pairs(d.children) do
+				if string.sub(f.data, -1) == "\n" then closed = closed + 1 end
+			end
+		end
+	end
+	eq("over its quota already, it closed nothing", closed, 0)
+	report[#report + 1] = string.format("  %-22s %6.2f ms for %d files", "migration v3", ms, made)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..
