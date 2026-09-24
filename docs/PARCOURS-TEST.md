@@ -288,8 +288,8 @@ passé réellement, même quand ça correspond au texte attendu.
     Remettre la ligne. [ ]
 60. `root`, faire de la ligne `admin NOPASSWD`. `admin`, `sudo whoami` → `root`
     sans aucune question. Remettre `admin` seul. [ ]
-61. `admin`, `sudo useradd bob`, mot de passe vide → `bob: created` puis
-    `useradd: set a password with passwd bob`. `ls -l /home` → `bob`,
+61. `admin`, `sudo useradd bob`, mot de passe vide → aucune ligne (useradd
+    SVR4 ne disait rien). `ls -l /home` → `bob`,
     `drwxr-x---`. `id bob` → `uid=bob flag=user groups=bob`. [ ]
 62. `useradd Bob` → `useradd: Bob: invalid name`. `useradd admin` →
     `useradd: admin: already exists`. [ ]
@@ -4667,15 +4667,15 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      verdict goes to the log ». Appuyer une deuxième fois tout de suite : la
      note dit « shell half already running ». Attendre quelques secondes :
      l'onglet **Log** (niveau info) et `console.txt` montrent
-     `CeroSec shell selftest: PASS 193 FAIL 0`, suivi d'une ligne de durée.
+     `CeroSec shell selftest: PASS 214 FAIL 0`, suivi d'une ligne de durée.
      Aucune ligne `warn`. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
 
 460. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les
      pages *What is not Unix here* jusqu'à « That is the whole list. » Il y en a
-     maintenant dix, dont *errors, continued*, *files and the shell*, *read,
-     history, and who you are* et *what is missing*. [ ]
+     maintenant dix, dont *errors, continued*, *files and the shell*, *pipes,
+     printf and date*, *read, history, and who you are* et *what is missing*. [ ]
 461. **Une affirmation, vérifiée à l'écran.** `set` : `set: command not
      found`. Si cette réponse a changé, la page ment : le noter au rapport.
      (Les anciennes, « `wc -c` d'un `echo a` donne `1` » et « IFS n'est pas
@@ -4710,6 +4710,30 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      tourne comme avant. Une disquette écrite avec l'ancienne version entre
      dans le lecteur et ses fichiers ont gagné leur saut de ligne ; une
      disquette pleine entre aussi, et `df` ne la montre pas au-delà de 4096. [ ]
+
+## Commandes et options de 4.4BSD
+
+465. **rmdir, expr, uname.** `mkdir e; rmdir e` → rien. `mkdir f; touch f/x;
+     rmdir f` → `rmdir: f: directory not empty`. `rmdir -p f` →
+     `rmdir: illegal option -- p` puis la ligne d'usage. `expr 2 + 3 \* 4` →
+     `14` ; `expr 3 - 3; echo $?` → `0` puis `1` ; `expr 1 / 0; echo $?` →
+     `Divide by zero` (sans préfixe, comme expr.y de 4.4BSD) puis `2`. `uname -a` → `CeroSec OS`, le nom de
+     la machine, la version. [ ]
+466. **rm -f, kill, tail +N, touch.** `rm -f nosuch; echo $?` → `0`.
+     `sleep 60 &`, puis `kill -9 %1` → `[1] killed`. `kill -STOP %1` →
+     `kill: stop: not honoured`. `kill -FOO %1` →
+     `kill: unknown signal FOO; valid signals:` et la liste. `kill -l` → la
+     même liste, en minuscules. `printf 'a\nb\nc\n' > t; tail +2 t` → `b`,
+     `c`. `touch t1 t2 t3; ls` → les trois. [ ]
+467. **printf et test.** `printf '[%5s][%-3d][%03x]\n' ab 7 255` →
+     `[   ab][7  ][0ff]`. `printf '%s\n' a b c` → trois lignes.
+     `printf 'x\101\n'` → `xA` ; `printf 'a\1b\n'` → `ab` (aucun caractère
+     de contrôle). `ln -s t lnk; [ -h lnk ] && echo y` → `y` ;
+     `[ -s t ] && echo y` → `y`. [ ]
+468. **Les formats de sortie.** `wc t` → `       3       3       6 t` (huit
+     colonnes par nombre). `printf 'a\na\nb\n' | uniq -c` → `   2 a`, `   1 b`.
+     `which nosuch` → `no nosuch in /bin /usr/local/bin` (le PATH, séparé par des
+     blancs), et `echo $?` → `0`, comme le script csh de 4.3BSD. `sudo useradd bob` puis `sudo userdel bob` → aucune ligne. [ ]
 
 ## Rapport
 

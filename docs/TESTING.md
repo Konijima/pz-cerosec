@@ -23,6 +23,11 @@ The suites, in the order they run:
 - `newline_test.lua` — a file's last line carries its newline: what `echo` and
   `printf` store, `wc`, and every consumer (cat, head, tail, tee, grep, sort, cp,
   a redirect, the editor's round trip, a mailbox) held to a real Unix's answer.
+- `commands_test.lua` — the commands and flags taken from 4.4BSD in 0.7.0
+  (`rmdir`, `expr`, `uname`, `rm -f`, `kill`'s signals, `tail +N`, `printf`'s
+  fields, `test -s/-h/-L`, several `touch` names, the `wc`/`uniq -c`/`which`
+  formats), each against the source its comment cites. It lists every red
+  before it exits, so one broken command shows all it breaks.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `compat_computermod_test.lua`: living beside the Workshop mod *Computer Mod*:
   who owns a desktop, and which of the two fillers gets the right-click. Against
@@ -491,7 +496,7 @@ any kind, and therefore the world, the save file, the wire and the sync.
   every read, while `v`, `on` and `facing` ride into the save file weighed by
   nothing — drop `facing` and a computer picked up and put down faces the wrong
   way, with a green suite behind it.
-- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 193 cases, each a
+- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 214 cases, each a
   line typed at a prompt on a scratch machine — `CeroSecOS.newState`, the
   constructor a first power-on uses, made once and deep-copied for every case —
   with what the screen must show, what `$?` must be and, where the point is a

@@ -21,7 +21,7 @@ have can notice is in the shell: a script you saved that used `echo "a\nb"` now 
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
-- The debug window's Self-test also runs 193 shell lines on a scratch
+- The debug window's Self-test also runs 214 shell lines on a scratch
   machine, spread over a few seconds, and writes
   `CeroSec shell selftest: PASS n FAIL m` to the log and console.txt.
 - The shell now refuses an `if`, `while`, `until`, `for` or function whose
@@ -146,10 +146,22 @@ and a command whose redirect is refused no longer runs.
   `read -p/-s/-n` and `!!` being later shells' words, the passwd file,
   the `#` prompt, the error wording, a pipe stopping its left side as soon as
   the right side is done (`sleep 5 | true` ends at once), and the commands and
-  flags that are not here (`set`, `rmdir`, `rm -f`, `kill -9`, `tail +N`,
-  printf widths, `sh -c`). The
+  flags that are not here (`set`, `trap`, `expr :`, `uname -m`, `printf %f`,
+  `sh -c`, the link count in `ls -l`, a time zone in `date`). The
   error appendix also gained grep's pattern errors, `passwd: permission
   denied`, `export: not a name` and `wait: too many jobs`.
+- New commands `rmdir`, `expr` (sums and comparisons, exit status 0, 1 or 2)
+  and `uname`, and the flags scripts reach for first: `rm -f` (a file that is
+  not there is no error), `kill -9 %1`, `kill -s KILL`, `kill -l`, `tail +N`,
+  `touch` with several files, and `test -s`, `-h` and `-L`. `printf` now
+  takes a width, a precision, the `-` and `0` flags, `%x`, `%o` and `%c`,
+  repeats its format for extra arguments, and understands `\101`-style octal
+  escapes (never a control character).
+- Some output now looks the way a 1993 BSD printed it: `wc` gives each number
+  eight columns, `uniq -c` four, and `which nosuch` says
+  `no nosuch in /bin /usr/local/bin` instead of nothing. `useradd` and
+  `userdel` now say nothing when they succeed, like the real ones --
+  remember that a new account has an empty password until you run `passwd`.
 
 ## 0.6.1 - 2026-09-21
 

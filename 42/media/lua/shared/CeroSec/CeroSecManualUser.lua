@@ -271,7 +271,8 @@ A name nothing on PATH answers is <name>: command not found, which is
 bash's wording; sh said only not found.
 
 A flag a command does not know is unknown option, where getopt said
-illegal option -- z and printed the usage line after it.
+illegal option -- z and printed the usage line after it. rmdir and
+uname, the newest, say it getopt's way.
 
 The syntax errors are this shell's own sentences: sh said `fi'
 unexpected where this one says unexpected 'fi', and a quote left open
@@ -288,9 +289,12 @@ with cat file | command.
 
 ${x:-y}, ${#x} and the rest of sh's and ksh's forms inside braces are
 not here: ${x} is the whole of it, and anything else is a bad
-substitution.]],
+substitution.
 
-[[What is not Unix here: pipes.
+ls -l has no link count: the column a real ls put between the mode and
+the owner is not there, and the name has the room instead.]],
+
+[[What is not Unix here: pipes, printf and date.
 
 A stage of a pipe stops as soon as the command reading it has finished,
 once it has run one command, whether it wrote into the pipe or not. A
@@ -299,7 +303,15 @@ next writes into a pipe nobody reads. So { echo a > f; echo b > g; } |
 true never makes g, and sleep 5 | true is over at once.
 
 sh -c is not here: sh runs a file. Put the line into one and hand sh
-the file's name.]],
+the file's name.
+
+printf has no %f: no floating point conversion is trusted here. It
+knows %s, %c, %d, %x, %o and %%, with a width, a precision and the
+flags - and 0. And its \NNN makes no control byte: printf '\1' prints
+nothing.
+
+date prints no time zone: nothing ever told this machine which one it
+sits in, so the zone a real date printed is left out, not guessed.]],
 
 [[What is not Unix here: read, history, and who you are.
 
@@ -328,13 +340,16 @@ here because a script reaches for them first.
 set, unset, exec and trap are not in this shell: a variable is set with
 NAME=value and emptied with NAME=, and nothing else touches it.
 
-rmdir, expr and uname are not on the disk. rm -r takes a directory,
-$(( )) does sums, and hostname names the machine.
+uname has no -m: no hardware name was ever put in this machine to print,
+and guessing one would be lying about what is inside the case.
 
-rm has no -f, and kill takes no signal: kill %1 is the whole of it, and
-kill -9 %1 is a usage error. tail +N is not here; tail -n N is. printf
-knows %s, %d and %%, and prints anything else as it stands: %5.2f comes
-out as %5.2f.]],
+expr has no : for matching a pattern against a string. The tool grep uses
+for one has no \( \) to hand back what matched, only whether it did.
+
+kill -9 and kill -s KILL, TERM, HUP, INT or QUIT end a job, the five
+signals whose default action is to end one outright. kill -STOP and
+kill -CONT are refused with not honoured: a job here cannot be paused
+and resumed the way a real process can.]],
 
 [[What is not Unix here, and the end of the list.
 
@@ -606,8 +621,9 @@ notes directory however far away you have wandered.]],
 
 Four commands, and then you have a working office.
 
-mkdir makes a directory. touch makes an empty file, or, on a file that
-already exists, just moves its date to now. cat prints a file's contents
+mkdir makes a directory, and rmdir takes an empty one away. touch makes
+an empty file, or, on a file that already exists, just moves its date to
+now. cat prints a file's contents
 on the screen. And a greater-than sign after a command sends what the
 command would have printed into a file instead.
 
@@ -1785,8 +1801,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2800  62736    5%
-  nodes         512    107    405   21%
+  hda         65536   2871  62665    5%
+  nodes         512    110    402   22%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 
@@ -1937,17 +1953,18 @@ The floppy drive.
 Making, copying, destroying.
 
   mkdir <dir>
-  touch <file>
+  touch <file>...
   cp [-r] <src>... <dst>
   mv <src>... <dst>
-  rm [-r] <path>...
+  rm [-rf] <path>...
+  rmdir <dir>...
   echo [text...]
   edit <file>
 
 Reading a file without opening it.
 
   head [-n N|-N] [file]
-  tail [-n N|-N] [file]
+  tail [-n N|-N|+N] [file]
   wc [-clw] [file]...
   grep [-cinv] [-e pattern] [pattern] [file]...
   sort [-r] [-n] [-u] [file]...

@@ -2864,9 +2864,10 @@ do
 	eq("and hides the answer", bench.window.mask, true)
 	bench.enter("")
 	bench.frame()
-	check("the account was made", bench.painted("useradd: bob: created"))
-	check("and the open password is said out loud",
-		bench.painted("useradd: set a password with passwd bob"))
+	-- SVR4's useradd says nothing when it has made one: the line typed is
+	-- what the screen carries, and the machine is what is asked.
+	check("the account was made, and nothing was said",
+		not bench.painted("useradd: bob"))
 	check("the machine really has him",
 		CeroSecOS.getUser(bench.object:osState(), "bob") ~= nil)
 
@@ -2896,7 +2897,7 @@ do
 	eq("still logged in", bench.window.mode, "shell")
 	eq("the console says so too", bench.object.console.user, "admin")
 	eq("and the stack is gone rather than left empty", bench.object.console.stack, nil)
-	check("the screen kept what was on it", bench.painted("useradd: bob: created"))
+	check("the screen kept what was on it", bench.painted("sudo useradd bob"))
 
 	-- The second one is a logout.
 	bench.enter("exit")
@@ -2904,7 +2905,7 @@ do
 	eq("the login prompt is back", bench.window.prompt, "login: ")
 	eq("at a prompt, not a shell", bench.window.mode, "prompt")
 	eq("nobody is logged in", bench.object.console.user, nil)
-	check("and the screen was wiped", not bench.painted("useradd: bob: created"))
+	check("and the screen was wiped", not bench.painted("sudo useradd bob"))
 end
 
 --
@@ -2921,7 +2922,7 @@ do
 		CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
 	bench.enter("sudo useradd bob")
 	bench.frame()
-	check("bob is on the machine", bench.painted("useradd: bob: created"))
+	check("bob is on the machine", CeroSecOS.getUser(bench.object:osState(), "bob") ~= nil)
 
 	bench.enter("sudo su bob")
 	bench.frame()
@@ -9099,7 +9100,7 @@ do
 	-- machine's greeting is not in it (rshd prints none -- that is login's job),
 	-- and neither is anything else the session did. A motd down the pipe would
 	-- make this two.
-	check("the stage behind it counted the line it was fed", net.glass("     1"))
+	check("the stage behind it counted the line it was fed", net.glass("       1"))
 	check("and the line itself went down the pipe and not onto the glass",
 		not net.glass(net.host(net.gate)))
 	eq("nothing was taken over", net.here.console.remote, nil)
@@ -9216,7 +9217,7 @@ do
 	check("rshd's own word for a machine that does not trust this one",
 		net.glass("rsh: gate: Permission denied"))
 	check("the refusal did not go down the pipe: the stage read nothing",
-		net.glass("     0"))
+		net.glass("       0"))
 	-- A pipeline's status is its LAST stage's, which is `wc` and which worked --
 	-- POSIX, and nothing to do with the rsh in front of it. The rsh's own status
 	-- is the line after it: 1, which is what rsh answers for a connection it
@@ -19307,7 +19308,7 @@ do
 			back2.tick(1); n = n + 1
 		end
 		local rows = back2.object.console.lines
-		eq("and the owner is what prints it", rows[#rows - 1], "     1")
+		eq("and the owner is what prints it", rows[#rows - 1], "       1")
 		eq("with the status after it", rows[#rows], "status=0")
 
 		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
@@ -20620,10 +20621,10 @@ do
 		-- counts newlines (POSIX wc): 1400, with no empty line after the last.
 		past("fourteen hundred lines", string.rep("abcd\n", 700),
 			"cat /home/admin/big /home/admin/big | wc -l",
-			function(pipe) return #pipe.lines > CeroSecOS.PIPE_LINES end, "  1400")
+			function(pipe) return #pipe.lines > CeroSecOS.PIPE_LINES end, "    1400")
 		past("forty lines of two hundred bytes", string.rep(string.rep("b", 199) .. "\n", 20),
 			"cat /home/admin/big /home/admin/big | wc -c",
-			function(pipe) return pipe.bytes > CeroSecOS.PIPE_BYTES end, "  8000")
+			function(pipe) return pipe.bytes > CeroSecOS.PIPE_BYTES end, "    8000")
 		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
 	end
 
@@ -26243,7 +26244,7 @@ do
 	bench.frame()
 	bench.enter("")
 	bench.frame()
-	check("bob exists to send to", bench.painted("useradd: bob: created"))
+	check("bob exists to send to", CeroSecOS.getUser(bench.object:osState(), "bob") ~= nil)
 	eq("and has no mailbox yet", bench.fileText("/var/mail/bob"), nil)
 
 	bench.enter("mail -s Note bob")

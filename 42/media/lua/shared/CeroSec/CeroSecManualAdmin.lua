@@ -247,17 +247,16 @@ is whether the account is in the group wheel -- and wheel is what grants,
 because the shipped /etc/sudoers carries a %wheel line. usermod -G writes
 this field from that membership, so the two never disagree.]],
 
-[[Making one. useradd is root's, and it does three things: writes the
-line, makes the home, and says out loud that the account is open.
+[[Making one. useradd is root's, and it does two things: writes the
+line and makes the home. It says nothing when it has done both -- and
+the account it made has an EMPTY password.
 
 Try it.
 
   root@ksp-04-11:~# useradd bob
-  useradd: bob: created
-  useradd: set a password with passwd bob
 
-Do the second line now, not later. Between those two commands bob is an
-account anybody in the office can log in to by pressing Enter.
+Give him a password now, not later. Until you do, bob is an account
+anybody in the office can log in to by pressing Enter.
 
   root@ksp-04-11:~# passwd bob
   New password:
@@ -279,7 +278,6 @@ obstacle to giving him an account.]],
 [[Unmaking one, and this is where care is owed.
 
   root@ksp-04-11:~# userdel kate
-  userdel: kate: removed
 
 That takes the line out of /etc/passwd, and takes the name out of
 /etc/sudoers with it -- a name left in that file is a line waiting for
@@ -2090,10 +2088,11 @@ Groups, and who may read what.
 [==[The machine itself.
 
   hostname [name]
+  uname [-asnrv]
   df
   ps
   jobs
-  kill <id>|%<n>
+  kill [-<signal>|-s <signal>] <id>|%<n>
   fg [%<n>|<id>]
   shutdown [-h|-r] now|+N
   halt

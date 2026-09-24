@@ -264,21 +264,21 @@ do
 	local admin = open(state, "admin")
 	ok(state, admin, "echo a > f", {})
 	eq("echo leaves its newline behind", data(state, "/home/admin/f"), "a\n")
-	ok(state, admin, "wc -c f", { "     2 f" })
-	ok(state, admin, "wc -l f", { "     1 f" })
+	ok(state, admin, "wc -c f", { "       2 f" })
+	ok(state, admin, "wc -l f", { "       1 f" })
 	ok(state, admin, "printf a > g", {})
 	eq("printf leaves only what its format asked for", data(state, "/home/admin/g"), "a")
-	ok(state, admin, "wc -c g", { "     1 g" })
+	ok(state, admin, "wc -c g", { "       1 g" })
 	-- wc -l counts newlines, not lines: a last line with none is not counted.
-	ok(state, admin, "wc -l g", { "     0 g" })
-	ok(state, admin, "wc g", { "     0      1      1 g" })
+	ok(state, admin, "wc -l g", { "       0 g" })
+	ok(state, admin, "wc g", { "       0       1       1 g" })
 	-- >> writes after the last byte, whatever it is.
 	ok(state, admin, "echo -n x > h; echo y >> h", {})
 	eq(">> glues onto an open last line", data(state, "/home/admin/h"), "xy\n")
 	ok(state, admin, "cat h", { "xy" })
 	ok(state, admin, "echo one > two; echo two >> two", {})
 	eq("and after a closed one starts a line", data(state, "/home/admin/two"), "one\ntwo\n")
-	ok(state, admin, "wc -l two", { "     2 two" })
+	ok(state, admin, "wc -l two", { "       2 two" })
 	-- An empty file has no line to end.
 	ok(state, admin, "printf '' > e", {})
 	eq("an empty write is an empty file", data(state, "/home/admin/e"), "")
@@ -353,15 +353,15 @@ do
 		exec(state, admin, line)
 		eq("`" .. line .. "` stores", data(state, "/home/admin/o"), want)
 	end
-	ok(state, admin, "printf a | wc -c", { "     1" })
-	ok(state, admin, "echo a | wc -c", { "     2" })
-	ok(state, admin, "cat g | wc -l", { "     0" })
-	ok(state, admin, "cat f | wc -l", { "     1" })
+	ok(state, admin, "printf a | wc -c", { "       1" })
+	ok(state, admin, "echo a | wc -c", { "       2" })
+	ok(state, admin, "cat g | wc -l", { "       0" })
+	ok(state, admin, "cat f | wc -l", { "       1" })
 	-- `wc f` and `cat f | wc` agree, open or closed.
-	ok(state, admin, "wc g", { "     0      1      1 g" })
-	ok(state, admin, "cat g | wc", { "     0      1      1" })
-	ok(state, admin, "wc f", { "     1      1      2 f" })
-	ok(state, admin, "cat f | wc", { "     1      1      2" })
+	ok(state, admin, "wc g", { "       0       1       1 g" })
+	ok(state, admin, "cat g | wc", { "       0       1       1" })
+	ok(state, admin, "wc f", { "       1       1       2 f" })
+	ok(state, admin, "cat f | wc", { "       1       1       2" })
 end
 
 --

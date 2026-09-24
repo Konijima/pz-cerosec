@@ -145,7 +145,7 @@ line under the list, in the log at info, and in `console.txt` via `print`:
 and, a few seconds later (the shell half runs over the ticks that follow the press,
 and the note on the window says so), in the log at info and in `console.txt`:
 
-    CeroSec shell selftest: PASS 193 FAIL 0
+    CeroSec shell selftest: PASS 214 FAIL 0
 
 Any failing line is in the log at **warn** -- the **Log** tab, `warn` filter -- and
 names the vector, what lua5.1 answers and what the game answered. A failure here is
@@ -168,7 +168,7 @@ It also writes that into `RESULTS.TXT` on the floppy, so a run can be read back 
 the disk afterwards. The exit status is non-zero on any failure (`echo $?`).
 
 **Paste both summaries into the release notes**, with the build's own numbers. A
-release whose notes say `PASS 138 FAIL 0`, `shell selftest: PASS 193 FAIL 0` and
+release whose notes say `PASS 138 FAIL 0`, `shell selftest: PASS 214 FAIL 0` and
 `PASS 26 FAIL 0` is a release somebody ran on Kahlua; a release with no numbers in it is one where nobody did, and that is
 the whole point of writing them down rather than ticking a box. Two of the checklist
 steps in [PARCOURS-TEST.md](PARCOURS-TEST.md) section X are the same two gestures,

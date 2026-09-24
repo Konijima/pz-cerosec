@@ -1486,10 +1486,28 @@ local testExpr
 local function testUnary(state, session, op, arg)
 	if op == "-z" then return #arg == 0 end
 	if op == "-n" then return #arg > 0 end
+	-- -h is 4.4BSD's (bin/test/operators.c lists it, test.1 says "exists
+	-- and is a symbolic link", test.c answers it with lstat). -L is the
+	-- letter later tests gave the same question; 4.4BSD's test has -h alone,
+	-- and -L is kept so a script written for either reads the same.
+	-- The one test here that must NOT follow the link, so it asks getNode with
+	-- noFollow rather than the node every other letter below shares.
+	if op == "-h" or op == "-L" then
+		local lnode = CeroSecOS.getNode(state, session, arg, true)
+		return lnode ~= nil and lnode.type == "link"
+	end
 	local node = CeroSecOS.getNode(state, session, arg)
 	if op == "-e" then return node ~= nil end
 	if op == "-f" then return node ~= nil and node.type == "file" end
 	if op == "-d" then return node ~= nil and node.type == "dir" end
+	-- -s: there, and st_size greater than zero (test.c's ISSIZE). A directory
+	-- on a 4.4BSD disk is never size zero -- it holds . and .. at least, a
+	-- block of them -- so one answers true whatever is in it.
+	if op == "-s" then
+		if node == nil then return false end
+		if node.type == "dir" then return true end
+		return #(node.data or "") > 0
+	end
 	if node == nil then return false end
 	if op == "-r" then return CeroSecOS.can(state, session, node, "r") end
 	if op == "-w" then return CeroSecOS.can(state, session, node, "w") end
@@ -1601,44 +1619,182 @@ builtins.echo = function(job, args)
 	return 0
 end
 
--- printf, with the three conversions worth having on a machine this size.
--- The formatting, apart from the writing: the builtin below writes it into the
--- job and `sudo printf` returns it as lines, and there is ONE implementation of
--- the conversions.
-function CeroSecOS.printfText(args)
-	local format = args[2]
-	if format == nil then return nil end
-	local out, i, a = "", 1, 3
+-- printf(1)'s field: [-][0][width][.precision]conversion. `-` left-justifies
+-- (the default is right), `0` pads with zeros instead of blanks and only
+-- means anything where there is no `-` beside it (printf.c: "if the left
+-- adjustment flag is set, the zero-padding flag is ignored"). Bounded at 64 --
+-- this machine's screen is 60 columns and nothing typed at a prompt needs a
+-- field wider than one, and CeroSecOS.hostileTest is what a `%999999999s`
+-- would otherwise be handed to.
+local PRINTF_MAX_FIELD = 64
+
+local function printfPad(body, width, left, zero, sign)
+	sign = sign or ""
+	if width == nil or width <= #sign + #body then return sign .. body end
+	local fill = width - #sign - #body
+	if left then return sign .. body .. string.rep(" ", fill) end
+	if zero then return sign .. string.rep("0", fill) .. body end
+	return string.rep(" ", fill) .. sign .. body
+end
+
+-- Division, not string.format: Kahlua's %x and %o are not proven (there is no
+-- bit library either), so the digits are found the way K&R's itoa does it, one
+-- remainder at a time. Bounded by the width of the number itself -- a 53-bit
+-- float in base 8 is at most eighteen digits -- and never by anything a
+-- player types.
+-- %x and %o are unsigned in C, and a negative argument is really the bit
+-- pattern of a signed int reread as one -- which wants a word size this
+-- engine has no bit library to fix at (docs/CONTRIBUTING.md's Kahlua purity
+-- rule). Clamped to zero instead of guessing a width: a survivor typing
+-- `printf %x -1` gets 0, not a wrong answer dressed as a right one.
+local function toBase(v, base, digits)
+	v = math.floor(v)
+	if v < 0 then v = 0 end
+	if v == 0 then return "0" end
+	local s = ""
+	while v > 0 do
+		local d = v - base * math.floor(v / base)
+		s = string.sub(digits, d + 1, d + 1) .. s
+		v = math.floor(v / base)
+	end
+	return s
+end
+
+-- One pass over the format, from args[from]. Answers the text and the next
+-- unread argument index, so the caller can tell whether the pass consumed
+-- anything -- which is what decides whether the format is reused (see the
+-- head of CeroSecOS.printfText).
+local function printfPass(format, args, from)
+	local out, i, a = "", 1, from
 	while i <= #format do
 		local c = string.sub(format, i, i)
 		if c == "\\" then
 			local nx = string.sub(format, i + 1, i + 1)
-			if nx == "n" then out = out .. "\n"
-			elseif nx == "t" then out = out .. "\t"
-			elseif nx == "\\" then out = out .. "\\"
-			else out = out .. "\\" .. nx end
-			i = i + 2
+			if nx == "n" then out = out .. "\n"; i = i + 2
+			elseif nx == "t" then out = out .. "\t"; i = i + 2
+			elseif nx == "\\" then out = out .. "\\"; i = i + 2
+			-- \NNN, up to three octal digits, sh(1)'s printf and the C escape it
+			-- is named after (K&R A2.5.2): the byte that octal names.
+			elseif string.match(nx, "^[0-7]$") ~= nil then
+				-- Kahlua's tonumber(s, base) is not trusted for anything but
+				-- base 10 (tests/kahlua-probe.lua), so the octal value is added
+				-- up a digit at a time instead of handed to it with an 8.
+				local j, val = i + 1, 0
+				local n = 0
+				while j <= #format and n < 3 and string.match(string.sub(format, j, j), "^[0-7]$") ~= nil do
+					val = val * 8 + tonumber(string.sub(format, j, j))
+					j = j + 1
+					n = n + 1
+				end
+				-- The byte, unless it is a control byte: nothing typed at
+				-- this machine may put one on a screen or a disk (the line
+				-- itself is refused with one in it, and writeFile refuses
+				-- them too -- docs/SECURITY.md), so \NNN naming anything
+				-- below a blank other than a tab or a newline, or DEL,
+				-- makes nothing. A declared deviation ("printf").
+				val = val % 256
+				if val == 9 or val == 10 or (val >= 32 and val ~= 127) then
+					out = out .. string.char(val)
+				end
+				i = j
+			else out = out .. "\\" .. nx; i = i + 2 end
 		elseif c == "%" then
-			local nx = string.sub(format, i + 1, i + 1)
-			if nx == "%" then
-				out = out .. "%"
-			elseif nx == "s" then
-				out = out .. (args[a] or "")
-				a = a + 1
-			elseif nx == "d" then
-				local v = tonumber(args[a] or "0")
-				if v == nil then v = 0 end
-				out = out .. tostring(math.floor(v))
-				a = a + 1
-			else
-				out = out .. c .. nx
+			local j = i + 1
+			local left, zero = false, false
+			while true do
+				local f = string.sub(format, j, j)
+				if f == "-" then left = true; j = j + 1
+				elseif f == "0" then zero = true; j = j + 1
+				else break end
 			end
-			i = i + 2
+			local width = nil
+			local wDigits = string.match(format, "^%d+", j)
+			if wDigits ~= nil then
+				width = tonumber(wDigits)
+				j = j + #wDigits
+			end
+			local prec = nil
+			if string.sub(format, j, j) == "." then
+				j = j + 1
+				local pDigits = string.match(format, "^%d+", j) or "0"
+				prec = tonumber(pDigits)
+				j = j + #pDigits
+			end
+			if width ~= nil and width > PRINTF_MAX_FIELD then width = PRINTF_MAX_FIELD end
+			if prec ~= nil and prec > PRINTF_MAX_FIELD then prec = PRINTF_MAX_FIELD end
+			local conv = string.sub(format, j, j)
+			if conv == "%" then
+				out = out .. "%"
+			elseif conv == "s" then
+				local v = tostring(args[a] or "")
+				a = a + 1
+				if prec ~= nil then v = string.sub(v, 1, prec) end
+				out = out .. printfPad(v, width, left, false)
+			elseif conv == "c" then
+				local v = string.sub(tostring(args[a] or ""), 1, 1)
+				a = a + 1
+				out = out .. printfPad(v, width, left, false)
+			elseif conv == "d" then
+				local v = tonumber(args[a] or "0") or 0
+				a = a + 1
+				v = math.floor(v)
+				local sign = ""
+				if v < 0 then sign = "-"; v = -v end
+				local digits = tostring(v)
+				-- Precision on a numeric conversion is a MINIMUM digit count
+				-- (printf(3)), not a truncation: `%.4d` on 3 is "0003", and
+				-- `%.0d` on 0 is nothing at all -- no digit, not even a zero.
+				if prec ~= nil then
+					if prec == 0 and v == 0 then digits = ""
+					elseif #digits < prec then digits = string.rep("0", prec - #digits) .. digits end
+				end
+				out = out .. printfPad(digits, width, left, zero and prec == nil, sign)
+			elseif conv == "x" or conv == "o" then
+				local v = tonumber(args[a] or "0") or 0
+				a = a + 1
+				local digits = toBase(v, conv == "x" and 16 or 8, "0123456789abcdef")
+				if prec ~= nil and #digits < prec then
+					digits = string.rep("0", prec - #digits) .. digits
+				end
+				out = out .. printfPad(digits, width, left, zero and prec == nil)
+			elseif conv == "" then
+				out = out .. "%"
+			else
+				-- An unknown conversion prints as it stood in the format, flags,
+				-- width and precision included -- `%5.2f` comes out `%5.2f`, not
+				-- `%f` with the field thrown away (this machine has no %f: no
+				-- floating point conversion is trusted here, printf(3)'s NUL
+				-- termination and rounding wanting more than Kahlua's numbers
+				-- prove). No argument is consumed either: the operand is still
+				-- waiting for the conversion that would have read it.
+				out = out .. string.sub(format, i, j)
+			end
+			i = j + 1
 		else
 			out = out .. c
 			i = i + 1
 		end
 	end
+	return out, a
+end
+
+-- printf(1): the format is reused for as many arguments as there are, POSIX's
+-- own rule ("the format operand shall be reused as often as necessary to
+-- satisfy the argument operands") -- `printf '%s\n' a b c` is three lines, not
+-- one truncated to the first name. Reused only while a PASS is actually
+-- eating an argument, so a format with no conversion in it -- `printf hello
+-- extra` -- prints once and stops, the way a real printf does not spin on
+-- operands it has nowhere to put.
+function CeroSecOS.printfText(args)
+	local format = args[2]
+	if format == nil then return nil end
+	local out, a = "", 3
+	repeat
+		local before = a
+		local piece
+		piece, a = printfPass(format, args, a)
+		out = out .. piece
+	until a > #args or a == before
 	return out
 end
 
@@ -4800,17 +4956,108 @@ end
 -- one forward, because a survivor who sits down at a glass has to be able to SEE
 -- what is running and to watch it. What he may not do is stop another account's
 -- work, which is Unix's rule and not this machine's.
+--
+-- THE SIGNAL. 4.4BSD-Lite2's bin/kill/kill.c: `-s name`, `-name` and
+-- `-number`, and `-l` to list them. A name is matched without regard to case
+-- and with or without "sig" in front (signame_to_signum: strncasecmp(sig,
+-- "sig", 3), then strcasecmp against sys_signame), and the names are
+-- lib/libc/gen/siglist.c's sys_signame, lower case, in number order -- so
+-- this table is that one and not this engine's invention.
+--
+-- There is no process under a job, only a script the scheduler steps, so the
+-- one thing a signal can do here is end it, which is the default action
+-- sigaction(2)'s table gives HUP, INT, QUIT, KILL and TERM alike. Those five
+-- are honoured. A signal that would stop, resume or merely be reported --
+-- STOP, TSTP and CONT among them -- is refused by name, a declared deviation
+-- (CeroSecOS.DEVIATIONS, "kill"), rather than faking a pause nothing behind
+-- it could hold. Signal 0 is kill(2)'s own "is it there": the job is looked
+-- up and left alone.
+local KILL_NAMES = {
+	"hup", "int", "quit", "ill", "trap", "abrt", "emt", "fpe",
+	"kill", "bus", "segv", "sys", "pipe", "alrm", "term", "urg",
+	"stop", "tstp", "cont", "chld", "ttin", "ttou", "io", "xcpu",
+	"xfsz", "vtalrm", "prof", "winch", "info", "usr1", "usr2",
+}
+local KILL_HONOURED = { [1] = true, [2] = true, [3] = true, [9] = true, [15] = true }
+
+-- printsignals(): NSIG is 32, and kill.c breaks the line after NSIG / 2 and
+-- after NSIG - 1, so the list is always these two lines.
+local function killSignalLines()
+	local a, b = {}, {}
+	for n = 1, #KILL_NAMES do
+		if n <= 16 then a[#a + 1] = KILL_NAMES[n] else b[#b + 1] = KILL_NAMES[n] end
+	end
+	return table.concat(a, " "), table.concat(b, " ")
+end
+
+-- nosig(): warnx's line, then the list, both on the error side.
+local function killNoSig(name)
+	local a, b = killSignalLines()
+	return false, { "kill: unknown signal " .. name .. "; valid signals:", a, b }
+end
+
+-- The number for a name, or nil: string.lower on both sides is strcasecmp,
+-- and a plain comparison, never a pattern, is what reads the typed word.
+local function killNumberOf(name)
+	local low = string.lower(name)
+	if string.sub(low, 1, 3) == "sig" then low = string.sub(low, 4) end
+	for n = 1, #KILL_NAMES do
+		if KILL_NAMES[n] == low then return n end
+	end
+	return nil
+end
+
 commands.kill = function(state, session, args, env)
-	if #args ~= 2 then return false, { "kill: usage: " .. CeroSecOS.commandUsage("kill") } end
+	local usageLines = { "kill: usage: " .. CeroSecOS.commandUsage("kill") }
+	if args[2] == nil then return false, usageLines end
+	local signum, at = 15, 2
+	local first = args[2]
+	if first == "-l" then
+		-- kill -l: the list, on the output side (printsignals(stdout)).
+		if #args > 2 then return false, usageLines end
+		local a, b = killSignalLines()
+		return true, { a, b }
+	elseif first == "-s" then
+		if args[3] == nil then
+			return false, { "kill: option requires an argument -- s", usageLines[1] }
+		end
+		if args[3] == "0" then signum = 0 else
+			signum = killNumberOf(args[3])
+			if signum == nil then return killNoSig(args[3]) end
+		end
+		at = 4
+	elseif string.sub(first, 1, 1) == "-" then
+		local rest = string.sub(first, 2)
+		local c = string.sub(rest, 1, 1)
+		if string.match(c, "^%a$") ~= nil then
+			signum = killNumberOf(rest)
+			if signum == nil then return killNoSig(rest) end
+		elseif string.match(c, "^%d$") ~= nil then
+			-- strtol and `*ep`: every character a digit, or the number is
+			-- illegal outright; then 1..NSIG-1, or unknown.
+			if string.match(rest, "^%d+$") == nil then
+				return false, { "kill: illegal signal number: " .. rest }
+			end
+			signum = tonumber(rest)
+			if signum < 1 or signum > #KILL_NAMES then return killNoSig(rest) end
+		else
+			return killNoSig(rest)
+		end
+		at = 3
+	end
+	if #args ~= at then return false, usageLines end
+	if signum ~= 0 and not KILL_HONOURED[signum] then
+		return false, { "kill: " .. KILL_NAMES[signum] .. ": not honoured" }
+	end
 	local jobs = CeroSecOS.jobsOf(env)
-	local want = args[2]
+	local want = args[at]
 	local bySlot = false
 	if string.sub(want, 1, 1) == "%" then
 		want = string.sub(want, 2)
 		bySlot = true
 	end
 	local n = tonumber(want)
-	if n == nil then return false, { "kill: " .. args[2] .. ": no such job" } end
+	if n == nil then return false, { "kill: " .. args[at] .. ": no such job" } end
 	for i = 1, #jobs do
 		local job = jobs[i]
 		local matches = false
@@ -4819,13 +5066,15 @@ commands.kill = function(state, session, args, env)
 			local me = CeroSecOS.userOf(session)
 			local owner = (job.session or {}).user
 			if me ~= "root" and owner ~= nil and owner ~= me then
-				return false, { "kill: " .. args[2] .. ": Operation not permitted" }
+				return false, { "kill: " .. args[at] .. ": Operation not permitted" }
 			end
-			job.killReq = "user"
+			-- Whichever of the five it was, the job ends the one way this
+			-- scheduler ends one, and says "killed" as it always has.
+			if signum ~= 0 then job.killReq = "user" end
 			return true, {}
 		end
 	end
-	return false, { "kill: " .. args[2] .. ": no such job" }
+	return false, { "kill: " .. args[at] .. ": no such job" }
 end
 
 --

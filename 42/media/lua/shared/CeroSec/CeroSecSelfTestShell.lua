@@ -211,6 +211,12 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "printf escapes", line = "printf 'a\\tb\\\\%%\\n' > f",
 		want = { { path = "/root/f", text = "a\tb\\%\n" } } },
 	{ name = "printf no newline", line = "printf abc; echo", out = { "abc" } },
+	-- printf(1) of 4.4BSD: a width, a precision and the - and 0 flags; the
+	-- format again for the arguments left over; \NNN in octal.
+	{ name = "printf widths", line = "printf '[%5s][%-3d][%03x][%.2s]\\n' ab 7 255 xyz",
+		out = { "[   ab][7  ][0ff][xy]" } },
+	{ name = "printf reuses its format", line = "printf '%s\\n' a b", out = { "a", "b" } },
+	{ name = "printf octal", line = "printf 'x\\101\\n'", out = { "xA" } },
 
 	--
 	-- 1g. test and [
@@ -218,6 +224,11 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "test on files", files = { { "/root/f", "x" } }, setup = { "mkdir d; touch e" },
 		line = "[ -f f ] && [ -d d ] && [ -e e ] && [ ! -d f ] && [ ! -e g ] && echo ok",
 		out = { "ok" } },
+	-- test(1) of 4.4BSD: -s is a file with something in it, -h and -L a link.
+	{ name = "test -s", files = { { "/root/f", "x" }, { "/root/e", "" } },
+		line = "[ -s f ] && [ ! -s e ] && echo y", out = { "y" } },
+	{ name = "test -h and -L", files = { { "/root/a", "x" } },
+		line = "ln -s a l; [ -h l ] && [ -L l ] && [ ! -h a ] && echo y", out = { "y" } },
 	{ name = "test on strings", line = "[ -z '' ] && [ -n a ] && [ a = a ] && [ a != b ] && echo ok",
 		out = { "ok" } },
 	{ name = "test on numbers",
@@ -300,8 +311,9 @@ CeroSecSelfTest.SHELL_CASES = {
 		out = { "3", "4" } },
 	{ name = "tail -N", files = { { "/root/f", "1\n2\n3\n4" } }, line = "tail -1 f",
 		out = { "4" } },
-	{ name = "tail +N is not here", files = { { "/root/f", "1" } },
-		line = "tail +1 f 2>/dev/null; echo $?", out = { "1" }, dev = "tail" },
+	-- tail(1) of 4.4BSD: +N counts from the start of the file.
+	{ name = "tail +N", files = { { "/root/f", "1\n2\n3\n" } }, line = "tail +2 f",
+		out = { "2", "3" } },
 
 	-- sort, uniq
 	{ name = "sort", line = "printf 'b\\na\\nc\\n' | sort", out = { "a", "b", "c" } },
@@ -312,6 +324,9 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "sort a file", files = { { "/root/f", "z\ny" } }, line = "sort f", out = { "y", "z" } },
 	{ name = "uniq", line = "printf 'a\\na\\nb\\na\\n' | uniq", out = { "a", "b", "a" } },
 	{ name = "uniq -c", line = "echo $(printf 'a\\na\\nb\\n' | uniq -c)", out = { "2 a 1 b" } },
+	-- uniq.c of 4.4BSD prints the count "%4d ".
+	{ name = "uniq -c columns", line = "printf 'a\\na\\nb\\n' | uniq -c",
+		out = { "   2 a", "   1 b" } },
 
 	-- cut, tr
 	{ name = "cut -c", line = "echo abcdef | cut -c 2-3", out = { "bc" } },
@@ -327,6 +342,9 @@ CeroSecSelfTest.SHELL_CASES = {
 	-- wc -l counts newlines: a last line without one is not counted.
 	{ name = "wc of a file names it", files = { { "/root/f", "a b\nc" } },
 		line = "echo $(wc -l -w f)", out = { "1 3 f" } },
+	-- wc.c of 4.4BSD prints each number " %7ld".
+	{ name = "wc columns", files = { { "/root/f", "a b\n" } }, line = "wc f",
+		out = { "       1       2       4 f" } },
 
 	-- grep
 	{ name = "grep", files = { { "/root/f", "apple\nBanana\ncherry" } }, line = "grep an f",
@@ -365,8 +383,13 @@ CeroSecSelfTest.SHELL_CASES = {
 		line = "rm d 2>/dev/null; echo $?", out = { "1" }, want = { { path = "/root/d" } } },
 	{ name = "rm -r", setup = { "mkdir d; touch d/a" }, line = "rm -r d",
 		want = { { path = "/root/d", absent = true } } },
-	{ name = "rm has no -f", line = "rm -f nosuch 2>/dev/null; echo $?", out = { "1" },
-		dev = "rm" },
+	-- rm(1): -f makes a file that is not there no error, and says nothing.
+	{ name = "rm -f", line = "rm -f nosuch; echo $?", out = { "0" } },
+	-- rmdir(1) of 4.4BSD removes an empty directory, and only that.
+	{ name = "rmdir", setup = { "mkdir d" }, line = "rmdir d; echo $?", out = { "0" },
+		want = { { path = "/root/d", absent = true } } },
+	{ name = "rmdir of a full one", setup = { "mkdir d; touch d/a" },
+		line = "rmdir d 2>/dev/null; echo $?", out = { "1" }, want = { { path = "/root/d/a" } } },
 	{ name = "mv renames", files = { { "/root/a", "x" } }, line = "mv a b",
 		want = { { path = "/root/a", absent = true }, { path = "/root/b", text = "x" } } },
 	{ name = "mv into a directory", files = { { "/root/a", "x" } }, setup = { "mkdir d" },
@@ -387,6 +410,7 @@ CeroSecSelfTest.SHELL_CASES = {
 		want = { { path = "/root/f", text = "" } } },
 	{ name = "touch keeps what is in it", files = { { "/root/f", "x" } }, line = "touch f",
 		want = { { path = "/root/f", text = "x" } } },
+	{ name = "touch several", line = "touch a b; [ -f a ] && [ -f b ] && echo y", out = { "y" } },
 	{ name = "ln -s", files = { { "/root/a", "x" } }, line = "ln -s a l; cat l",
 		out = { "x" } },
 	{ name = "ln without -s", files = { { "/root/a", "x" } },
@@ -413,7 +437,24 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "tar there and back", setup = { "mkdir d; echo x > d/a" },
 		line = "tar cf t d; rm -r d; tar xf t; cat d/a", out = { "x" } },
 
+	-- expr(1) of 4.4BSD: the answer, and a status of 0, 1 (the answer is 0 or
+	-- empty) or 2 (bad expression).
+	{ name = "expr", line = "expr 2 + 3 \\* 4", out = { "14" } },
+	{ name = "expr of zero is 1", line = "expr 3 - 3; echo $?", out = { "0", "1" } },
+	{ name = "expr compares", line = "expr 2 \\< 10", out = { "1" } },
+	{ name = "expr divides by zero", line = "expr 1 / 0 2>/dev/null; echo $?", out = { "2" } },
+
+	-- kill(1) of 4.4BSD: signals by number and by name, and the list. The
+	-- scratch machine has no job book, so a signal can only miss here; a job
+	-- actually ended is os_test's and commands_test's.
+	{ name = "kill -9", line = "kill -9 99 2>/dev/null; echo $?", out = { "1" } },
+	{ name = "kill of a bad signal", line = "kill -s FOO 99 2>&1 | head -1",
+		out = { "kill: unknown signal FOO; valid signals:" } },
+	{ name = "kill -l", line = "echo $(kill -l) | cut -d ' ' -f 9", out = { "kill" } },
+
 	-- The machine and the account.
+	{ name = "uname", line = "uname", out = { "CeroSec OS" } },
+	{ name = "uname -n", line = "uname -n", out = { "selftest" } },
 	{ name = "date +FORMAT", line = "date +%Y-%m-%d", out = { "1993-06-13" } },
 	{ name = "date +%H:%M", line = "date +%H:%M", out = { "19:33" } },
 	{ name = "hostname", line = "hostname", out = { "selftest" } },
@@ -422,6 +463,9 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "id", line = "id", out = { "uid=root flag=admin groups=root" }, dev = "id" },
 	{ name = "groups", line = "groups", out = { "root" } },
 	{ name = "which", line = "which ls", out = { "/bin/ls" } },
+	-- 4.3BSD's which.csh ends on `echo no $arg in $path`.
+	{ name = "which of nothing", line = "which nosuch",
+		out = { "no nosuch in /bin /usr/local/bin" } },
 	{ name = "type of a builtin", line = "type cd", out = { "cd is a shell builtin" } },
 	{ name = "type of a file", line = "type ls", out = { "ls is /bin/ls" } },
 	{ name = "env", line = "env", out = { "HOME=/root", "PATH=/bin:/usr/local/bin" } },
@@ -437,6 +481,8 @@ CeroSecSelfTest.SHELL_CASES = {
 		out = { "0" }, status = 1 },
 	{ name = "useradd", line = "useradd u1 > /dev/null; grep -c '^u1:' /etc/passwd; [ -d /home/u1 ] && echo home",
 		out = { "1", "home" } },
+	-- SVR4's useradd says nothing when it works.
+	{ name = "useradd is silent", line = "useradd u1; echo $?", out = { "0" } },
 	{ name = "useradd -G", line = "groupadd g1; useradd -G g1 u1 > /dev/null; groups u1",
 		out = { "u1 g1" } },
 	{ name = "usermod -G", line = "groupadd g1; useradd u1 > /dev/null; usermod -G g1 u1; groups u1",

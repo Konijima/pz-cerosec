@@ -616,6 +616,8 @@ About a file, with the name after the flag:
   -f  is it a plain file
   -d  is it a directory
   -e  is it there at all, either kind
+  -s  is it there, and not empty
+  -h  is it a symbolic link (-L is the same question)
   -r  may I read it
   -w  may I write it
   -x  may I run it
@@ -2478,6 +2480,30 @@ carries:
   sh <file> [args]        test <expression>
   [ <expression> ]        wait [id]...
   printf <format> [arg...]    true    false]],
+
+[[What the newer tools say when a line is wrong.
+
+  rmdir: illegal option -- p
+      getopt's words, and then the usage line;
+      uname says it the same way
+  syntax error
+  non-numeric argument
+  Divide by zero
+  Remainder by zero
+  yacc stack overflow
+      expr's, bare; $? is 2, and 0 and 1 its answer
+  kill: unknown signal <x>; valid signals:
+      and then the list, as kill -l prints it
+  kill: illegal signal number: <x>
+  kill: option requires an argument -- s
+  kill: stop: not honoured
+      a signal that would only pause a job
+  no <name> in /bin /usr/local/bin
+      which, finding nothing; $? is still 0
+
+And the one shape no other card carries:
+
+  expr <expression>]],
 
 [[The reasons off the disk, each after the command's name and the path:
 cat: notes: no such file.
