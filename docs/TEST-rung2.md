@@ -78,7 +78,7 @@ machine's console and stays there until the machine goes dark.
     title bar.
 19. `cd`, then `mkdir notes`, `cd notes`, `echo "hello" > a.txt`, `cat a.txt`.
 20. `echo "second" >> a.txt`, `cat a.txt`: two lines.
-21. **Permission denied.** As `admin`: `cd /root` answers `cd: /root: permission
+21. **Permission denied.** As `admin`: `cd /root` answers `cd: /root: Permission
     denied`. As `root` it works.
 22. **A command that does not exist.** `frobnicate` answers `frobnicate: command not
     found`.
@@ -537,7 +537,7 @@ at the BIOS.
 120. **Putting it back.** `write /bin/ls "list a directory"` then
      `chmod 755 /bin/ls`: `ls` works again. An executable is an ordinary file.
 121. **A command nobody may run.** `chmod 644 /bin/ls`, `exit`, log in as
-     `admin`: `ls` → `ls: Permission denied`. Log back in as `root`: `ls` is
+     `admin`: `ls` → `ls: permission denied`. Log back in as `root`: `ls` is
      refused too — a file with no `x` bit at all is one root may not execute
      either. `chmod 700 /bin/ls` and root runs it again; `chmod 755 /bin/ls` to
      put it back for everybody.
@@ -751,7 +751,7 @@ the seven should be in the list, with the machine's own files untouched.
 167. **`ls -F` marks the directories.** `ls -F /` — `bin/`, `dev/`, `etc/`,
      `home/`, `root/`, with the slash. `ls -lF /` is the long listing with the
      same slashes. `ls -Fl` and `ls -l -F` are the same thing; `ls -lz` is
-     `ls: -lz: unknown option`.
+     `ls: illegal option -- z` and the usage line.
 168. **`grep` is a string, not a pattern.** Put a few lines in a file, then
      `grep alpha notes.txt`. `grep -n alpha notes.txt` numbers them,
      `grep -i ALPHA notes.txt` ignores case, and `grep a.b notes.txt` matches the
@@ -839,7 +839,7 @@ away and coming back.
      comments included, is exactly as it was.
 188. **su asks for the target's password.** As `admin` with a password set on
      `root`: `su` (no argument) asks `Password:` with stars. A wrong one is
-     `su: authentication failure` and nothing changes. The right one and the
+     `Sorry` and nothing changes. The right one and the
      prompt becomes `root@<host>:/root#`. `whoami` says `root`.
 189. **su comes back.** `exit`: back to `admin@<host>:~$`, still logged in, and
      **the screen is not cleared**. `exit` again: now it is a logout — the screen

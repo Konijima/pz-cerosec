@@ -721,12 +721,18 @@ CeroSecOS.STRERROR = {
 	["permission denied"]    = "Permission denied",
 	["file exists"]          = "File exists",
 	["directory not empty"]  = "Directory not empty",
+	-- And the three more that have an errno of their own in errlst.c:
+	-- ENOSPC, EFBIG and ELOOP.
+	["disk full"]            = "No space left on device",
+	["file too large"]       = "File too large",
+	["too many levels of symbolic links"] = "Too many levels of symbolic links",
 }
 
--- A reason as it goes on the glass: strerror(3)'s wording for the six above,
--- and every other reason exactly as the caller wrote it -- "no such device",
--- "no such job" and the rest are this machine's own words, not an errno, and
--- stay as they are (see the "refusal" entry of CeroSecOS.DEVIATIONS).
+-- A reason as it goes on the glass: strerror(3)'s wording for the ones above,
+-- and every other reason exactly as the caller wrote it -- "is a device",
+-- "invalid characters" and the rest are this machine's own words for things
+-- no errno named, and stay as they are (the "errno" entry of
+-- CeroSecOS.DEVIATIONS).
 function CeroSecOS.strerror(reason)
 	if type(reason) ~= "string" then return reason end
 	return CeroSecOS.STRERROR[reason] or reason
@@ -743,9 +749,38 @@ end
 -- getNode already signs a lookup with). CeroSecOSShell.writeRedirect and
 -- .openRedirect are always a CREATE (">" truncates or makes; there is no "<"
 -- on this shell), so only the E_CREAT row applies here.
+-- The rest of the E_CREAT rows: ENOSPC is "file system full" and ELOOP
+-- "symbolic link loop"; EACCES and EISDIR are the lower-case words this
+-- machine already signs with. EFBIG has no row at all -- errmsg() falls back
+-- on "error 27" -- and "file too large" is kept (the "errno" entry).
+local SH_CREAT = {
+	["no such file"] = "directory nonexistent",
+	["not a directory"] = "directory nonexistent",
+	["disk full"] = "file system full",
+	["too many levels of symbolic links"] = "symbolic link loop",
+}
+
 function CeroSecOS.sherror(reason)
-	if reason == "no such file" or reason == "not a directory" then
-		return "directory nonexistent"
-	end
+	return SH_CREAT[reason] or reason
+end
+
+-- The line for a redirect sh could not open. bin/sh/redir.c's openredirect():
+-- error("cannot create %s: %s", fname, errmsg(errno, E_CREAT)), and error()
+-- signs with commandname only when there is one -- which an interactive sh
+-- never has (bin/sh/options.c sets it for a script FILE only), so at the
+-- prompt the line starts with "cannot". Inside a script sh would have put the
+-- script's name in front; this one does not (the "sh" entry).
+function CeroSecOS.cannotCreate(path, reason)
+	return "cannot create " .. tostring(path) .. ": " .. tostring(CeroSecOS.sherror(reason))
+end
+
+-- What sh says about a command it could not RUN, which is the E_EXEC column of
+-- the same errormsg[] table and not strerror(3): bin/sh/exec.c prints
+-- "%s: %s" with errmsg(e, E_EXEC) both when the PATH walk finds nothing
+-- (find_command) and when the exec of a path fails (shellexec). ENOENT and
+-- ENOTDIR are "not found"; EACCES and EISDIR are the lower-case words
+-- this machine already signs with.
+function CeroSecOS.execError(reason)
+	if reason == "no such file" or reason == "not a directory" then return "not found" end
 	return reason
 end

@@ -24,7 +24,8 @@ admin@ksp-04-11:~$ kill %1
 ```
 
 Multi-line constructs go on one line, all of it. There is no continuation prompt:
-a line with an unfinished construct answers `sh: syntax error: missing 'done'` and
+a line with an unfinished construct answers
+`Syntax error: end of file unexpected (expecting "done")` and
 nothing runs. A refusal the shell itself makes carries no line number, a typed line
 is line one of nothing, but past the first level it is inside a file again
 (`sh backup.sh`) and that file's name and line come back.
@@ -567,7 +568,7 @@ somebody loosened (which is the `setgid mail` of a real spool, done the way this
 machine can do it). What it does **not** inherit is the quota exemption above:
 that exemption is for the machine writing about *itself*, so the bytes a message
 somebody typed really adds are charged to the drive and put back when they do not
-fit, `mail: /var/mail/bob: disk full`, and nothing written.
+fit, `mail: /var/mail/bob: No space left on device`, and nothing written.
 
 Across the wire it is `cat note | rsh gate mail -s Hi bob`: `rsh` drains its own
 standard input before it dials and hands it to the far command as an ordinary
@@ -768,8 +769,8 @@ lines land, as it did before.
 **`2>file`, `2>>file`, `2>&1`, `>&2` and `1>`** are sh(1)'s `[n]>word` and
 `[n]>&digit`, for the two descriptors this machine has. A digit is a descriptor only
 where a word would start and only with `>` right after it (`a2>f` is the word `a2`);
-`3>f` is still the word `3`. One redirect per descriptor, or `syntax error: bad
-redirect`, and so is a `>&` that is not `>&1` or `>&2`. They are read left to right:
+`3>f` is still the word `3`. One redirect per descriptor, or `Syntax error:
+redirection unexpected`, and so is a `>&` that is not `>&1` or `>&2`. They are read left to right:
 `> f 2>&1` puts both in `f`, `2>&1 > f` puts the errors where the output *was*.
 
 The engine still has one list per command, so the second stream is a **sink**

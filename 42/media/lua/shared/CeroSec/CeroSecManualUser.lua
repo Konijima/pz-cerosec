@@ -262,15 +262,22 @@ ones kept, name the files one command at a time.]],
 
 [[What is not Unix here: errors, continued.
 
-The syntax errors are this shell's own sentences: sh said `fi'
-unexpected where this one says missing 'fi', and a quote left open
-is refused here where sh waited for the rest on the next line.
+A syntax error reads as sh's did, but a quote left open is refused
+here, and so is a line that ends in | or &&, or an if with no fi:
+sh waited for the rest at its second prompt, and this screen has one
+typing line. What it says is end of file unexpected.
 
-A wrong password to su is Sorry, as 4.4BSD's su said it; a wrong
-one to passwd is passwd: Permission denied, EACCES under its own
-name. sudo's own wrong-password line here is still authentication
-failure: no source for what a 1993 sudo really printed has turned
-up to check that against.]],
+Three refusals had no errno to name them and keep this machine's own
+words: is a device, invalid characters and file too large (sh itself
+said error 27 for that one). So does /dev: read-only.
+
+The shell signs its own complaints sh: at the prompt, and name: line
+N: in a script, where 4.4BSD's said nothing at the prompt and gave no
+line. A > it cannot open is cannot create, signed by nobody, even in
+a script, where sh put the script's name in front.
+
+A wrong password to sudo says sudo: authentication failure. No source
+for what a 1993 sudo printed has turned up to check it against.]],
 
 [[What is not Unix here: files and the shell.
 
@@ -1047,7 +1054,7 @@ press Enter. New password: is the new one. Retype new password: is the
 same one again, to catch a typo before it becomes the only key to your own
 account.
 
-Get the old one wrong and it says "passwd: authentication failure". Type
+Get the old one wrong and it says "passwd: Permission denied". Type
 the new one two different ways and it says "passwd: passwords do not
 match". Either way nothing changed and you simply start again.]],
 
@@ -2039,23 +2046,23 @@ every time:
   <command>: <what failed>: <why>
 
 The command that refused, then exactly which file or word it refused
-about, then the reason in two or three words. Read it in that order and it
-will tell you what to do next. Below is every reason a user meets, with
-what it actually means.
+about, then the reason, in the words every Unix of 1993 used. Read it
+in that order and it will tell you what to do next. Below is every
+reason a user meets, with what it actually means.
 
-  no such file
+  No such file or directory
       nothing is at that name; check ls and your spelling
-  is a directory
+  Is a directory
       a file command was handed a directory; try -r
-  not a directory
+  Not a directory
       a directory was expected and a file was there
-  permission denied
+  Permission denied
       you may not read, write or step into it
-  file exists
+  File exists
       something is already at that name
   are identical
       cp was handed one file under two names
-  directory not empty
+  Directory not empty
       mv onto a directory with something in it
 
 Classic mistake: skipping the middle piece. It is the only part that tells
@@ -2076,16 +2083,21 @@ you which file the machine is actually complaining about.]],
 
 Running out of room. Chapter 3 has the numbers.
 
-  file too large
+  File too large
       past 4096 bytes for that one file
-  disk full
+  No space left on device
       past 65536 bytes, or past 512 files, on the machine
   directory full
       the parent already holds 96 entries
 
   /dev: read-only
       nothing may be created under /dev; only the machine
-      puts things there]],
+      puts things there
+
+  cannot create <file>: <why>
+      a > the shell could not open; nothing ran. Why is
+      one of: permission denied, is a directory,
+      file system full, directory nonexistent]],
 
 [[Commands the machine could not run.
 
@@ -2093,16 +2105,14 @@ Running out of room. Chapter 3 has the numbers.
       nothing on PATH answers that name; check spelling,
       check capitals, and check help
 
-A command that is there but not yours to run says Permission denied
-instead, never not found. One tells you it is missing, the other
-that it is locked and exactly where.
+One there but not yours to run says permission denied instead.
 
   <cmd>: usage: <the shape of it>
       the right command with the wrong number of parts;
       the line it prints is the answer
   <cmd>: illegal option -- <flag>
   usage: <the shape of it>
-      a flag that command does not have, and the shape it wanted
+      a flag it does not have, and the shape it wanted
   chmod: <mode>: invalid mode
       neither three digits nor a clause in letters
   man: <name>: no manual entry
@@ -2117,14 +2127,14 @@ that it is locked and exactly where.
 
 [[Typing that the shell could not make sense of. Nothing runs at all.
 
-  syntax error: bad redirect
-      two > or two 2> on one command, or a >& that is
-      not >&1 or >&2
-  syntax error: missing redirect target
-      a greater-than sign with no file name after it
-  syntax error: unterminated quote
-      a double quote opened and never closed, or a line
-      that ends in a backslash
+  Syntax error: redirection unexpected
+      two > or two 2> on one command, or a <
+  Syntax error: Bad fd number
+      a >& that is not >&1 or >&2
+  Syntax error: end of file unexpected
+      a > with no file name, or a | with nothing after
+  Syntax error: Unterminated quoted string
+      a quote never closed, or a trailing backslash
 
 Pipes, from chapter 7.
 
@@ -2151,16 +2161,16 @@ The three new filters, from chapter 7.
   Login incorrect
       a wrong name or a wrong password, and it will never
       say which
-  passwd: authentication failure
-      the old password did not match
+  passwd: Permission denied
+      the old password did not match, or the account is
+      another's, which only root may change
   passwd: passwords do not match
       the new one was typed two different ways
   passwd: password too long
   passwd: no such user
-  passwd: Permission denied
-      another account's, which only root may change
-  su: authentication failure
-      one wrong answer; there is no second try
+  Sorry
+      su's whole answer to a wrong password; there is no
+      second try
   su: too many levels
       a fifth su, past the four the machine allows
 

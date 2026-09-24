@@ -173,7 +173,7 @@ puts it out of everybody's reach but root's. That holds for the small ones the
 engine runs without leaving the house too, `echo`, `printf`, `test`, `[`, `true`,
 `false` and `sleep` are resolved through `/bin/<name>` first and then executed
 inside the engine, so `rm /bin/sleep` gives `sleep: not found` and
-`chmod 600 /bin/echo` gives `echo: Permission denied` to an ordinary account.
+`chmod 600 /bin/echo` gives `echo: permission denied` to an ordinary account.
 `/bin/sh` is the shell itself: delete it and every line typed answers
 `sh: not found`, and the BIOS repair brings it back.
 
@@ -304,7 +304,7 @@ a script the script runs writes there too. `./nightly.sh`, a script of your own 
 `PATH`, and `. nightly.sh` all do the same. What still comes to the screen is a
 **refusal**, `ls: /nope: No such file or directory` is not output, here as on any Unix, and a
 script whose output fills the file to its 4096 bytes is stopped there with
-`sh: log: file too large`.
+`cannot create log: file too large`.
 
 `shutdown` and `reboot` are the power button typed instead of pressed, and they are
 root's alone. `shutdown` turns the machine off: the sprite goes dark, the screen is

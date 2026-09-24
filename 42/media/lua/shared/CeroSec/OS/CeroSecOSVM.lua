@@ -2624,7 +2624,7 @@ local function runSimple(state, job, f, env)
 			-- A function with no body left is a name nothing answers to: 127, as
 			-- for any command not found (see CeroSecOS.notRunStatus).
 			job.status = 1
-			if reason == "not a function" then job.status = CeroSecOS.notRunStatus("command not found") end
+			if reason == "not a function" then job.status = CeroSecOS.notRunStatus("not found") end
 			return 1
 		end
 		-- The redirect on the call is the FUNCTION's, the way it is a script's: one
@@ -2673,7 +2673,7 @@ local function runSimple(state, job, f, env)
 		-- in /bin is looked up like any other command, and the walk is what it is.
 		if type(walked) == "number" and walked > 1 then builtinWalk = walked - 1 end
 		if refusal ~= nil then
-			errLines(job, CeroSecOS.fit({ name .. ": " .. refusal }))
+			errLines(job, CeroSecOS.fit({ name .. ": " .. CeroSecOS.execError(refusal) }))
 			job.status = CeroSecOS.notRunStatus(refusal)
 			return 1 + builtinWalk
 		end
@@ -4352,17 +4352,25 @@ end
 -- The script a name points at, as text. needX says whether it has to be
 -- executable (./thing) or merely readable (sh thing).
 -- text, or nil plus the line to print.
+-- A file that is RUN (needX) is refused in sh's own E_EXEC words --
+-- "./x: not found", "./x: permission denied" (CeroSecOS.execError); one
+-- handed to sh or to `.` is refused with strerror(3)'s.
 function CeroSecOS.readScript(state, session, who, path, needX)
 	local label = scriptLabel(who, path)
+	local says = CeroSecOS.strerror
+	if needX then says = CeroSecOS.execError end
 	local node, reason = CeroSecOS.getNode(state, session, path)
-	if node == nil then return nil, label .. ": " .. CeroSecOS.strerror(reason) end
-	if node.type == "dir" then return nil, label .. ": Is a directory" end
+	if node == nil then return nil, label .. ": " .. says(reason) end
+	-- A directory RUN is execve(2)'s EACCES (4.4BSD's manual: "The new
+	-- process file is not an ordinary file"), so sh says permission denied.
+	if node.type == "dir" and needX then return nil, label .. ": " .. says("permission denied") end
+	if node.type == "dir" then return nil, label .. ": " .. says("is a directory") end
 	if node.type ~= "file" then return nil, label .. ": " .. CeroSecOS.notAFile(node) end
 	if needX and not CeroSecOS.can(state, session, node, "x") then
-		return nil, label .. ": Permission denied"
+		return nil, label .. ": " .. says("permission denied")
 	end
 	if not CeroSecOS.can(state, session, node, "r") then
-		return nil, label .. ": Permission denied"
+		return nil, label .. ": " .. says("permission denied")
 	end
 	return node.data or ""
 end

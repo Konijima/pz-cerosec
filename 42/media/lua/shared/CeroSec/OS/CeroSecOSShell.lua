@@ -1003,22 +1003,39 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "w", phrase = "prints the clock where a real one prints a weekday",
 		why = "sixty columns: the clock where a weekday was" },
 
-	-- What the machine's WORDING is, where it is not 1993's. Kept rather than
-	-- unified: the strings are pinned in all three volumes and in the
+	-- What is left of the machine's own WORDING, where it is not 1993's. Kept
+	-- because each one says plainly what went wrong, and each says why below.
 	-- self-test's vectors, and each one says plainly what went wrong.
 	--
-	-- The Bourne shell's "syntax error: `fi' unexpected", and an open quote
-	-- is a line it waits for (PS2); this parser refuses the line.
+	-- The words themselves are 1993's now: strerror(3) for a command's
+	-- refusal (CeroSecOS.STRERROR), getopt(3)'s two lines for a flag,
+	-- sh's own lower-case table for what sh says (CeroSecOS.sherror,
+	-- .execError, .cannotCreate), synerror()'s "Syntax error:", su's
+	-- "Sorry" and login's "Login incorrect". What is left is below.
+	--
+	-- An open quote, or a line that ends in | or &&, is a line sh waited
+	-- for (PS2, bin/sh/parser.c); this parser has one line and refuses it.
 	{ name = "syntax", world = true,
-		phrase = "The syntax errors are this shell's own sentences",
-		why = "the parser's own wording, and an open quote is refused" },
-	-- su's bare "Sorry" (usr.bin/su/su.c) and passwd's "passwd: Permission
-	-- denied" (usr.bin/passwd/local_passwd.c's pw_error) are both cited at
-	-- their own call sites now. sudo's own wrong-password line is not pinned
-	-- down the same way -- the 1980s sudo that would have been on a 1993
-	-- machine is not in circulation to read, and "it probably said X" is
-	-- exactly the guess CONTRIBUTING.md refuses. Kept as this machine's own
-	-- words until a real source turns up.
+		phrase = "a quote left open is refused",
+		why = "one typing line: no PS2 continuation, so the line is refused" },
+	-- Reasons no errno ever named, kept in this machine's own words: a
+	-- device, a name with characters the disk will not keep, a file past
+	-- the size a file may be. (4.4BSD's sh had no word for EFBIG at all:
+	-- errmsg() printed "error 27".)
+	{ name = "errno", world = true,
+		phrase = "is a device, invalid characters and file too large",
+		why = "refusals no errno named keep this machine's own words" },
+	-- 4.4BSD sh's error() signs with commandname: nothing at the prompt,
+	-- the script's name inside a script, and no line number. This one signs
+	-- its own run-time errors "sh:" at the prompt and "name: line N:" in a
+	-- file, and a redirect it cannot open is never signed.
+	{ name = "sh",
+		phrase = "signs its own complaints sh:",
+		why = "a run-time error names the shell and the line a script stopped on" },
+	-- sudo's own wrong-password line is not pinned down the way su's and
+	-- passwd's are: the 1980s sudo that would have been on a 1993 machine is
+	-- not in circulation to read, and "it probably said X" is exactly the
+	-- guess CONTRIBUTING.md refuses. Kept until a real source turns up.
 	{ name = "sudo", phrase = "authentication failure",
 		why = "sudo's own wrong-password wording has no source to check it against" },
 
@@ -1033,7 +1050,7 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "IFS", world = true, phrase = "IFS is not read",
 		why = "field splitting is blank, tab and newline only" },
 	-- One > (or >>) and one 2> per command, and < is refused by the lexer
-	-- (CeroSecOSScript: "unexpected '<'"). sh took any number of each.
+	-- (CeroSecOSScript: "redirection unexpected"). sh took any number of each.
 	{ name = "redirect", world = true,
 		phrase = "One > and one 2> to a command, and no <",
 		why = "a command has one output, one error and no input redirect" },
@@ -1094,7 +1111,7 @@ CeroSecOS.DEVIATIONS = {
 		why = "hostname names the machine" },
 	-- And flags that are not here on commands that are.
 	{ name = "rm", phrase = "rm has no -f",
-		why = "rm -f is an unknown option" },
+		why = "rm -f is an illegal option" },
 	{ name = "kill", phrase = "kill takes no signal",
 		why = "there are no signals: kill ends a job" },
 	{ name = "tail", phrase = "tail +N is not here",
@@ -2514,7 +2531,7 @@ local function fileLines(state, session, cmd, path)
 	local node, reason = CeroSecOS.getNode(state, session, path)
 	if node == nil then return nil, cmd .. ": " .. path .. ": " .. CeroSecOS.strerror(reason) end
 	if node.type ~= "file" then
-		return nil, cmd .. ": " .. path .. ": " .. CeroSecOS.notAFile(node)
+		return nil, cmd .. ": " .. path .. ": " .. CeroSecOS.strerror(CeroSecOS.notAFile(node))
 	end
 	if not CeroSecOS.can(state, session, node, "r") then
 		return nil, cmd .. ": " .. path .. ": Permission denied"
@@ -4637,7 +4654,7 @@ local function tarGather(state, session, carry, verbose)
 	elseif CeroSecOS.isLink(node) then kind = "l" end
 	if kind == nil then
 		carry.problems[#carry.problems + 1] =
-			"tar: " .. path .. ": " .. CeroSecOS.notAFile(node)
+			"tar: " .. path .. ": " .. CeroSecOS.strerror(CeroSecOS.notAFile(node))
 		return
 	end
 
@@ -4699,7 +4716,7 @@ local function tarPut(state, session, m, now)
 		if node ~= nil then
 			if not CeroSecOS.isLink(node) then return "tar: " .. path .. ": File exists" end
 			local gone, why = CeroSecOS.removeNode(state, session, path, false, now)
-			if gone == nil then return "tar: " .. path .. ": " .. why end
+			if gone == nil then return "tar: " .. path .. ": " .. CeroSecOS.strerror(why) end
 		end
 		local made, reason = CeroSecOS.createNode(state, session, path,
 			CeroSecOS.newLink(who, m.data, now), now)
@@ -5371,7 +5388,7 @@ continuations.passwd = function(state, session, cont, line, env)
 
 	-- A token with a step nobody wrote: refuse the way a wrong answer is
 	-- refused, and change nothing.
-	return false, { "Sorry" }
+	return false, { "passwd: Permission denied" }
 end
 
 -- mkpasswd. The same function the passwords go through, on a string you choose,
@@ -5702,7 +5719,7 @@ local function sudoRun(state, session, args, from, env, sh)
 	-- this era reset nothing about the environment either.
 	if not CeroSecOS.BUILTINS[name] then
 		local refusal = CeroSecOS.whyNotRun(state, sub, name, shPath(sh))
-		if refusal ~= nil then return false, { name .. ": " .. refusal } end
+		if refusal ~= nil then return false, { name .. ": " .. CeroSecOS.execError(refusal) } end
 	end
 
 	-- Every command reads args[1] as its own name, so the tail is handed over
@@ -6420,18 +6437,17 @@ end
 -- `echo hi > f` writes the same way whoever ran the echo.
 -- true plus the lines, or false plus the refusal.
 -- who is kept for the caller's own bookkeeping but never signs this line: a
--- real sh opens ">" itself, before the command runs, and 4.4BSD's sh says so
--- under its OWN name whichever command was on the line -- "sh: cannot create
--- /etc/hosts: permission denied" for `cat nosuch > /etc/hosts`, never "cat:"
--- and never capitalised (CeroSecOS.sherror's comment has the citation).
+-- real sh opens ">" itself, before the command runs, and says so in its OWN
+-- words whichever command was on the line -- "cannot create /etc/hosts:
+-- permission denied" for `cat nosuch > /etc/hosts`, never "cat:" and never
+-- capitalised (CeroSecOS.cannotCreate has the citation).
 function CeroSecOS.writeRedirect(state, session, who, redirect, text, env)
 	local devOk, devLines = redirectToDevice(state, session, redirect.path, text, env)
 	if devOk ~= nil then return devOk, devLines end
 	local done, reason = CeroSecOS.writeFile(state, session, redirect.path, text,
 		redirect.append, CeroSecOS.clockOf(env))
 	if done == nil then
-		return false, CeroSecOS.fit({ "sh: cannot create " .. redirect.path .. ": "
-			.. CeroSecOS.sherror(reason) })
+		return false, CeroSecOS.fit({ CeroSecOS.cannotCreate(redirect.path, reason) })
 	end
 	return true, {}
 end
@@ -6459,8 +6475,7 @@ function CeroSecOS.openRedirect(state, session, who, redirect, env)
 	local done, reason = CeroSecOS.writeFile(state, session, redirect.path, "", false,
 		CeroSecOS.clockOf(env))
 	if done == nil then
-		return false, CeroSecOS.fit({ "sh: cannot create " .. redirect.path .. ": "
-			.. CeroSecOS.sherror(reason) })
+		return false, CeroSecOS.fit({ CeroSecOS.cannotCreate(redirect.path, reason) })
 	end
 	return true, {}
 end
@@ -6505,11 +6520,14 @@ function CeroSecOS.promptJob(state, session, line, vars, status, name, exported,
 	if type(line) ~= "string" then return nil, "sh: syntax error" end
 
 	local prog, reason, where = CeroSecOS.parseScript(line)
-	-- No line number for a typed line: it is line one of nothing, and
-	-- "sh: line 1:" in front of every typo would be a number that never says
-	-- anything. A file has lines and is named after itself, like any script.
+	-- No line number for a typed line, and no name either: 4.4BSD-Lite2
+	-- sh's synerror() signs with commandname, which an interactive shell
+	-- never set (bin/sh/options.c sets it only for a script file), so a
+	-- typo at the prompt is the bare "Syntax error: ..." line. A file has
+	-- lines and is named after itself, like any script.
 	if prog == nil then
 		if name ~= nil then return nil, CeroSecOS.scriptError(name, reason, where) end
+		if CeroSecOS.isSyntaxError(reason) then return nil, reason end
 		return nil, "sh: " .. reason
 	end
 
@@ -6577,7 +6595,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	CeroSecOS.expandTilde(state, session, args, redirect)
 
 	-- A bare redirection still creates (or truncates) the file, and it is sh
-	-- doing the creating -- the same "sh: cannot create" as writeRedirect and
+	-- doing the creating -- the same "cannot create" as writeRedirect and
 	-- openRedirect, because a line with nothing but a ">" on it is still sh
 	-- opening a target before a command that never comes.
 	if #args == 0 then
@@ -6587,8 +6605,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, "",
 			redirect.append, CeroSecOS.clockOf(env))
 		if done == nil then
-			return false, CeroSecOS.fit({ "sh: cannot create " .. redirect.path .. ": "
-				.. CeroSecOS.sherror(wreason) })
+			return false, CeroSecOS.fit({ CeroSecOS.cannotCreate(redirect.path, wreason) })
 		end
 		return true, {}
 	end
@@ -6614,9 +6631,9 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 			local function endsWith(tail)
 				return #said >= #tail and string.sub(said, #said - #tail + 1) == tail
 			end
-			if endsWith(": No such file or directory") then
+			if endsWith(": not found") then
 				sh.status = 127
-			elseif endsWith(": Permission denied") or endsWith(": Is a directory") then
+			elseif endsWith(": permission denied") or endsWith(": is a directory") then
 				sh.status = 126
 			end
 		end
@@ -6632,7 +6649,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	-- (CeroSecOS.notRunStatus); a caller that handed no table wants none.
 	local function notRun(reason)
 		if type(sh) == "table" then sh.status = CeroSecOS.notRunStatus(reason) end
-		return false, CeroSecOS.fit({ name .. ": " .. CeroSecOS.strerror(reason) })
+		return false, CeroSecOS.fit({ name .. ": " .. CeroSecOS.execError(reason) })
 	end
 	if CeroSecOS.BUILTINS[name] then
 		if fn == nil then return notRun("not found") end

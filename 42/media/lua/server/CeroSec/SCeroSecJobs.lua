@@ -458,8 +458,12 @@ local function cronFire(system, luaObject, console, state, user, home, entry, no
 		-- A command that will not parse never becomes a job, exactly as `sh` on
 		-- a broken file does not -- and what sh would have said goes to the
 		-- account's mail, because that is where a cron job's output goes.
+		-- cron ran the line as `sh -c`, and sh -c never set commandname
+		-- (4.4BSD-Lite2 bin/sh/options.c sets it for a script FILE only), so
+		-- synerror() printed the bare "Syntax error: ..." with no name and
+		-- no line in front of it.
 		CeroSecOS.mailAppend(state, user, CeroSecOS.hostname(state), entry.cmd,
-			{ CeroSecOS.scriptError("sh", reason, where) }, now)
+			{ reason }, now)
 		return nil
 	end
 

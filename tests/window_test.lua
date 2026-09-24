@@ -1369,7 +1369,7 @@ do
 	bench.enter("edit /etc")
 	bench.frame()
 	eq("a directory does not open an editor", bench.window.mode, "shell")
-	check("and the shell says why", bench.painted("is a directory"))
+	check("and the shell says why", bench.painted("edit: /etc: Is a directory"))
 end
 
 --
@@ -6914,7 +6914,7 @@ do
 	bench.login("admin")
 	bench.frame()
 	check("it names the file and the line",
-		bench.painted(".profile: line 2: syntax error: unexpected 'fi'"))
+		bench.painted(".profile: 2: Syntax error: \"fi\" unexpected"))
 	eq("and the account is at a prompt", bench.window.mode, "shell")
 end
 
@@ -7384,7 +7384,7 @@ do
 	-- And the file is still out of the account's reach: crontab is the way in.
 	bench.enter("cat /var/spool/cron/admin")
 	bench.frame()
-	check("the spool is nobody's to read", bench.painted("permission denied"))
+	check("the spool is nobody's to read", bench.painted("Permission denied"))
 
 	bench.enter("crontab -r")
 	bench.enter("crontab -l")
@@ -7679,7 +7679,7 @@ do
 	-- it, in the mail, because that is where a cron job's output goes.
 	local mail = bench.fileText("/var/mail/admin")
 	check("the mail carries sh's own refusal", mail ~= nil and
-		string.find(mail, "sh: line 1: syntax error: missing 'then'", 1, true) ~= nil)
+		string.find(mail, "\nSyntax error: end of file unexpected (expecting \"then\")", 1, true) ~= nil)
 	local log = bench.fileText("/var/log/cron")
 	check("the log says the orphan was not run",
 		string.find(log, "(ghost) ORPHAN (no passwd entry)", 1, true) ~= nil)
@@ -9352,7 +9352,7 @@ do
 	net.enter("rcp notes.txt gate:/home/admin/big.txt")
 	net.tick(4)
 	check("the far machine refuses what will not fit a file",
-		net.glass("rcp: /home/admin/big.txt: file too large"))
+		net.glass("rcp: /home/admin/big.txt: File too large"))
 	eq("and nothing landed", net.text(net.gate, "/home/admin/big.txt"), nil)
 
 	-- A machine that does not trust this one refuses the copy outright.
@@ -9830,7 +9830,7 @@ do
 	local ok, lines = CeroSecOS.runArgs(net.here:osState(),
 		{ user = "root", cwd = "/root" }, { "cat", "/etc/phone" }, nil, { now = 0 })
 	eq("and there is no file to read it out of", ok, false)
-	check("no such file", string.find(lines[1], "no such file", 1, true) ~= nil)
+	check("no such file", string.find(lines[1], "No such file or directory", 1, true) ~= nil)
 
 	-- AN OLDER SAVE. Every machine written before the line belonged to the premises
 	-- carries the building bytes and no exchange, and such a machine has NO
@@ -13188,7 +13188,7 @@ do
 	check("df says what is wrong with it", bench.painted("fd0"))
 	bench.enter("echo x > /mnt/c")
 	bench.frame()
-	check("and every write says so", bench.painted("disk full"))
+	check("and every write says so", bench.painted("file system full"))
 
 	-- But it does not come out.
 	bench.sounds = {}

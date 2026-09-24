@@ -126,6 +126,18 @@ and a command whose redirect is refused no longer runs.
   printf widths, `sh -c`). The
   error appendix also gained grep's pattern errors, `passwd: permission
   denied`, `export: not a name` and `wait: too many jobs`.
+- Error messages now read the way a 1993 BSD printed them. A command's
+  refusal is the full sentence (`cat: notes: No such file or directory`,
+  `Permission denied`, `Is a directory`, `File exists`). A flag a command
+  does not have is `cat: illegal option -- z` followed by its usage line.
+  The shell speaks for itself in its own lower-case words: `foo: not found`,
+  `foo: permission denied`, and `cannot create /etc/x: permission denied`
+  for a `>` it could not open. Syntax errors read `Syntax error: "fi"
+  unexpected`, and in a script `broken.sh: 3: Syntax error: ...`. A wrong
+  password to `su` is `Sorry`, and to `passwd` it is `passwd: Permission
+  denied`; the login prompt says `Login incorrect`. A script that looked
+  for the old words in an error (`no such file`, `command not found`)
+  needs the new ones; `$?` is unchanged (127 not found, 126 not runnable).
 
 ## 0.6.1 - 2026-09-21
 

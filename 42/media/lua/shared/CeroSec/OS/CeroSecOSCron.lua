@@ -888,7 +888,7 @@ local function mailRead(state, session, env)
 		if reason == "no such file" then return true, { "No mail for " .. tostring(user) } end
 		return false, { "mail: " .. path .. ": " .. CeroSecOS.strerror(reason) }
 	end
-	if node.type ~= "file" then return false, { "mail: " .. path .. ": " .. CeroSecOS.notAFile(node) } end
+	if node.type ~= "file" then return false, { "mail: " .. path .. ": " .. CeroSecOS.strerror(CeroSecOS.notAFile(node)) } end
 	if not CeroSecOS.can(state, session, node, "r") then
 		return false, { "mail: " .. path .. ": Permission denied" }
 	end
@@ -909,7 +909,7 @@ local function mailRead(state, session, env)
 		if kept == nil then
 			-- The disk, or a directory that is not there any more. The messages stay in
 			-- the spool and are shown anyway: they have been read.
-			local out = { "mail: " .. box .. ": " .. why }
+			local out = { "mail: " .. box .. ": " .. CeroSecOS.strerror(why) }
 			for i = 1, #lines do out[#out + 1] = lines[i] end
 			return false, out
 		end
@@ -926,7 +926,7 @@ local function mailRead(state, session, env)
 	-- account's own authority, so a spool that cannot be emptied is a spool that is
 	-- not shown as read.
 	local done, why = CeroSecOS.setData(state, session, path, "", now)
-	if done == nil then return false, { "mail: " .. path .. ": " .. why } end
+	if done == nil then return false, { "mail: " .. path .. ": " .. CeroSecOS.strerror(why) } end
 	return true, lines
 end
 
@@ -945,7 +945,7 @@ local function mailFile(state, session)
 		return false, { "mail: " .. box .. ": " .. CeroSecOS.strerror(reason) }
 	end
 	if node.type ~= "file" then
-		return false, { "mail: " .. box .. ": " .. CeroSecOS.notAFile(node) }
+		return false, { "mail: " .. box .. ": " .. CeroSecOS.strerror(CeroSecOS.notAFile(node)) }
 	end
 	if not CeroSecOS.can(state, session, node, "r") then
 		return false, { "mail: " .. box .. ": Permission denied" }

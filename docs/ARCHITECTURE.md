@@ -381,7 +381,7 @@ and `/usr/local/bin` — empty, root's at 755, seeded on every machine by
 somebody widens `PATH`: nothing there, no `/bin` at all, `/bin` a
 file, a directory called `/bin/ls`, or a file with no Lua command behind it are all
 `<name>: not found`; a file without `x` for this user, or a `/bin` he cannot
-read, is `<name>: Permission denied`. A **link** at a name in `/bin` is not one of
+read, is `<name>: permission denied`. A **link** at a name in `/bin` is not one of
 the machine's executables — what runs is the file it points at, as a script. The words with no file are the shell's own —
 `cd`, `exit`, `fg`, `jobs`, `wait` (marked `shell` in `COMMAND_INFO`, so `binNames`
 never seeds one) and the engine's `read`, `shift`, `break`, `continue`, `history` — plus

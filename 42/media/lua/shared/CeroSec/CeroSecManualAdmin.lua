@@ -498,7 +498,7 @@ So this is not a demonstration. It is a machine losing a command:
   ls: not found
 
 And a mode is enough on its own. chmod 600 /bin/ls leaves the file there
-and every account, root included, gets ls: Permission denied instead: a
+and every account, root included, gets ls: permission denied instead: a
 file with no x bit anywhere is one nobody may run, and the repair below
 is the way back. One says the command is missing; the other that it is
 locked.
@@ -2167,15 +2167,17 @@ meets. Below are the ones that belong to this book.
 
 Being somebody else, and the accounts.
 
-  su: authentication failure
-      one wrong answer; there is no second try
+  Sorry
+      su's one wrong answer; there is no second try
   su: too many levels
       a fifth su, past the four the machine allows
   sudo: authentication failure
       the same, and for the same reason
+  sudo: <name>: command not found
+      nothing on PATH answers the name sudo was given
   <name> is not in the sudoers file.
       not in the file at all; sudo will not ask twice
-  passwd: authentication failure
+  passwd: Permission denied
   passwd: passwords do not match
   passwd: password too long
   passwd: no such user
@@ -2286,7 +2288,7 @@ refused whole, and the refusal names the file, the line and the field:
   No mail for <name>
       an empty mailbox, which is not an error
   mail: <path>: Permission denied
-  crontab: <path>: disk full
+  crontab: <path>: No space left on device
 
 And sending:
 
@@ -2295,7 +2297,7 @@ And sending:
       and <host>!<name> too: no mailer off this machine
   Null message body; hope that's ok
       an empty message, and it is SENT anyway
-  mail: <path>: disk full
+  mail: <path>: No space left on device
 
 And the log, for a minute the machine had no room for:
 

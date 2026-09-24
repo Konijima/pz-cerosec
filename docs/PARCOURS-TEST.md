@@ -273,7 +273,7 @@ passé réellement, même quand ça correspond au texte attendu.
     `passwd: password updated`. [ ]
 54. `exit`, se reconnecter en `admin` avec le mot de passe vide → `login
     incorrect` ; avec `hunter2` → connecté. [ ]
-55. `passwd`, mauvais ancien mot de passe → `passwd: authentication failure`,
+55. `passwd`, mauvais ancien mot de passe → `passwd: Permission denied`,
     rien de changé. [ ]
 56. `passwd`, bon ancien mot de passe, `abc` puis `abd` aux deux nouveaux →
     `passwd: passwords do not match`. [ ]
@@ -318,7 +318,7 @@ passé réellement, même quand ça correspond au texte attendu.
     `wheel:` de nouveau, et `cat /etc/sudoers` n'a jamais eu son nom. Un nom
     laissé dans `wheel` serait `root` qui attend le prochain `dan`. [ ]
 64. `admin`, `su` (mot de passe défini sur `root`) → `Password:` avec des `*` ;
-    mauvais mot de passe → `su: authentication failure`. Bon mot de passe →
+    mauvais mot de passe → `Sorry`. Bon mot de passe →
     `root@<host>:/root#`. `exit` → retour à `admin@<host>:~$`, écran non
     effacé ; `exit` encore → déconnexion complète, écran effacé, `login:`. [ ]
 65. `root`, `su root` quatre fois de suite (chacune libre), une cinquième →
@@ -876,10 +876,10 @@ capture d'écran prise en jeu qui les a fait écrire (`while: not found`).
      l'autre, l'invite ne revient qu'à la fin, et pendant ce temps rien de ce
      qu'on tape n'apparaît à l'écran. [ ]
 129. `chmod 755 compte.sh` puis `./compte.sh` → même résultat. `chmod 644
-     compte.sh` puis `./compte.sh` → `./compte.sh: Permission denied`, alors
+     compte.sh` puis `./compte.sh` → `./compte.sh: permission denied`, alors
      que `sh compte.sh` marche toujours. [ ]
 129a. En `root` (`su -`, ou une session root), `cd /home/admin`, `chmod 644
-     compte.sh` puis `./compte.sh` → `./compte.sh: Permission denied` **pour
+     compte.sh` puis `./compte.sh` → `./compte.sh: permission denied` **pour
      root aussi** : un fichier sans aucun bit `x` est un fichier que personne
      n'a le droit d'exécuter, root compris. `chmod 100 compte.sh` (ou `010`, ou
      `001` : un seul bit `x` n'importe où suffit) → `./compte.sh` repart. Puis
@@ -929,7 +929,7 @@ capture d'écran prise en jeu qui les a fait écrire (`while: not found`).
      `for i in 1 2 3; do echo $i; done`, `echo $((7 * 6))`,
      `echo $(whoami)`, `echo 'un   deux'` → chacun répond comme dans un
      script. `while true; do echo x` (sans `done`) →
-     `sh: syntax error: missing 'done'` et **rien** ne tourne. [ ]
+     `Syntax error: end of file unexpected (expecting "done")` et **rien** ne tourne. [ ]
 141a. **Les dollars dans une somme.** `edit part.sh` avec deux lignes :
      `echo $(($1 / $2)) chacun, $(($1 % $2)) de reste` et
      `echo $# nombres`. Puis `chmod 755 part.sh` et `./part.sh 17 5` →
@@ -956,7 +956,7 @@ capture d'écran prise en jeu qui les a fait écrire (`while: not found`).
      fichier DANS ce shell-ci. Vérifier aussi `. pose.sh` (sans `./`) →
      `.: pose.sh: No such file or directory` tant que le dossier n'est pas dans `PATH`, et
      `chmod 600 pose.sh` → `. ./pose.sh` marche encore (le point veut `r`, pas
-     `x`) alors que `./pose.sh` répond `./pose.sh: Permission denied`. [ ]
+     `x`) alors que `./pose.sh` répond `./pose.sh: permission denied`. [ ]
 143. Taper `while true; do echo y; done` sans `&` → les `y` arrivent en filet,
      il n'y a aucune invite en dessous, et **Échap** rend l'invite avec `^C`.
      Pendant ce temps, marcher et ouvrir une porte : le jeu ne saccade pas. [ ]
@@ -1010,15 +1010,15 @@ capture d'écran prise en jeu qui les a fait écrire (`while: not found`).
 148. Fichiers cachés et `/bin` : `ls -a` dans le home → `.` et `..` en tête,
      puis les noms pointés, puis le reste ; `ls -A` → les mêmes sans `.` ni
      `..` ; `ls -la` et `ls -aF` lisent pareil (`./` et `../` avec `-F`). Puis
-     `sudo rm /bin/sleep` → `sleep 1` répond `sleep: command not found` ;
-     `sudo chmod 600 /bin/echo` → `echo hi` répond `echo: Permission denied`
+     `sudo rm /bin/sleep` → `sleep 1` répond `sleep: not found` ;
+     `sudo chmod 600 /bin/echo` → `echo hi` répond `echo: permission denied`
      et `sudo echo hi` est refusé de la même façon (aucun bit `x` : même root
      ne l'exécute pas), puis `sudo chmod 755 /bin/echo` le remet ; `if true; then history; fi`
      marche toujours (la grammaire n'est pas un fichier) ; `ls /bin` ne montre
      ni `cd` ni `exit` ni `jobs` ni `wait` -- ce sont des mots du shell, pas des
      fichiers -- et `cd /etc` marche quand meme, `man cd` repond, et `help` les
      nomme sous la table. Enfin
-     `sudo rm /bin/sh` → **toute** ligne tapée répond `sh: command not found`,
+     `sudo rm /bin/sh` → **toute** ligne tapée répond `sh: not found`,
      `exit` fonctionne encore, et éteindre puis rallumer la machine la répare
      par le BIOS. [ ]
 
@@ -1240,7 +1240,7 @@ en observant le jeu réel, pas par un banc de test.
      fruits` → `pomme` puis `figue` ; `grep -c melon fruits` → `0` et rien
      d'autre (le zéro est une réponse, pas un silence) ; `sort -u fruits` →
      `figue`, `poire`, `pomme` sur trois lignes ; `cat fruits | sort -u | wc -l`
-     → `     3`. Puis `wc -q fruits` → `wc: -q: unknown option` et `wc` tout
+     → `     3`. Puis `wc -q fruits` → `wc: illegal option -- q` suivi de `usage: wc [-clw] [file]...` et `wc` tout
      seul → `wc: usage: wc [-clw] [file]...`. [ ]
 
 ## N. Le réseau (palier 6a)
@@ -1570,7 +1570,7 @@ coques.
      `rm -r travail`, `rm notes.txt`, `tar xvf /mnt/home.tar` → tout revient,
      `cat notes.txt` → `deux`, et `ls -l notes.txt` → le mode `600` est revenu
      aussi. Enfin `df` avant et après un `tar cf` : l'archive **compte** sur le
-     disque, et un home trop gros répond `tar: /mnt/home.tar: file too large`.
+     disque, et un home trop gros répond `tar: /mnt/home.tar: File too large`.
      Pendant un `tar` d'un gros home, marcher et ouvrir une porte : le jeu ne
      saccade pas. [ ]
 208. **Reprendre la machine avec la disquette dedans.**
@@ -3444,7 +3444,7 @@ Tout se tape au prompt d'une seule machine allumée, en `admin`. Les bancs
 sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
 
 339a. **`sudo` signe ce qu'il ne trouve pas.** `sudo lights on` → une seule ligne,
-     `sudo: lights: command not found`, et non `lights: command not found` : c'est
+     `sudo: lights: command not found`, et non `lights: not found` : c'est
      `sudo` qui a cherché. `sudo cd /root` répond pareil
      (`sudo: cd: command not found`). [ ]
 
@@ -3464,7 +3464,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      impossible : `stop=$(( $(date +%s) + 300 ))`, puis `now=$(date +%s)`, puis
      `echo $(( stop - now ))` → `300` (ou 299/300 selon la seconde qui passe).
      Deux prises restent refusées : `echo $(echo $(date))` →
-     `sh: syntax error: bad substitution`. [ ]
+     `Syntax error: Bad substitution`. [ ]
 
 339e. **La sortie d'un script suit la redirection de la ligne.** Avec
      `edit deux.sh` contenant `echo un` et `echo deux`, Tab pour enregistrer :
@@ -3473,7 +3473,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      puis `./deux.sh > out2` → pareil, et `./deux.sh | wc -l` → `2`. Un script
      qui contient `ls /nope` sous un `> fic` : le refus est à l'écran, le fichier
      ne contient que ce qui a été imprimé. Et `sh deux.sh > /etc/nope` →
-     `sh: /etc/nope: Permission denied`, le script ne tourne pas. [ ]
+     `cannot create /etc/nope: permission denied`, le script ne tourne pas. [ ]
 
 339f. **`case`.** Au prompt : `case abc in a*) echo star;; esac` → `star` ;
      `case abc in x|abc|y) echo alt;; esac` → `alt` ;
@@ -3483,7 +3483,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `case is a shell keyword`, et `help` liste `case` et `esac` parmi les mots
      du shell. Dans un fichier avec `edit`, la forme sur plusieurs lignes
      marche aussi (`case $1 in`, une clause par bloc, `esac` seul sur sa
-     ligne). Et `echo a;;` → `sh: syntax error: unexpected ';;'`. [ ]
+     ligne). Et `echo a;;` → `Syntax error: ";;" unexpected`. [ ]
 
 339g. **Les fonctions du shell.** Au prompt : `greet() { echo hello $1; }` puis
      `greet world` → `hello world` ; `type greet` → `greet is a function` ;
@@ -3600,12 +3600,13 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `[a b]`. `` echo '`echo a b`' `` (guillemets simples) répond
      `` `echo a b` `` au lieu de l'exécuter. Et un seul niveau, comme
      pour `$( )` : `` echo `echo \`echo hi\` ` ``, `` echo `echo $(echo hi)` `` et
-     `` echo $(echo `echo hi`) `` répondent tous `sh: syntax error: bad substitution`. [ ]
+     `` echo $(echo `echo hi`) `` répondent tous `Syntax error: Bad substitution`. [ ]
 
 339q. **La redirection s'ouvre avant la commande.** En `admin`, dans `~` :
-     `echo garde > notes`, puis `rm notes > /etc/x` → `rm: /etc/x: permission
-     denied`, et `cat notes` répond toujours `garde` : la commande n'a pas
-     tourné. `touch zz > /etc/hosts` → refusé, et `ls zz` → `no such file`.
+     `echo garde > notes`, puis `rm notes > /etc/x` → `cannot create
+     /etc/x: permission denied` (c'est sh qui parle, pas rm), et `cat notes`
+     répond toujours `garde` : la commande n'a pas tourné. `touch zz >
+     /etc/hosts` → refusé, et `ls zz` → `ls: zz: No such file or directory`.
      `cat nosuch > out` → l'erreur à l'écran, et `ls -l out` montre un fichier
      vide ; `nosuchcmd > out2` laisse aussi un `out2` vide. [ ]
 
@@ -3615,7 +3616,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `cat nosuch > log 2>&1` → rien à l'écran, et `cat log` montre l'erreur ;
      `cat nosuch 2>&1 > log2` → l'erreur à l'écran, `log2` vide (l'ordre
      compte). `cat nosuch 2>&1 | wc -l` → `1`. `echo a > b > c` et
-     `cat x 2>y 2>z` → `sh: syntax error: bad redirect`. Et le seul écart
+     `cat x 2>y 2>z` → `Syntax error: redirection unexpected`. Et le seul écart
      déclaré : `cat notes nosuch 2>/dev/null` ne montre rien, pas même
      `garde` (une commande qui échoue à moitié rend un seul flot) ; la page
      *What is not Unix here: errors* du volume 1 le dit. [ ]
@@ -4209,7 +4210,7 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      `sh /mnt/tvguide.sh` → `tvguide.sh: no tv0 in /dev`, `sh /mnt/genwatch.sh` →
      `genwatch.sh: gen0 gave no fuel figure`. Et sans argument :
      `sh /mnt/curtains.sh` → la ligne d'usage. Aucun des six ne dit
-     `syntax error` ni ne laisse une erreur du shell sur l'écran. [ ]
+     `Syntax error` ni ne laisse une erreur du shell sur l'écran. [ ]
 404. **Sur les machines qui l'avaient déjà.** Dans le magasin d'informatique
      (`showroom`) : `ls bin` sur la machine du comptoir → une chance sur trois d'y
      trouver `autoclose.sh` et `curtains.sh`. Chez CeroSec (`cerosec`) :
@@ -4643,7 +4644,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `h() { echo out; cat nosuch; }`, puis `h 2>/dev/null | wc -l` : `1`, et
      `h > o 2>&1 | wc -l` : `0`, `cat o` affiche `out` puis la plainte de
      cat. `k() { echo ran > r; }`, puis `k > /etc/hosts | wc -l` :
-     `k: /etc/hosts: Permission denied`, `0`, et `cat r` dit qu'il n'existe
+     `cannot create /etc/hosts: permission denied`, `0`, et `cat r` dit qu'il n'existe
      pas. Pareil pour un script : `sh s.sh > f | wc -l` affiche `0`.
      Quand le lecteur finit d'abord : `echo a > f1 | true`, puis `cat f1`
      affiche `a` ; `g > f2 | true`, puis `cat f2` affiche `a` puis `b`.
@@ -4653,7 +4654,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 459b. **Une fonction sans espace avant l'accolade.** Taper `t(){ echo a; }`
      puis `t` : affiche `a`. Idem avec `t (){ echo a; }` et
      `t ( ) { echo a; }`. `t(){echo a;}` répond
-     `sh: syntax error: missing '{'`. [ ]
+     `Syntax error: word unexpected (expecting "{")`. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
 
@@ -4671,6 +4672,20 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      *Commands the machine could not run*. Connecté en admin,
      `passwd root` : `passwd: Permission denied`, dans *Logging in, and your
      account*. [ ]
+463. **Les messages sont ceux de 1993.** En `admin` : `cat nosuch` →
+     `cat: nosuch: No such file or directory` (majuscule, phrase entière).
+     `cat -z` → deux lignes : `cat: illegal option -- z` puis
+     `usage: cat [-n] [file]...`. `nosuch` → `nosuch: not found`, puis
+     `echo $?` → `127`. `echo hi > /etc/x` → `cannot create /etc/x:
+     permission denied`, en minuscules et sans nom devant. `echo hi >
+     /nulle/part` → `cannot create /nulle/part: directory nonexistent`.
+     `fi` → `Syntax error: "fi" unexpected`. `echo "ouvert` → `Syntax
+     error: Unterminated quoted string`. `su root` avec un mauvais mot de
+     passe → `Sorry`, seul sur sa ligne. `passwd` avec un mauvais ancien
+     mot de passe → `passwd: Permission denied`. Se déconnecter, mauvais
+     mot de passe au login → `Login incorrect`. Volume 1, *What is not Unix
+     here: errors, continued* : il ne reste que la ligne ouverte, les
+     refus sans errno, la signature `sh:` et sudo. [ ]
 
 ## Rapport
 
