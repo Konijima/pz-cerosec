@@ -100,6 +100,12 @@ local function isNameChar(c)
 	return c ~= "" and string.find(c, "^[A-Za-z0-9_]") ~= nil
 end
 
+-- The special parameters that may stand in braces, and the part each is.
+local SPECIAL_IN_BRACES = {
+	["@"] = "all", ["*"] = "star", ["#"] = "count",
+	["?"] = "status", ["$"] = "job", ["!"] = "bang",
+}
+
 -- Digits and nothing else: ${1} and ${10}, a positional parameter inside
 -- braces. Never a variable -- isVarName refuses a leading digit.
 local function isPositional(name)
@@ -315,6 +321,15 @@ local function readDollar(text, i, quoted, depth)
 	end
 
 	if c == "{" then
+		-- ${@} ${*} ${#} ${?} ${$} ${!}: the special parameters in braces,
+		-- the same parts their bare forms are (below). Before ${#name},
+		-- because ${#} is $# and not the length of nothing.
+		local sp = string.sub(text, i + 2, i + 2)
+		if string.sub(text, i + 3, i + 3) == "}" then
+			local kind = SPECIAL_IN_BRACES[sp]
+			if kind ~= nil then return { t = kind, q = quoted }, i + 4 end
+		end
+
 		-- ${#name}: the length, ksh88's own form and POSIX.2's. Read first
 		-- because "#" cannot start a name (isVarName says so), so it can
 		-- never be mistaken for one.

@@ -305,6 +305,10 @@ do
 	ok(state, c, "set -- a b; echo ${1:-d} ${3:-d} ${#1} ${2} ${10-ten}", { "a d 1 b ten" })
 	ok(state, c, "set -- 1 2 3 4 5 6 7 8 9 ten; echo ${10} $10", { "ten 10" })
 	bad(state, c, "echo ${1=x}", "sh: 1: bad variable name")
+	-- The special parameters in braces are their bare selves.
+	ok(state, c, "set -- 'a b' c; for w in \"${@}\"; do echo \"<$w>\"; done; echo ${#} ${*}",
+		{ "<a b>", "<c>", "2 a b c" })
+	ok(state, c, "false; echo ${?}; echo \"[${!}]\"", { "1", "[]" })
 	-- One substitution deep, and a bounded pattern.
 	bad(state, c, "echo ${x:-$(echo no)}", "sh: syntax error: bad substitution")
 	bad(state, c, "x=aaa; echo ${x#" .. string.rep("a", CeroSecOS.MAX_TRIM_ITEMS + 1) .. "}",

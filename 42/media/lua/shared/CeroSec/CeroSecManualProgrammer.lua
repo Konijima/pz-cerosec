@@ -2422,8 +2422,8 @@ own name and line -- broken.sh: line 3: -- a typed line with sh: alone.
   syntax error: unterminated quote
       a quote opened and never closed
   syntax error: bad substitution
-      a $( ) in a $( ), an unclosed ${ or $(( , or
-      braces round something that is not a name
+      a $( ) in a $( ) or a ${ }, an unclosed ${
+      or $(( , or braces round no parameter
   syntax error: bad redirect
       two > or two 2> on one command, or a bad >&
   syntax error: missing redirect target
