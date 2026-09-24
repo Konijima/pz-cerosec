@@ -499,7 +499,7 @@ any kind, and therefore the world, the save file, the wire and the sync.
   every read, while `v`, `on` and `facing` ride into the save file weighed by
   nothing — drop `facing` and a computer picked up and put down faces the wrong
   way, with a green suite behind it.
-- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 235 cases, each a
+- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 252 cases, each a
   line typed at a prompt on a scratch machine — `CeroSecOS.newState`, the
   constructor a first power-on uses, made once and deep-copied for every case —
   with what the screen must show, what `$?` must be and, where the point is a
