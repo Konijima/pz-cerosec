@@ -3865,6 +3865,18 @@ do
 	badAt(state, admin, "head", "head: usage: head [-n N|-N] [file]")
 	badAt(state, admin, "head -n a.txt", "head: usage: head [-n N|-N] [file]")
 	badAt(state, admin, "head -n -3 a.txt", "head: usage: head [-n N|-N] [file]")
+	-- The count's SIGN is what it means (4.4BSD tail.c's ARG()): +N from the
+	-- top, -N and N from the bottom; head reads a "+" and ignores it. Read
+	-- by strtol: tonumber("+3") is not a number on every VM this runs on.
+	okAt(state, admin, "tail -n +11 a.txt", { "eleven", "twelve" })
+	okAt(state, admin, "tail -n+11 a.txt", { "eleven", "twelve" })
+	okAt(state, admin, "tail -n -2 a.txt", { "eleven", "twelve" })
+	okAt(state, admin, "head -n +2 a.txt", { "alpha beta", "gamma" })
+	okAt(state, admin, "cat a.txt | tail -n +12", { "twelve" })
+	okAt(state, admin, "tail -n +0 a.txt | head -n 1", { "alpha beta" })
+	okAt(state, admin, "tail -n 99999999999999999999 a.txt | head -1", { "alpha beta" })
+	badAt(state, admin, "tail -n 1e9 a.txt", "tail: usage: tail [-n N|-N|+N] [file]")
+	badAt(state, admin, "tail -n inf a.txt", "tail: usage: tail [-n N|-N|+N] [file]")
 	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N|-N|+N] [file]")
 	-- Digits and nothing else: `-2x` is not a number and is not a flag either.
 	badAt(state, admin, "head -2x a.txt", "head: usage: head [-n N|-N] [file]")
