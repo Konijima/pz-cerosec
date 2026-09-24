@@ -17067,13 +17067,13 @@ do
 	-- One > per command, and no <.
 	bad(state, admin, "echo a > q > r", "sh: syntax error: bad redirect")
 	bad(state, admin, "cat < p", "sh: syntax error: unexpected '<'")
-	-- ${x:-y}, ${#x} and the rest of the Bourne and ksh88 forms now work
-	-- (builtins.set's neighbours in CeroSecOSVM.lua); only a positional
-	-- parameter inside braces is still refused (${1:-y}), because isVarName
-	-- never accepted a name starting with a digit.
+	-- ${x:-y}, ${#x}, ${1:-y} and the rest of the Bourne and ksh88 forms
+	-- (tests/builtins_test.lua walks them all); a substitution inside the
+	-- word is still refused, one level deep like a catch in a catch.
 	ok(state, admin, "x=; echo ${x:-y}", { "y" })
 	ok(state, admin, "x=abc; echo ${#x}", { "3" })
-	bad(state, admin, "echo ${1:-y}", "sh: syntax error: bad substitution")
+	ok(state, admin, "echo ${1:-y}", { "y" })
+	bad(state, admin, "echo ${x:-$(echo y)}", "sh: syntax error: bad substitution")
 	-- The wording.
 	bad(state, admin, "nosuch", "nosuch: command not found")
 	bad(state, admin, "ls -z", "ls: -z: unknown option")

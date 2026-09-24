@@ -14,6 +14,9 @@ The suites, in the order they run:
 
 - `defs_test.lua` — the shared definitions (sprites, facings, state).
 - `os_test.lua` — the OS core: filesystem, permissions, users, shell, passwords.
+- `builtins_test.lua` — the shell's `set`, `unset`, `exec` and `trap`, the
+  `${...}` expansions, and what a pipeline stage inherits, on a console with the
+  exported set a login gives.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `compat_computermod_test.lua`: living beside the Workshop mod *Computer Mod*:
   who owns a desktop, and which of the two fillers gets the right-click. Against

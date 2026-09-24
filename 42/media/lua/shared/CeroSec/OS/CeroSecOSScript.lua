@@ -100,6 +100,12 @@ local function isNameChar(c)
 	return c ~= "" and string.find(c, "^[A-Za-z0-9_]") ~= nil
 end
 
+-- Digits and nothing else: ${1} and ${10}, a positional parameter inside
+-- braces. Never a variable -- isVarName refuses a leading digit.
+local function isPositional(name)
+	return name ~= "" and string.find(name, "^[0-9]+$") ~= nil
+end
+
 -- A variable name: what may sit on the left of "=" and inside ${}.
 function CeroSecOS.isVarName(name)
 	if type(name) ~= "string" or name == "" then return false end
@@ -322,6 +328,9 @@ local function readDollar(text, i, quoted, depth)
 			if string.sub(text, k, k) == "}" and CeroSecOS.isVarName(name) then
 				return { t = "vare", kind = "len", name = name, q = quoted }, k + 1
 			end
+			if string.sub(text, k, k) == "}" and isPositional(name) then
+				return { t = "vare", kind = "len", pos = tonumber(name), q = quoted }, k + 1
+			end
 			return nil, "syntax error: bad substitution"
 		end
 
@@ -331,11 +340,18 @@ local function readDollar(text, i, quoted, depth)
 			name = name .. string.sub(text, j, j)
 			j = j + 1
 		end
-		if name == "" or not CeroSecOS.isVarName(name) then
+		-- ${1}, ${10}: a positional parameter, the only way past $9 (POSIX.2
+		-- 2.5.1, "a positional parameter with more than one digit shall be
+		-- enclosed in braces"), and the name ${1:-default} carries.
+		local pos = nil
+		if isPositional(name) then
+			pos = tonumber(name)
+		elseif name == "" or not CeroSecOS.isVarName(name) then
 			return nil, "syntax error: bad substitution"
 		end
 		local nc = string.sub(text, j, j)
 		if nc == "}" then
+			if pos ~= nil then return { t = "arg", n = pos, q = quoted }, j + 1 end
 			return { t = "var", name = name, q = quoted }, j + 1
 		end
 
@@ -372,8 +388,9 @@ local function readDollar(text, i, quoted, depth)
 		j = j + 1
 		local word, j2 = readBraceWord(text, j, depth)
 		if word == nil then return nil, j2 end
-		return { t = "vare", kind = kind, name = name, word = word, colon = colon,
-			q = quoted }, j2
+		if pos ~= nil then name = nil end
+		return { t = "vare", kind = kind, name = name, pos = pos, word = word,
+			colon = colon, q = quoted }, j2
 	end
 
 	if isNameStart(c) then
@@ -484,8 +501,19 @@ readBraceWord = function(text, i, depth)
 			if ok == nil then return nil, reason end
 		elseif c == "`" then
 			return nil, "syntax error: bad substitution"
+		elseif c == "\\" then
+			-- A backslash quotes the character after it, as it does outside
+			-- the braces: ${x#\*} cuts a literal star, never "anything".
+			local nx = string.sub(text, i + 1, i + 1)
+			if nx == "" then return nil, "syntax error: bad substitution" end
+			addLit(parts, nx, true, false)
+			i = i + 2
 		else
-			addLit(parts, c, true, false)
+			-- BARE, and marked so: in the pattern of # ## % %% an unquoted
+			-- * ? [ is a glob character and a quoted one is itself (POSIX.2
+			-- 3.6.2, "quoting ... shall cause the pattern character to be
+			-- matched literally"), so the matcher has to know which it was.
+			addLit(parts, c, true, true)
 			i = i + 1
 		end
 	end

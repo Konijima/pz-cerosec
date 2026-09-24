@@ -3574,6 +3574,32 @@ do
 end
 
 --
+-- 22f. ${x##pattern} in a loop, on the widest value a variable holds.
+--
+-- A trim is a walk of the value for every piece of its pattern
+-- (CeroSecOSVM's trimRun), capped at CeroSecOS.MAX_TRIM_ITEMS pieces and
+-- charged at grep's rate. Trying every cut of the value against globMatch
+-- instead -- the first way it was written -- cost 1.1 s for ONE of these
+-- over a kilobyte of "a", inside one step: the one expansion that could
+-- stall a server with no loop to charge.
+--
+do
+	local machine, state, console = newMachine()
+	local pat = string.rep("*[a]", CeroSecOS.MAX_TRIM_ITEMS / 2 - 1) .. "*[b]"
+	put(state, "/home/admin/grind.sh",
+		"x=" .. string.rep("a", 960) ..
+		"\nwhile true; do y=${x##" .. pat .. "}; y=${x%%" .. pat .. "}; done\n")
+	local job = typeLine(system, machine, state, console, "sh /home/admin/grind.sh")
+	local trimmed = drive(machine, PASSES, CeroSec.JOB_PASS_MS)
+	flat("a trim over a maximal value", trimmed)
+	timely("a trim over a maximal value", trimmed)
+	note("trim, 960 bytes", trimmed)
+	check("and the loop is still running (" .. job.steps .. " steps)",
+		not CeroSecOS.jobIsOver(job))
+	eq("having said nothing", #console.lines, 0)
+end
+
+--
 -- 26. THE COUNTY: the minute sweep, and the windows open on one machine
 --
 -- Every bench above is about one player's script on one machine. These two are

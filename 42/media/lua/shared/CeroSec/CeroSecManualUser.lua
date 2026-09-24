@@ -293,10 +293,11 @@ One > and one 2> to a command, and no < at all: a second > is a bad
 redirect, and < is refused. Hand a file to a command by naming it, or
 with cat file | command.
 
-${x:-y}, ${#x}, ${x#p} and the rest of sh's and ksh's forms inside
-braces work now, but the word after :- := :? :+ # ## % %% may not
-hold a $( ) of its own, nor another ${x:-y}: one substitution deep is
-the ceiling a catch inside a catch already has.]],
+Inside braces, the word after :- := :? :+ and the pattern after # ##
+% %% may not hold a $( ) of its own, nor another ${x:-y}: one
+substitution deep is the ceiling a catch inside a catch already has.
+A pattern is at most 32 pieces, a piece being a character, a ? or a
+[set]; a run of * is one.]],
 
 [[What is not Unix here: pipes.
 
@@ -307,7 +308,11 @@ next writes into a pipe nobody reads. So { echo a > f; echo b > g; } |
 true never makes g, and sleep 5 | true is over at once.
 
 sh -c is not here: sh runs a file. Put the line into one and hand sh
-the file's name.]],
+the file's name.
+
+At the prompt, each line is a shell of its own: set -- and a trap
+last for that line, exec ends the line, not the login, and exec >
+file with no command is refused.]],
 
 [[What is not Unix here: read, history, and who you are.
 
@@ -333,15 +338,15 @@ ls /bin is the whole list of what this machine can run, and a program a
 real Unix had and this one has not is simply not in it. A few are named
 here because a script reaches for them first.
 
-exec cannot replace this shell, because no job here stands in front of
-the one that started it, and trap is not in this shell: there are no
-signals to catch.
+trap catches EXIT and nothing else: kill, Escape and the processor
+ceiling end a job outright, the way kill -9 did, so there is no INT or
+TERM to catch. A job stopped by an error runs no trap either.
 
 rmdir, expr and uname are not on the disk. rm -r takes a directory,
 $(( )) does sums, and hostname names the machine.
 
-set has no -e, -x or -u. rm has no -f, and kill takes no signal: kill %1 is the whole of it, and
-kill -9 %1 is a usage error. tail +N is not here; tail -n N is. printf
+set has no -e, -x or -u. rm has no -f, and kill takes no signal: kill
+%1 is the whole of it, and kill -9 %1 is a usage error. tail +N is not here; tail -n N is. printf
 knows %s, %d and %%, and prints anything else as it stands: %5.2f comes
 out as %5.2f.]],
 

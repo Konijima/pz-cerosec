@@ -21,6 +21,12 @@ and a command whose redirect is refused no longer runs.
 
 - A shell function can be defined without a space before the brace, as in
   `t(){ echo a; }`, like on any sh.
+- The shell has `set` (`set -- a b` for new `$1 $2`, `set` alone to list the
+  variables), `unset` and `unset -f`, `exec`, and `trap '...' EXIT` to clean
+  up when a script ends. `${x:-default}`, `${x:=...}`, `${x:?...}`,
+  `${x:+...}`, `${#x}` and the `${x#...}`, `${x%...}` trims work, `${1:-...}`
+  and `${10}` too. A variable you did not `export` no longer leaks into the
+  commands of a pipeline (`Q=1; env | cat`).
 - A computer that's already on now opens with a left click, same as the
   menu's Use computer.
 - The editor no longer refuses a line wider than the screen. It wraps onto the

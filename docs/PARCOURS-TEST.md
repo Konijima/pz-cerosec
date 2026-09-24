@@ -4655,6 +4655,23 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `t ( ) { echo a; }`. `t(){echo a;}` répond
      `sh: syntax error: missing '{'`. [ ]
 
+459c. **set, unset, exec, trap.** `set -- a b c; echo $# $2` : `3 b`.
+     `Qz=1; set | grep Qz` : `Qz=1`. `Q=1; unset Q; echo ${Q-parti}` :
+     `parti`. `f(){ echo hi; }; unset -f f; f` : `f: command not found`.
+     `exec echo a; echo b` : seulement `a`. `exec > f` :
+     `sh: exec: redirect with no command`. `trap 'echo bye' EXIT; echo hi` :
+     `hi` puis `bye`. `trap 'echo x' INT` : `sh: trap: INT: bad trap`.
+     Un script `s.sh` qui contient `trap 'echo fin' EXIT`, `echo un`,
+     `exit 3`, `echo jamais` ; `sh s.sh; echo $?` : `un`, `fin`, `3`. [ ]
+459d. **Les accolades de sh et de ksh.** `x=; echo ${x:-d} ${x+oui}` :
+     `d oui`. `unset y; echo ${y:?}` : `sh: y: parameter null or not set`.
+     `v=/usr/lib/a.tar.gz; echo ${v##*/} ${v%%.*} ${#v}` :
+     `a.tar.gz /usr/lib/a 17`. `v='a*b'; echo ${v#"a*"} ${v#a*}` :
+     `b *b`. `set -- un; echo ${1:-d} ${2:-d}` : `un d`. [ ]
+459e. **Seul ce qui est exporté passe dans un tuyau.** `Q=1; env | cat` :
+     aucune ligne `Q=1`. `export Q; env | cat` : la ligne `Q=1`
+     apparaît. [ ]
+
 ## Le manuel dit tout ce qui n'est pas Unix
 
 460. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les
@@ -4664,8 +4681,9 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 461. **Trois affirmations, vérifiées à l'écran.** `echo a > p` puis `wc -c p` :
      `1`, pas `2` (pas de saut de ligne après la dernière ligne). `IFS=:`,
      `x=a:b`, puis `for i in $x; do echo $i; done` : une seule ligne `a:b`
-     (IFS n'est pas lu). `set` : `set: command not found`. Si l'une de ces
-     réponses a changé, la page ment : le noter au rapport. [ ]
+     (IFS n'est pas lu). `set -e` : `sh: set: -e: unknown option` (set
+     n'a ni -e, ni -x, ni -u). Si l'une de ces réponses a changé, la page
+     ment : le noter au rapport. [ ]
 462. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
      `grep: [z-a]: bad range`, et la ligne figure au volume 1, annexe,
      *Commands the machine could not run*. Connecté en admin,
