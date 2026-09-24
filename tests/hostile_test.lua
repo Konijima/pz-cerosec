@@ -4337,6 +4337,33 @@ do
 	eq("and so does one down a line", far.lastBg, nil)
 end
 
+--
+-- 28. A hostile IFS, splitting a word of nothing but delimiters (rung 6b)
+--
+-- Every non-whitespace IFS byte delimits on its own (CeroSecOSVM's addSplit),
+-- so a value that is nothing else is the worst shape splitting has: about a
+-- thousand fields out of one MAX_VAR_BYTES-sized word, every one of them
+-- empty. What this asks is whether that walk stays flat and inside budget,
+-- the same question 21's forged PATH asked of the walk that follows it.
+--
+do
+	local machine, state, console = newMachine()
+	-- The word itself is one literal token to the parser (no whitespace in
+	-- it), so it is set into a variable first: only an UNQUOTED EXPANSION's
+	-- result ever meets addSplit, script text never does.
+	local forged = string.rep(":", CeroSecOS.MAX_VAR_BYTES)
+	put(state, "/home/admin/ifsbomb.sh",
+		"IFS=:\nx=" .. forged .. "\nfor i in $x; do test 1 = 1; done\n")
+	local job = typeLine(system, machine, state, console, "sh ifsbomb.sh")
+
+	local result = drive(machine, 400)
+	flat("a word split into a thousand empty fields", result)
+	timely("a word split into a thousand empty fields", result)
+	note("a word split into a thousand empty fields", result)
+
+	check("the machine still boots", CeroSecOS.validate(state) == true)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

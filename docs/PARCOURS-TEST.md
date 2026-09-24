@@ -4678,9 +4678,16 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      history, and who you are* et *what is missing*. [ ]
 461. **Trois affirmations, vérifiées à l'écran.** `echo a > p` puis `wc -c p` :
      `1`, pas `2` (pas de saut de ligne après la dernière ligne). `IFS=:`,
-     `x=a:b`, puis `for i in $x; do echo $i; done` : une seule ligne `a:b`
-     (IFS n'est pas lu). `set` : `set: command not found`. Si l'une de ces
+     `x=a:b`, puis `for i in $x; do echo $i; done` : deux lignes, `a` puis
+     `b` (IFS est maintenant lu, POSIX.2 2.6.5 -- ce n'est plus une page de
+     déviation). `set` : `set: command not found`. Si l'une de ces
      réponses a changé, la page ment : le noter au rapport. [ ]
+461a. **IFS, la coupure des mots.** `IFS=:`, `x=a:b:c`, `for i in $x; do
+     echo "[$i]"; done` : trois lignes, `[a]`, `[b]`, `[c]`. `f(){ echo
+     "$*"; }; IFS=:; f a b c` : une ligne, `a:b:c` (le premier caractère
+     d'IFS joint `"$*"`). `unset IFS` (ou une nouvelle connexion) : `x=a
+     b`, `for i in $x; do echo $i; done` redonne deux lignes, `a` puis `b`,
+     exactement comme avant IFS. [ ]
 462. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
      `grep: [z-a]: bad range`, et la ligne figure au volume 1, annexe,
      *Commands the machine could not run*. Connecté en admin,

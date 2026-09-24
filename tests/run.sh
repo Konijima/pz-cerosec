@@ -8,6 +8,7 @@ set -e
 
 lua5.1 tests/defs_test.lua
 lua5.1 tests/os_test.lua
+lua5.1 tests/ifs_test.lua
 # The photographed saves under tests/fixtures/, walked up to whatever the code is now:
 # the one bench that reads bytes a real build wrote instead of building its own.
 lua5.1 tests/migrate_test.lua

@@ -186,6 +186,13 @@ local function trim(s)
 	return (string.gsub(string.gsub(s, "^[ \t\n]+", ""), "[ \t\n]+$", ""))
 end
 
+-- What a $( ) does to what it caught, and only that: sh(1) and POSIX.2
+-- 2.6.3 remove trailing NEWLINES and nothing else -- not a leading one, not
+-- a blank line in the middle, not a space or tab anywhere.
+local function stripTrailingNewlines(s)
+	return (string.gsub(s, "\n+$", ""))
+end
+
 --
 -- Output
 --
@@ -244,7 +251,7 @@ end
 local jobError
 
 -- How big the open capture has become: the value it would hand back if it
--- closed now, which is its lines joined by one separator, plus whatever is held
+-- closed now, which is its lines joined by "\n", plus whatever is held
 -- part way through a line. Kept as a running total on the buffer rather than
 -- measured, because it is asked on every write a captured job makes.
 local function captureBytes(job, extra)
@@ -426,12 +433,13 @@ end
 -- bounds what is held to one row.
 --
 -- Only on the way to the screen. Inside a $(...) the text is not going to a
--- screen and must not be folded as if it were: the capture joins its lines with
--- a space, so a wrap there would push spaces into the middle of the captured
--- value. What bounds it there is the capture's byte ceiling, measured on what
--- is held as well as on what has been caught -- the same flood written into a
--- substitution instead of onto a screen must meet a ceiling of its own, or it
--- is the same unbounded string one door along.
+-- screen and must not be folded as if it were: the capture joins its lines
+-- with "\n" (POSIX.2 2.6.3), so a wrap there would push newlines into the
+-- middle of the captured value. What bounds it there is the capture's byte
+-- ceiling, measured on what is held as well as on what has been caught --
+-- the same flood written into a substitution instead of onto a screen must
+-- meet a ceiling of its own, or it is the same unbounded string one door
+-- along.
 local function wrapPartial(job)
 	if capturing(job) then
 		if captureBytes(job, job.partial) > CeroSecOS.MAX_VAR_BYTES then
@@ -537,6 +545,39 @@ local function getVar(job, name)
 	local v = job.vars[name]
 	if v == nil then return "" end
 	return v
+end
+
+-- IFS, POSIX.2 2.6.5: unset reads as space, tab, newline; getVar cannot say
+-- that (it turns nil into ""), so field splitting reads job.vars.IFS itself.
+local IFS_DEFAULT = " \t\n"
+local function getIFS(job)
+	local v = job.vars.IFS
+	if v == nil then return IFS_DEFAULT end
+	return v
+end
+
+-- "$*"'s join character (POSIX.2 2.5.3): the first byte of IFS, a blank when
+-- IFS is unset, none at all when it is set empty.
+local function ifsJoinChar(job)
+	local v = job.vars.IFS
+	if v == nil then return " " end
+	if v == "" then return "" end
+	return string.sub(v, 1, 1)
+end
+
+-- Splits an IFS value into two membership tables: the space/tab/newline
+-- bytes it holds (IFS whitespace, collapsed and ignored at the ends) and
+-- every other byte it holds (an IFS delimiter, which delimits on its own
+-- even next to another one). A character loop over the value, never a
+-- pattern built from it -- IFS is the player's (tests/pattern-check.lua).
+local function ifsClasses(ifs)
+	local ws, delim = {}, {}
+	for i = 1, #ifs do
+		local c = string.sub(ifs, i, i)
+		if c == " " or c == "\t" or c == "\n" then ws[c] = true
+		else delim[c] = true end
+	end
+	return ws, delim
 end
 
 -- nil, or the reason it may not be set. The two ceilings live here and nowhere
@@ -855,8 +896,14 @@ local function popFrame(job)
 		flushPartial(job)
 		local buf = job.caps[#job.caps]
 		job.caps[#job.caps] = nil
-		-- Newlines become spaces, the way every shell folds a substitution.
-		job.capval = trim(table.concat(buf or {}, " "))
+		-- The lines it caught, joined back the way they came apart: outLine
+		-- split the command's output at each newline, table.concat with "\n"
+		-- puts them back, and only the newline(s) left at the very end are
+		-- gone (sh(1), POSIX.2 2.6.3) -- a captured "a\n\nb\n" is "a\n\nb",
+		-- the blank line kept and the run of trailing ones the only casualty.
+		-- Splitting IT further, if this word is unquoted, is field
+		-- splitting's job below, on IFS like any other expansion's result.
+		job.capval = stripTrailingNewlines(table.concat(buf or {}, "\n"))
 		job.hasCap = true
 		-- And the shell it was a SUBSHELL of comes back with its own variables.
 		-- POSIX.2: a command substitution is executed in a subshell environment,
@@ -1120,7 +1167,11 @@ local function newExpansion(words, nosplit)
 	local kept = {}
 	for i = 1, #words do kept[i] = words[i] end
 	return { words = kept, wi = 1, pi = 1, buf = "", mask = "", open = false, nosplit = nosplit,
-		fields = {}, fieldMasks = {}, out = {}, outMasks = {}, counts = {} }
+		fields = {}, fieldMasks = {}, out = {}, outMasks = {}, counts = {},
+		-- IFS state for addSplit: ifsWs nil means "IFS unset, use the plain
+		-- whitespace splitter verbatim"; wsClosed is the one bit an IFS
+		-- delimiter needs across two parts of the same word (see addSplit).
+		ifsWs = nil, ifsDelim = nil, wsClosed = false }
 end
 
 -- The mask beside ex.buf: "g" for a byte a pathname expansion may still read
@@ -1134,33 +1185,107 @@ local function closeField(ex)
 	ex.open = false
 end
 
--- An unquoted expansion's text: every run of blanks in it ends a field and
--- starts the next one, which is what makes `for f in $list` walk a list.
--- `glob` is carried onto every byte handed in: a value that came out of an
--- unquoted "$x" still globs, which is what makes `x='*'; echo $x` expand.
+-- An unquoted expansion's text: every run of IFS delimiters in it ends a
+-- field and starts the next one, which is what makes `for f in $list` walk
+-- a list. `glob` is carried onto every byte handed in: a value that came out
+-- of an unquoted "$x" still globs, which is what makes `x='*'; echo $x`
+-- expand. Called once per PART of a word, so the field it is building may
+-- already be open (from an earlier part of the same word) and may still be
+-- open when it returns (for a later part to add to) -- ex.buf/ex.mask/
+-- ex.open carry that across calls, exactly as they did before IFS existed.
 local function addSplit(ex, text, glob)
 	if text == "" then return end
-	local tokens = {}
-	for piece in string.gmatch(text, "[^ \t\n]+") do tokens[#tokens + 1] = piece end
-	if #tokens == 0 then
-		-- Blanks and nothing else: it closes the open field and opens none.
-		if ex.open then closeField(ex) end
+	if ex.ifsWs == nil then
+		-- IFS unset: the default splitter, byte for byte as it always was,
+		-- so a script that never touches IFS is unchanged by this feature.
+		local tokens = {}
+		for piece in string.gmatch(text, "[^ \t\n]+") do tokens[#tokens + 1] = piece end
+		if #tokens == 0 then
+			-- Blanks and nothing else: it closes the open field and opens none.
+			if ex.open then closeField(ex) end
+			return
+		end
+		local mc = glob and "g" or "l"
+		if string.find(text, "^[ \t\n]") ~= nil and ex.open then closeField(ex) end
+		for i = 1, #tokens do
+			if i > 1 then closeField(ex) end
+			ex.buf = ex.buf .. tokens[i]
+			ex.mask = ex.mask .. string.rep(mc, #tokens[i])
+			ex.open = true
+		end
+		if string.find(text, "[ \t\n]$") ~= nil then closeField(ex) end
 		return
 	end
+
+	-- IFS is set (maybe to "", which holds no byte in either table below, so
+	-- every byte falls through to the plain "content" branch and the whole
+	-- text becomes one unsplit run -- POSIX.2 2.6.5's "no splitting occurs").
+	--
+	-- A character loop over the WORD now too, matching the one over IFS
+	-- above it: the word is the player's exactly as much as IFS is.
+	--
+	-- wsClosed is the one bit of state a delimiter needs to see across the
+	-- boundary between two parts of a word: an IFS delimiter, along with any
+	-- IFS whitespace next to it on EITHER side, is one separator (POSIX.2's
+	-- "along with any adjacent IFS white space"), so `x="a "; y=":b"; $x$y`
+	-- with IFS=" :" is two fields, not three, even though the space and the
+	-- colon arrive in different addSplit calls. It is true only right after
+	-- a field closed on pure whitespace, and it is spent (false) the moment
+	-- a delimiter uses it, content starts, or a field closes on a delimiter
+	-- of its own -- that delimiter already IS the boundary, nothing is left
+	-- to merge into it.
+	local ws, delim = ex.ifsWs, ex.ifsDelim
 	local mc = glob and "g" or "l"
-	if string.find(text, "^[ \t\n]") ~= nil and ex.open then closeField(ex) end
-	for i = 1, #tokens do
-		if i > 1 then closeField(ex) end
-		ex.buf = ex.buf .. tokens[i]
-		ex.mask = ex.mask .. string.rep(mc, #tokens[i])
-		ex.open = true
+	local n = #text
+	for i = 1, n do
+		local c = string.sub(text, i, i)
+		if ex.open then
+			if delim[c] then
+				closeField(ex)
+				ex.wsClosed = false
+			elseif ws[c] then
+				closeField(ex)
+				ex.wsClosed = true
+			else
+				ex.buf = ex.buf .. c
+				ex.mask = ex.mask .. mc
+			end
+		else
+			if delim[c] then
+				if ex.wsClosed then
+					-- Adjacent to the whitespace that just closed a field:
+					-- the same separator, not a second one.
+					ex.wsClosed = false
+				else
+					-- A delimiter on its own (or a second one in a row)
+					-- always delimits, empty field and all: closeField on
+					-- an empty, still-open buf pushes "" and nothing else.
+					closeField(ex)
+				end
+			elseif not ws[c] then
+				ex.buf = c
+				ex.mask = mc
+				ex.open = true
+			end
+			-- ws[c] while already closed: more of the same separator, and
+			-- nothing to do.
+		end
 	end
-	if string.find(text, "[ \t\n]$") ~= nil then closeField(ex) end
 end
 
 -- "done" when every word is expanded, "sub" when a $(...) has been pushed and
 -- the walker must run it first, or nil plus the reason.
 local function expandStep(job, state, ex, env)
+	-- Read IFS once per entry (this walker returns to the caller and is
+	-- re-entered for every $( ) it must run first, and job.vars is back to
+	-- the outer shell's by the time it is). nil means unset: addSplit keeps
+	-- its old path verbatim for that case.
+	local ifsRaw = job.vars.IFS
+	if not ex.ifsCached or ifsRaw ~= ex.ifsRaw then
+		ex.ifsRaw, ex.ifsCached = ifsRaw, true
+		if ifsRaw == nil then ex.ifsWs, ex.ifsDelim = nil, nil
+		else ex.ifsWs, ex.ifsDelim = ifsClasses(ifsRaw) end
+	end
 	while ex.wi <= #ex.words do
 		local parts = ex.words[ex.wi]
 
@@ -1181,9 +1306,11 @@ local function expandStep(job, state, ex, env)
 			elseif part.t == "job" then
 				text = tostring(job.id)
 			elseif part.t == "star" then
-				-- One string. Quoted it is one field; bare it is split like any
-				-- other expansion, below.
-				text = table.concat(job.args, " ")
+				-- One string, joined by IFS's first byte -- a blank if IFS is
+				-- unset, nothing if it is set empty (POSIX.2 2.5.3). Quoted it
+				-- is one field; bare it is split like any other expansion,
+				-- below, on the very same IFS.
+				text = table.concat(job.args, ifsJoinChar(job))
 			elseif part.t == "bang" then
 				-- Empty until an `&` has started something, as in any sh.
 				if job.lastBg ~= nil then text = tostring(job.lastBg) else text = "" end
@@ -1230,9 +1357,10 @@ local function expandStep(job, state, ex, env)
 				-- an argument with a blank in it becomes two words there.
 				--
 				-- Where nothing is split -- the right of `x=`, a case subject or
-				-- pattern -- it is ONE field, the arguments joined by a blank as
-				-- $* is: `x=$@` and `x="$@"` with a and b set x to "a b" in dash
-				-- and bash alike, and `case "$@" in "a b")` matches. As a list
+				-- pattern -- it is ONE field, the arguments joined by a blank,
+				-- $@'s own rule and not $*'s IFS-joined one: `x=$@` and
+				-- `x="$@"` with a and b set x to "a b" in dash and bash alike,
+				-- whatever IFS holds, and `case "$@" in "a b")` matches. As a list
 				-- it made the assignment two words, the second with no "=" in
 				-- it, and runSimple's setVar fell over on it.
 				local allGlob = (not part.q) and (not ex.nosplit)
@@ -1300,6 +1428,9 @@ local function expandStep(job, state, ex, env)
 		ex.fieldMasks = {}
 		ex.wi = ex.wi + 1
 		ex.pi = 1
+		-- A new word starts a new run: nothing before it to merge a leading
+		-- delimiter into (`:a` is an empty field then "a", not one field).
+		ex.wsClosed = false
 	end
 	return "done"
 end
@@ -1691,8 +1822,18 @@ builtins["continue"] = function(job, args) return loopSignal(job, args, "continu
 -- a real read for the next line; this console hands over one line and nothing
 -- after it (the `more` entry of CeroSecOS.DEVIATIONS), so it is dropped.
 --
--- A character loop and never a pattern: the line is the player's.
-local function readFields(line, raw, count)
+-- A character loop and never a pattern: the line, and IFS, are the player's.
+--
+-- Interior fields (all but the last) split exactly as any unquoted expansion
+-- does (addSplit above): an IFS delimiter, with any IFS whitespace adjacent
+-- to it, is one boundary, and a second delimiter in the same run still
+-- delimits its own -- possibly empty -- field. The LAST name never re-splits:
+-- it is everything left on the line after that one boundary, with only ITS
+-- OWN leading and trailing IFS whitespace gone -- POSIX.2's read hands the
+-- rest of the line to the last variable, delimiters and all, not a rejoin of
+-- further fields. `dash` on this box is the oracle every one of these rules
+-- was checked against, `a::b` through a lone `read x y z` included.
+local function readFields(job, line, raw, count)
 	local chars, prot = {}, {}
 	local i, n = 1, #line
 	while i <= n do
@@ -1709,30 +1850,89 @@ local function readFields(line, raw, count)
 			i = i + 1
 		end
 	end
-	local function blank(k) return not prot[k] and (chars[k] == " " or chars[k] == "\t") end
-	local fields, k, total = {}, 1, #chars
-	for f = 1, count do
-		while k <= total and blank(k) do k = k + 1 end
-		local last = total
-		if f < count then
-			last = k
-			while last <= total and not blank(last) do last = last + 1 end
-			last = last - 1
-		else
-			while last >= k and blank(last) do last = last - 1 end
-		end
+	local total = #chars
+
+	local ifs = getIFS(job)
+	if ifs == "" then
+		-- IFS null: no field splitting at all. The whole line, untouched,
+		-- is the first name; every other name is left empty.
+		local fields = {}
 		local word = {}
-		for j = k, last do word[#word + 1] = chars[j] end
-		fields[f] = table.concat(word)
-		k = last + 1
+		for j = 1, total do word[#word + 1] = chars[j] end
+		fields[1] = table.concat(word)
+		for f = 2, count do fields[f] = "" end
+		return fields
 	end
+	local ws, delim = ifsClasses(ifs)
+	local function isW(k) return not prot[k] and ws[chars[k]] end
+	local function isD(k) return not prot[k] and delim[chars[k]] end
+	local function slice(a, b)
+		local word = {}
+		for j = a, b do word[#word + 1] = chars[j] end
+		return table.concat(word)
+	end
+
+	local fields, k = {}, 1
+	local open, start, wsClosed = false, 1, false
+	local f = 1
+	while f < count do
+		local val = nil
+		while k <= total do
+			if open then
+				if isD(k) then
+					val, wsClosed = slice(start, k - 1), false
+					k, open = k + 1, false
+					break
+				elseif isW(k) then
+					val, wsClosed = slice(start, k - 1), true
+					k, open = k + 1, false
+					break
+				else
+					k = k + 1
+				end
+			elseif isD(k) then
+				if wsClosed then
+					-- Adjacent to the whitespace that just closed a field:
+					-- the same boundary, not a second one.
+					wsClosed = false
+					k = k + 1
+				else
+					val = ""
+					k = k + 1
+					break
+				end
+			elseif isW(k) then
+				k = k + 1
+			else
+				open, start = true, k
+				k = k + 1
+			end
+		end
+		if val == nil then
+			-- The line ran out before this field closed on its own.
+			if open then val, open = slice(start, total), false
+			else val = "" end
+			k = total + 1
+		end
+		fields[f] = val
+		f = f + 1
+	end
+
+	-- The one absorption a delimiter right after a whitespace-close still
+	-- owes, same as inside addSplit: at most one, and only if the run has
+	-- not already spent it.
+	if not open and wsClosed and k <= total and isD(k) then k = k + 1 end
+	while k <= total and isW(k) do k = k + 1 end
+	local last = total
+	while last >= k and isW(last) do last = last - 1 end
+	fields[count] = slice(k, last)
 	return fields
 end
 
 -- Every name, set from one line, from each of the three places a line reaches
 -- read: the pipe, end of file, and the answer typed at the question.
 local function assignFields(job, names, line, raw)
-	local fields = readFields(line, raw, #names)
+	local fields = readFields(job, line, raw, #names)
 	for i = 1, #names do
 		local reason = setVar(job, names[i], fields[i])
 		if reason ~= nil then return reason end
