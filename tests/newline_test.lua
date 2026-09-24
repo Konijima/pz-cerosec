@@ -414,8 +414,8 @@ do
 	-- The accounts file, appended to by useradd, stays one account a line.
 	local before = data(state, CeroSecOS.PASSWD_PATH)
 	eq("/etc/passwd ends its line", string.sub(before, -1), "\n")
-	CeroSecOS.addUser(state, "kim", "/home/kim", false, nil, 0)
-	check("useradd adds a line", CeroSecOS.getUser(state, "kim") ~= nil)
+	CeroSecOS.addUser(state, "bob", "/home/bob", false, nil, 0)
+	check("useradd adds a line", CeroSecOS.getUser(state, "bob") ~= nil)
 	eq("and the file still ends in one newline", string.sub(data(state, CeroSecOS.PASSWD_PATH), -2),
 		string.sub(data(state, CeroSecOS.PASSWD_PATH), -2, -2) .. "\n")
 	check("with no empty line in it",
