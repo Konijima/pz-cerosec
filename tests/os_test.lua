@@ -686,10 +686,9 @@ do
 	eq("four-digit chmod took", state.fs.children.home.children.admin.children["notes.txt"].mode, 640)
 	ok(state, admin, "cat notes.txt notes.txt", { "one", "two", "one", "two" })
 
-	-- cat of several files in one go, and rm of several paths.
-	bad(state, admin, "touch a.txt b.txt", "touch: usage: touch <file>")
-	ok(state, admin, "touch a.txt", {})
-	ok(state, admin, "touch b.txt", {})
+	-- cat of several files in one go, touch of several names in one go, and
+	-- rm of several paths.
+	ok(state, admin, "touch a.txt b.txt", {})
 	ok(state, admin, "rm a.txt b.txt", {})
 	ok(state, admin, "ls", { "notes.txt" })
 
@@ -755,8 +754,8 @@ do
 	bad(state, admin, 'mkdir "/home/admin/bad name"', "mkdir: /home/admin/bad name: invalid name")
 	bad(state, admin, "touch /etc/x", "touch: /etc/x: permission denied")
 	bad(state, admin, "touch /etc", "touch: /etc: is a directory")
-	bad(state, admin, "touch", "touch: usage: touch <file>")
-	bad(state, admin, "rm", "rm: usage: rm [-r] <path>...")
+	bad(state, admin, "touch", "touch: usage: touch <file>...")
+	bad(state, admin, "rm", "rm: usage: rm [-rf] <path>...")
 	bad(state, admin, "rm /", "rm: /: permission denied")
 	bad(state, admin, "rm /etc/motd", "rm: /etc/motd: permission denied")
 	bad(state, admin, "rm /nope", "rm: /nope: no such file")

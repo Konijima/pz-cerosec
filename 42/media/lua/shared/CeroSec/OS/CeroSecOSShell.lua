@@ -738,7 +738,7 @@ CeroSecOS.COMMAND_INFO = {
 	-- every one of them whoever started it (see the head of commands.jobs).
 	jobs     = { desc = "list the background jobs on this machine",
 		usage = "jobs", shell = true },
-	kill     = { desc = "stop a job", usage = "kill <id>|%<n>" },
+	kill     = { desc = "stop a job", usage = "kill [-<signal>|-s <signal>] <id>|%<n>" },
 	last     = { desc = "list the logins on this machine", usage = "last [name]" },
 	-- Symbolic only, and the usage line says so: see the note above
 	-- CeroSecOS.newLink for why this machine has no hard links.
@@ -774,7 +774,12 @@ CeroSecOS.COMMAND_INFO = {
 	rcp      = { desc = "copy a file to or from another machine",
 		usage = "rcp <src> <dst>, one is <host|address>:<path>" },
 	rlogin   = { desc = "log in on another machine", usage = "rlogin <host|address> [-l user]" },
-	rm       = { desc = "remove a file or a directory", usage = "rm [-r] <path>..." },
+	rm       = { desc = "remove a file or a directory", usage = "rm [-rf] <path>..." },
+	-- 4.4BSD's rmdir(1): a directory that already has nothing in it, or `rm -r`
+	-- for one that has not. No -p: that flag climbs and removes every parent
+	-- that is empty afterwards too, which is a second command's worth of walk
+	-- behind one flag, and the manual's deviations page says so.
+	rmdir    = { desc = "remove an empty directory", usage = "rmdir <dir>..." },
 	rsh      = { desc = "run one command on another machine",
 		usage = "rsh <host|address> [-l user] <command>..." },
 	ruptime  = { desc = "list the machines on the wire", usage = "ruptime" },
@@ -793,11 +798,11 @@ CeroSecOS.COMMAND_INFO = {
 	tar      = { desc = "store files in one archive",
 		usage = "tar c|x|t[v]f <archive> [path]..." },
 	tail     = { desc = "print the last lines of a file",
-		usage = "tail [-n N|-N] [file]" },
+		usage = "tail [-n N|-N|+N] [file]" },
 	tee      = { desc = "copy the input to the screen and to files",
 		usage = "tee [-a] <file>..." },
 	test     = { desc = "evaluate an expression", usage = "test <expression>" },
-	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
+	touch    = { desc = "create a file, or stamp it", usage = "touch <file>..." },
 	-- Ranges only. The character classes are POSIX.2's and a survivor types a-z,
 	-- so they are what is here -- and the manual says which is missing.
 	tr       = { desc = "translate or delete characters",
@@ -807,6 +812,8 @@ CeroSecOS.COMMAND_INFO = {
 	-- /bin could be handed.
 	type     = { desc = "say what a word is", usage = "type <name>", shell = true },
 	umount   = { desc = "unmount a filesystem", usage = "umount <dir>" },
+	-- No -m: see the head of commands.uname for why.
+	uname    = { desc = "print system information", usage = "uname [-asnrv]" },
 	uniq     = { desc = "drop repeated lines", usage = "uniq [-c] [file]" },
 	uptime   = { desc = "show how long the machine has been up", usage = "uptime" },
 	-- The three account commands, under the names System V gave them in 1989 and
@@ -1336,6 +1343,47 @@ commands.hostname = function(state, session, args, env)
 	return true, {}
 end
 
+-- uname [-asnrvm], 4.4BSD's own five letters and the fixed order -a prints
+-- them in (sysname, nodename, release, version, machine -- uname.c calls
+-- uname(2) once and picks fields off the one struct it fills). With no flag
+-- at all it is -s alone, uname(1)'s own default.
+--
+-- sysname is CeroSecOS.issueText's own words for this machine, "CeroSec OS";
+-- nodename is CeroSecOS.hostname, the same name `hostname` prints; release is
+-- CeroSecOS.VERSION, the number on the box; version is the build under it,
+-- SYSTEM_VERSION, the same number upgradeSystem reads to know a save is
+-- behind. -m is not here: nothing on this machine ever named the hardware
+-- under it the way struct utsname's machine field would, and inventing one
+-- would be answering with a chip nobody ever put in this box.
+local UNAME_FLAGS = { a = true, s = true, n = true, r = true, v = true }
+commands.uname = function(state, session, args, env)
+	local want, any = {}, false
+	for i = 2, #args do
+		local a = args[i]
+		if string.sub(a, 1, 1) ~= "-" or a == "-" then return usage("uname") end
+		for c = 2, #a do
+			local flag = string.sub(a, c, c)
+			if UNAME_FLAGS[flag] == nil then return fail("uname", a, "unknown option") end
+			want[flag] = true
+			any = true
+		end
+	end
+	if not any then want.s = true end
+	if want.a then want.s, want.n, want.r, want.v = true, true, true, true end
+
+	local sysname = "CeroSec OS"
+	local nodename = CeroSecOS.hostname(state)
+	local release = CeroSecOS.VERSION
+	local version = "SYSTEM_VERSION " .. tostring(CeroSecOS.SYSTEM_VERSION)
+
+	local fields = {}
+	if want.s then fields[#fields + 1] = sysname end
+	if want.n then fields[#fields + 1] = nodename end
+	if want.r then fields[#fields + 1] = release end
+	if want.v then fields[#fields + 1] = version end
+	return true, { table.concat(fields, " ") }
+end
+
 commands.clear = function(state, session, args, env)
 	return true, {}, "clear"
 end
@@ -1589,27 +1637,43 @@ commands.mkdir = function(state, session, args, env)
 	return true, {}
 end
 
-commands.touch = function(state, session, args, env)
-	if #args ~= 2 then return usage("touch") end
-	local now = CeroSecOS.clockOf(env)
-	local node, reason = CeroSecOS.getNode(state, session, args[2])
-	if node == nil and underDev(session, args[2]) then return devReadOnly() end
+-- touch(1) took any number of names, one line of arguments and one file each
+-- (4.4BSD's touch.c: `while (*argv) { ... argv++; }`), each answered on its
+-- own -- a name that failed does not stop the ones after it, only the exit
+-- status the line as a whole ends with.
+local function touchOne(state, session, path, now)
+	local node, reason = CeroSecOS.getNode(state, session, path)
+	if node == nil and underDev(session, path) then return devReadOnly() end
 	if node ~= nil then
-		if node.type ~= "file" then return fail("touch", args[2], CeroSecOS.notAFile(node)) end
+		if node.type ~= "file" then return fail("touch", path, CeroSecOS.notAFile(node)) end
 		-- Moving a timestamp is a write: a file you may not write is a file you
 		-- may not stamp, which is what a real touch says too. On a machine with
 		-- no clock there is nothing to move and the file is left alone.
 		if not CeroSecOS.can(state, session, node, "w") then
-			return fail("touch", args[2], "permission denied")
+			return fail("touch", path, "permission denied")
 		end
 		if now ~= nil then node.mtime = now end
 		return true, {}
 	end
-	if reason ~= "no such file" then return fail("touch", args[2], reason) end
+	if reason ~= "no such file" then return fail("touch", path, reason) end
 	local file = CeroSecOS.newFile(CeroSecOS.userOf(session), 644, "")
-	local created, creason = CeroSecOS.createNode(state, session, args[2], file, now)
-	if created == nil then return fail("touch", args[2], creason) end
+	local created, creason = CeroSecOS.createNode(state, session, path, file, now)
+	if created == nil then return fail("touch", path, creason) end
 	return true, {}
+end
+
+commands.touch = function(state, session, args, env)
+	if #args < 2 then return usage("touch") end
+	local now = CeroSecOS.clockOf(env)
+	local out, ok = {}, true
+	for i = 2, #args do
+		local done, lines = touchOne(state, session, args[i], now)
+		if not done then
+			ok = false
+			for k = 1, #lines do out[#out + 1] = lines[k] end
+		end
+	end
+	return ok, out
 end
 
 -- cat [-n] [file]... -- and "-" among the files is the standard input, read
@@ -2046,14 +2110,26 @@ commands.dev = function(state, session, args, env, stdin, sh)
 	return done, { line }
 end
 
+-- -f, rm.c's own: it never prompts (this machine's rm never did, having no -i
+-- to prompt for) and a name that was never there is not an error -- 4.4BSD's
+-- rm.c checks `access` first under -f and skips the file silently when it
+-- fails. A missing OPERAND is a different question, asked by getopt before -f
+-- is ever read, so `rm -f` alone still gets the usage line.
 commands.rm = function(state, session, args, env)
-	local recursive, paths = false, {}
+	local recursive, force, paths = false, false, {}
 	for i = 2, #args do
 		local a = args[i]
-		if a == "-r" then
-			recursive = true
-		elseif string.sub(a, 1, 1) == "-" and a ~= "-" then
-			return fail("rm", a, "unknown option")
+		if string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				local flag = string.sub(a, c, c)
+				if flag == "r" then
+					recursive = true
+				elseif flag == "f" then
+					force = true
+				else
+					return fail("rm", a, "unknown option")
+				end
+			end
 		else
 			paths[#paths + 1] = a
 		end
@@ -2064,9 +2140,42 @@ commands.rm = function(state, session, args, env)
 	for i = 1, #paths do
 		local done, reason =
 			CeroSecOS.removeNode(state, session, paths[i], recursive, CeroSecOS.clockOf(env))
-		if done == nil then
+		if done == nil and not (force and reason == "no such file") then
 			ok = false
 			out[#out + 1] = "rm: " .. paths[i] .. ": " .. reason
+		end
+	end
+	return ok, out
+end
+
+-- rmdir DIR... -- 4.4BSD's rmdir(1): each name has to be a directory of its
+-- own, and it has to be empty, or the whole line answers about that one name
+-- and moves no other node. rmdir(2)'s own two reasons are ENOTDIR and
+-- ENOTEMPTY (CeroSecOSFS.lua's rename shares the second wording already), so
+-- both are asked here before removeNode is ever called, rather than let a
+-- non-empty directory be answered by rm's "is a directory" instead.
+commands.rmdir = function(state, session, args, env)
+	if #args < 2 then return usage("rmdir") end
+	local out, ok = {}, true
+	for i = 2, #args do
+		local path = args[i]
+		local node, reason = CeroSecOS.getNode(state, session, path, true)
+		if node == nil then
+			ok = false
+			out[#out + 1] = "rmdir: " .. path .. ": " .. reason
+		elseif node.type ~= "dir" then
+			ok = false
+			out[#out + 1] = "rmdir: " .. path .. ": not a directory"
+		elseif CeroSecOS.countEntries(node) > 0 then
+			ok = false
+			out[#out + 1] = "rmdir: " .. path .. ": directory not empty"
+		else
+			local done, rreason =
+				CeroSecOS.removeNode(state, session, path, true, CeroSecOS.clockOf(env))
+			if done == nil then
+				ok = false
+				out[#out + 1] = "rmdir: " .. path .. ": " .. rreason
+			end
 		end
 	end
 	return ok, out
@@ -3033,7 +3142,44 @@ commands.head = function(state, session, args, env, stdin)
 	return true, out
 end
 
+-- +N, tail(1)'s older form, and the one head(1) never had: `tail +N` starts at
+-- line N and runs to the end, where -N counts back from it. Only at the front
+-- of the line and only tail's, per 4.4BSD's tail.c and the manual's deviations
+-- page (which said this was missing). Since it names a STARTING point rather
+-- than a count kept until the end, it can be answered as it goes -- like head,
+-- and unlike -n N -- so a pipe under it costs nothing per line once past N.
+local function tailPlus(args)
+	local a = args[2]
+	if a == nil or string.match(a, "^%+%d+$") == nil then return nil end
+	local from = tonumber(string.sub(a, 2))
+	if from < 1 then from = 1 end
+	local rest = {}
+	for i = 3, #args do rest[#rest + 1] = args[i] end
+	return from, rest
+end
+
 commands.tail = function(state, session, args, env, stdin)
+	local from, plusRest = tailPlus(args)
+	if from ~= nil then
+		local input = stdinOf(stdin, plusRest)
+		if input ~= nil then
+			local carry = input.carry
+			if carry.seen == nil then carry.seen = 0 end
+			local out = {}
+			for i = 1, #input.lines do
+				carry.seen = carry.seen + 1
+				if carry.seen >= from then out[#out + 1] = input.lines[i] end
+			end
+			return true, out
+		end
+		if #plusRest ~= 1 then return usage("tail") end
+		local lines, refusal = fileLines(state, session, "tail", plusRest[1])
+		if lines == nil then return false, { refusal } end
+		local out = {}
+		for i = from, #lines do out[#out + 1] = lines[i] end
+		return true, out
+	end
+
 	local n, rest = lineCount(args)
 	if n == nil then return usage("tail") end
 

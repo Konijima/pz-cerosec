@@ -335,13 +335,23 @@ here because a script reaches for them first.
 set, unset, exec and trap are not in this shell: a variable is set with
 NAME=value and emptied with NAME=, and nothing else touches it.
 
-rmdir, expr and uname are not on the disk. rm -r takes a directory,
-$(( )) does sums, and hostname names the machine.
+rmdir has no -p: that flag climbs and removes every empty parent behind
+the one you named too, a second command's walk behind one flag.
 
-rm has no -f, and kill takes no signal: kill %1 is the whole of it, and
-kill -9 %1 is a usage error. tail +N is not here; tail -n N is. printf
-knows %s, %d and %%, and prints anything else as it stands: %5.2f comes
-out as %5.2f.]],
+uname has no -m: no hardware name was ever put in this machine to print,
+and guessing one would be lying about what is inside the case.
+
+expr has no : for matching a pattern against a string. The tool grep uses
+for one has no \( \) to hand back what matched, only whether it did.
+
+kill -9 and kill -s KILL, TERM, HUP, INT or QUIT end a job, the five
+signals whose default action is to end one outright. kill -STOP and
+kill -CONT are refused: a job here cannot be paused and resumed the way
+a real process can, so this machine does not pretend it can.
+
+printf knows %s, %c, %d, %x, %o and %%, with a width, a precision and
+the flags "-" and "0" in front of any of them, exactly as printf(1) took
+them. It has no %f: no floating point conversion is trusted here.]],
 
 [[What is not Unix here, and the end of the list.
 

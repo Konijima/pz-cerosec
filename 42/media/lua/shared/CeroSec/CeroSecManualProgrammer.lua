@@ -616,6 +616,8 @@ About a file, with the name after the flag:
   -f  is it a plain file
   -d  is it a directory
   -e  is it there at all, either kind
+  -s  is it there, and not empty
+  -h  is it a symbolic link (-L is the same question)
   -r  may I read it
   -w  may I write it
   -x  may I run it
