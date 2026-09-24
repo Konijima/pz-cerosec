@@ -16196,15 +16196,15 @@ do
 	-- And one at or above the match does run.
 	okAt(state, admin, "case abc in $(echo abc)) echo caught;; esac", { "caught" })
 
-	-- An unquoted ")" is what closes a pattern, so a QUOTED one is a bracket in the
-	-- pattern and a "[)]" set is a set holding one. Both fall out of asking whether
-	-- the last piece of the word was bare literal text.
+	-- An unquoted ")" is an operator (XCU 2.3 rule 6) and is what closes a
+	-- pattern, so a QUOTED one is a bracket in the pattern, and a set holding one
+	-- is written [\)] -- a bare [)] is the syntax error it is on sh.
 	okAt(state, admin, "case \"a)\" in \"a)\") echo quoted;; esac", { "quoted" })
-	okAt(state, admin, "case \")\" in [)]) echo inset;; esac", { "inset" })
+	okAt(state, admin, "case \")\" in [\\)]) echo inset;; esac", { "inset" })
+	badAt(state, admin, "case \")\" in [)]) echo inset;; esac",
+		"Syntax error: \")\" unexpected")
 	-- And a quoted bracket does not CLOSE one either, so a pattern that ends in one
-	-- and has no bracket after it is a pattern list that was never closed. This is
-	-- the assertion that holds the "bare" test in takeClose: without it the quoted
-	-- bracket would be read as the closer and the line would quietly run.
+	-- and has no bracket after it is a pattern list that was never closed.
 	badAt(state, admin, "case \"a)\" in \"a)\" echo x;; esac",
 		"Syntax error: word unexpected (expecting \")\")")
 
@@ -16391,12 +16391,13 @@ do
 	-- The two refusals the parser has for a body.
 	badAt(state, admin, "bad() { echo unclosed", "Syntax error: end of file unexpected (expecting \"}\")")
 	badAt(state, admin, "bad2() echo x; }", "Syntax error: word unexpected (expecting \"{\")")
-	-- A reserved word is not a name, so `if()` is not a definition at all: it is a
-	-- word with no command behind it, which is what a real sh refuses too.
+	-- A reserved word is not a name, so `if()` is not a definition at all: it is
+	-- an if whose condition opens a subshell with nothing in it, which is what a
+	-- real sh refuses too (parser.c's list() on TRP).
 	do
 		local res = runAt(state, admin, "if() { echo no; }", ENV)
 		eq("a reserved word is not a function name", res.ok, false)
-		eq("and nothing was defined", res.lines[1], "if(): not found")
+		eq("and nothing was defined", res.lines[1], "Syntax error: \")\" unexpected")
 	end
 	okAt(state, admin, "type if", { "if is a shell keyword" })
 end

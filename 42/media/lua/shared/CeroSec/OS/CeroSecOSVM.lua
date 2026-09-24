@@ -1201,34 +1201,46 @@ local function popFrame(job)
 			-- The bodies cached from the child's own definitions go with them.
 			job.fprog = f.oldFprog
 		end
-		-- And the file the shell had opened for it is closed: what the script wrote
-		-- and nobody has written yet goes on a queue, IN ORDER, before the target
-		-- changes back -- flushing it here is not possible, because popFrame has no
-		-- filesystem and no clock to write with. The queue is emptied before the
-		-- next step (flushDone, at the top of stepOnce), so the command after this
-		-- one finds the file whole, as it does after a real sh closed it.
-		if f.hadRdto then
-			-- The row it was part way through goes in the FILE, like the rest of what
-			-- it wrote: the redirect is closed here, and a partial flushed afterwards
-			-- would find the target gone and land on the glass instead. `printf aaa`
-			-- with no newline in a redirected script printed on the screen and left an
-			-- empty file, which is the whole of what this line is for.
-			flushPartial(job)
-			if job.rdto ~= nil then
-				if job.rdDone == nil then job.rdDone = {} end
-				job.rdDone[#job.rdDone + 1] = job.rdto
-			end
-			job.rdto = f.oldRdto
+	elseif f.sub then
+		-- A ( list ) that is over: the shell it was a copy of comes back, as
+		-- after a $( ) (above) -- its variables, its environment, its working
+		-- directory, its functions and the bodies cached for them, and its
+		-- positional parameters.
+		job.vars = f.oldVars
+		job.nvars = f.oldNvars
+		job.exported = f.oldExported
+		job.session.cwd = f.oldCwd
+		job.funcs = f.oldFuncs
+		job.fprog = f.oldFprog
+		job.args = f.subArgs
+	end
+	-- And the file the shell had opened for it is closed -- a script's, a
+	-- function's or a group's: what it wrote and nobody has written yet goes
+	-- on a queue, IN ORDER, before the target changes back -- flushing it here is not possible, because popFrame has no
+	-- filesystem and no clock to write with. The queue is emptied before the
+	-- next step (flushDone, at the top of stepOnce), so the command after this
+	-- one finds the file whole, as it does after a real sh closed it.
+	if f.hadRdto then
+		-- The row it was part way through goes in the FILE, like the rest of what
+		-- it wrote: the redirect is closed here, and a partial flushed afterwards
+		-- would find the target gone and land on the glass instead. `printf aaa`
+		-- with no newline in a redirected script printed on the screen and left an
+		-- empty file, which is the whole of what this line is for.
+		flushPartial(job)
+		if job.rdto ~= nil then
+			if job.rdDone == nil then job.rdDone = {} end
+			job.rdDone[#job.rdDone + 1] = job.rdto
 		end
-		-- The `2>` of the call, closed the same way and onto the same queue.
-		if f.hadErd then
-			local e = job.errRd
-			if e ~= nil and e.buf ~= nil then
-				if job.rdDone == nil then job.rdDone = {} end
-				job.rdDone[#job.rdDone + 1] = e
-			end
-			job.errRd = f.oldErd
+		job.rdto = f.oldRdto
+	end
+	-- The `2>` of the call, closed the same way and onto the same queue.
+	if f.hadErd then
+		local e = job.errRd
+		if e ~= nil and e.buf ~= nil then
+			if job.rdDone == nil then job.rdDone = {} end
+			job.rdDone[#job.rdDone + 1] = e
 		end
+		job.errRd = f.oldErd
 	end
 end
 
@@ -3429,6 +3441,11 @@ end
 local function exitLeavesTheMachine(job)
 	if not jobHasTerminal(job) then return false end
 	if job.depth > 1 then return false end
+	-- `(exit)` at the glass leaves the subshell and nothing else: the ( ) is
+	-- the house it is standing in, though it still has the terminal.
+	for i = 1, #job.frames do
+		if job.frames[i].sub then return false end
+	end
 	return true
 end
 
@@ -3564,7 +3581,7 @@ local function runSimple(state, job, f, env)
 	local errGoes = node.err or "2"
 	if errTarget ~= nil then CeroSecOS.expandTilde(state, job.session, {}, errTarget) end
 
-	if #args == 0 then
+	if #args == 0 and node.k ~= "group" then
 		if errTarget ~= nil then
 			local openOk, openLines =
 				CeroSecOS.openRedirect(state, job.session, "sh", errTarget, env)
@@ -3622,6 +3639,8 @@ local function runSimple(state, job, f, env)
 	end
 
 	local name = args[1]
+	-- A group has no name of its own; a target it cannot open is the shell's.
+	if node.k == "group" then name = "sh" end
 
 	-- exec: POSIX.2's own words, "the command specified... shall replace the
 	-- current shell". There is no process here to fork and then replace, so
@@ -3714,6 +3733,49 @@ local function runSimple(state, job, f, env)
 		frameTarget = { path = outFile.path, who = name }
 	elseif outGoes == "2" then
 		frameTarget = { toErr = true, spec = outerErr }
+	end
+
+	-- A GROUP: `{ list; }` runs its list in this shell, `( list )` in a copy of
+	-- it (POSIX.2 XCU 2.9.4). Its redirects were opened above, before anything
+	-- in it ran, and are the whole group's, exactly as a function call's are:
+	-- one `>` catches everything the list prints. One step, like the call.
+	--
+	-- The subshell is what pushCapture makes of a $( ), without the catching:
+	-- a copy of the variables, the exported set and the functions, the working
+	-- directory put back, no trap of its own (POSIX.2 3.12). And the positional
+	-- parameters, which `set --` and `shift` replace. handleSignal treats it as
+	-- the wall a $( ) is: `exit` ends it and nothing further, `return` does not
+	-- cross it, nor `break`. It is a frame of this job and not a job of its
+	-- own, so the scheduler's budget is spent on it like on any other list.
+	if node.k == "group" then
+		local frame = { k = "block", prog = node.body, i = 1 }
+		if node.sub then
+			frame.sub = true
+			frame.oldVars, frame.oldNvars = job.vars, job.nvars
+			frame.oldExported, frame.oldCwd = job.exported, job.session.cwd
+			frame.oldFuncs, frame.oldFprog = job.funcs, job.fprog
+			frame.subArgs = job.args
+			frame.hadTraps, frame.oldTraps = true, job.traps
+		end
+		if frameTarget ~= nil then
+			frame.hadRdto = true
+			frame.oldRdto = job.rdto
+		end
+		if errSpec ~= nil then
+			frame.hadErd = true
+			frame.oldErd = job.errRd
+		end
+		if not pushFrame(job, frame) then return 1 end
+		if frameTarget ~= nil then job.rdto = CeroSecOS.rdtoOf(frameTarget, #job.caps) end
+		if errSpec ~= nil then job.errRd = CeroSecOS.sameOut(job, errSpec) end
+		if node.sub then
+			job.traps = nil
+			job.vars = CeroSecOS.copyVars(job.vars)
+			job.exported = CeroSecOS.copyExported(job.exported)
+			job.funcs = CeroSecOS.copyFuncs(job.funcs)
+			job.fprog = nil
+		end
+		return 1
 	end
 
 	-- A FUNCTION the shell holds. Looked for before /bin and before the builtins that
@@ -4489,7 +4551,10 @@ end
 
 local function pushNode(job, node)
 	job.line = node.line or job.line
-	if node.k == "cmd" then
+	-- A group is walked as far as its redirects as a command with no words is:
+	-- the targets are expanded and opened by runSimple, which then pushes the
+	-- body (see "A GROUP" there).
+	if node.k == "cmd" or node.k == "group" then
 		local words = {}
 		for i = 1, #node.words do words[i] = node.words[i] end
 		if node.redirect ~= nil then words[#words + 1] = node.redirect.word end
@@ -4889,8 +4954,9 @@ handleSignal = function(job)
 				at = i
 				break
 			end
-			-- A subshell is a wall: `$(return)` returns from nothing outside itself.
-			if f.k == "capture" then break end
+			-- A subshell is a wall: `$(return)` returns from nothing outside itself,
+			-- and nor does `(return)`.
+			if f.k == "capture" or f.sub then break end
 		end
 		if at ~= nil then
 			while #job.frames >= at do popFrame(job) end
@@ -4920,7 +4986,7 @@ handleSignal = function(job)
 				-- arguments like a script's: `exit` inside a function ends the shell or
 				-- the script it is in, which is POSIX and is the whole difference between
 				-- it and `return`.
-				if f.k == "capture" or (f.oldArgs ~= nil and not f.func) then
+				if f.k == "capture" or f.sub or (f.oldArgs ~= nil and not f.func) then
 					at = i
 					break
 				end
@@ -4957,7 +5023,7 @@ handleSignal = function(job)
 	local loops = 0
 	for i = 1, #job.frames do
 		local k = job.frames[i].k
-		if k == "capture" then loops = 0 end
+		if k == "capture" or job.frames[i].sub then loops = 0 end
 		if k == "loop" or k == "for" then loops = loops + 1 end
 	end
 	if loops == 0 then return end

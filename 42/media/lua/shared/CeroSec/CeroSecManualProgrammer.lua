@@ -1313,6 +1313,28 @@ shell:
 Remember the rule as a sentence: a pipe carries text out, never variables
 back. If you need the value, catch it.]],
 
+[[Braces and brackets: a list as one command.
+
+Put a list between braces and it is one command: one redirect catches all
+of it, one pipe carries all of it, and && and || judge it by its last:
+
+  admin@ksp-04-11:~$ { date; who; } > log
+  admin@ksp-04-11:~$ { echo a; echo b; } | wc -l
+         2
+
+The braces are words, so they want a blank inside them, and the list
+before } ends in a semicolon or a new line.
+
+Round brackets make the same list a subshell: a copy of this shell, like
+a stage of a pipe. What it changes stays inside it:
+
+  admin@ksp-04-11:~$ x=1; (x=2; cd /etc); echo $x; pwd
+  1
+  /home/admin
+
+And exit leaves the brackets and nothing more: (exit 3); echo $?
+prints 3, and you are still logged in.]],
+
 [[Sending output to a file, and to nowhere.
 
 One greater-than sign puts a command's output in a file, replacing what
@@ -2305,12 +2327,12 @@ A program is a list of commands, separated by a semicolon or a new line.
   cmd >> file      output onto the end of a file
   cmd &            run it behind the prompt
 
-The thirteen reserved words. They mean this only where a command starts,
+The fifteen reserved words. They mean this only where a command starts,
 so echo done prints "done":
 
   if then elif else fi
   for in while until do done
-  case esac
+  case esac { }
 
 The shapes they build:
 
@@ -2319,10 +2341,8 @@ The shapes they build:
   while LIST; do LIST; done
   until LIST; do LIST; done
   case WORD in PAT|PAT) LIST;; PAT) LIST;; esac
-  NAME() { LIST; }
-
-Sixteen deep is as far as these nest, and eight is as long as a pipeline
-may be.]],
+  { LIST; }    ( LIST )
+  NAME() { LIST; }]],
 
 [[The dollar signs, all of them.
 
@@ -2345,6 +2365,9 @@ single quotes let nothing through; a backslash takes the meaning off one
 character. A pound sign starts a comment.]],
 
 [[The shell's own words.
+
+The shapes on the page before go inside one another. Sixteen deep is as
+far as these nest, and eight is as long as a pipeline may be.
 
 Seventeen words the shell runs itself, with no file in /bin needed:
 

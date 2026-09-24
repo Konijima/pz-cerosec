@@ -20,7 +20,7 @@
 --   statement := andor [ "&" ]
 --   andor     := pipeline (( "&&" | "||" ) pipeline)*
 --   pipeline  := piece ( "|" piece )*
---   piece     := if | for | while | until | case | func | simple
+--   piece     := if | for | while | until | case | group | func | simple
 --   if        := "if" program "then" program
 --                ("elif" program "then" program)* [ "else" program ] "fi"
 --   for       := "for" NAME [ "in" word* ] (";"|newline) "do" program "done"
@@ -28,8 +28,10 @@
 --   until     := "until" program "do" program "done"
 --   case      := "case" word "in" clause* "esac"
 --   clause    := [ "(" ] word ( "|" word )* ")" program [ ";;" ]
---   func      := NAME "()" "{" program "}"
---   simple    := word* [ (">"|">>") word ]
+--   group     := ( "{" program "}" | "(" program ")" ) redirect*
+--   func      := NAME "(" ")" "{" program "}"
+--   simple    := ( word | redirect )*
+--   redirect  := [ "2" ] ( ">" | ">>" ) word | [ "1" | "2" ] ">&" ( "1" | "2" )
 --
 -- A word is an array of PARTS, because what a word means is only known when
 -- the job runs it:
@@ -612,7 +614,7 @@ local function tokenize(text, depth)
 				local after = string.sub(text, i + 2, i + 2)
 				local ends = after == "" or after == " " or after == "\t" or after == "\r"
 					or after == "\n" or after == ";" or after == "&" or after == "|"
-					or after == ">" or after == "<"
+					or after == ">" or after == "<" or after == "(" or after == ")"
 				if (d ~= "1" and d ~= "2") or not ends then
 					return nil, "Syntax error: Bad fd number", line
 				end
@@ -623,6 +625,15 @@ local function tokenize(text, depth)
 			tokens[#tokens + 1] = { t = "redir", append = append, fd = fd, dup = dup, line = line }
 		elseif c == "<" then
 			return nil, "Syntax error: redirection unexpected", line
+		elseif c == "(" or c == ")" then
+			-- Operators, and they end a word: POSIX.2 XCU 2.3 rule 6, and
+			-- 4.4BSD-Lite2 sh's TLP and TRP (bin/sh/mktokens, parser.c's
+			-- xxreadtoken). What they build is a subshell, a function's
+			-- `name ( )` and a case pattern's brackets; anywhere else one is
+			-- `"(" unexpected`, as `echo (a)` is on sh. Inside quotes, $( ),
+			-- ${ } and backquotes they are text, read by those readers.
+			tokens[#tokens + 1] = { t = "op", v = c, line = line }
+			i = i + 1
 		else
 			-- One word: bare text, quoted runs and expansions, until a blank or
 			-- an operator ends it.
@@ -631,7 +642,8 @@ local function tokenize(text, depth)
 			while i <= n do
 				local ch = string.sub(text, i, i)
 				if ch == " " or ch == "\t" or ch == "\r" or ch == "\n" or ch == ";"
-						or ch == "&" or ch == "|" or ch == ">" or ch == "<" then
+						or ch == "&" or ch == "|" or ch == ">" or ch == "<"
+						or ch == "(" or ch == ")" then
 					break
 				elseif ch == "'" then
 					i = i + 1
@@ -813,7 +825,7 @@ end
 -- is the one operator any caller has ever needed to stop at.
 local function stopsHere(t, stops)
 	if t.t == "word" and t.plain ~= nil and stops[t.plain] then return true end
-	if t.t == "op" and t.v == ";;" and stops[";;"] then return true end
+	if t.t == "op" and (t.v == ";;" or t.v == ")") and stops[t.v] then return true end
 	return false
 end
 
@@ -848,15 +860,48 @@ local function wordAt(P)
 	return t
 end
 
+-- One redirect off the token stream into st, or a reason and a line. A simple
+-- command reads its redirects with it, and so do the compound commands that may
+-- carry them -- `{ ...; } > f 2>&1`, `( ... ) 2>/dev/null` -- the same
+-- descriptors, in the same left-to-right order.
+--
+-- Where each descriptor ends up, worked out in the order the line names them,
+-- which is sh(1)'s rule and the whole difference between `> f 2>&1` (both into
+-- f) and `2>&1 > f` (errors where the output WAS, the output into f). In st.fds,
+-- "1" and "2" are the ones the command was started with, "w" the file ">" names
+-- and "e" the file "2>" names.
+local function takeRedirect(P, st)
+	local t = peek(P)
+	-- One redirect per descriptor: a second one is a line that says two
+	-- things about the same place, and this machine does not guess which.
+	local fd = t.fd or 1
+	if st.seen[fd] then
+		return "Syntax error: redirection unexpected", t.line
+	end
+	st.seen[fd] = true
+	P.i = P.i + 1
+	if t.dup ~= nil then
+		st.fds[fd] = st.fds[t.dup]
+	else
+		local target = wordAt(P)
+		if target == nil then
+			return unexpected(peek(P)), t.line
+		end
+		P.i = P.i + 1
+		if fd == 2 then
+			st.errRedirect = { word = target.parts, append = t.append }
+			st.fds[2] = "e"
+		else
+			st.redirect = { word = target.parts, append = t.append }
+			st.fds[1] = "w"
+		end
+	end
+	return nil
+end
+
 local function parseSimple(P)
-	local words, redirect, errRedirect = {}, nil, nil
-	-- Where each descriptor ends up, worked out in the order the line names them,
-	-- which is sh(1)'s rule and the whole difference between `> f 2>&1` (both
-	-- into f) and `2>&1 > f` (errors where the output WAS, the output into f).
-	-- "1" and "2" are the ones the command was started with, "w" the file ">"
-	-- names and "e" the file "2>" names.
-	local fds = { "1", "2" }
-	local seen = {}
+	local words = {}
+	local st = { fds = { "1", "2" }, seen = {} }
 	local line = peek(P).line
 	while true do
 		local t = peek(P)
@@ -869,34 +914,13 @@ local function parseSimple(P)
 			words[#words + 1] = t.parts
 			P.i = P.i + 1
 		elseif t.t == "redir" then
-			-- One redirect per descriptor: a second one is a line that says two
-			-- things about the same place, and this machine does not guess which.
-			local fd = t.fd or 1
-			if seen[fd] then
-				return nil, "Syntax error: redirection unexpected", t.line
-			end
-			seen[fd] = true
-			P.i = P.i + 1
-			if t.dup ~= nil then
-				fds[fd] = fds[t.dup]
-			else
-				local target = wordAt(P)
-				if target == nil then
-					return nil, unexpected(peek(P)), t.line
-				end
-				P.i = P.i + 1
-				if fd == 2 then
-					errRedirect = { word = target.parts, append = t.append }
-					fds[2] = "e"
-				else
-					redirect = { word = target.parts, append = t.append }
-					fds[1] = "w"
-				end
-			end
+			local reason, rline = takeRedirect(P, st)
+			if reason ~= nil then return nil, reason, rline end
 		else
 			break
 		end
 	end
+	local redirect, errRedirect, fds, seen = st.redirect, st.errRedirect, st.fds, st.seen
 	if #words == 0 and not seen[1] and not seen[2] then
 		local t = peek(P)
 		return nil, unexpected(t), t.line
@@ -1054,41 +1078,12 @@ end
 --
 -- case
 --
--- `case word in pattern) ... ;; esac`, POSIX.2's own shape, and the one construct
--- whose grammar needs a bracket. ")" is NOT an operator on this machine -- it never
--- was, there being no subshell grouping here, and making one of it now would turn
--- every `echo (hi)` a survivor has already written into a syntax error -- so the
--- ")" that closes a pattern is taken off the END of the pattern word instead.
---
--- That reading is not a shortcut, it is the right one: only an UNQUOTED ")" closes a
--- pattern, so `"a)"` is a pattern with a bracket in it and `[)]` is a set holding
--- one, and both come out right because the strip asks whether the last piece of the
--- word was bare literal text (`bare`, which the tokenizer already records for
--- exactly this kind of question).
---
--- The leading "(" POSIX allows before a pattern is taken off the front the same way.
-
--- The ")" at the end of a pattern word, removed. false when the word does not end
--- in one, which is how the caller knows to go on looking.
-local function takeClose(parts)
-	local last = parts[#parts]
-	if last == nil or last.t ~= "lit" or not last.bare then return false end
-	if string.sub(last.s, #last.s) ~= ")" then return false end
-	last.s = string.sub(last.s, 1, #last.s - 1)
-	-- A part that is nothing but the bracket goes with it, unless it is the whole
-	-- word: `)` on its own is the pattern that matches an empty word.
-	if last.s == "" and #parts > 1 then parts[#parts] = nil end
-	return true
-end
-
--- And the "(" POSIX allows in front of one.
-local function takeOpen(parts)
-	local first = parts[1]
-	if first == nil or first.t ~= "lit" or not first.bare then return end
-	if string.sub(first.s, 1, 1) ~= "(" then return end
-	first.s = string.sub(first.s, 2)
-	if first.s == "" and #parts > 1 then table.remove(parts, 1) end
-end
+-- `case word in pattern) ... ;; esac`, POSIX.2's own shape. "(" and ")" are
+-- operators since the subshell came (the tokenizer), so the brackets round a
+-- pattern are tokens of their own and a pattern is an ordinary word: `"a)"` is a
+-- pattern with a bracket in it, and a bare `[)]` is the syntax error it is on sh
+-- (write `[\)]`). Until 0.7.0 ")" was not an operator here and was taken off the
+-- end of the pattern word, which is how `echo (hi)` used to print its brackets.
 
 local function parseCase(P, depth)
 	local line = take(P).line
@@ -1117,21 +1112,25 @@ local function parseCase(P, depth)
 			return nil, unexpected(peek(P), "esac"), peek(P).line
 		end
 
-		-- The patterns of one clause: words with "|" between them, the last of them
-		-- carrying the ")" that closes the list.
+		-- The patterns of one clause: the "(" POSIX allows in front, then words
+		-- with "|" between them, then the ")" that closes the list -- all three
+		-- operators (parser.c: `if (lasttoken == TLP) readtoken()`, then TPIPE
+		-- between the words and TRP after them).
 		local pats = {}
-		local closed = false
+		local open = peek(P)
+		if open.t == "op" and open.v == "(" then P.i = P.i + 1 end
 		while true do
 			local w = wordAt(P)
 			if w == nil then
 				return nil, unexpected(peek(P), ")"), peek(P).line
 			end
 			P.i = P.i + 1
-			if #pats == 0 then takeOpen(w.parts) end
-			closed = takeClose(w.parts)
 			pats[#pats + 1] = w.parts
-			if closed then break end
 			local sep = peek(P)
+			if sep.t == "op" and sep.v == ")" then
+				P.i = P.i + 1
+				break
+			end
 			if not (sep.t == "op" and sep.v == "|") then
 				return nil, unexpected(sep, ")"), sep.line
 			end
@@ -1164,23 +1163,15 @@ end
 -- A function definition
 --
 -- `name() { list; }`, POSIX.2's shape and the one every sh has taken since the
--- seventh edition. In sh `(` and `)` are operators and end a word (XCU 2.3 rule 6,
+-- seventh edition. `(` and `)` are operators and end a word (XCU 2.3 rule 6,
 -- 2.9.5 `fname ( ) compound-command`), so the blanks around them are free:
 -- `t(){`, `t() {`, `t (){`, `t ( ) {` and a `{` on the next line are all the same
--- definition on dash. This tokenizer does not split on them -- `(` means nothing
--- anywhere else on this machine and `echo (a)` is kept -- so funcAhead glues the
--- words back together where a definition begins instead.
+-- definition on dash, and here.
 --
 -- `{` is a reserved word, not an operator: it needs a blank after it, and
--- `t(){echo a;}` is a syntax error on dash ("}" unexpected) and here.
---
--- The braces are NOT made reserved words. `{` and `}` are POSIX reserved words, and
--- making them so here would mean a brace group (`{ list; }` as a command) this
--- machine has not got and a refusal for every `echo {` already written. What is
--- needed instead is that `}` stops the body, and that falls out of the stops table
--- parseProgram already takes: a reserved word is only one where a command starts, so
--- `echo done }` prints the brace exactly as a real sh does and the body ends at the
--- `}` that begins a statement.
+-- `t(){echo a;}` is a syntax error on dash ("}" unexpected) and here. The body is
+-- a brace group and nothing else: 4.4BSD sh took any compound command there, and
+-- `f() ( list )` is refused here as `word unexpected (expecting "{")`.
 --
 -- The SOURCE of the definition travels with it (`src`). The console keeps a
 -- function between one line and the next, and what it keeps has to survive being
@@ -1217,36 +1208,69 @@ local function parseFunc(P, depth, name, tokens, braced)
 end
 
 -- Is what is next a function definition, and what is its name? nil when it is not
--- one, so the caller goes on to read an ordinary command. Else the name, how many
--- words spell `name ( )`, and whether the last of them already carried the `{`.
---
--- The bare words on the line are read one after another and joined, blanks
--- dropped, for as long as the join is still the start of `name(){`. `name()` is a
--- definition; `name(){` is one with its brace; `name()` and anything else glued on
--- (`t(){echo`) is one whose brace is missing, the syntax error it is on a real sh.
--- A quoted word has no plain text and ends the join: `t "()"` is a command.
+-- one, so the caller goes on to read an ordinary command. Else the name and the
+-- three tokens that spell `name ( )`. A NAME followed by "(" and anything but ")"
+-- is "bad": parser.c reads TLP after a word as a definition and asks for TRP
+-- (`if (readtoken() != TRP) synexpect(TRP)`).
 --
 -- A reserved word is not a name: `if() { :; }` is a syntax error on a real sh and is
--- one here, because `if` is grammar and cannot be a command.
+-- one here, because `if` is grammar and cannot be a command. A quoted word has no
+-- plain text: `"t" ()` is a command followed by a stray bracket.
 local function funcAhead(P)
 	local t = wordAt(P)
 	if t == nil or t.plain == nil then return nil end
-	local name = string.match(t.plain, "^([A-Za-z_][A-Za-z0-9_]*)")
+	local lp = P.tokens[P.i + 1]
+	if lp == nil or lp.t ~= "op" or lp.v ~= "(" then return nil end
+	local name = string.match(t.plain, "^[A-Za-z_][A-Za-z0-9_]*$")
 	if name == nil or CeroSecOS.RESERVED[name] then return nil end
-	local joined = ""
-	local n = 0
-	while true do
-		local w = P.tokens[P.i + n]
-		if w == nil or w.t ~= "word" or w.plain == nil then return nil end
-		joined = joined .. w.plain
-		n = n + 1
-		local rest = string.sub(joined, #name + 1)
-		if string.sub(joined, 1, #name) ~= name then return nil end
-		if rest == "()" then return name, n, false end
-		if rest == "(){" then return name, n, true end
-		if string.sub(rest, 1, 2) == "()" then return name, n, "bad" end
-		if rest ~= "" and rest ~= "(" then return nil end
+	local rp = P.tokens[P.i + 2]
+	if rp == nil or rp.t ~= "op" or rp.v ~= ")" then return name, 2, "bad" end
+	return name, 3, false
+end
+
+-- `{ list; }` and `( list )`: a brace group, run in this shell, and a subshell, run
+-- in a copy of it (POSIX.2 XCU 2.9.4; 4.4BSD-Lite2 sh's NBRACE and NSUBSHELL,
+-- parser.c's command()). `{` and `}` are reserved words -- only where a command
+-- starts, so `echo {` and `echo a }` print their braces -- and `(` `)` operators.
+-- A list is at least one command in either (the "}" or ")" unexpected dash gives
+-- `{ }` and `( )`), and what follows the closer is a redirect or the end of the
+-- command: `{ echo; } foo` is `word unexpected`, as on sh.
+local function parseGroup(P, depth)
+	local open = take(P)
+	local sub = open.t == "op"
+	local closer = "}"
+	if sub then closer = ")" end
+	local body, reason, where
+	if sub then
+		body, reason, where = parseProgram(P, { [")"] = true }, depth + 1)
+	else
+		body, reason, where = parseProgram(P, { ["}"] = true }, depth + 1)
 	end
+	if body == nil then return nil, reason, where end
+	local empty, eline = emptyList(P, body)
+	if empty ~= nil then return nil, empty, eline end
+	local close = peek(P)
+	local closed
+	if sub then
+		closed = close.t == "op" and close.v == ")"
+	else
+		closed = close.t == "word" and close.plain == "}"
+	end
+	if not closed then return nil, unexpected(close, closer), close.line end
+	P.i = P.i + 1
+	local node = { k = "group", line = open.line, body = body, sub = sub, words = {} }
+	local st = { fds = { "1", "2" }, seen = {} }
+	while peek(P).t == "redir" do
+		local r, rline = takeRedirect(P, st)
+		if r ~= nil then return nil, r, rline end
+	end
+	node.redirect = st.redirect
+	if st.seen[2] or st.fds[1] ~= (st.redirect ~= nil and "w" or "1") then
+		node.errRedirect = st.errRedirect
+		node.out = st.fds[1]
+		node.err = st.fds[2]
+	end
+	return node
 end
 
 local function parsePiece(P, depth)
@@ -1260,9 +1284,13 @@ local function parsePiece(P, depth)
 		if t.plain == "while" or t.plain == "until" then return parseLoop(P, depth) end
 		if t.plain == "case" then return parseCase(P, depth) end
 	end
+	if (t ~= nil and t.plain == "{") or (peek(P).t == "op" and peek(P).v == "(") then
+		return parseGroup(P, depth)
+	end
 	local fname, fwords, braced = funcAhead(P)
 	if braced == "bad" then
-		return nil, unexpected(P.tokens[P.i], "{"), P.tokens[P.i].line
+		local at = P.tokens[P.i + fwords]
+		return nil, unexpected(at, ")"), at.line
 	end
 	if fname ~= nil then return parseFunc(P, depth, fname, fwords, braced) end
 	return parseSimple(P)
