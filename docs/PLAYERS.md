@@ -93,9 +93,10 @@ Commands:
 | `pwd` | print the working directory |
 | `cat [-n] [file]...` | print files; `-` among them is the pipe, `-n` numbers the lines |
 | `edit <file>` | open the file in the editor |
-| `touch <file>` | create an empty file, or move an existing one's date to now |
+| `touch <file>...` | create empty files, or move existing ones' dates to now |
 | `mkdir <dir>` | create a directory |
-| `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
+| `rm [-rf] <path>...` | remove a file, or a directory tree with `-r`; `-f` is silent about a name that is not there |
+| `rmdir <dir>...` | remove an empty directory (4.4BSD's has no `-p`) |
 | `mv <src> <dst>` | move or rename; a destination that exists is replaced (the directory's `w`, not the destination's mode, is what decides), an existing directory is moved *into*, and one that is not empty answers `directory not empty` |
 | `ln -s <target> <name>` | make a symbolic link; there are no hard links here, so the `-s` is not optional, `ln a b` answers `ln: usage: ln -s <target> <name>` and makes nothing. It is a **declared deviation**: a 1993 `ln` with no flag made a second name for one file |
 | `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r`; onto a file that is already there it writes over it and keeps that file's owner and mode |
@@ -112,12 +113,13 @@ Commands:
 | `useradd [-G group[,group...]] login` | make an account with an empty password (root only); `-G wheel` makes it an administrator |
 | `userdel [-r] login` | remove an account (root only); `-r` removes its home directory too, and either way its name is swept out of `/etc/sudoers` and every group |
 | `hostname` | print the machine's name |
+| `uname [-asnrv]` | the system's name, `-n` the machine's, `-r` and `-v` the version; `-a` all four |
 | `passwd [user]` | change a password (root may change anyone's) |
 | `mkpasswd <text> [salt]` | show what a password would hash to (CeroSec Systems' own, no 1993 Unix had this) |
 | `grep [-cinv] [-e pattern] [pattern] <file>...` | find a **basic regular expression** in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines that do *not* match, `-c` prints how many instead of which, `-e` gives the pattern as an option-argument, the only spelling for one starting with a dash, and twice means either of two). POSIX.2's BRE cut to six pieces: `^` and `$` where they anchor (first and last), `.` for one character, `*` for any number of the piece in front of it, `[abc]`/`[a-z]` and `[^abc]` for a set, and `\` to take the meaning off any of them. **Not** here: `\( \)` and `\{m,n\}`. A pattern of more than 32 pieces is `expression too long`, an unclosed set is `unmatched [`, a reversed range is `bad range`. A literal pattern is a C call whatever the file; a pattern with a piece in it is a walk of every byte for every piece, and grep charges the job for that walk in steps (see "Design rules") |
 | `head [-n N\|-N] <file>` | the first N lines, 10 by default; `head -1` is the older spelling and works |
-| `tail [-n N\|-N] <file>` | the last N lines, 10 by default; `tail -5` likewise |
-| `wc [-clw] <file>...` | lines, words and bytes, or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
+| `tail [-n N\|-N\|+N] <file>` | the last N lines, 10 by default; `tail -5` likewise; `tail +N` from line N to the end |
+| `wc [-clw] <file>...` | lines, words and bytes, or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, eight columns each as 4.4BSD's `wc`, with a `total` row for several files |
 | `more [file]...` | a pager: one screenful, then `--More--(NN%)`; **Space** is the next screenful, **Return** one more line, **q** quits. Works as the *last* stage of a pipe (`ls -l \| more`). Where its output is not a screen, a redirect, a `$( )`, a stage that is not the last, it copies through and pages nothing, which is what `more(1)` itself does; where the output *is* a screen but nobody is there (a `&` job, a crontab line) it answers `more: not a terminal`. One deviation, and it is the console's: this machine reads a *line*, so Space is a space and then Enter |
 | `find <path>... [expression]` | walk a tree depth-first, one path a line, the directory before what is in it. The expression is `-name <glob>` (matches the **last component**, with `*`, `?` and `[…]`; a leading `!` or `^` negates a set), `-type f\|d`, `-print` (implied when no action is named, as POSIX says, and accepted anyway) and `-exec`. Both tests together must both be true. A link is a leaf: find does not follow one. A directory it may not read is named and not entered, and the walk goes on **unsuccessfully**, so `find / \| wc -l` as an ordinary account prints the paths instead of counting them, exactly as `cat good bad \| wc -l` does |
 | `find … -exec <cmd> {} \;` | run the command once for every name found, in find's own order, with `{}` replaced by the name. POSIX's rule: only an argument that is *exactly* `{}`. The `\;` is the shell being told to leave the semicolon alone. Naming an action takes the implied `-print` away; an explicit `-print` prints where you wrote it. The expression is AND-ed, so `-exec test -f {} \; -exec rm {} \;` runs the second only where the first was true. find does **one exec per turn** and hands the machine back, so a sweep of a hundred names takes a few seconds of game time and prints as it goes, no command on this machine may spend a whole pass |
@@ -136,7 +138,7 @@ Commands:
 | `mount <device> <dir>` | graft the disk onto a directory; from then on that directory **is** the disk, and what was under it is covered |
 | `umount <dir>` | take it off again, refused with `Device busy` while any session's working directory is inside it |
 | `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, one worked, or a whole kind worked, `dev door1 open`, `dev light0 off`, `dev lock1 toggle`, and `dev window close` for every window the machine can reach, one answer line each in the table's order, the line failing if any of them refused (no kind means *everything*: `off` means one thing to a light and another to a generator); `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
-| `which <name>` | where a bare name would be found on `PATH`, and nothing at all when it would not |
+| `which <name>` | where a bare name would be found on `PATH`; `no <name> in <PATH>` when it would not, as 4.3BSD's csh script said |
 | `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
 | `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
@@ -158,7 +160,8 @@ Commands:
 | `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
 | `!!` / `!<n>` | run the last line again, or line `<n>` |
 | `sleep <seconds>` | wait, costing the machine nothing while it does |
-| `printf <format> [arg...]` | `%s`, `%d`, `%%`, `\n` and `\t` |
+| `printf <format> [arg...]` | `%s %c %d %x %o %%` with a width, a precision and the `-` and `0` flags, `\n`, `\t` and `\NNN` (never a control byte); the format repeats for extra arguments |
+| `expr <expression>` | integer sums and comparisons, `\|` and `&`; `$?` is 0, 1, or 2 for an error. No `:` |
 | `test <expr>` / `[ <expr> ]` | the file and string tests, as in any `sh` |
 | `true` / `false` | a status and nothing else |
 | `echo <text>` | print text |

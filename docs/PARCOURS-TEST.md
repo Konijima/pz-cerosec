@@ -4678,7 +4678,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      rmdir f` → `rmdir: f: directory not empty`. `rmdir -p f` →
      `rmdir: illegal option -- p` puis la ligne d'usage. `expr 2 + 3 \* 4` →
      `14` ; `expr 3 - 3; echo $?` → `0` puis `1` ; `expr 1 / 0; echo $?` →
-     `expr: division by zero` puis `2`. `uname -a` → `CeroSec OS`, le nom de
+     `Divide by zero` (sans préfixe, comme expr.y de 4.4BSD) puis `2`. `uname -a` → `CeroSec OS`, le nom de
      la machine, la version. [ ]
 464. **rm -f, kill, tail +N, touch.** `rm -f nosuch; echo $?` → `0`.
      `sleep 60 &`, puis `kill -9 %1` → `[1] killed`. `kill -STOP %1` →
@@ -4694,7 +4694,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 466. **Les formats de sortie.** `wc t` → `       3       3       5 t` (huit
      colonnes par nombre). `printf 'a\na\nb\n' | uniq -c` → `   2 a`, `   1 b`.
      `which nosuch` → `no nosuch in /bin /usr/local/bin` (le PATH, séparé par des
-     blancs). `sudo useradd bob` puis `sudo userdel bob` → aucune ligne. [ ]
+     blancs), et `echo $?` → `0`, comme le script csh de 4.3BSD. `sudo useradd bob` puis `sudo userdel bob` → aucune ligne. [ ]
 
 ## Rapport
 

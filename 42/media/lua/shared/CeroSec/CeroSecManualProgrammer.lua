@@ -2486,10 +2486,12 @@ carries:
   rmdir: illegal option -- p
       getopt's words, and then the usage line;
       uname says it the same way
-  expr: syntax error
-  expr: non-numeric argument
-  expr: division by zero
-      $? is 2; 0 and 1 are expr's answer
+  syntax error
+  non-numeric argument
+  Divide by zero
+  Remainder by zero
+  yacc stack overflow
+      expr's, bare; $? is 2, and 0 and 1 its answer
   kill: unknown signal <x>; valid signals:
       and then the list, as kill -l prints it
   kill: illegal signal number: <x>
@@ -2497,7 +2499,7 @@ carries:
   kill: stop: not honoured
       a signal that would only pause a job
   no <name> in /bin /usr/local/bin
-      which, finding nothing; $? is 1
+      which, finding nothing; $? is still 0
 
 And the one shape no other card carries:
 

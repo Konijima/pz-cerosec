@@ -88,6 +88,14 @@ case(state, admin, "rmdir -p f", {
 	"rmdir: illegal option -- p", "rmdir: usage: rmdir <dir>..." }, 1)
 case(state, admin, "rmdir", { "rmdir: usage: rmdir <dir>..." }, 1)
 case(state, admin, "rm -r f g", {}, 0)
+-- A mount point is EBUSY, whatever the disk on it holds.
+state.floppy = CeroSecOS.newFloppy()
+case(state, admin, "newfs /dev/fd0 > /dev/null; mount /dev/fd0 /mnt; touch /mnt/f", {}, 0)
+case(state, root, "rmdir /mnt", { "rmdir: /mnt: Device busy" }, 1)
+case(state, admin, "umount /mnt", {}, 0)
+-- And it is a word the shell completes, like every name in /bin.
+local done = CeroSecOS.complete(state, admin, "rmd", 3)
+eq("rmd completes to rmdir", type(done) == "table" and done.replacement or tostring(done), "rmdir ")
 
 --
 -- expr: arithmetic, comparison, | and &, status 0/1/2.
@@ -102,12 +110,18 @@ case(state, admin, "expr b \\> a", { "1" }, 0)
 case(state, admin, "expr 10 = 10", { "1" }, 0)
 case(state, admin, "expr '' \\| x", { "x" }, 0)
 case(state, admin, "expr 0 \\& x", { "0" }, 1)
-case(state, admin, "expr a + 1", { "expr: non-numeric argument" }, 2)
-case(state, admin, "expr 1 / 0", { "expr: division by zero" }, 2)
-case(state, admin, "expr 1 +", { "expr: syntax error" }, 2)
-case(state, admin, "expr", { "expr: syntax error" }, 2)
+-- 4.4BSD's expr.y: yyerror prints the words bare and exits 2.
+case(state, admin, "expr a + 1", { "non-numeric argument" }, 2)
+case(state, admin, "expr 1 / 0", { "Divide by zero" }, 2)
+case(state, admin, "expr 1 % 0", { "Remainder by zero" }, 2)
+case(state, admin, "expr 1 +", { "syntax error" }, 2)
+case(state, admin, "expr", { "syntax error" }, 2)
+case(state, admin, "expr " .. string.rep("\\( ", 33) .. "1" .. string.rep(" \\)", 33),
+	{ "yacc stack overflow" }, 2)
+case(state, admin, "expr " .. string.rep("\\( ", 32) .. "1" .. string.rep(" \\)", 32),
+	{ "1" }, 0)
 -- 2 is expr's own, and the next command starts from nothing.
-case(state, admin, "expr 1 +; false; echo $?", { "expr: syntax error", "1" }, 0)
+case(state, admin, "expr 1 +; false; echo $?", { "syntax error", "1" }, 0)
 case(state, admin, "x=$(expr 4 \\* 5); echo $x", { "20" }, 0)
 
 --
@@ -218,8 +232,9 @@ case(state, admin, "printf 'a b\\nc\\n' > w; wc w", { "       2       3       5 
 case(state, admin, "wc -l w", { "       2 w" }, 0)
 case(state, admin, "cat w | wc -l", { "       2" }, 0)
 case(state, admin, "printf 'a\\na\\nb\\n' | uniq -c", { "   2 a", "   1 b" }, 0)
-case(state, admin, "which nosuch", { "no nosuch in " .. string.gsub(CeroSecOS.DEFAULT_PATH, ":", " ") }, 1)
-case(state, admin, "which nosuch > /dev/null; echo $?", { "1" }, 0)
+-- 4.3BSD's which.csh ended on that echo, so its status is 0.
+case(state, admin, "which nosuch", { "no nosuch in " .. string.gsub(CeroSecOS.DEFAULT_PATH, ":", " ") }, 0)
+case(state, admin, "which nosuch > /dev/null; echo $?", { "0" }, 0)
 case(state, admin, "which ls", { "/bin/ls" }, 0)
 
 --

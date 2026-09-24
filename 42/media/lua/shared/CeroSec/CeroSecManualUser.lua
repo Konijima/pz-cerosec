@@ -629,8 +629,9 @@ notes directory however far away you have wandered.]],
 
 Four commands, and then you have a working office.
 
-mkdir makes a directory. touch makes an empty file, or, on a file that
-already exists, just moves its date to now. cat prints a file's contents
+mkdir makes a directory, and rmdir takes an empty one away. touch makes
+an empty file, or, on a file that already exists, just moves its date to
+now. cat prints a file's contents
 on the screen. And a greater-than sign after a command sends what the
 command would have printed into a file instead.
 

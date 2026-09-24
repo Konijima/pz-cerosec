@@ -14,6 +14,11 @@ The suites, in the order they run:
 
 - `defs_test.lua` — the shared definitions (sprites, facings, state).
 - `os_test.lua` — the OS core: filesystem, permissions, users, shell, passwords.
+- `commands_test.lua` — the commands and flags taken from 4.4BSD in 0.7.0
+  (`rmdir`, `expr`, `uname`, `rm -f`, `kill`'s signals, `tail +N`, `printf`'s
+  fields, `test -s/-h/-L`, several `touch` names, the `wc`/`uniq -c`/`which`
+  formats), each against the source its comment cites. It lists every red
+  before it exits, so one broken command shows all it breaks.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `compat_computermod_test.lua`: living beside the Workshop mod *Computer Mod*:
   who owns a desktop, and which of the two fillers gets the right-click. Against

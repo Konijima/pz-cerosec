@@ -4337,6 +4337,30 @@ do
 	eq("and so does one down a line", far.lastBg, nil)
 end
 
+--
+-- 28. expr handed a wall of brackets. Each ( is a level of Lua recursion in
+-- exprPrimary, and a file holds 4096 bytes and a word MAX_VAR_BYTES, but a
+-- line may expand a word several times: four copies of 256 brackets is a
+-- thousand levels of recursion inside one job step. yacc ran out of state
+-- stack first, and so does this -- EXPR_DEPTH, and yaccpar's own "yacc
+-- stack overflow" -- in a pass that costs what any other pass costs.
+--
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/deep.sh", "a='('; b=')'; i=0\n"
+		.. "while [ $i -lt 8 ]; do a=\"$a $a\"; b=\"$b $b\"; i=$((i+1)); done\n"
+		.. "expr $a $a $a $a 1 $b $b $b $b\necho status $?\n")
+	typeLine(system, machine, state, console, "sh deep.sh")
+	local result = drive(machine, 20)
+	timely("expr brackets", result)
+	note("expr brackets", result)
+	local said = table.concat(console.lines, "|")
+	check("it answers yacc's own words (" .. string.sub(said, 1, 80) .. ")",
+		string.find(said, "yacc stack overflow", 1, true) ~= nil)
+	check("and the script goes on with $? 2",
+		string.find(said, "status 2", 1, true) ~= nil)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

@@ -1025,7 +1025,7 @@ CeroSecOS.DEVIATIONS = {
 		why = "command not found is bash's wording, not sh's" },
 	-- getopt(3), 4.3BSD: "illegal option -- z", then the usage line.
 	{ name = "getopt", world = true, phrase = "unknown option, where getopt said",
-		why = "the engine's one word for a flag it does not know" },
+		why = "the older commands' word for a flag they do not know" },
 	-- The Bourne shell's "syntax error: `fi' unexpected", and an open quote
 	-- is a line it waits for (PS2); this parser refuses the line.
 	{ name = "syntax", world = true,
@@ -1422,11 +1422,16 @@ end
 -- own pattern. Declared on the manual's deviations page.
 --
 -- Exit status is expr(1)'s own: 0 when the value is neither empty nor "0",
--- 1 when it is, 2 for a syntax error or an operation that failed outright
--- (a non-integer to an arithmetic operator, or a division by zero) -- the
--- two cases POSIX.2 does not split the way some expr(1)s do with a third
--- status.
+-- 1 when it is, 2 for anything that stopped it. The words are 4.4BSD's
+-- bin/expr/expr.y (the 1993 CSRG tree), whose yyerror prints the message
+-- bare, with no "expr:" in front, and exits 2: yacc's "syntax error",
+-- "non-numeric argument", "Divide by zero" and "Remainder by zero". A
+-- bracket nested past EXPR_DEPTH is yaccpar's own "yacc stack overflow",
+-- which is where a real parser's state stack ran out too -- and what keeps
+-- a script full of \( from walking the Lua stack down.
 local exprOr, exprAnd, exprRel, exprAdd, exprMul, exprPrimary
+local EXPR_DEPTH = 32
+local exprDepth = 0
 
 local function exprIsInt(s)
 	return string.match(s, "^%-?%d+$") ~= nil
@@ -1453,11 +1458,14 @@ local function exprCompare(op, a, b)
 end
 
 exprPrimary = function(t, i, hi)
-	if i > hi then return nil, "expr: syntax error", i end
+	if i > hi then return nil, "syntax error", i end
 	if t[i] == "(" then
+		if exprDepth >= EXPR_DEPTH then return nil, "yacc stack overflow", i end
+		exprDepth = exprDepth + 1
 		local v, err, ni = exprOr(t, i + 1, hi)
+		exprDepth = exprDepth - 1
 		if err ~= nil then return nil, err, ni end
-		if t[ni] ~= ")" then return nil, "expr: syntax error", ni end
+		if t[ni] ~= ")" then return nil, "syntax error", ni end
 		return v, nil, ni + 1
 	end
 	return t[i], nil, i + 1
@@ -1471,13 +1479,14 @@ exprMul = function(t, i, hi)
 		local w, werr, nj = exprPrimary(t, ni + 1, hi)
 		if werr ~= nil then return nil, werr, nj end
 		if not exprIsInt(v) or not exprIsInt(w) then
-			return nil, "expr: non-numeric argument", nj
+			return nil, "non-numeric argument", nj
 		end
 		local a, b = tonumber(v), tonumber(w)
 		if op == "*" then
 			v = tostring(math.floor(a * b))
 		else
-			if b == 0 then return nil, "expr: division by zero", nj end
+			if b == 0 and op == "/" then return nil, "Divide by zero", nj end
+			if b == 0 then return nil, "Remainder by zero", nj end
 			if op == "/" then v = tostring(exprDiv(a, b))
 			else v = tostring(math.floor(a - exprDiv(a, b) * b)) end
 		end
@@ -1494,7 +1503,7 @@ exprAdd = function(t, i, hi)
 		local w, werr, nj = exprMul(t, ni + 1, hi)
 		if werr ~= nil then return nil, werr, nj end
 		if not exprIsInt(v) or not exprIsInt(w) then
-			return nil, "expr: non-numeric argument", nj
+			return nil, "non-numeric argument", nj
 		end
 		local a, b = tonumber(v), tonumber(w)
 		if op == "+" then v = tostring(math.floor(a + b)) else v = tostring(math.floor(a - b)) end
@@ -1544,9 +1553,10 @@ end
 commands.expr = function(state, session, args, env, stdin, sh)
 	-- No operand at all is a grammar with nothing to parse: yacc's
 	-- "syntax error" and 2, the same as any other malformed line.
-	local v, err, ni = nil, "expr: syntax error", 2
+	local v, err, ni = nil, "syntax error", 2
+	exprDepth = 0
 	if #args >= 2 then v, err, ni = exprOr(args, 2, #args) end
-	if err == nil and ni ~= #args + 1 then err = "expr: syntax error" end
+	if err == nil and ni ~= #args + 1 then err = "syntax error" end
 	if err ~= nil then
 		if type(sh) == "table" then sh.status = 2 end
 		return false, { err }
@@ -2344,6 +2354,11 @@ commands.rmdir = function(state, session, args, env)
 		local why = nil
 		if node == nil then why = reason
 		elseif node.type ~= "dir" then why = "not a directory"
+		-- A mount point is EBUSY whatever is on it, the words removeNode
+		-- refuses one in; asked first, since the disk's files are not the
+		-- directory's to be "not empty" with.
+		elseif CeroSecOS.mountUnder(state, CeroSecOS.resolve(session, path)) ~= nil then
+			why = "Device busy"
 		elseif CeroSecOS.countEntries(node) > 0 then why = "directory not empty"
 		else
 			local done, rreason =
@@ -6664,8 +6679,9 @@ end
 -- A name no PATH entry answers to is the csh script's own line, 4.3BSD's
 -- ucb/which: `echo no $arg in $path`, where csh's $path is the directories
 -- with blanks between -- so it is output, not an error, and `which thing >
--- /dev/null` still says nothing on the screen. The status is 1 all the same,
--- so the test it has been used as keeps working.
+-- /dev/null` says nothing on the screen -- and the status is 0, because the
+-- script's last command was that echo and csh hands its status back. A
+-- found name and a missing one are told apart by the words, as in 1993.
 --
 -- It answers about FILES, because that is all a PATH holds: `which cd` finds
 -- nothing, exactly as it finds nothing on a real machine, and `type` is the word
@@ -6674,10 +6690,9 @@ commands.which = function(state, session, args, env, stdin, sh)
 	if #args ~= 2 then return usage("which") end
 	local found = CeroSecOS.lookupPath(state, session, args[2], shPath(sh))
 	if found == nil then
-		if type(sh) == "table" then sh.outOnFail = true end
 		-- A plain ":" to find, never a pattern built from what was typed.
 		local dirs = string.gsub(shPath(sh), ":", " ")
-		return false, { "no " .. args[2] .. " in " .. dirs }
+		return true, { "no " .. args[2] .. " in " .. dirs }
 	end
 	return true, { found }
 end

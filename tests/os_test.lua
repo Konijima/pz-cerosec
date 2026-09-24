@@ -11067,10 +11067,9 @@ do
 	-- about the command that was typed, as every refusal here is.
 	bad(state, admin, "which ls", "which: command not found")
 	-- Back on a PATH that holds it, `which` answers a name it cannot find
-	-- with the csh script's own line, on the output side, and comes back
-	-- unsuccessful -- so `which x > /dev/null` is still the test it was.
+	-- with the csh script's own line, and $? 0: the script ended on the echo.
 	ok(state, admin, "PATH=/bin", {})
-	expect(state, admin, "which nosuch", false, { "no nosuch in /bin" })
+	expect(state, admin, "which nosuch", true, { "no nosuch in /bin" })
 	ok(state, admin, "PATH=/home/admin/bin", {})
 
 	-- An empty field is the working directory. Standing in the directory the
@@ -11135,7 +11134,7 @@ do
 		end
 		return true
 	end)())
-	local silent = expect(state, admin, "which cd", false,
+	local silent = expect(state, admin, "which cd", true,
 		{ "no cd in " .. string.gsub(CeroSecOS.DEFAULT_PATH, ":", " ") })
 	eq("which finds no file for a shell word", #silent, 1)
 	ok(state, admin, "which which", { "/bin/which" })

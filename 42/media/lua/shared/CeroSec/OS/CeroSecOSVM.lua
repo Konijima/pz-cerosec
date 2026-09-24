@@ -1313,8 +1313,10 @@ local testExpr
 local function testUnary(state, session, op, arg)
 	if op == "-z" then return #arg == 0 end
 	if op == "-n" then return #arg > 0 end
-	-- -h is 4.4BSD's (bin/test/operators.c lists it; test.c answers it with
-	-- lstat, not stat) and -L is the same question under POSIX.2's letter.
+	-- -h is 4.4BSD's (bin/test/operators.c lists it, test.1 says "exists
+	-- and is a symbolic link", test.c answers it with lstat). -L is the
+	-- letter later tests gave the same question; 4.4BSD's test has -h alone,
+	-- and -L is kept so a script written for either reads the same.
 	-- The one test here that must NOT follow the link, so it asks getNode with
 	-- noFollow rather than the node every other letter below shares.
 	if op == "-h" or op == "-L" then
