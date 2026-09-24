@@ -2494,7 +2494,8 @@ their line too.
   <n>: bad variable name
       ${1:=word}: a number is not a variable
   set: Illegal option -e
-      and -x and -u, which are not here
+      and -x and -u, which are not here; +e too
+  set: Illegal option -o <name>
   trap: <name>: bad trap
       anything but EXIT or 0
   exec: redirect with no command

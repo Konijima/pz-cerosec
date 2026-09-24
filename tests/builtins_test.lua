@@ -138,6 +138,18 @@ do
 	bad(state, c, "set -e", "sh: set: Illegal option -e")
 	bad(state, c, "set -x", "sh: set: Illegal option -x")
 	bad(state, c, "set -u", "sh: set: Illegal option -u")
+	-- A "+" word is an option too (4.4BSD options.c: val = 0), refused in
+	-- the same words, and it never becomes $1: `set +e` once replaced the
+	-- positional parameters with "+e".
+	bad(state, c, "set +e", "sh: set: Illegal option -e")
+	bad(state, c, "set +x a b", "sh: set: Illegal option -x")
+	bad(state, c, "set -o vi", "sh: set: Illegal option -o vi")
+	-- "-" ends the options and turns off -x and -v, neither of them here;
+	-- with nothing after it the list stands. "+" alone is no option at all.
+	ok(state, c, "f(){ set -; echo \"$#:$1\"; set +; echo \"$#:$1\"; }; f a b",
+		{ "2:a", "2:a" })
+	ok(state, c, "f(){ set - x -e; echo \"$#:$1:$2\"; }; f a b", { "2:x:-e" })
+	ok(state, c, "f(){ set -- -e; echo \"$#:$1\"; }; f a b", { "1:-e" })
 end
 
 --

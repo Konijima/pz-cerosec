@@ -2362,15 +2362,42 @@ builtins.set = function(job, args)
 		end
 		return 0
 	end
-	local start = 2
-	if args[2] == "--" then
-		start = 3
-	elseif string.sub(args[2], 1, 1) == "-" then
-		return nil, "set: Illegal option -" .. string.sub(args[2], 2, 2)
+	-- The walk is options.c's options(0), word for word: a word that starts
+	-- "-" turns its letters on and one that starts "+" turns them off, and
+	-- both are OPTIONS -- `set +e` never became $1. "-" alone (which turns
+	-- off -x and -v, neither of them here) and "--" end the options, and
+	-- "--" with nothing after it empties the list (setparam); any other
+	-- word ends them too. What is left, if anything, is the new list, so
+	-- `set -` and `set +` leave $1.. as they were. Every letter is one this
+	-- shell has not got, and setoption() refuses it in the one form
+	-- whichever sign it came with; -o NAME is minus_o's "Illegal option -o
+	-- %s".
+	local i, reset = 2, false
+	while args[i] ~= nil do
+		local p = args[i]
+		local c = string.sub(p, 1, 1)
+		if c == "-" then
+			i = i + 1
+			if p == "-" or p == "--" then
+				if p == "--" and args[i] == nil then reset = true end
+				break
+			end
+		elseif c == "+" then
+			i = i + 1
+		else
+			break
+		end
+		local letter = string.sub(p, 2, 2)
+		if letter == "o" and args[i] ~= nil then
+			return nil, "set: Illegal option -o " .. args[i]
+		end
+		if letter ~= "" then return nil, "set: Illegal option -" .. letter end
 	end
-	local kept = {}
-	for i = start, #args do kept[#kept + 1] = args[i] end
-	job.args = kept
+	if args[i] ~= nil or reset then
+		local kept = {}
+		for k = i, #args do kept[#kept + 1] = args[k] end
+		job.args = kept
+	end
 	return 0
 end
 
