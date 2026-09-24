@@ -3746,7 +3746,7 @@ function CeroSecContent.diskData(entry, now, variant)
 		if file.dir then
 			node = CeroSecOS.newDir("root", mode or 755)
 		elseif type(text) == "string" then
-			node = CeroSecOS.newFile("root", mode or 644, text)
+			node = CeroSecOS.newFile("root", mode or 644, CeroSecOS.terminated(text))
 		end
 		if node ~= nil and CeroSecContent.diskNameOk(file.name) then
 			local path = CeroSecOS.MNT_PATH .. "/" .. file.name
@@ -3837,7 +3837,9 @@ function CeroSecContent.lateEntryFor(disk)
 	if type(root) ~= "table" or type(root.children) ~= "table" then return nil end
 	local node = root.children[name]
 	if type(node) ~= "table" or node.type ~= "file" then return nil end
-	if node.data ~= stub then return nil end
+	-- Either form: a disk written before FLOPPY_VERSION 2 may hold the stub
+	-- bare, when the step had no room to close it (CeroSecOS.terminateFiles).
+	if not CeroSecOS.sameText(node.data, stub) then return nil end
 	return entry, name
 end
 
@@ -3920,7 +3922,7 @@ function CeroSecContent.fillLate(disk, exchange, numbers, now)
 	end
 	local session = CeroSecOS.rootSession()
 	local done = CeroSecOS.writeFile(state, session,
-		CeroSecOS.MNT_PATH .. "/" .. name, text, false, now)
+		CeroSecOS.MNT_PATH .. "/" .. name, CeroSecOS.terminated(text), false, now)
 	CeroSecOS.unmountAll(state)
 	return done ~= nil
 end
@@ -4605,7 +4607,7 @@ CeroSecContent.LOG_DAYS = 7
 -- That is the trimming rule, in one function, so no caller can forget it.
 local function place(state, session, path, owner, mode, text, now)
 	if type(text) ~= "string" then return false end
-	local node = CeroSecOS.newFile(owner, mode or 644, text)
+	local node = CeroSecOS.newFile(owner, mode or 644, CeroSecOS.terminated(text))
 	return CeroSecOS.createNode(state, session, path, node, now) ~= nil
 end
 
@@ -5052,10 +5054,10 @@ local function placeMail(state, session, profile, secret, b1, b2, logins, owner,
 		-- a mailbox is read from the top and the first message is the one that sets
 		-- the scene.
 		while #kept > CeroSecOS.MAIL_LINES do table.remove(kept) end
-		local text = table.concat(kept, "\n")
+		local text = CeroSecOS.linesToText(kept)
 		while #text > CeroSecOS.MAIL_BYTES and #kept > 1 do
 			table.remove(kept)
-			text = table.concat(kept, "\n")
+			text = CeroSecOS.linesToText(kept)
 		end
 		place(state, session, CeroSecOS.mailPath(to), to, CeroSecOS.MAIL_MODE,
 			text, now)
@@ -5619,12 +5621,12 @@ function CeroSecContent.prefill(state, opts)
 		if role == CeroSecContent.DESK_SPARE and type(profile.motd) == "string" then
 			motd = profile.motd
 		end
-		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, motd, now)
+		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, CeroSecOS.terminated(motd), now)
 		-- The banner over the login prompt, on the same terms as the motd: a spare
 		-- desk in the company's own office carries the company's, and a machine the
 		-- shop has not sold carries the one it was built with.
 		if role == CeroSecContent.DESK_SPARE and type(profile.issue) == "string" then
-			CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, profile.issue, now)
+			CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, CeroSecOS.terminated(profile.issue), now)
 		end
 		local password =
 			setRoot(state, session, profile, secret, opts.b1, opts.b2, mkey, now)
@@ -5695,13 +5697,13 @@ function CeroSecContent.prefill(state, opts)
 	end
 
 	if type(profile.motd) == "string" then
-		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, profile.motd, now)
+		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, CeroSecOS.terminated(profile.motd), now)
 	end
 	-- And the banner, for the two kinds of building that put a warning over the
 	-- login prompt rather than under it. A profile with none keeps the seeded line,
 	-- which setHostname has already rewritten with this machine's own name.
 	if type(profile.issue) == "string" then
-		CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, profile.issue, now)
+		CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, CeroSecOS.terminated(profile.issue), now)
 	end
 
 	placeLog(state, session, profile, secret, mkey, opts.start, now)

@@ -1326,8 +1326,8 @@ do
 	local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
 	local node = CeroSecOS.getNode(state, session, "/home/admin/notes.txt")
 	check("the file is on the disk", node ~= nil and node.type == "file")
-	eq("with what was typed in it", node.data, "hello")
-	check("and the machine says so", bench.painted("Saved 5 bytes"))
+	eq("with what was typed in it", node.data, "hello\n")
+	check("and the machine says so", bench.painted("Saved 6 bytes"))
 
 	-- Escape leaves the editor and the shell is back.
 	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
@@ -1645,7 +1645,7 @@ do
 	check("the machine validates", state ~= nil)
 	local node = CeroSecOS.systemNode(state, "/home/admin/work/notes.txt")
 	check("the file in /home survived the repair", node ~= nil)
-	eq("with its contents", node.data, "keep me")
+	eq("with its contents", node.data, "keep me\n")
 end
 
 -- A machine wiped and left: the next player to open the window meets the
@@ -1711,7 +1711,7 @@ do
 	eq("and this build's contents", state.sysv, CeroSecOS.SYSTEM_VERSION)
 	local node = CeroSecOS.systemNode(state, "/home/admin/work/notes.txt")
 	check("the file in /home is still there", node ~= nil)
-	eq("byte for byte", node.data, "keep me")
+	eq("byte for byte", node.data, "keep me\n")
 	check("and the accounts still log in", CeroSecOS.login(state, "admin", "") ~= nil)
 
 	-- And it boots to a login prompt rather than to the BIOS: an older save is not
@@ -2704,10 +2704,10 @@ do
 	bench.window.entry:setCursorPos(18)
 	bench.window:onOtherKey(Keyboard.KEY_TAB)
 	bench.frame()
-	check("the save went through", bench.painted("Saved 18 bytes"))
+	check("the save went through", bench.painted("Saved 19 bytes"))
 	local state = bench.object:osState()
 	eq("and the file on the disk is the new one",
-		CeroSecOS.systemNode(state, "/etc/motd").data, "welcome to the lab")
+		CeroSecOS.systemNode(state, "/etc/motd").data, "welcome to the lab\n")
 	eq("still root's", CeroSecOS.systemNode(state, "/etc/motd").owner, "root")
 	eq("and the console is still admin's", bench.object.console.user, "admin")
 end
@@ -7335,7 +7335,7 @@ do
 	-- Tab saved it, which is what Tab has always done in here.
 	local session = { user = "admin", cwd = "/home/admin" }
 	local node = CeroSecOS.getNode(bench.object:osState(), session, "/home/admin/notes.txt")
-	check("Tab wrote the file", node ~= nil and node.data == "ca")
+	check("Tab wrote the file", node ~= nil and node.data == "ca\n")
 end
 
 --
@@ -7376,8 +7376,8 @@ do
 	bench.window.entry:setCursorPos(18)
 	bench.tab()
 	bench.frame()
-	check("a crontab that parses is installed", bench.painted("Saved 18 bytes"))
-	eq("and is on the disk", bench.fileText("/var/spool/cron/admin"), "30 * * * * echo hi")
+	check("a crontab that parses is installed", bench.painted("Saved 19 bytes"))
+	eq("and is on the disk", bench.fileText("/var/spool/cron/admin"), "30 * * * * echo hi\n")
 
 	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
 	bench.enter("crontab -l")
@@ -9186,7 +9186,7 @@ do
 	net.enter("rsh gate hostname > kept.txt")
 	net.tick(10)
 	eq("the file holds the far machine's answer",
-		net.text(net.here, "/home/admin/kept.txt"), net.host(net.gate))
+		net.text(net.here, "/home/admin/kept.txt"), net.host(net.gate) .. "\n")
 
 	-- rcp was in the same trap next door, for a plainer reason: a redirect on a
 	-- command that hands back an ORDER used to drop the order's data on the way
@@ -9197,7 +9197,7 @@ do
 	net.tick(12)
 	check("the copy said how it went", net.glass("copied 0"))
 	eq("and the far machine has the file",
-		net.text(net.gate, "/home/admin/copy.txt"), net.host(net.gate))
+		net.text(net.gate, "/home/admin/copy.txt"), net.host(net.gate) .. "\n")
 end
 
 -- A machine that will not have us: the refusal comes back into the job that is
@@ -9339,13 +9339,13 @@ do
 	-- The wire takes as long as it takes, so the command is asleep.
 	net.tick(8)
 	eq("the file landed on the far machine", net.text(net.gate, "/home/admin/there.txt"),
-		"hello")
+		"hello\n")
 	check("and nothing was said about it", not net.glass("rcp:"))
 
 	-- And back again, under another name.
 	net.enter("rcp gate:/home/admin/there.txt back.txt")
 	net.tick(8)
-	eq("and comes back", net.text(net.here, "/home/admin/back.txt"), "hello")
+	eq("and comes back", net.text(net.here, "/home/admin/back.txt"), "hello\n")
 
 	-- The far machine's own ceilings, not this one's: a file too big for a file.
 	local big = string.rep("y", CeroSecOS.MAX_FILE_BYTES + 1)
@@ -9462,7 +9462,7 @@ do
 	check("and still takes a login", net.glass("admin@" .. net.host(net.gate)))
 	net.enter("echo deep > /home/admin/deep.txt")
 	net.tick(3)
-	eq("and its disk is really written", net.text(net.gate, "/home/admin/deep.txt"), "deep")
+	eq("and its disk is really written", net.text(net.gate, "/home/admin/deep.txt"), "deep\n")
 end
 
 -- Shutting the far machine down from inside the session closes it.
@@ -9529,7 +9529,7 @@ do
 	net.window:onOtherKey(Keyboard.KEY_TAB)
 	net.tick(2)
 	eq("the far machine's disk has it",
-		net.text(net.gate, "/home/admin/remote.txt"), "over there")
+		net.text(net.gate, "/home/admin/remote.txt"), "over there\n")
 	eq("and this machine's has nothing at that name",
 		net.text(net.here, "/home/admin/remote.txt"), nil)
 	net.window:onOtherKey(Keyboard.KEY_ESCAPE)
@@ -18424,7 +18424,7 @@ do
 			back.painted("sh /home/admin/x.sh &"))
 		seconds(back, 8)
 		eq("it wakes, finishes, and the file it was going to write is there",
-			back.fileText("/var/tmp/x"), "done")
+			back.fileText("/var/tmp/x"), "done\n")
 		eq("and the machine is running nothing afterwards", jobCount(back), 0)
 	end
 
@@ -18505,7 +18505,7 @@ do
 		eq("and it still holds the prompt",
 			CeroSec.consoleWaiting(back.object:consoleState()), "job")
 		seconds(back, 8)
-		eq("it finishes", back.fileText("/var/tmp/fg"), "back")
+		eq("it finishes", back.fileText("/var/tmp/fg"), "back\n")
 		eq("and the prompt comes back to the glass",
 			CeroSec.consoleWaiting(back.object.console), "shell")
 	end
@@ -19611,7 +19611,7 @@ do
 		local back = newBench(saved)
 		eq("an entry in the old flat form still comes back", jobCount(back), 1)
 		seconds(back, 8)
-		eq("and does what it was going to do", back.fileText("/var/tmp/x"), "done")
+		eq("and does what it was going to do", back.fileText("/var/tmp/x"), "done\n")
 
 		-- And what no build ever wrote in it, a pipeline, is not taken from it.
 		local pbench = newBench()
@@ -20350,7 +20350,7 @@ do
 		eq("it is still asleep a week later, with its own seconds to go",
 			back.fileText("/var/tmp/late"), nil)
 		seconds(back, 20)
-		eq("and it wakes when they are up", back.fileText("/var/tmp/late"), "late")
+		eq("and it wakes when they are up", back.fileText("/var/tmp/late"), "late\n")
 	end
 
 	--
@@ -20530,8 +20530,8 @@ do
 			seconds(back, 3)
 			eq(name .. ": four after it, with five to go in all, still", back.fileText("/var/tmp/e"), nil)
 			seconds(back, 4)
-			eq(name .. ": and eight after, it is over", back.fileText("/var/tmp/e"), "end")
-			eq(name .. ": having said what the script says", back.fileText("/var/tmp/w"), "1\n2")
+			eq(name .. ": and eight after, it is over", back.fileText("/var/tmp/e"), "end\n")
+			eq(name .. ": having said what the script says", back.fileText("/var/tmp/w"), "1\n2\n")
 			eq(name .. ": nothing is left running", jobCount(back), 0)
 		end
 		-- Two stages asleep for different times. The pipeline as a whole wakes when the
@@ -20557,7 +20557,7 @@ do
 			eq(name .. ": three seconds after the reload the longer sleep still has one to go",
 				back.fileText("/var/tmp/e"), nil)
 			seconds(back, 3)
-			eq(name .. ": and six after, it is over", back.fileText("/var/tmp/e"), "end")
+			eq(name .. ": and six after, it is over", back.fileText("/var/tmp/e"), "end\n")
 			eq(name .. ": nothing is left running", jobCount(back), 0)
 		end
 		sleepers("two stages asleep", "sleep 2 | sleep 5\necho end > /var/tmp/e\n")
@@ -20616,13 +20616,14 @@ do
 			local rows = back.object.console.lines
 			eq(name .. ": and counts what was in the pipe", rows[#rows - 1], want)
 		end
-		-- The files are what bench.script makes of them: one more, empty, line at the end.
+		-- Each file is 700 lines, each ending in its own newline, and wc -l
+		-- counts newlines (POSIX wc): 1400, with no empty line after the last.
 		past("fourteen hundred lines", string.rep("abcd\n", 700),
 			"cat /home/admin/big /home/admin/big | wc -l",
-			function(pipe) return #pipe.lines > CeroSecOS.PIPE_LINES end, "  1402")
+			function(pipe) return #pipe.lines > CeroSecOS.PIPE_LINES end, "  1400")
 		past("forty lines of two hundred bytes", string.rep(string.rep("b", 199) .. "\n", 20),
 			"cat /home/admin/big /home/admin/big | wc -c",
-			function(pipe) return pipe.bytes > CeroSecOS.PIPE_BYTES end, "  8001")
+			function(pipe) return pipe.bytes > CeroSecOS.PIPE_BYTES end, "  8000")
 		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
 	end
 
@@ -23081,7 +23082,7 @@ do
 	check("its name says which premises it is", state.hostname ~= "ksp-7t-jc"
 		and string.find(state.hostname, "^acct%-") ~= nil)
 	eq("and /etc/hostname agrees with it",
-		CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname)
+		CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname .. "\n")
 	check("the premises name is on the record",
 		CeroSecOS.premisesName(state) == "FrontOffice")
 	check("there is a week of log on it",
@@ -23264,7 +23265,7 @@ do
 		check("and open", CeroSecOS.checkPassword(demo, ""))
 		eq("and the dealer's card on it",
 			CeroSecOS.systemNode(onFloor, CeroSecOS.MOTD_PATH).data,
-			CeroSecContent.DEMO.motd)
+			CeroSecContent.DEMO.motd .. "\n")
 		local _, ord = CeroSecOS.readUsers(onFloor)
 		-- root and demo, and nobody else: not the shop's people, because it is stock --
 		-- and not the factory `admin` either, because this is a machine somebody set up
@@ -26305,7 +26306,7 @@ do
 	bench.frame()
 	eq("nothing of the script reached the glass", bench.painted("alpha"), false)
 	eq("and neither did its second line", bench.painted("beta"), false)
-	eq("the file has it", bench.fileText("/home/admin/out"), "alpha\nbeta")
+	eq("the file has it", bench.fileText("/home/admin/out"), "alpha\nbeta\n")
 
 	-- And with no redirect on the line the very same script paints, so the
 	-- assertion above is about the redirect and not about a script that never ran.
@@ -26323,7 +26324,7 @@ do
 	bench.frame()
 	eq("the refusal is on the screen", bench.painted("/nope: no such file"), true)
 	eq("and the file holds only what was printed",
-		bench.fileText("/home/admin/eout"), "good")
+		bench.fileText("/home/admin/eout"), "good\n")
 end
 
 --

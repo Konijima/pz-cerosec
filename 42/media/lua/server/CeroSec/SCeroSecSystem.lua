@@ -917,7 +917,9 @@ function SCeroSecSystem:editArgs(luaObject, state, console, playerObj)
 	local disk = ""
 	local session = self:editSession(console)
 	local node = CeroSecOS.getNode(state, session, edit.path)
-	if node ~= nil and node.type == "file" then disk = node.data or "" end
+	-- In the buffer's own terms (CeroSecOS.bufferOf): the file less the
+	-- newline the save will put back.
+	if node ~= nil and node.type == "file" then disk = CeroSecOS.bufferOf(node.data) end
 	return {
 		path = edit.path,
 		text = edit.text or "",
@@ -2471,14 +2473,19 @@ Commands.editsave = function(self, playerObj, x, y, z, token, args)
 	end
 
 	local session = self:editSession(console)
+	-- The buffer is lines and the file is bytes: every line goes back followed
+	-- by its "\n", the last one included (POSIX ex(1), "Write"; the edit
+	-- command took that one off when it opened the file). An empty buffer is an
+	-- empty file, which has no line to end.
+	local bytes = CeroSecOS.bufferBytes(text)
 	-- The editor's save is a write like any other, clock included: a file saved
 	-- out of the editor is stamped the minute it was saved.
-	local done, reason = CeroSecOS.writeFile(state, session, console.edit.path, text, false,
+	local done, reason = CeroSecOS.writeFile(state, session, console.edit.path, bytes, false,
 		CeroSecOS.clockOf(self:clockEnv()))
 	if done == nil then
 		console.edit.message = "Cannot save: " .. tostring(reason)
 	else
-		console.edit.message = "Saved " .. #text .. " bytes"
+		console.edit.message = "Saved " .. #bytes .. " bytes"
 		console.edit.saves = (console.edit.saves or 0) + 1
 		-- A new file has just come into being writable; say so.
 		console.edit.readonly = false

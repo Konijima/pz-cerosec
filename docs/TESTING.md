@@ -20,6 +20,9 @@ The suites, in the order they run:
   the-remainder rule. Every expected value was checked against `dash` first.
   The hostile shape of it -- a word that is nothing but delimiters -- is in
   `hostile_test.lua` instead, because its calibration lives in that process.
+- `newline_test.lua` — a file's last line carries its newline: what `echo` and
+  `printf` store, `wc`, and every consumer (cat, head, tail, tee, grep, sort, cp,
+  a redirect, the editor's round trip, a mailbox) held to a real Unix's answer.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `compat_computermod_test.lua`: living beside the Workshop mod *Computer Mod*:
   who owns a desktop, and which of the two fillers gets the right-click. Against

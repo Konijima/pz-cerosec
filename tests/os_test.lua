@@ -42,10 +42,8 @@ end
 local function addUser(state, name, password, home, admin)
 	local user = CeroSecOS.newUser(name, password or "", home or ("/home/" .. name), admin)
 	local node = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
-	local text = node.data
-	if text ~= "" then text = text .. "\n" end
 	local done, reason = CeroSecOS.setData(state, CeroSecOS.rootSession(),
-		CeroSecOS.PASSWD_PATH, text .. CeroSecOS.passwdLine(user))
+		CeroSecOS.PASSWD_PATH, CeroSecOS.appendLine(node.data, CeroSecOS.passwdLine(user)))
 	if done == nil then error("cannot add " .. name .. ": " .. tostring(reason), 2) end
 	-- And the HOME, which `useradd` makes and which an account without one is not a
 	-- machine anybody could have: a line in /etc/passwd naming a directory that is
@@ -326,14 +324,14 @@ do
 	eq("readable and writable by everybody", null.mode, 666)
 	eq("with nothing in it", null.state, "")
 	eq("and it costs the disk nothing", select(2, CeroSecOS.subtreeUsage(null)), 0)
-	eq("/etc/hostname data", state.fs.children.etc.children.hostname.data, "ksp-front-01")
-	eq("/etc/motd data", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
+	eq("/etc/hostname data", state.fs.children.etc.children.hostname.data, "ksp-front-01\n")
+	eq("/etc/motd data", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD .. "\n")
 	eq("/etc/motd fits the screen", #CeroSecOS.MOTD <= 60, true)
 	-- The banner over the login prompt, with this machine's own name written into
 	-- it: the file is static, so the name is in the bytes and not in a token.
 	local issue = state.fs.children.etc.children.issue
 	eq("/etc/issue data", issue.data,
-		"CeroSec OS " .. CeroSecOS.VERSION .. " (ksp-front-01) (console)")
+		"CeroSec OS " .. CeroSecOS.VERSION .. " (ksp-front-01) (console)\n")
 	eq("/etc/issue owner", issue.owner, "root")
 	eq("/etc/issue mode", issue.mode, 644)
 	eq("/etc/issue fits the screen", #issue.data <= 60, true)
@@ -365,7 +363,7 @@ do
 	local nodes, bytes = CeroSecOS.usage(state)
 	eq("skeleton node count", nodes, 10 + 3 + 7 + #binNames + 6)
 	eq("skeleton byte count", bytes,
-		#"ksp-front-01" + #CeroSecOS.MOTD + #issue.data + #passwd.data + #sudoers.data
+		#"ksp-front-01\n" + #(CeroSecOS.MOTD .. "\n") + #issue.data + #passwd.data + #sudoers.data
 			+ #group.data + #hosts.data + #equiv.data + binBytes)
 
 	eq("default hostname", CeroSecOS.newState().hostname, CeroSecOS.DEFAULT_HOSTNAME)
@@ -922,11 +920,11 @@ do
 	ok(state, admin, 'echo "ab" > short.txt', {})
 	ok(state, admin, 'echo "' .. string.rep("y", 200) .. '" > long.txt', {})
 	local _, both = CeroSecOS.usage(state)
-	eq("two files on the disk", both, before + 202)
+	eq("two files on the disk", both, before + 204)
 	ok(state, admin, "mv short.txt long.txt", {})
 	local _, after = CeroSecOS.usage(state)
 	eq("and one of them after the replacement, holding the short file's bytes",
-		after, before + 2)
+		after, before + 3)
 	ok(state, admin, "cat long.txt", { "ab" })
 end
 
@@ -1279,35 +1277,35 @@ do
 	eq("ls -l group",
 		etc[1],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultGroup()), 5)
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultGroup() + 1), 5)
 			.. "  " .. EPOCH .. "  group")
 	-- hostname, hosts and hosts.equiv sort in that order: "hostn" is before
 	-- "hosts", and the dotted name is behind the bare one.
 	eq("ls -l hosts",
 		etc[3],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultHosts()), 5)
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultHosts() + 1), 5)
 			.. "  " .. EPOCH .. "  hosts")
 	eq("ls -l hosts.equiv",
 		etc[4],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultEquiv()), 5)
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultEquiv() + 1), 5)
 			.. "  " .. EPOCH .. "  hosts.equiv")
 	-- issue sorts between the dotted name and the motd.
 	eq("ls -l issue",
 		etc[5],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
 			.. CeroSecOS.padLeft(
-				tostring(#CeroSecOS.issueText(CeroSecOS.hostname(state))), 5)
+				tostring(#CeroSecOS.issueText(CeroSecOS.hostname(state)) + 1), 5)
 			.. "  " .. EPOCH .. "  issue")
 	eq("ls -l motd",
 		etc[6],
-		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "   52"
+		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "   53"
 			.. "  " .. EPOCH .. "  motd")
 	eq("ls -l sudoers",
 		etc[8],
 		"-r--r-----" .. "  " .. "root  " .. " " .. "root  " .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers()), 5)
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers() + 1), 5)
 			.. "  " .. EPOCH .. "  sudoers")
 	eq("ls -l /etc has 8 lines", #etc, 8)
 
@@ -1481,7 +1479,7 @@ do
 	-- And every further write on it is refused until room is made.
 	eq("a write on a full disk is refused",
 		select(2, CeroSecOS.setData(overTotal, CeroSecOS.rootSession(),
-			"/etc/motd", CeroSecOS.MOTD .. "!", nil)), "disk full")
+			"/etc/motd", CeroSecOS.MOTD .. "\n!", nil)), "disk full")
 	eq("a shorter line over a longer one is room being MADE, and goes in",
 		CeroSecOS.setData(overTotal, CeroSecOS.rootSession(), "/etc/motd", "x", nil), true)
 
@@ -1647,7 +1645,7 @@ do
 	local set, sreason = CeroSecOS.setData(state, rootSession, "/etc/motd", "\1CLEAR")
 	eq("setData refuses control bytes", set, nil)
 	eq("setData reason", sreason, "invalid characters")
-	eq("the file was left alone", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
+	eq("the file was left alone", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD .. "\n")
 
 	-- createNode refuses a file carrying them, and a whole subtree carrying
 	-- them: a network rung will hand over trees, not just single files.
@@ -1679,7 +1677,7 @@ do
 	ok(state, admin, 'echo "\\1" > tame.txt', {})
 	ok(state, admin, "cat tame.txt", { "\\1" })
 	eq("the file holds backslash and digit, not the byte",
-		state.fs.children.home.children.admin.children["tame.txt"].data, "\\1")
+		state.fs.children.home.children.admin.children["tame.txt"].data, "\\1\n")
 	ok(state, admin, 'printf "\\1"', { "\\1" })
 
 	-- Newline and tab still go in, through printf, and come back out.
@@ -2783,14 +2781,14 @@ do
 	-- What was there is still there.
 	local kept = CeroSecOS.systemNode(state, "/home/admin/work/notes.txt")
 	check("a file in /home survived", kept ~= nil)
-	eq("with its contents", kept.data, "keep me")
+	eq("with its contents", kept.data, "keep me\n")
 	eq("the name survived", CeroSecOS.hostname(state), "ksp-mine")
 	check("and the root password survived", holds(state, "root", "hunter2"))
 	-- A banner deleted with /etc is put back, naming the machine as it stands now
 	-- and not as it shipped: a repair is not a rename.
 	eq("the banner is back and names this machine",
 		CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH).data,
-		CeroSecOS.issueText("ksp-mine"))
+		CeroSecOS.issueText("ksp-mine") .. "\n")
 	check("the empty one does not work", not holds(state, "root", ""))
 
 	-- The commands are back, all of them, and runnable.
@@ -2849,7 +2847,7 @@ do
 	eq("with its description", ls.data, CeroSecOS.commandDesc("ls"))
 	local mine = CeroSecOS.systemNode(state, "/bin/mine")
 	check("a file of his own is still there", mine ~= nil)
-	eq("untouched", mine.data, "not ours")
+	eq("untouched", mine.data, "not ours\n")
 
 	-- Nothing at all to work with, and nothing thrown.
 	eq("no state, no repair", CeroSecOS.restoreSystem(nil), nil)
@@ -3148,18 +3146,18 @@ do
 	CeroSecOS.restoreSystem(state)
 	eq("a sudoers that still names somebody is kept, with the wheel line added",
 		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data,
-		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP)
+		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP .. "\n")
 	CeroSecOS.restoreSystem(state)
 	eq("and it is added once and not again",
 		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data,
-		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP)
+		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP .. "\n")
 	eq("kate is still not asked", CeroSecOS.sudoer(state, "kate").nopasswd, true)
 
 	-- One that names nobody is not a list.
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "rubbish line here")
 	CeroSecOS.restoreSystem(state)
 	local node = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
-	eq("an unparseable one is written back", node.data, CeroSecOS.defaultSudoers())
+	eq("an unparseable one is written back", node.data, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 	eq("root's", node.owner, "root")
 	eq("440", node.mode, CeroSecOS.SUDOERS_MODE)
 	eq("and admin is on it again", CeroSecOS.sudoer(state, "admin").name, "admin")
@@ -3168,7 +3166,7 @@ do
 	CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH).children.sudoers = nil
 	CeroSecOS.restoreSystem(state)
 	eq("a missing one comes back",
-		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, CeroSecOS.defaultSudoers())
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 	local before = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
 	CeroSecOS.restoreSystem(state)
 	eq("and a second repair changes nothing",
@@ -3230,7 +3228,7 @@ do
 	check("/etc/sudoers was written", sudoers ~= nil)
 	eq("root's", sudoers.owner, "root")
 	eq("440", sudoers.mode, CeroSecOS.SUDOERS_MODE)
-	eq("with the shipped list", sudoers.data, CeroSecOS.defaultSudoers())
+	eq("with the shipped list", sudoers.data, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 	eq("so admin may sudo again", CeroSecOS.sudoer(state, "admin").name, "admin")
 
 	-- Nothing else was touched.
@@ -3284,7 +3282,7 @@ do
 	-- And the BIOS is what puts that one right.
 	CeroSecOS.restoreSystem(state)
 	eq("the repair rewrites it",
-		state.fs.children.etc.children.sudoers.data, CeroSecOS.defaultSudoers())
+		state.fs.children.etc.children.sudoers.data, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 	eq("and the executable is an executable again",
 		state.fs.children.bin.children.sudo.type, "file")
 end
@@ -3565,7 +3563,7 @@ do
 	eq("the write still happens", r, true)
 	eq("and leaves the stamp where it was",
 		CeroSecOS.mtimeOf(home.children.d.children["moved.txt"]), was)
-	eq("the data did change", home.children.d.children["moved.txt"].data, "no clock here")
+	eq("the data did change", home.children.d.children["moved.txt"].data, "no clock here\n")
 
 	-- A stamp is a write. Somebody who may not write the file may not move it.
 	okAt(state, rootSession, "touch /root/his.txt", {})
@@ -3664,12 +3662,12 @@ do
 	okAt(state, admin, "mkdir sub", {}, ENV2)
 
 	okAt(state, admin, "ls -l", {
-		"-rw-r--r--  admin  admin       5  Jul  8 14:32  notes.txt",
+		"-rw-r--r--  admin  admin       6  Jul  8 14:32  notes.txt",
 		"drwxr-xr-x  admin  admin       0  Jul  8 15:32  sub",
 	})
 	-- The flags are letters, so every spelling is the same line.
 	local want = {
-		"-rw-r--r--  admin  admin       5  Jul  8 14:32  notes.txt",
+		"-rw-r--r--  admin  admin       6  Jul  8 14:32  notes.txt",
 		"drwxr-xr-x  admin  admin       0  Jul  8 15:32  sub/",
 	}
 	okAt(state, admin, "ls -lF", want)
@@ -3727,7 +3725,8 @@ do
 	local after = okAt(state, admin, "df", nil)
 	local usedBefore = tonumber(string.match(lines[2], "^%a+%s+%d+%s+(%d+)"))
 	local usedAfter = tonumber(string.match(after[2], "^%a+%s+%d+%s+(%d+)"))
-	eq("a thousand bytes written is a thousand bytes used", usedAfter - usedBefore, 1000)
+	eq("a thousand bytes and echo's newline are that many used",
+		usedAfter - usedBefore, 1001)
 	local nodesAfter = tonumber(string.match(after[3], "^%a+%s+%d+%s+(%d+)"))
 	eq("and one more node", nodesAfter - nodes, 1)
 
@@ -3846,35 +3845,35 @@ do
 	badAt(state, admin, "tail /etc", "tail: /etc: is a directory")
 
 	-- wc: lines, words, bytes, name, and a total when there is more than one.
-	okAt(state, admin, "wc dots.txt", { "     2      2      7 dots.txt" })
+	okAt(state, admin, "wc dots.txt", { "     2      2      8 dots.txt" })
 	okAt(state, admin, "wc empty.txt", { "     0      0      0 empty.txt" })
 	okAt(state, admin, "wc dots.txt empty.txt", {
-		"     2      2      7 dots.txt",
+		"     2      2      8 dots.txt",
 		"     0      0      0 empty.txt",
-		"     2      2      7 total",
+		"     2      2      8 total",
 	})
 	local counted = okAt(state, admin, "wc a.txt", nil)
-	eq("wc counts a.txt", counted[1], "    12     14     " .. #text .. " a.txt")
+	eq("wc counts a.txt", counted[1], "    12     14     " .. #text + 1 .. " a.txt")
 
 	-- -l, -w and -c: only what was asked for, and always in POSIX's order
 	-- whatever order the flags were written in. The row is the same width, so
 	-- the name has 7 more columns for every number left out.
 	okAt(state, admin, "wc -l a.txt", { "    12 a.txt" })
 	okAt(state, admin, "wc -w a.txt", { "    14 a.txt" })
-	okAt(state, admin, "wc -c dots.txt", { "     7 dots.txt" })
-	okAt(state, admin, "wc -lc dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -cl dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -c -l dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -wc dots.txt", { "     2      7 dots.txt" })
+	okAt(state, admin, "wc -c dots.txt", { "     8 dots.txt" })
+	okAt(state, admin, "wc -lc dots.txt", { "     2      8 dots.txt" })
+	okAt(state, admin, "wc -cl dots.txt", { "     2      8 dots.txt" })
+	okAt(state, admin, "wc -c -l dots.txt", { "     2      8 dots.txt" })
+	okAt(state, admin, "wc -wc dots.txt", { "     2      8 dots.txt" })
 	okAt(state, admin, "wc -lw dots.txt", { "     2      2 dots.txt" })
 	-- All three, asked for, is what all three are by default.
-	okAt(state, admin, "wc -lwc dots.txt", { "     2      2      7 dots.txt" })
+	okAt(state, admin, "wc -lwc dots.txt", { "     2      2      8 dots.txt" })
 	okAt(state, admin, "wc -ll dots.txt", { "     2 dots.txt" })
 	-- The total row carries the same columns as the rows above it.
 	okAt(state, admin, "wc -l dots.txt empty.txt",
 		{ "     2 dots.txt", "     0 empty.txt", "     2 total" })
 	okAt(state, admin, "wc -c dots.txt empty.txt",
-		{ "     7 dots.txt", "     0 empty.txt", "     7 total" })
+		{ "     8 dots.txt", "     0 empty.txt", "     8 total" })
 
 	badAt(state, admin, "wc", "wc: usage: wc [-clw] [file]...")
 	badAt(state, admin, "wc -q dots.txt", "wc: -q: unknown option")
@@ -3894,8 +3893,8 @@ do
 	badAt(state, admin, "cp tree copy", "cp: tree: is a directory")
 	okAt(state, admin, "cp -r tree copy", {}, ENV2)
 	local copy = state.fs.children.home.children.admin.children.copy
-	eq("the tree came over", copy.children.inner.children["deep.txt"].data, "buried")
-	eq("and the file at the top", copy.children["top.txt"].data, "surface")
+	eq("the tree came over", copy.children.inner.children["deep.txt"].data, "buried\n")
+	eq("and the file at the top", copy.children["top.txt"].data, "surface\n")
 	eq("the copy is the caller's", copy.children.inner.owner, "admin")
 	eq("every node of it is stamped now",
 		CeroSecOS.mtimeOf(copy.children.inner.children["deep.txt"]), LATER)
@@ -3927,7 +3926,7 @@ do
 	okAt(state, admin, "cp -r tree box", {})
 	eq("it landed under its name",
 		state.fs.children.home.children.admin.children.box.children.tree.children["top.txt"].data,
-		"surface")
+		"surface\n")
 	eq("the state is still plain and legal", CeroSecOS.validate(state), true)
 end
 
@@ -4137,7 +4136,7 @@ do
 	local home = CeroSecOS.systemNode(state, "/home/carl")
 	eq("it changed hands", home.owner, "carl")
 	eq("and kept the mode it had", home.mode, 700)
-	eq("and everything in it", home.children["notes.txt"].data, "keep me")
+	eq("and everything in it", home.children["notes.txt"].data, "keep me\n")
 
 	-- A file at that name is not a home, and the refusal says so.
 	okAt(state, rootSession, "echo hello > /home/dave", {})
@@ -4230,7 +4229,7 @@ do
 	eq("and now he is nobody", CeroSecOS.sudoer(state, "bob"), nil)
 	eq("admin kept his line", CeroSecOS.sudoer(state, "admin").name, "admin")
 	eq("and the comment is still in the file",
-		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, "# who may\nadmin")
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, "# who may\nadmin\n")
 
 	-- A machine with no /etc/sudoers at all has nothing to take out of it.
 	okAt(state, rootSession, "useradd dan", nil)
@@ -4552,7 +4551,7 @@ do
 	check("/etc/group was seeded", groupNode ~= nil)
 	eq("/etc/group is root's", groupNode.owner, "root")
 	eq("/etc/group is 644", groupNode.mode, CeroSecOS.GROUP_MODE)
-	eq("/etc/group holds the shipped four", groupNode.data, CeroSecOS.defaultGroup())
+	eq("/etc/group holds the shipped four", groupNode.data, CeroSecOS.terminated(CeroSecOS.defaultGroup()))
 	eq("the player's file was not touched", old.data, "keep me")
 	eq("and still has no group of its own", old.group, nil)
 	eq("which reads as its owner", CeroSecOS.groupOf(old), "admin")
@@ -4568,7 +4567,7 @@ do
 	CeroSecOS.upgradeSystem(kept)
 	eq("a group file that is there is left alone, wheel apart",
 		kept.fs.children.etc.children.group.data,
-		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":")
+		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":\n")
 	check("and nobody is in it", not CeroSecOS.inGroup(kept, "admin", CeroSecOS.WHEEL_GROUP))
 
 	-- The BIOS repair, on the same terms: a file that still holds a group is
@@ -4580,19 +4579,19 @@ do
 	check("the repair puts groupadd back", broken.fs.children.bin.children.groupadd ~= nil)
 	eq("and keeps a group file that still parses, wheel apart",
 		broken.fs.children.etc.children.group.data,
-		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":")
+		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":\n")
 
 	local wiped = fresh()
 	CeroSecOS.setData(wiped, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "# nothing but this")
 	CeroSecOS.restoreSystem(wiped)
 	eq("a group file that parses to nothing is written back",
-		wiped.fs.children.etc.children.group.data, CeroSecOS.defaultGroup())
+		wiped.fs.children.etc.children.group.data, CeroSecOS.terminated(CeroSecOS.defaultGroup()))
 
 	local gone = fresh()
 	gone.fs.children.etc.children.group = nil
 	CeroSecOS.restoreSystem(gone)
 	eq("and a missing one is written back too",
-		gone.fs.children.etc.children.group.data, CeroSecOS.defaultGroup())
+		gone.fs.children.etc.children.group.data, CeroSecOS.terminated(CeroSecOS.defaultGroup()))
 end
 
 -- A machine from the rung before this one is topped up with /bin/dev, and
@@ -7013,7 +7012,7 @@ do
 	ok(state, admin, 'x=$(sleep abc); echo "[$x]"', { "sleep: invalid interval", "[]" })
 	ok(state, admin, "sleep abc 2>/dev/null; echo $?", { "1" })
 	expect(state, admin, "sleep abc 2>se.txt", false, {})
-	eq("and it is in the file 2> named", data("/home/admin/se.txt"), "sleep: invalid interval")
+	eq("and it is in the file 2> named", data("/home/admin/se.txt"), "sleep: invalid interval\n")
 	ok(state, admin, "[ 1 -eq x ] 2>/dev/null; echo $?", { "2" })
 	ok(state, admin, "[ 1 -eq x ] | wc -l", { "test: integer expected", "     0" })
 	ok(state, admin, "test 1 -eq x > t.txt; echo $?", { "test: integer expected", "2" })
@@ -7106,7 +7105,7 @@ do
 	local text = data("/home/admin/old.txt") or ""
 	eq("the file kept what the 0.6 turn wrote", string.sub(text, 1, #before), before)
 	local lines = 0
-	for _ in string.gmatch(text .. "\n", "\n") do lines = lines + 1 end
+	for _ in string.gmatch(text, "\n") do lines = lines + 1 end
 	eq("and holds every line", lines, 150)
 end
 
@@ -7912,7 +7911,7 @@ do
 	check("the file is there", node ~= nil)
 	eq("owned by the account", node.owner, "admin")
 	eq("and readable by nobody else", node.mode, CeroSecOS.HISTORY_MODE)
-	eq("holding both lines", node.data, "ls -l\necho two")
+	eq("holding both lines", node.data, "ls -l\necho two\n")
 
 	-- history prints the last HISTORY_SHOW with numbers, bash's way.
 	okAt(state, admin, "history", { "    1  ls -l", "    2  echo two" }, env)
@@ -8121,16 +8120,16 @@ do
 	local xs = open(state, "x")
 	eq("x's history goes in", CeroSecOS.historyAppend(state, xs, "id", FIXED), true)
 	eq("and it is exempt where his passwd line says his home is",
-		CeroSecOS.exemptUsage(state), #"id")
+		CeroSecOS.exemptUsage(state), #"id\n")
 
 	-- And root's own, which is exempt whatever /etc/passwd has been edited into.
 	eq("root's history goes in", CeroSecOS.historyAppend(state, rootSession, "ls", FIXED), true)
-	eq("and is exempt too", CeroSecOS.exemptUsage(state), #"id" + #"ls")
+	eq("and is exempt too", CeroSecOS.exemptUsage(state), #"id\n" + #"ls\n")
 	local passwd = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
 	local kept = passwd.data
 	passwd.data = "nonsense"
 	eq("root's history is exempt with no passwd line at all",
-		CeroSecOS.exemptUsage(state), #"ls")
+		CeroSecOS.exemptUsage(state), #"ls\n")
 	passwd.data = kept
 
 	-- Four histories' worth on a whole machine, and the fifth account writes
@@ -8185,7 +8184,7 @@ do
 	eq("and is at this build's shape now", state.v, CeroSecOS.STATE_VERSION)
 	eq("the flag is off the history", hist.nq, nil)
 	eq("and off every other node", state.fs.children.etc.children.motd.nq, nil)
-	eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi")
+	eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi\n")
 end
 
 --
@@ -8895,7 +8894,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	local C = CeroSecOS.STEP_COST_COMMAND
-	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig")
+	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig\n")
 	put(state, admin, "/home/admin/nums", "3\n20\n100")
 
 	-- The lines travel, and nothing of the pipe reaches the screen but the last
@@ -8906,12 +8905,12 @@ do
 	ok(state, admin, "cat fruit | grep -n pear", { "1:pear", "3:pear" })
 	ok(state, admin, "cat fruit | head -n 2", { "pear", "apple" })
 	ok(state, admin, "cat fruit | tail -n 1", { "fig" })
-	ok(state, admin, "cat fruit | wc", { "     4      4     19" })
+	ok(state, admin, "cat fruit | wc", { "     4      4     20" })
 	-- The flags work on a pipe exactly as they work on a file: there is no name
 	-- to put after the numbers, and wc has never invented one.
 	ok(state, admin, "cat fruit | wc -l", { "     4" })
-	ok(state, admin, "cat fruit | wc -c", { "    19" })
-	ok(state, admin, "cat fruit | wc -lc", { "     4     19" })
+	ok(state, admin, "cat fruit | wc -c", { "    20" })
+	ok(state, admin, "cat fruit | wc -lc", { "     4     20" })
 	ok(state, admin, "cat fruit | grep -v pear", { "apple", "fig" })
 	ok(state, admin, "cat fruit | grep -c pear", { "2" })
 	ok(state, admin, "cat fruit | grep -cv pear", { "2" })
@@ -8983,7 +8982,7 @@ do
 
 	-- A pipe inside $(...), which is the shape a script really uses.
 	ok(state, admin, "echo $(cat fruit | sort | head -n 1)", { "apple" })
-	ok(state, admin, "x=$(cat fruit | wc); echo $x", { "4 4 19" })
+	ok(state, admin, "x=$(cat fruit | wc); echo $x", { "4 4 20" })
 	ok(state, admin, "x=$(cat fruit | wc -l); echo $x", { "4" })
 
 	-- A redirect on a stage writes the stage's output, once: a command that
@@ -9083,7 +9082,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	local C = CeroSecOS.STEP_COST_COMMAND
-	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig")
+	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig\n")
 
 	-- Every stage is charged to the job that asked for the pipeline, and a
 	-- command that reads a pipe is charged every time it runs: cat once, and
@@ -9113,7 +9112,7 @@ do
 		"i=0\nwhile [ $i -lt 200 ]; do echo line$i; i=$((i+1)); done | wc\n",
 		nil, nil, { passes = 2000 })
 	eq("wc counts a flood it will never hold", counted.out[#counted.out],
-		"   200    200   1489")
+		"   200    200   1490")
 end
 
 --
@@ -9960,7 +9959,7 @@ do
 	local se = typed(state, admin, "sudo cat /nosuch 2>serr.txt", { "" })
 	eq("sudo 2> was asked for a password", se.asked[1], "[sudo] password for admin: ")
 	eq("its error went into the file", contents(state, "/home/admin/serr.txt"),
-		"cat: /nosuch: no such file")
+		"cat: /nosuch: no such file\n")
 	eq("and not onto the screen", #se.out, 0)
 	eq("and the status is the command's", se.status, 1)
 
@@ -9978,7 +9977,7 @@ do
 	ok(state, admin, "echo first > log", {})
 	local added = typed(state, admin, "sudo echo second >> log", { "" })
 	eq("the append succeeded", added.status, 0)
-	eq("and added one line", contents(state, "/home/admin/log"), "first\nsecond")
+	eq("and added one line", contents(state, "/home/admin/log"), "first\nsecond\n")
 
 	-- A wrong password writes nothing -- but the file is there and empty, because
 	-- a shell opens what ">" names before the command runs and this one is no
@@ -10040,7 +10039,7 @@ do
 	eq("the question was asked once", #first.asked, 1)
 	eq("nothing reached the screen", #first.out, 0)
 	eq("and the last stage wrote what it read",
-		contents(state, "/home/admin/first.txt"), "alpha")
+		contents(state, "/home/admin/first.txt"), "alpha\n")
 
 	-- A stage that reads a pipe is still refused a question: its answer would
 	-- come back to a command with nothing on its input.
@@ -10061,7 +10060,7 @@ do
 	eq("and the retype", chain.asked[3], "Retype new password: ")
 	eq("nothing reached the screen", #chain.out, 0)
 	eq("the line it printed is in the file", contents(state, "/home/admin/done.txt"),
-		"passwd: password updated")
+		"passwd: password updated\n")
 	check("and root's password is the one that was typed", holds(state, "root", "hunter2"))
 
 	-- The refusal in the middle of a chain stays on the screen, and the file that
@@ -10323,7 +10322,7 @@ do
 	local node = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
 	eq("the file is root's", node.owner, "root")
 	eq("and 644", node.mode, CeroSecOS.WTMP_MODE)
-	eq("with the record in it", node.data, "in admin console - " .. FIXED)
+	eq("with the record in it", node.data, "in admin console - " .. FIXED .. "\n")
 	check("and a logout behind it", CeroSecOS.wtmpAppend(state, "out", "admin",
 		CeroSecOS.CONSOLE_LINE, nil, FIXED + 60))
 	eq("two lines now", #CeroSecOS.parseWtmp(node.data), 2)
@@ -11488,7 +11487,7 @@ do
 	ok(state, admin, "cat copy/also", { "body" })
 	eq("a link is one node like anything else", after - before, 3)
 	eq("and its target text is bytes on the disk", bytesAfter - bytesBefore,
-		#"body" + #"real.txt")
+		#"body\n" + #"real.txt")
 
 	-- A dangling link inside a tree is copied too: nothing is resolved.
 	ok(state, admin, "ln -s gone tree/broken", {})
@@ -12391,13 +12390,13 @@ do
 	eq("a disk that is not a table", CeroSecOS.validateDisk("floppy"), false)
 	eq("a disk of an unknown version", CeroSecOS.validateDisk({ v = 99 }), false)
 	eq("a label longer than a sticker",
-		CeroSecOS.validateDisk({ v = 1, label = string.rep("x", CeroSecOS.LABEL_MAX + 1) }),
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, label = string.rep("x", CeroSecOS.LABEL_MAX + 1) }),
 		false)
 	eq("a label of exactly a sticker is fine",
-		CeroSecOS.validateDisk({ v = 1, label = string.rep("x", CeroSecOS.LABEL_MAX) }),
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, label = string.rep("x", CeroSecOS.LABEL_MAX) }),
 		true)
 	eq("a root that is not a directory",
-		CeroSecOS.validateDisk({ v = 1, fs = CeroSecOS.newFile("root", 644, "x") }), false)
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = CeroSecOS.newFile("root", 644, "x") }), false)
 
 	-- Past the disk's own ceilings, which NEITHER the boot gate nor the slot asks
 	-- about -- and they are the same gate, which is the point of this block.
@@ -12416,7 +12415,7 @@ do
 	for i = 1, CeroSecOS.FLOPPY_NODES do
 		many.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
 	end
-	local over = { v = 1, fs = many }
+	local over = { v = CeroSecOS.FLOPPY_VERSION, fs = many }
 	eq("the boot gate runs on a disk past its node ceiling",
 		CeroSecOS.validateDisk(over), true)
 	eq("and the slot, which walks it on every command after, does not",
@@ -12425,7 +12424,7 @@ do
 	fat.children["big"] = CeroSecOS.newFile("root", 644,
 		string.rep("x", CeroSecOS.FLOPPY_BYTES))
 	fat.children["more"] = CeroSecOS.newFile("root", 644, "x")
-	local heavy = { v = 1, fs = fat }
+	local heavy = { v = CeroSecOS.FLOPPY_VERSION, fs = fat }
 	eq("the boot gate runs on a disk past its byte ceiling",
 		CeroSecOS.validateDisk(heavy), true)
 	eq("and the slot does not take that either", CeroSecOS.diskFromData(heavy), nil)
@@ -12457,7 +12456,7 @@ do
 		named.children["d" .. i] = sub
 	end
 	eq("in a sentence with its separator in it",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = named })), "floppy: too many nodes")
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = named })), "floppy: too many nodes")
 	-- The boot gate still bounds what a walk costs, at the machine's own ceiling:
 	-- a save file is a thing somebody can write.
 	local huge = CeroSecOS.newDir("root", 755)
@@ -12467,16 +12466,16 @@ do
 		huge.children["d" .. i] = sub
 	end
 	eq("a forged tree past the machine's own node ceiling is refused",
-		CeroSecOS.validateDisk({ v = 1, fs = huge }), false)
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = huge }), false)
 
 	-- The copy refuses what it cannot carry, rather than dropping it quietly.
 	eq("a function on a disk is not a disk",
-		CeroSecOS.diskFromData({ v = 1, fs = print }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = print }), nil)
 	-- Hung on `fs`, which is one of the three keys the slot takes off an item at all:
 	-- a chain under a name nobody here declared is not refused any more, it is left
 	-- on the item and never copied (ownKeysOf), so it would prove nothing about the
 	-- copy's own bound.
-	local deep = { v = 1, fs = {} }
+	local deep = { v = CeroSecOS.FLOPPY_VERSION, fs = {} }
 	local at = deep.fs
 	for i = 1, CeroSecOS.DISK_COPY_DEPTH + 2 do
 		at.down = {}
@@ -12492,7 +12491,7 @@ do
 		forged.children["d" .. i] = sub
 	end
 	eq("a disk past what ANY filesystem here may hold is refused at the slot",
-		CeroSecOS.diskFromData({ v = 1, fs = forged }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = forged }), nil)
 end
 
 -- 47l2. The disk has a chain of its own, and a number of its own to count against.
@@ -13113,11 +13112,11 @@ do
 	-- A write that CANNOT be made leaves the item exactly as it was, which is the
 	-- ordering the disaster was made of: cleared first, a failed copy left the item
 	-- blank and the machine's own copy already dropped.
-	local keep = { v = 1, fs = CeroSecOS.newDir("root", 755), label = "KEEP" }
+	local keep = { v = CeroSecOS.FLOPPY_VERSION, fs = CeroSecOS.newDir("root", 755), label = "KEEP" }
 	local held = keep.fs
 	eq("a copy that cannot be made writes nothing",
-		CeroSecOS.writeDiskTo(keep, { v = 1, fs = print }), false)
-	eq("the item still has its version", keep.v, 1)
+		CeroSecOS.writeDiskTo(keep, { v = CeroSecOS.FLOPPY_VERSION, fs = print }), false)
+	eq("the item still has its version", keep.v, CeroSecOS.FLOPPY_VERSION)
 	eq("its label", keep.label, "KEEP")
 	eq("and the very filesystem it was carrying", keep.fs, held)
 
@@ -13159,46 +13158,46 @@ do
 	eq("a disk is its own three keys",
 		table.concat(CeroSecOS.DISK_KEYS, " "), "v fs label")
 	eq("and a fourth on a RECORD is a refusal that names it",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, junk = "x" }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, junk = "x" }, true)),
 		"floppy: unknown field 'junk'")
 	eq("a numeric one too",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, [3] = "x" }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, [3] = "x" }, true)),
 		"floppy: unknown field '3'")
 	-- A key that is not a name a screen can carry is said by what it is, and never
 	-- quoted onto the glass: the sentence goes in a halo and on a console, and
 	-- nothing shapes a line there except this machine.
 	eq("a key of the wrong type is named by its type",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, [true] = "x" }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, [true] = "x" }, true)),
 		"floppy: unknown field of type boolean")
 	eq("and one carrying control bytes by its size",
 		select(2, CeroSecOS.validateDisk(
-			{ v = 1, fs = tiny, ["a\1b"] = "x" }, true)),
+			{ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, ["a\1b"] = "x" }, true)),
 		"floppy: unknown field of 3 bytes")
 	-- At the SLOT it is not a refusal at all: what arrives there is an item's
 	-- modData, which is the game's table and not a record of ours, so a name nobody
 	-- here declared is left on the item -- unread, uncopied, and not paid for.
-	local payload = { v = 1, fs = tiny, junk = string.rep("x", 100000) }
+	local payload = { v = CeroSecOS.FLOPPY_VERSION, fs = tiny, junk = string.rep("x", 100000) }
 	local taken = CeroSecOS.diskFromData(payload)
 	check("the slot takes the disk beside a stranger's key", taken ~= nil)
 	eq("and the payload is not on what it took", taken.junk, nil)
 	-- The three themselves still go in, label and all.
 	check("an honest disk is untouched by the rule",
-		CeroSecOS.diskFromData({ v = 1, fs = tiny, label = "WORK" }) ~= nil)
-	check("and one with no label", CeroSecOS.diskFromData({ v = 1, fs = tiny }) ~= nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, label = "WORK" }) ~= nil)
+	check("and one with no label", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny }) ~= nil)
 
 	-- No device on a disk. newfs never makes one, and the boot gate lets the null
 	-- kind through only because its walk is shared with the machine's own drive.
 	local devs = CeroSecOS.newDir("root", 755)
 	devs.children.null = CeroSecOS.newNull()
 	eq("a device on a disk is a refusal, and it is named",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = devs }, true)), "floppy/null: bad type")
-	eq("at the slot", CeroSecOS.diskFromData({ v = 1, fs = devs }), nil)
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = devs }, true)), "floppy/null: bad type")
+	eq("at the slot", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = devs }), nil)
 	-- However deep it is buried, and however little the ceilings can see of it.
 	local deep = CeroSecOS.newDir("root", 755)
 	local sub = CeroSecOS.newDir("root", 755)
 	sub.children.null = CeroSecOS.newNull()
 	deep.children.d = sub
-	eq("buried as deep as you like", CeroSecOS.diskFromData({ v = 1, fs = deep }), nil)
+	eq("buried as deep as you like", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = deep }), nil)
 	-- A thousand of them weigh nothing and count nothing, which is the whole reason
 	-- the rule is about the TYPE and not about the weight.
 	local many = CeroSecOS.newDir("root", 755)
@@ -13207,21 +13206,21 @@ do
 	eq("ninety devices weigh nothing", bytes, 0)
 	eq("and count as nothing", nodes, 1)
 	eq("and are refused all the same",
-		CeroSecOS.diskFromData({ v = 1, fs = many }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = many }), nil)
 
 	-- The blank disk is the shape the rule was half a rule on: a floppy off a shelf
 	-- has no filesystem, so the gate used to answer "nothing to check" and take
 	-- whatever else was written on it -- and then one `newfs` gave it a filesystem
 	-- and the disk could never come out of the drive again. The trap is shut at the
 	-- other end now: the junk is not refused, it is simply not taken.
-	local blank = CeroSecOS.diskFromData({ v = 1, junk = string.rep("x", 100000) })
+	local blank = CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, junk = string.rep("x", 100000) })
 	check("a blank disk beside somebody's payload still goes in", blank ~= nil)
 	eq("and the payload did not come in with it", blank.junk, nil)
 	blank.fs = CeroSecOS.newFloppyRoot("root")
 	eq("so the newfs that follows cannot trap it in the drive",
 		CeroSecOS.validateDisk(blank, true), true)
 	check("and an honest blank one still goes in",
-		CeroSecOS.diskFromData({ v = 1 }) ~= nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION }) ~= nil)
 
 	-- The same rule one level down, which is where the rest of it was hiding: a
 	-- node's fields are its kind's and nothing else, and a `children` table on a
@@ -13232,11 +13231,11 @@ do
 				CeroSecOS.NODE_OWN_FIELD.link } or {}, " "), "children data target")
 	local onFs = CeroSecOS.newDir("root", 755)
 	onFs.junk = "x"
-	eq("junk on the disk's own root", CeroSecOS.diskFromData({ v = 1, fs = onFs }), nil)
+	eq("junk on the disk's own root", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = onFs }), nil)
 	local onNode = CeroSecOS.newDir("root", 755)
 	onNode.children.f = CeroSecOS.newFile("root", 644, "")
 	onNode.children.f.junk = "x"
-	eq("junk on a node inside it", CeroSecOS.diskFromData({ v = 1, fs = onNode }), nil)
+	eq("junk on a node inside it", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = onNode }), nil)
 	local hidden = CeroSecOS.newDir("root", 755)
 	local asFile = CeroSecOS.newFile("root", 644, "")
 	asFile.children = {}
@@ -13244,28 +13243,28 @@ do
 	hidden.children.h = asFile
 	eq("a whole tree hung under a file node weighs nothing",
 		select(2, CeroSecOS.subtreeUsage(hidden)), 0)
-	eq("and is refused", CeroSecOS.diskFromData({ v = 1, fs = hidden }), nil)
+	eq("and is refused", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = hidden }), nil)
 	local asLink = CeroSecOS.newDir("root", 755)
 	local lk = CeroSecOS.newLink("root", "/x")
 	lk.children = { y = CeroSecOS.newFile("root", 644, "") }
 	asLink.children.l = lk
-	eq("under a link node too", CeroSecOS.diskFromData({ v = 1, fs = asLink }), nil)
+	eq("under a link node too", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = asLink }), nil)
 	-- And an owner nothing prints is a hiding place by another name -- as is a
 	-- timestamp nothing checks, in a field that only ever comes out as a date.
 	local longOwner = CeroSecOS.newDir("root", 755)
 	longOwner.owner = string.rep("a", CeroSecOS.MAX_NAME + 1)
 	eq("an owner longer than a name may be",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = longOwner }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = longOwner }, true)),
 		"floppy: invalid name")
 	local longGroup = CeroSecOS.newDir("root", 755)
 	longGroup.group = string.rep("a", CeroSecOS.MAX_NAME + 1)
-	eq("a group likewise", CeroSecOS.diskFromData({ v = 1, fs = longGroup }), nil)
+	eq("a group likewise", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = longGroup }), nil)
 	for _, when in ipairs({ -1, CeroSecOS.MAX_STAMP + 1, 1e300 }) do
 		local stamped = CeroSecOS.newDir("root", 755)
 		stamped.children.f = CeroSecOS.newFile("root", 644, "")
 		stamped.children.f.mtime = when
 		eq("a timestamp that is not a moment (" .. tostring(when) .. ")",
-			select(2, CeroSecOS.validateDisk({ v = 1, fs = stamped }, true)),
+			select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = stamped }, true)),
 			"floppy/f: bad mtime")
 	end
 
@@ -13283,11 +13282,11 @@ do
 		at = down
 	end
 	eq("a chain deeper than a path can be is refused and not fallen down",
-		CeroSecOS.diskFromData({ v = 1, fs = chain }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = chain }), nil)
 	local loop = CeroSecOS.newDir("root", 755)
 	loop.children.self = loop
 	eq("and a tree that contains itself, which is infinitely deep",
-		CeroSecOS.diskFromData({ v = 1, fs = loop }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = loop }), nil)
 	-- And the breadth is refused before the names are gathered: the ceiling that
 	-- says no is one comparison, and collecting and sorting four hundred thousand
 	-- names to reach it was nine seconds of the server's own thread.
@@ -13296,7 +13295,7 @@ do
 		crowd.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
 	end
 	eq("a directory with more in it than one may hold",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = crowd }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = crowd }, true)),
 		"floppy: directory full")
 
 	-- The same lesson one level up: a WELL-FORMED tree -- every node legal, every
@@ -14697,30 +14696,30 @@ end
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	put(state, admin, "/home/admin/src", "one\ntwo\nthree")
+	put(state, admin, "/home/admin/src", "one\ntwo\nthree\n")
 	put(state, admin, "/home/admin/old", "was here")
 
 	okAt(state, admin, "cat src | tee copy", { "one", "two", "three" })
 	eq("and the file holds exactly what went past",
-		state.fs.children.home.children.admin.children.copy.data, "one\ntwo\nthree")
+		state.fs.children.home.children.admin.children.copy.data, "one\ntwo\nthree\n")
 	-- Two files at once, which is the whole point of a T-piece.
 	okAt(state, admin, "cat src | tee a b", { "one", "two", "three" })
-	eq("both of them", state.fs.children.home.children.admin.children.a.data, "one\ntwo\nthree")
-	eq("byte for byte", state.fs.children.home.children.admin.children.b.data, "one\ntwo\nthree")
+	eq("both of them", state.fs.children.home.children.admin.children.a.data, "one\ntwo\nthree\n")
+	eq("byte for byte", state.fs.children.home.children.admin.children.b.data, "one\ntwo\nthree\n")
 	-- Without -a the file is REPLACED, exactly as ">" replaces.
 	okAt(state, admin, "cat src | tee old", nil)
 	eq("what was there is gone",
-		state.fs.children.home.children.admin.children.old.data, "one\ntwo\nthree")
+		state.fs.children.home.children.admin.children.old.data, "one\ntwo\nthree\n")
 	-- With -a it is added to, exactly as ">>" adds.
 	okAt(state, admin, "cat src | tee -a old", nil)
 	eq("and the second copy is behind the first",
 		state.fs.children.home.children.admin.children.old.data,
-		"one\ntwo\nthree\none\ntwo\nthree")
+		"one\ntwo\nthree\none\ntwo\nthree\n")
 	-- It is a filter and it passes the lines ON, which is what makes a tee in the
 	-- middle of a pipeline worth writing.
 	okAt(state, admin, "cat src | tee kept | wc -l", { "     3" })
 	eq("and still wrote the file", state.fs.children.home.children.admin.children.kept.data,
-		"one\ntwo\nthree")
+		"one\ntwo\nthree\n")
 
 	badAt(state, admin, "tee f", "tee: usage: tee [-a] <file>...")
 	badAt(state, admin, "cat src | tee", "tee: usage: tee [-a] <file>...")
@@ -14748,11 +14747,11 @@ do
 	local WIDE = "alpha:" .. string.rep("x", 52) .. "MARKER" .. string.rep("y", 20)
 	check("the line under test is wider than the screen", #WIDE > CeroSecOS.COLS)
 	eq("and it is the width this block was written for", #WIDE, 84)
-	put(state, admin, "/home/admin/wide", WIDE)
+	put(state, admin, "/home/admin/wide", WIDE .. "\n")
 
 	-- DOWN A PIPE. One line in, one line out, whole, whatever is on the right.
 	okAt(state, admin, "cat wide | wc -l", { "     1" })
-	okAt(state, admin, "cat wide | wc -c", { "    84" })
+	okAt(state, admin, "cat wide | wc -c", { "    85" })
 	okAt(state, admin, "cat wide | cut -d: -f1", { "alpha" })
 	okAt(state, admin, "cat wide | grep -c MARKER", { "1" })
 	okAt(state, admin, "cat wide | head -1 | wc -l", { "     1" })
@@ -14765,14 +14764,14 @@ do
 	-- stayed green the whole time and says the write door is the right one.
 	okAt(state, admin, "cat wide > plain", {})
 	eq("a plain redirect holds the line whole",
-		contents(state, "/home/admin/plain"), WIDE)
+		contents(state, "/home/admin/plain"), WIDE .. "\n")
 	-- A redirect on a pipeline STAGE goes through a different door (the reader's
 	-- own write, CeroSecOSVM's runSimple) and was folded there.
 	okAt(state, admin, "cat wide | cat > staged", {})
-	eq("and so does one on a stage", contents(state, "/home/admin/staged"), WIDE)
+	eq("and so does one on a stage", contents(state, "/home/admin/staged"), WIDE .. "\n")
 	-- The T-piece writes the file and passes the line on; both halves are whole.
-	okAt(state, admin, "cat wide | tee kept | wc -c", { "    84" })
-	eq("and the tee's file is whole", contents(state, "/home/admin/kept"), WIDE)
+	okAt(state, admin, "cat wide | tee kept | wc -c", { "    85" })
+	eq("and the tee's file is whole", contents(state, "/home/admin/kept"), WIDE .. "\n")
 
 	-- INTO A WORD. A capture is substituted into the line being built, so a fold
 	-- in it is a second word nobody typed.
@@ -14784,7 +14783,7 @@ do
 	okAt(state, admin, "sh show.sh | wc -l", { "     1" })
 	okAt(state, admin, "sh show.sh > fromsh", {})
 	eq("and a script's redirect is whole too",
-		contents(state, "/home/admin/fromsh"), WIDE)
+		contents(state, "/home/admin/fromsh"), WIDE .. "\n")
 
 	-- ON THE GLASS, which is the one place it IS folded, and exactly as before:
 	-- sixty columns, then the rest, and the two put back together are the line.
@@ -14835,7 +14834,7 @@ do
 	check("/etc/issue was put in", issue ~= nil and issue.type == "file")
 	eq("root's", issue.owner, "root")
 	eq("and 644", issue.mode, 644)
-	eq("naming this machine", issue.data, CeroSecOS.issueText("ksp-front-01"))
+	eq("naming this machine", issue.data, CeroSecOS.issueText("ksp-front-01") .. "\n")
 	eq("and a login prompt now has a banner over it",
 		#CeroSecOS.issueLines(state), 1)
 	for i = 1, #ADDED do
@@ -15083,9 +15082,9 @@ do
 	local admin = open(state, "admin")
 	local USAGE = "find: usage: find <path>... [expression]"
 	okAt(state, admin, "mkdir tree", {})
-	put(state, admin, "/home/admin/tree/a.log", "one")
-	put(state, admin, "/home/admin/tree/b.log", "two")
-	put(state, admin, "/home/admin/tree/c.txt", "three")
+	put(state, admin, "/home/admin/tree/a.log", "one\n")
+	put(state, admin, "/home/admin/tree/b.log", "two\n")
+	put(state, admin, "/home/admin/tree/c.txt", "three\n")
 
 	-- Once per name found, in walk order, and the command's output is find's.
 	okAt(state, admin, "find tree -name '*.log' -exec cat {} ';'", { "one", "two" })
@@ -15164,8 +15163,8 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	okAt(state, admin, "mkdir tree", {})
-	put(state, admin, "/home/admin/tree/a.log", "one")
-	put(state, admin, "/home/admin/tree/b.log", "two")
+	put(state, admin, "/home/admin/tree/a.log", "one\n")
+	put(state, admin, "/home/admin/tree/b.log", "two\n")
 	local function steps(line)
 		local _, _, _, _, job = exec(state, admin, line, { jobs = {} })
 		return job.steps
@@ -16004,7 +16003,7 @@ do
 	okAt(state, admin, "sh wide.sh > wideout", {})
 	do
 		local node = CeroSecOS.getNode(state, admin, "/home/admin/wideout")
-		eq("the file holds the whole line, unwrapped", #(node.data or ""), 70)
+		eq("the file holds the whole line, unwrapped", #(node.data or ""), 71)
 	end
 
 	-- A target that cannot be opened is a script that does not run at all -- it
@@ -17108,12 +17107,9 @@ end
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	-- No newline after the last line: one byte, and >> starts a line.
+	-- (A file's last line keeps its newline now: tests/newline_test.lua.)
 	ok(state, admin, "echo a > p", {})
-	ok(state, admin, "wc -c p", { "     1 p" })
-	ok(state, admin, "echo -n x > f", {})
-	ok(state, admin, "echo y >> f", {})
-	ok(state, admin, "cat f", { "x", "y" })
+	-- (IFS is read now: tests/ifs_test.lua.)
 	-- One > per command, and no <.
 	bad(state, admin, "echo a > q > r", "sh: syntax error: bad redirect")
 	bad(state, admin, "cat < p", "sh: syntax error: unexpected '<'")
@@ -17193,7 +17189,7 @@ do
 		nil, nil, { passes = 5 })
 	eq("the sleeping stage is still running", CeroSecOS.jobIsOver(res.job), false)
 	local slow = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/slow.txt")
-	eq("and what it wrote before sleeping is in its file", slow and slow.data, "a")
+	eq("and what it wrote before sleeping is in its file", slow and slow.data, "a\n")
 end
 
 --

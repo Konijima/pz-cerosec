@@ -161,7 +161,7 @@ CeroSecSelfTest.SHELL_CASES = {
 	-- 1e. Redirects, and this release's rules for them
 	--
 	{ name = "redirect writes a file", line = "echo hi > f; cat f", out = { "hi" },
-		want = { { path = "/root/f", text = "hi" } } },
+		want = { { path = "/root/f", text = "hi\n" } } },
 	{ name = "append", line = "echo a > f; echo b >> f; cat f", out = { "a", "b" } },
 	-- sh opens the file BEFORE it runs the command: a redirect that cannot be
 	-- opened means the command never runs.
@@ -209,7 +209,7 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "printf conversions", line = "printf '%s-%d-%s\\n' x 42 'y z'",
 		out = { "x-42-y z" } },
 	{ name = "printf escapes", line = "printf 'a\\tb\\\\%%\\n' > f",
-		want = { { path = "/root/f", text = "a\tb\\%" } } },
+		want = { { path = "/root/f", text = "a\tb\\%\n" } } },
 	{ name = "printf no newline", line = "printf abc; echo", out = { "abc" } },
 
 	--
@@ -275,12 +275,14 @@ CeroSecSelfTest.SHELL_CASES = {
 
 	-- cat
 	{ name = "cat", files = { { "/root/f", "1\n2" } }, line = "cat f", out = { "1", "2" } },
+	-- cat copies bytes: a file whose last line has no newline runs into the
+	-- next one, as it does on a real terminal.
 	{ name = "cat several", files = { { "/root/a", "1" }, { "/root/b", "2" } },
-		line = "cat a b", out = { "1", "2" } },
+		line = "cat a b", out = { "12" } },
 	{ name = "cat - is the input", files = { { "/root/a", "1" }, { "/root/b", "3" } },
-		line = "echo 2 | cat a - b", out = { "1", "2", "3" } },
+		line = "echo 2 | cat a - b", out = { "12", "3" } },
 	{ name = "cat -n", line = "printf 'a\\nb\\n' | cat -n > f",
-		want = { { path = "/root/f", text = "     1\ta\n     2\tb" } } },
+		want = { { path = "/root/f", text = "     1\ta\n     2\tb\n" } } },
 	{ name = "cat -- ends the options", files = { { "/root/a", "1" } },
 		line = "cat -- a", out = { "1" } },
 	-- cat goes on past a file it cannot open, and says 1 -- but the half that
@@ -321,9 +323,10 @@ CeroSecSelfTest.SHELL_CASES = {
 	-- wc: a pipe's text is its lines, and nothing follows the last one.
 	{ name = "wc -l", line = "echo $(printf 'a\\nb\\nc\\n' | wc -l)", out = { "3" } },
 	{ name = "wc -w", line = "echo $(echo one two three | wc -w)", out = { "3" } },
-	{ name = "wc -c", line = "echo $(echo abc | wc -c)", out = { "3" }, dev = "newline" },
+	{ name = "wc -c", line = "echo $(echo abc | wc -c)", out = { "4" } },
+	-- wc -l counts newlines: a last line without one is not counted.
 	{ name = "wc of a file names it", files = { { "/root/f", "a b\nc" } },
-		line = "echo $(wc -l -w f)", out = { "2 3 f" }, dev = "newline" },
+		line = "echo $(wc -l -w f)", out = { "1 3 f" } },
 
 	-- grep
 	{ name = "grep", files = { { "/root/f", "apple\nBanana\ncherry" } }, line = "grep an f",
@@ -349,7 +352,7 @@ CeroSecSelfTest.SHELL_CASES = {
 	-- tee, more
 	{ name = "tee", line = "echo hi | tee f; cat f", out = { "hi", "hi" } },
 	{ name = "tee -a", files = { { "/root/f", "a" } },
-		line = "echo b | tee -a f > /dev/null; cat f", out = { "a", "b" } },
+		line = "echo b | tee -a f > /dev/null; cat f", out = { "ab" } },
 	{ name = "more on a pipe is cat", line = "printf 'a\\nb\\n' | more", out = { "a", "b" } },
 
 	-- mkdir, rm, mv, cp, touch, ln
@@ -377,7 +380,7 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "cp into a directory", files = { { "/root/a", "x" } }, setup = { "mkdir d" },
 		line = "cp a d", want = { { path = "/root/d/a", text = "x" } } },
 	{ name = "cp -r", setup = { "mkdir d; echo x > d/a" }, line = "cp -r d e",
-		want = { { path = "/root/e/a", text = "x" } } },
+		want = { { path = "/root/e/a", text = "x\n" } } },
 	{ name = "cp of nothing", line = "cp nosuch b 2>/dev/null; echo $?", out = { "1" },
 		want = { { path = "/root/b", absent = true } } },
 	{ name = "touch", line = "touch f; [ -f f ] && echo y", out = { "y" },

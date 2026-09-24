@@ -409,10 +409,10 @@ local function appendBounded(state, node, lines, maxLines, maxBytes, now)
 		end
 	end
 	while #kept > maxLines do table.remove(kept, 1) end
-	local text = table.concat(kept, "\n")
+	local text = CeroSecOS.linesToText(kept)
 	while #text > maxBytes and #kept > 1 do
 		table.remove(kept, 1)
-		text = table.concat(kept, "\n")
+		text = CeroSecOS.linesToText(kept)
 	end
 	if #text > maxBytes then text = string.sub(text, #text - maxBytes + 1) end
 	node.data = text
@@ -504,7 +504,7 @@ commands.crontab = function(state, session, args, env)
 			if made == nil then return false, { "crontab: " .. path .. ": " .. reason } end
 		end
 		return true, {}, "edit", {
-			path = path, text = text, readonly = false,
+			path = path, text = CeroSecOS.bufferOf(text), readonly = false,
 			-- The privilege, and the only place it is spent: the save is root's
 			-- write, on this path, because crontab is what opened it.
 			user = "root",

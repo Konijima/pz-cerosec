@@ -119,10 +119,10 @@ end
 -- CeroSecOS.historyAppend.
 local function historyText(lines, ceiling)
 	while #lines > CeroSecOS.HISTORY_MAX do table.remove(lines, 1) end
-	local text = table.concat(lines, "\n")
+	local text = CeroSecOS.linesToText(lines)
 	while #text > ceiling and #lines > 1 do
 		table.remove(lines, 1)
-		text = table.concat(lines, "\n")
+		text = CeroSecOS.linesToText(lines)
 	end
 	-- One line of its own, longer than the whole file may be: cut rather than
 	-- refused, because the alternative is a history that silently stops.
@@ -1018,12 +1018,9 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "su", phrase = "4.4BSD and System V said Sorry",
 		why = "authentication failure is later Linux wording" },
 
-	-- The FILES and the SHELL. A file's text is stored as its lines joined
-	-- by "\n" with nothing after the last one (CeroSecOS.splitLines is the
-	-- reader), so `echo a > p` is one byte, and `>>` starts a line of its own.
-	{ name = "newline", world = true,
-		phrase = "A file keeps no newline after its last line",
-		why = "the text is its lines joined; nothing follows the last" },
+	-- The FILES and the SHELL. (A file's last line used to have no "\n"
+	-- after it, and IFS used to be an ordinary name; both are real
+	-- since 0.7.0 and those deviations are gone.)
 	-- One > (or >>) and one 2> per command, and < is refused by the lexer
 	-- (CeroSecOSScript: "unexpected '<'"). sh took any number of each.
 	{ name = "redirect", world = true,
@@ -1658,7 +1655,23 @@ commands.cat = function(state, session, args, env, stdin)
 	if carry.n == nil then carry.n = 0 end
 
 	local out = {}
+	-- Whatever cat read LAST in this call decides whether its own output ends
+	-- open: a file (or a drained pipe) with no final newline behind it is
+	-- cat's own last line with none either, which is what lets `cat noeol`
+	-- and `cat noeol | cat` print the same missing newline a real one does.
+	local lastOpen = false
+	-- And while the last source's last line is open, the next line cat reads
+	-- is the REST of it: cat copies bytes, so `cat noeol f` prints the two
+	-- glued together, exactly as a real one does (cat(1), 4.4BSD: the files
+	-- are "read sequentially" onto the standard output and nothing between).
+	local glue = false
 	local function put(line)
+		if glue and #out > 0 then
+			out[#out] = out[#out] .. line
+			glue = false
+			return
+		end
+		glue = false
 		if number then
 			carry.n = carry.n + 1
 			local num = tostring(carry.n)
@@ -1675,14 +1688,21 @@ commands.cat = function(state, session, args, env, stdin)
 			if input ~= nil and not carry.drained then
 				for j = 1, #input.lines do put(input.lines[j]) end
 				-- Not at the end of the pipe yet: the rest of the line waits
-				-- for the turn that is.
-				if not input.eof then return not carry.bad, out end
+				-- for the turn that is. An open line not yet glued to anything
+				-- is left open, and the VM glues what comes next onto it.
+				if not input.eof then
+					if glue and #out > 0 then out.open = true end
+					return not carry.bad, out
+				end
 				carry.drained = true
+				lastOpen = input.open == true
+				glue = lastOpen
 			end
 		else
 			local node, reason = CeroSecOS.getNode(state, session, p)
 			if node == nil then
 				carry.bad = true
+				glue, lastOpen = false, false
 				out[#out + 1] = "cat: " .. p .. ": " .. reason
 			elseif CeroSecOS.isDev(node) then
 				-- A device answers with its state, and refuses in its OWN name:
@@ -1699,6 +1719,7 @@ commands.cat = function(state, session, args, env, stdin)
 					-- empty file has none.
 					local said = CeroSecOS.splitLines(text)
 					for j = 1, #said do put(said[j]) end
+					if text ~= "" then glue, lastOpen = false, false end
 				end
 			elseif node.type ~= "file" then
 				carry.bad = true
@@ -1709,10 +1730,15 @@ commands.cat = function(state, session, args, env, stdin)
 			else
 				local lines = CeroSecOS.splitLines(node.data)
 				for j = 1, #lines do put(lines[j]) end
+				if node.data ~= "" then
+					lastOpen = not CeroSecOS.endsLine(node.data)
+					glue = lastOpen
+				end
 			end
 		end
 		carry.pos = carry.pos + 1
 	end
+	if lastOpen then out.open = true end
 	return not carry.bad, out
 end
 
@@ -3009,22 +3035,29 @@ commands.head = function(state, session, args, env, stdin)
 		local carry = input.carry
 		if carry.n == nil then carry.n = 0 end
 		local out = {}
+		local all = true
 		for i = 1, #input.lines do
-			if carry.n >= n then break end
+			if carry.n >= n then all = false break end
 			carry.n = carry.n + 1
 			out[#out + 1] = input.lines[i]
 		end
+		-- The input's own last line, and it had no newline: head copies
+		-- bytes, so it has none on the way out either.
+		if all and input.eof and input.open and #out > 0 then out.open = true end
 		if carry.n >= n then input.done = true end
 		return true, out
 	end
 
 	if #rest ~= 1 then return usage("head") end
-	local lines, refusal = fileLines(state, session, "head", rest[1])
+	local lines, refusal, node = fileLines(state, session, "head", rest[1])
 	if lines == nil then return false, { refusal } end
 	local out = {}
 	for i = 1, #lines do
 		if i > n then break end
 		out[#out + 1] = lines[i]
+	end
+	if #out > 0 and #out == #lines and not CeroSecOS.endsLine(node.data) then
+		out.open = true
 	end
 	return true, out
 end
@@ -3058,16 +3091,21 @@ commands.tail = function(state, session, args, env, stdin)
 			return fail("tail", nil, "input too large")
 		end
 		if not input.eof then return true, {} end
-		return true, carry.keep
+		-- The kept lines end where the input did: open, if it was.
+		local out = {}
+		for i = 1, #carry.keep do out[i] = carry.keep[i] end
+		if input.open and #out > 0 then out.open = true end
+		return true, out
 	end
 
 	if #rest ~= 1 then return usage("tail") end
-	local lines, refusal = fileLines(state, session, "tail", rest[1])
+	local lines, refusal, node = fileLines(state, session, "tail", rest[1])
 	if lines == nil then return false, { refusal } end
 	local first = #lines - n + 1
 	if first < 1 then first = 1 end
 	local out = {}
 	for i = first, #lines do out[#out + 1] = lines[i] end
+	if #out > 0 and not CeroSecOS.endsLine(node.data) then out.open = true end
 	return true, out
 end
 
@@ -3113,6 +3151,22 @@ local function wordsIn(text)
 	return n
 end
 
+-- wc -l counts the NEWLINE BYTE, not the line it starts (POSIX wc(1)): a file
+-- whose last line has none is one short, which is what "a\nb" -- printf's,
+-- or an old save's, since neither ever carried a final "\n" -- being TWO
+-- lines but ONE count is. #splitLines(data) is the wrong number for exactly
+-- that file; this counts the bytes themselves; no gsub count (kahlua-probe
+-- has not proved that return of it).
+local function countNewlines(text)
+	local n, start = 0, 1
+	while true do
+		local p = string.find(text, "\n", start, true)
+		if p == nil then return n end
+		n = n + 1
+		start = p + 1
+	end
+end
+
 commands.wc = function(state, session, args, env, stdin)
 	local want, paths = flagsOf(args, "clw")
 	if want == nil then return fail("wc", paths, "unknown option") end
@@ -3132,16 +3186,19 @@ commands.wc = function(state, session, args, env, stdin)
 		local carry = input.carry
 		for i = 1, #input.lines do
 			local line = input.lines[i]
-			-- The newlines BETWEEN the lines are bytes of what came down the
-			-- pipe, and the one that would have followed the last line is not:
-			-- it is the same text a file of those lines holds, so `wc f` and
-			-- `cat f | wc` answer with the same three numbers.
-			if (carry.l or 0) > 0 then carry.c = (carry.c or 0) + 1 end
+			-- Every line down the pipe ends in a newline EXCEPT possibly the
+			-- very last -- input.open says so, and only the final turn (eof)
+			-- can be that one -- which is what makes `wc f` and `cat f | wc`
+			-- agree.
 			carry.l = (carry.l or 0) + 1
+			carry.c = (carry.c or 0) + #line + 1
 			carry.w = (carry.w or 0) + wordsIn(line)
-			carry.c = (carry.c or 0) + #line
 		end
 		if not input.eof then return true, {} end
+		if input.open and (carry.l or 0) > 0 then
+			carry.l = carry.l - 1
+			carry.c = carry.c - 1
+		end
 		return true, { (wcCounts(want, carry)) }
 	end
 	if #paths == 0 then return usage("wc") end
@@ -3155,7 +3212,7 @@ commands.wc = function(state, session, args, env, stdin)
 			out[#out + 1] = refusal
 		else
 			local data = node.data or ""
-			local counts = { l = #lines, w = wordsIn(data), c = #data }
+			local counts = { l = countNewlines(data), w = wordsIn(data), c = #data }
 			counted = counted + 1
 			total.l = total.l + counts.l
 			total.w = total.w + counts.w
@@ -3683,7 +3740,13 @@ commands.tee = function(state, session, args, env, stdin)
 
 	local carry = stdin.carry
 	if carry.wrote == nil then carry.wrote = {} end
+	-- Every line of this turn's chunk gets its own "\n", including the last
+	-- one -- writeFile's append is a raw concat now, so the terminator
+	-- between one turn's text and the next has to be put here -- UNLESS this
+	-- really is the pipe's last line and it had none of its own (input.open
+	-- at eof), the one turn tee must leave open behind it too.
 	local text = table.concat(stdin.lines, "\n")
+	if text ~= "" and not (stdin.eof and stdin.open) then text = text .. "\n" end
 	local out, okAll = {}, true
 	for i = 1, #paths do
 		local path = paths[i]
@@ -3722,6 +3785,7 @@ commands.tee = function(state, session, args, env, stdin)
 		return false, out
 	end
 	for i = 1, #stdin.lines do out[#out + 1] = stdin.lines[i] end
+	if stdin.eof and stdin.open then out.open = true end
 	return true, out
 end
 
@@ -5564,7 +5628,7 @@ commands.edit = function(state, session, args, env)
 		end
 		return true, {}, "edit", {
 			path = abs,
-			text = node.data or "",
+			text = CeroSecOS.bufferOf(node.data),
 			readonly = not CeroSecOS.can(state, session, node, "w"),
 			-- Who the buffer was opened by, so that the save four minutes later
 			-- is the write this command was allowed. Under sudo that is root
@@ -6668,7 +6732,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 		-- ">" and ">>" are the same order to a device: it has no contents to
 		-- append to, only a state to be put into.
 		local wroteOk, wroteLines =
-			CeroSecOS.writeRedirect(state, session, name, redirect, table.concat(lines, "\n"), env)
+			CeroSecOS.writeRedirect(state, session, name, redirect, CeroSecOS.linesToText(lines), env)
 		-- data with it: an order this branch let through is still an order, and one
 		-- handed on without its data is one the caller cannot carry out. `rcp
 		-- notes gate:notes > out` gave a "sleep" with nothing to sleep on before
@@ -6762,7 +6826,7 @@ continueLine = function(state, session, cont, line, env, redirect, sh)
 	local redirectable = control ~= "prompt" and control ~= "edit" and control ~= "job"
 	if ok and redirect ~= nil and redirectable then
 		local wroteOk, wroteLines = CeroSecOS.writeRedirect(state, session,
-			redirect.who or cont.cmd, redirect, table.concat(lines, "\n"), env)
+			redirect.who or cont.cmd, redirect, CeroSecOS.linesToText(lines), env)
 		return wroteOk, wroteLines, control
 	end
 

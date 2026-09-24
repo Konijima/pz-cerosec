@@ -728,7 +728,7 @@ do
 			eq(id .. " keeps the coordinate tail",
 				string.match(state.hostname, "(%-.*)$"), "-4-b")
 			eq(id .. " writes it to /etc/hostname",
-				CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname)
+				CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname .. "\n")
 
 			-- The accounts, read back out of the file the way the machine reads them.
 			if type(profile.accounts) == "table" then
@@ -819,10 +819,10 @@ do
 			check(id .. " has a banner over its login prompt",
 				banner ~= nil and banner.type == "file")
 			if type(profile.issue) == "string" then
-				eq(id .. " writes the banner", banner.data, profile.issue)
+				eq(id .. " writes the banner", banner.data, profile.issue .. "\n")
 			else
 				eq(id .. " keeps the seeded banner, naming itself",
-					banner.data, CeroSecOS.issueText(state.hostname))
+					banner.data, CeroSecOS.issueText(state.hostname) .. "\n")
 			end
 			eq(id .. " and a login prompt has exactly one line over it",
 				#CeroSecOS.issueLines(state), 1)
@@ -830,7 +830,7 @@ do
 			-- The motd, inside what a login will print.
 			if type(profile.motd) == "string" then
 				eq(id .. " writes the motd",
-					CeroSecOS.systemNode(state, CeroSecOS.MOTD_PATH).data, profile.motd)
+					CeroSecOS.systemNode(state, CeroSecOS.MOTD_PATH).data, profile.motd .. "\n")
 				local lines = CeroSecOS.motdLines(state)
 				eq(id .. " and every line of it is printed", #lines,
 					select(2, string.gsub(profile.motd, "\n", "")) + 1)
@@ -2221,7 +2221,7 @@ do
 		eq("and nobody was left logged in at it", m.live, nil)
 		-- The dealer's card, and the dealer's name on the machine.
 		eq("it carries the dealer's motd",
-			CeroSecOS.systemNode(m.state, CeroSecOS.MOTD_PATH).data, DEMO.motd)
+			CeroSecOS.systemNode(m.state, CeroSecOS.MOTD_PATH).data, DEMO.motd .. "\n")
 		eq("and the dealer's name on it", string.match(m.state.hostname, "^[a-z0-9]+"),
 			DEMO.host)
 		-- THE BOOT GATE, on a machine built by the other branch of the prefill.
@@ -2348,7 +2348,7 @@ do
 	eq("the company's name is still on it",
 		string.match(spare.state.hostname, "^[a-z0-9]+"), profile.host)
 	eq("and the company's own motd",
-		CeroSecOS.systemNode(spare.state, CeroSecOS.MOTD_PATH).data, profile.motd)
+		CeroSecOS.systemNode(spare.state, CeroSecOS.MOTD_PATH).data, profile.motd .. "\n")
 	eq("and nobody's work is on it", spare.owner, nil)
 	local demo = CeroSecOS.getUser(spare.state, CeroSecContent.DEMO.login)
 	check("it came up on the dealer's disk", demo ~= nil)
@@ -3498,7 +3498,7 @@ do
 		local got, gotName = CeroSecContent.lateEntryFor(disk)
 		eq("a disk off a shelf is the entry it came from", got, entry)
 		eq("and the file waiting to be filled is the one named", gotName, name)
-		eq("which still holds the stub", disk.fs.children[name].data, stub)
+		eq("which still holds the stub", disk.fs.children[name].data, stub .. "\n")
 
 		check("the fill writes it", CeroSecContent.fillLate(disk, 418, HERE, START))
 		local filled = disk.fs.children[name].data
@@ -3553,7 +3553,7 @@ do
 			local empty = CeroSecContent.diskData(entry, START)
 			check("a county with no listings fills nothing",
 				not CeroSecContent.fillLate(empty, 418, {}, START))
-			eq("and the stub is untouched", empty.fs.children[name].data, stub)
+			eq("and the stub is untouched", empty.fs.children[name].data, stub .. "\n")
 		end
 
 		-- Every other disk in the county, and every kind of junk, answers nothing.
@@ -3750,6 +3750,18 @@ do
 	-- Which it could only do because the stub ships world-writable: /mnt is root's
 	-- and the account running the suite is not.
 	eq("because the stub ships world-writable", results.mode, 666)
+
+	-- The floppy's 4096 bytes, measured and not assumed: every text file on the
+	-- disk ends its last line with a newline since FLOPPY_VERSION 2, a byte each,
+	-- and the RESULTS.TXT the suite writes has to fit beside the script and the
+	-- README it shipped with, or the survivor's run ends on "disk full".
+	local _, shipped = CeroSecOS.subtreeUsage(CeroSecContent.diskData(entry, START).fs)
+	local _, used = CeroSecOS.subtreeUsage(state.floppy.fs)
+	check("the disk as shipped fits its bytes (" .. shipped .. ")",
+		shipped <= CeroSecOS.FLOPPY_BYTES)
+	check("and with its results written (" .. used .. ")", used <= CeroSecOS.FLOPPY_BYTES)
+	print("content_test: the diagnostics floppy holds " .. shipped .. " of "
+		.. CeroSecOS.FLOPPY_BYTES .. " bytes shipped, " .. used .. " after a run")
 
 	-- It took its scratch files away with it, both because a suite that fills a
 	-- survivor's home is a suite nobody runs twice and because the disk quota is

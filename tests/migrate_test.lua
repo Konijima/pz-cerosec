@@ -246,10 +246,10 @@ for i = 1, #fixtures do
 	-- The files, byte for byte.
 	local notes = CeroSecOS.systemNode(state, "/home/sam/notes.txt")
 	check(at .. "sam's file is there", notes ~= nil)
-	eq(at .. "with what he wrote in it", notes.data, "the generator needs fuel")
+	eq(at .. "with what he wrote in it", notes.data, "the generator needs fuel\n")
 	local todo = CeroSecOS.systemNode(state, "/home/admin/todo.txt")
 	check(at .. "and admin's", todo ~= nil)
-	eq(at .. "with his", todo.data, "check the back door")
+	eq(at .. "with his", todo.data, "check the back door\n")
 
 	-- And the script RUNS, which is the half no field can prove: a file whose owner,
 	-- mode or bytes a migration touched is a file the shell will not read.
@@ -439,7 +439,7 @@ for i = 1, #fixtures do
 	eq(at .. "and the gate still takes it", CeroSecOS.validate(state), true)
 	eq(at .. "sam still logs in", CeroSecOS.login(state, "sam", "letmein") ~= nil, true)
 	eq(at .. "his file is still his file",
-		CeroSecOS.systemNode(state, "/home/sam/notes.txt").data, "the generator needs fuel")
+		CeroSecOS.systemNode(state, "/home/sam/notes.txt").data, "the generator needs fuel\n")
 	eq(at .. "and the disk is still labelled", CeroSecOS.floppyOf(state).label, "PAYROLL 93")
 
 	--
@@ -514,12 +514,12 @@ do
 		-- And the flag is off every node.
 		eq("the quota flag is off the history", hist.nq, nil)
 		eq("and off every other node", state.fs.children.etc.children.motd.nq, nil)
-		eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi")
+		eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi\n")
 
 		-- And what was on the machine is still on it: a step that converts the
 		-- accounts has no business touching anything else.
 		eq("sam's file survived the conversion",
-			CeroSecOS.systemNode(state, "/home/sam/notes.txt").data, "the generator needs fuel")
+			CeroSecOS.systemNode(state, "/home/sam/notes.txt").data, "the generator needs fuel\n")
 		eq("and the disk is still in the drive", CeroSecOS.floppyOf(state).label, "PAYROLL 93")
 
 		-- Twice is once, here too, and byte for byte: the accounts conversion is the one
@@ -533,6 +533,118 @@ do
 		eq("and the gate still takes it", CeroSecOS.validate(state), true)
 		check("and root still logs in", CeroSecOS.login(state, "root", "toor") ~= nil)
 	end
+end
+
+--
+-- 5b. STATE_VERSION 3 and FLOPPY_VERSION 2: a file's last line gets its newline
+--
+-- The v2 photograph is what 0.6.1 and the 0.7.0 builds before this change wrote
+-- (tools/capture-fixture.sh on the commit before the bump gives it back byte for
+-- byte), and every text file in it ends with no "\n". Walked up, each one gains
+-- exactly one byte, and nothing else in the file moves.
+--
+local function filesOf(node, path, into)
+	into = into or {}
+	if type(node) ~= "table" then return into end
+	if node.type == "file" then into[path] = node.data return into end
+	if type(node.children) == "table" then
+		for name, child in pairs(node.children) do filesOf(child, path .. "/" .. name, into) end
+	end
+	return into
+end
+
+do
+	local entry = nil
+	for i = 1, #fixtures do
+		if fixtures[i].n == 2 then entry = fixtures[i] end
+	end
+	check("the v2 photograph is here to walk", entry ~= nil)
+	local fixture = reload(entry)
+	local state = fixture.state
+	-- Three files the photograph does not happen to hold, planted in it the way a
+	-- v2 build would have stored them: empty, already ending in "\n" (a >> of an
+	-- empty echo could leave that), and one at the ceiling a file may reach.
+	local home = state.fs.children.home.children.sam or state.fs.children.home.children.admin
+	check("a home to plant in", home ~= nil and home.type == "dir")
+	home.children["empty.txt"] = CeroSecOS.newFile("sam", 644, "")
+	home.children["closed.txt"] = CeroSecOS.newFile("sam", 644, "done\n")
+	home.children["full.txt"] = CeroSecOS.newFile("sam", 644,
+		string.rep("x", CeroSecOS.MAX_FILE_BYTES))
+	local before = filesOf(state.fs, "")
+	local standIn = {}
+	for name in pairs(CeroSecOS.COMMAND_INFO) do standIn[CeroSecOS.commandDesc(name)] = true end
+
+	local walked = CeroSecOS.migrate(state, "ksp-front-01")
+	check("v2 -> 3: the machine came back", walked == state)
+	local after = filesOf(state.fs, "")
+	local closed, binaries = 0, 0
+	for path, was in pairs(before) do
+		local now = after[path]
+		if now ~= nil then
+			if was == "" then
+				eq(path .. " is empty and stays empty", now, "")
+			elseif string.sub(was, -1) == "\n" then
+				eq(path .. " ended its line already and is untouched", now, was)
+			elseif #was >= CeroSecOS.MAX_FILE_BYTES then
+				eq(path .. " is at a file's ceiling and is left open", now, was)
+			elseif standIn[was] then
+				eq(path .. " is a /bin stand-in, a binary, and is untouched", now, was)
+				binaries = binaries + 1
+			else
+				eq(path .. " gains exactly its newline", now, was .. "\n")
+				closed = closed + 1
+			end
+		end
+	end
+	check("and there were text files to close (" .. closed .. ")", closed > 5)
+	check("and binaries to leave alone (" .. binaries .. ")", binaries > 20)
+	eq("sam's note reads the same lines", table.concat(CeroSecOS.splitLines(
+		CeroSecOS.systemNode(state, "/home/sam/notes.txt").data), "|"), "the generator needs fuel")
+	-- An upgrade that closed a stand-in would keep a retired command in /bin for
+	-- ever: upgradeSystem retires one only when its bytes are the shipped ones.
+	eq("/bin/ls is still the shipped bytes", CeroSecOS.systemNode(state, "/bin/ls").data,
+		CeroSecOS.commandDesc("ls"))
+
+	-- And the disk in the drive, which rides inside the state, on its own number.
+	local inDrive = CeroSecOS.floppyOf(state)
+	eq("the floppy in the drive is at this build's shape", inDrive.v, CeroSecOS.FLOPPY_VERSION)
+	for path, data in pairs(filesOf(inDrive.fs, "")) do
+		check("its " .. path .. " ends its line", data == "" or string.sub(data, -1) == "\n")
+	end
+
+	-- Twice is once: wound back and walked again, not one byte moves.
+	local once = canon(state)
+	state.v = 2
+	inDrive.v = 1
+	CeroSecOS.migrate(state, "ksp-front-01")
+	eq("a second walk of step 3 changes nothing", canon(state), once)
+
+	-- The disk in his POCKET, by the slot: the same step, on the way in.
+	local inHand = CeroSecOS.diskFromData(fixture.disk)
+	check("the pocket disk goes in", inHand ~= nil)
+	eq("at this build's shape", inHand.v, CeroSecOS.FLOPPY_VERSION)
+	for path, data in pairs(filesOf(inHand.fs, "")) do
+		check("its " .. path .. " ends its line", data == "" or string.sub(data, -1) == "\n")
+	end
+end
+
+-- A FULL floppy: the step is paid out of the disk's own 4096 bytes and never past
+-- them, because the slot refuses a disk over FLOPPY_BYTES and a migration that
+-- pushed one over would turn a full disk into one no drive takes.
+do
+	local fs = CeroSecOS.newDir("root", 755)
+	fs.children.a = CeroSecOS.newFile("root", 644, string.rep("a", 2047))
+	fs.children.b = CeroSecOS.newFile("root", 644, string.rep("b", 2048))
+	local disk = { v = 1, fs = fs, label = "FULL" }
+	local _, was = CeroSecOS.subtreeUsage(fs)
+	eq("the disk is one byte short of full", was, CeroSecOS.FLOPPY_BYTES - 1)
+	local inHand, why = CeroSecOS.diskFromData(disk)
+	check("it still goes in the slot (" .. tostring(why) .. ")", inHand ~= nil)
+	local _, now = CeroSecOS.subtreeUsage(inHand.fs)
+	eq("and it is full now, not over", now, CeroSecOS.FLOPPY_BYTES)
+	eq("the first file by name took the one byte there was",
+		inHand.fs.children.a.data, string.rep("a", 2047) .. "\n")
+	eq("and the second was left as it was", inHand.fs.children.b.data, string.rep("b", 2048))
 end
 
 --
