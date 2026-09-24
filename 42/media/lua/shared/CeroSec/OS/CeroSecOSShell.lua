@@ -6823,9 +6823,10 @@ end
 -- .profile. A fresh table every time, so no two shells ever share one.
 --
 -- And IFS, set and not exported: every sh starts with it at space, tab and
--- newline (POSIX.2 2.5.3; 4.4BSD sh var.c's varinit), so `echo ${#IFS}` is 3
--- and OIFS="$IFS" ... IFS="$OIFS" puts back what it saved. A shell saved
--- before this line has no IFS, which reads as the same three bytes.
+-- newline (POSIX.2 2.5.3; 4.4BSD expand.c reads it as ifsval()), so
+-- `echo ${#IFS}` is 3 and OIFS="$IFS" ... IFS="$OIFS" puts back what it
+-- saved. A shell saved before this line has no IFS, which reads as the
+-- same three bytes.
 function CeroSecOS.loginVars(home)
 	local vars = { PATH = CeroSecOS.DEFAULT_PATH, IFS = " \t\n" }
 	if type(home) == "string" and home ~= "" then vars.HOME = home end
@@ -7391,4 +7392,24 @@ continueLine = function(state, session, cont, line, env, redirect, sh)
 	-- file in front of it -- `sudo cat /etc/passwd | cut -d: -f1` is the same line
 	-- with a password in the middle of it.
 	return ok, lines, control, data
+end
+
+-- getopt(3)'s "--", for the commands in this file whose own reader takes
+-- no option at all (or takes its operands as they come): 4.4BSD ran each of
+-- them through getopt first, so a leading "--" ended the options and was
+-- never an operand -- `chmod -- 644 f` changes f, and `mv -- a b` does not
+-- look for a file called "--". Dropped here, once, rather than taught to
+-- each reader; the ones with flags of their own read "--" themselves.
+for _, name in ipairs({ "mkdir", "mv", "chmod", "chown", "chgrp", "find", "atrm", "more" }) do
+	local fn = commands[name]
+	if fn ~= nil then
+		commands[name] = function(state, session, args, ...)
+			if type(args) == "table" and args[2] == "--" then
+				local kept = { args[1] }
+				for i = 3, #args do kept[#kept + 1] = args[i] end
+				args = kept
+			end
+			return fn(state, session, args, ...)
+		end
+	end
 end

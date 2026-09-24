@@ -223,11 +223,14 @@ do
 		"usage: " .. CeroSecOS.commandUsage("touch") }, 1)
 	says(state, admin, "passwd -z", { "passwd: illegal option -- z",
 		"usage: " .. CeroSecOS.commandUsage("passwd") }, 1)
-	says(state, admin, "sh -z", { "Illegal option -z" }, 1)
-	says(state, admin, "sh +x f", { "Illegal option -x" }, 1)
+	says(state, admin, "sh -z", { "Illegal option -z" }, 2)
+	says(state, admin, "sh +x f", { "Illegal option -x" }, 2)
 	says(state, admin, "kill -l TERM", { "kill: usage: " .. CeroSecOS.commandUsage("kill") }, 1)
 	says(state, admin, "kill -l 15; kill -l 143", { "term", "term" }, 0)
 	says(state, admin, "kill -l 15x", { "kill: illegal signal number: 15x" }, 1)
+	-- The commands that take no option here still end their options at "--".
+	says(state, admin, "mkdir -- d; echo a > m; chmod -- 600 m; mv -- m n; cat n",
+		{ "a" }, 0)
 end
 
 --

@@ -4517,7 +4517,6 @@ do
 	timely("numbers nobody can hold", result)
 	note("big numbers", result)
 	local said = table.concat(console.lines, "|")
-	if os.getenv("HOSTILE_DUMP") then print(said) end
 	local function says(what, text)
 		check(what .. " (" .. string.sub(said, 1, 60) .. "...)",
 			string.find(said, text, 1, true) ~= nil)

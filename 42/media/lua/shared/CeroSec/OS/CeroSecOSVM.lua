@@ -1023,8 +1023,9 @@ function CeroSecOS.newJob(opts)
 		-- whole path in a crontab line. A script run by hand is handed a copy of
 		-- its parent's ENVIRONMENT instead, and a subshell -- a stage, an `&` -- a
 		-- copy of everything its parent held.
-		-- And IFS, which every sh sets at its start (POSIX.2 2.5.3; 4.4BSD
-		-- var.c's varinit, "IFS= \t\n") and nobody exports.
+		-- And IFS, which every sh sets at its start and nobody exports
+		-- (POSIX.2 2.5.3; 4.4BSD expand.c's ifsbreakup reads ifsval(),
+		-- which is always a variable there).
 		vars = { PATH = CeroSecOS.DEFAULT_PATH, IFS = IFS_DEFAULT }
 		nvars = 2
 		-- And it is an environment and not a shell variable: a machine with no
@@ -5635,13 +5636,16 @@ CeroSecOS.MAX_JOBS = 4
 -- "sh" deviation -- is setoption()'s error("Illegal option -%c"), bare,
 -- because error() puts commandname in front and procargs sets commandname
 -- only AFTER the options are read (4.4BSD-Lite2 bin/sh/options.c, error.c).
-commands.sh = function(state, session, args, env)
+-- And the status is 2: main.c's handler sets exitstatus = 2 for an EXERROR
+-- and exitshell(2) for a shell that is not interactive yet.
+commands.sh = function(state, session, args, env, stdin, sh)
 	local at = 2
 	local first = args[2]
 	if first == "-" or first == "--" then
 		at = 3
 	elseif first ~= nil and (string.sub(first, 1, 1) == "-" or string.sub(first, 1, 1) == "+")
 			and #first > 1 then
+		if type(sh) == "table" then sh.status = 2 end
 		return false, { "Illegal option -" .. string.sub(first, 2, 2) }
 	end
 	if #args < at then
