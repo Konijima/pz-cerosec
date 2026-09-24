@@ -9,6 +9,8 @@ set -e
 lua5.1 tests/defs_test.lua
 lua5.1 tests/os_test.lua
 lua5.1 tests/ifs_test.lua
+# { list; } and ( list ): redirects, pipes, the subshell wall, the braces as words.
+lua5.1 tests/groups_test.lua
 lua5.1 tests/commands_test.lua
 # What a refusal SAYS, against 4.4BSD-Lite2, and the $? each kind leaves.
 lua5.1 tests/errors_test.lua

@@ -4542,6 +4542,63 @@ do
 	says("and the script reaches its end", "done")
 end
 
+--
+-- 31. Groups and subshells. A ( list ) is a frame of the job and not a job of
+-- its own, so a loop inside one spends the same budget as a loop anywhere;
+-- and entering one copies the variables, the exported set and the functions
+-- (at most MAX_VARS of the first two), which a loop of them must not turn
+-- into a pass that climbs. A function that calls itself in brackets meets the
+-- frame ceiling like any recursion.
+--
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/subspin.sh", "( { while true; do x=1; done; } )\n")
+	typeLine(system, machine, state, console, "sh subspin.sh")
+	local result = drive(machine, PASSES)
+	flat("loop in a subshell", result)
+	timely("loop in a subshell", result)
+	note("loop in a subshell", result)
+	local job = CeroSecJobs.foreground(machine, console)
+	check("the subshell loop is still running", job ~= nil)
+	check("having spent its steps (" .. (job and job.steps or 0) .. ")",
+		job ~= nil and job.steps > 50000)
+	eq("and having said nothing", #console.lines, 0)
+end
+
+do
+	local machine, state, console = newMachine()
+	local lines = {}
+	for i = 1, 60 do lines[#lines + 1] = "v" .. i .. "=" .. string.rep("x", 40) end
+	for i = 1, 12 do lines[#lines + 1] = "f" .. i .. "() { echo " .. i .. "; }" end
+	-- Nothing in the brackets but the copy itself: a function call with a
+	-- redirect costs what it costs anywhere, and is not what is measured.
+	lines[#lines + 1] = "while true; do ( x=1 ); done"
+	put(state, "/home/admin/subcopy.sh", table.concat(lines, "\n") .. "\n")
+	typeLine(system, machine, state, console, "sh subcopy.sh")
+	local result = drive(machine, PASSES)
+	flat("subshell copies", result)
+	timely("subshell copies", result)
+	note("subshell copies", result)
+	local job = CeroSecJobs.foreground(machine, console)
+	check("the subshell copies still run", job ~= nil)
+	eq("and said nothing", #console.lines, 0)
+end
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/subrec.sh", "f() { ( f ); }\nf\necho after $?\n")
+	local job = typeLine(system, machine, state, console, "sh subrec.sh")
+	local result = drive(machine, PASSES)
+	flat("subshell recursion", result)
+	timely("subshell recursion", result)
+	note("subshell recursion", result)
+	check("the recursion ended (" .. tostring(job.state) .. ")", CeroSecOS.jobIsOver(job))
+	eq("and the machine is running nothing", #CeroSecJobs.book(machine).list, 0)
+	local said = table.concat(console.lines, "|")
+	check("saying why (" .. said .. ")", string.find(said, "too deeply nested", 1, true) ~= nil)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

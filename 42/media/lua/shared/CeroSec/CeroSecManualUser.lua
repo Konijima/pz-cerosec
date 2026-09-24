@@ -309,11 +309,11 @@ says [Incomplete last line].]],
 
 [[What is not Unix here: pipes, printf and date.
 
-A stage of a pipe stops as soon as the command reading it has finished,
+A stage of a pipe stops as soon as the command reading it is over,
 once it has run one command, whether it wrote into the pipe or not. A
 real sh runs every stage to its end, and stops a writer only when it
 next writes into a pipe nobody reads. So { echo a > f; echo b > g; } |
-true never makes g, and sleep 5 | true is over at once.
+true makes f and never g, and sleep 5 | true is over at once.
 
 sh -c is not here: sh runs a file. Put the line into one and hand sh
 the file's name.

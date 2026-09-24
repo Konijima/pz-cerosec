@@ -1333,7 +1333,8 @@ a stage of a pipe. What it changes stays inside it:
   /home/admin
 
 And exit leaves the brackets and nothing more: (exit 3); echo $?
-prints 3, and you are still logged in.]],
+prints 3, and you are still logged in. A bracket is grammar now,
+so echo (a) is a syntax error: quote it, echo '(a)'.]],
 
 [[Sending output to a file, and to nowhere.
 
@@ -2342,7 +2343,7 @@ The shapes they build:
   until LIST; do LIST; done
   case WORD in PAT|PAT) LIST;; PAT) LIST;; esac
   { LIST; }    ( LIST )
-  NAME() { LIST; }]],
+  NAME() { LIST; }    NAME() ( LIST )]],
 
 [[The dollar signs, all of them.
 
@@ -2442,7 +2443,10 @@ meaning away. The word may hold $name, not a $( ) or a second ${ }.]],
 becomes a job. In a script the name and line come first -- broken.sh: 3:
 
   Syntax error: "fi" unexpected
-      a closing word where a command should be
+      a closing word where a command should be,
+      or an empty { } or ( )
+  Syntax error: "(" unexpected
+      a bracket that opens nothing: quote it
   Syntax error: end of file unexpected (expecting "done")
       a loop never closed; also "fi", "then", "esac",
       "in", ")" and "}"
@@ -2464,7 +2468,8 @@ before anything runs: these are the machine's own ceilings and not sh's, and
 every one of them is a number this book names where it belongs.
 
   too deeply nested
-      past sixteen levels of if, for, while or case,
+      past sixteen levels of if, for, while, case,
+      { } or ( ),
       or eight of sh running sh
   too many stages
       more than eight in one pipeline

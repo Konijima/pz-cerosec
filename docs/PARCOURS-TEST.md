@@ -3800,7 +3800,7 @@ Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
 Ouvrir la fenêtre de débogage sur une machine allumée et prefillée (clic droit →
 **CeroSec (dev)** → **Fenêtre de débogage**).
 
-356. **La bannière nomme la machine.** Onglet **Files**. Attendu : au-dessus de la
+356a. **La bannière nomme la machine.** Onglet **Files**. Attendu : au-dessus de la
      liste, une ligne `<hostname> at x,y,z  (on)` avec le nom d'hôte de la machine
      sélectionnée. Passer à **Devices** puis à **Scheduler** : la même bannière,
      la même machine. Revenir à **Machines** : pas de bannière (c'est l'onglet où
@@ -4372,7 +4372,7 @@ la **machine** (la liste des cases à visiter) ; les deux se remettent d'accord 
 seuls au tour de ronde suivant. La règle complète est dans
 [DEVICES.md](DEVICES.md#the-cable-when-the-fixture-is-in-no-building).
 
-424. **Le lampadaire de la rue entre dans `dev`.** Sur un **lampadaire** (un poteau,
+424a. **Le lampadaire de la rue entre dans `dev`.** Sur un **lampadaire** (un poteau,
      pas un mur) à une douzaine de cases d'un ordinateur : poser un **relais**
      dessus (étape 418 : il ne paraît dans aucun `dev`). Avec un tournevis,
      Électricité 1 et une vingtaine de **fils électriques** dans le sac, clic droit
@@ -4686,7 +4686,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      verdict goes to the log ». Appuyer une deuxième fois tout de suite : la
      note dit « shell half already running ». Attendre quelques secondes :
      l'onglet **Log** (niveau info) et `console.txt` montrent
-     `CeroSec shell selftest: PASS 252 FAIL 0`, suivi d'une ligne de durée.
+     `CeroSec shell selftest: PASS 260 FAIL 0`, suivi d'une ligne de durée.
      Aucune ligne `warn`. [ ]
 
 459g. **Les nombres, IFS et set.** `printf %x 1e999` répond tout de suite
@@ -4695,6 +4695,18 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `echo ${#IFS}` : `3`. `set a b; set +e; echo $# $1` : pas `1 +e`.
      `echo x > -f; rm -- -f` supprime le fichier `-f`. Sur une vieille
      partie : `expr 1 + 1` répond `2`, `uname` et `rmdir` existent. [ ]
+
+459h. **Les accolades et les parenthèses.** `{ echo a; echo b; } > g; cat g`
+     affiche `a` puis `b`. `{ echo a; echo b; } | wc -l` : `       2` (huit
+     colonnes). `x=1; (x=2; cd /etc); echo $x; pwd` : `1` puis le répertoire
+     de départ. `(exit 3); echo $?` : `3`, et la session est toujours
+     ouverte. `false; (exit); echo $?` : `1`. `f() ( cd /; pwd ); f; pwd` :
+     `/` puis le répertoire de départ. `{ echo a > f5; echo b > g5; } | true`
+     puis `cat f5` : `a`, et `ls g5` : `ls: g5: No such file or directory`.
+     `echo {` affiche `{`. `{echo a;}` : `Syntax error: "}" unexpected`.
+     `echo (a)` : `Syntax error: word unexpected (expecting ")")` ; entre
+     guillemets, `echo '(a)'` affiche `(a)`. `{ }` : `Syntax error: "}"
+     unexpected`. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
 

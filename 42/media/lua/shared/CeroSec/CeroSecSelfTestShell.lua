@@ -175,6 +175,22 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "function", line = "f() { echo \"f:$1:$2\"; }; f x y", out = { "f:x:y" } },
 	{ name = "for over a pipe", line = "for w in a b; do echo $w; done | sort -r",
 		out = { "b", "a" } },
+	-- { list; } and ( list ), POSIX.2 XCU 2.9.4: one command, one redirect, one
+	-- pipe; the brackets a copy of the shell, the braces this one.
+	{ name = "a brace group takes one redirect",
+		line = "{ echo a; echo b; } > f; cat f", out = { "a", "b" } },
+	{ name = "a brace group in a pipe", line = "{ echo a; echo b; } | wc -l",
+		out = { "       2" } },
+	{ name = "a subshell keeps what it changes",
+		line = "x=1; (x=2; cd /; f() { :; }); echo $x; pwd; f",
+		out = { "1", "/root", "f: not found" }, status = 127 },
+	{ name = "exit leaves only the subshell", line = "(exit 3); echo $?", out = { "3" } },
+	{ name = "exit in braces ends the script", files = { { "/root/s.sh", "{ exit 3; }\necho no\n" } },
+		line = "sh s.sh; echo $?", out = { "3" } },
+	{ name = "a function whose body is a subshell",
+		line = "f() ( x=2 ); x=1; f; echo $x", out = { "1" } },
+	{ name = "} where a command starts", line = "{echo a;}",
+		out = { "Syntax error: \"}\" unexpected" }, status = 2 },
 
 	--
 	-- 1c. Scripts: arguments, $#, $*, $@, shift, exit, `.`
@@ -282,6 +298,8 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "a redirect wins over $( )",
 		line = "g() { echo hi; }; x=$(g > f); echo \"[$x]\"; cat f", out = { "[]", "hi" } },
 	{ name = "echo a > f | true", line = "echo a > f | true; cat f", out = { "a" } },
+	{ name = "a file named -f", line = "echo x > -f; cat ./-f; rm -- -f; ls",
+		out = { "x" } },
 	{ name = "the file is complete for the next command",
 		line = "printf '1\\n2\\n3\\n' > f; tail -1 f; echo $(cat f | wc -l)",
 		out = { "3", "3" } },

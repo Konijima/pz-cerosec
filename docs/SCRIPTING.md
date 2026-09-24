@@ -106,21 +106,26 @@ it defines afterwards is its own), and **none** for a script, which is a new `sh
 which is the whole reason the dot exists. A logout takes them, as it takes the
 variables.
 
-The braces are **not** reserved words here. `{` and `}` are POSIX reserved words, and
-making them so would mean a brace group (`{ list; }` as a command) this machine has not
-got, plus a refusal for every `echo {` already written. What is needed is that `}`
-*stops the body*, and that falls out of the stops table `parseProgram` already takes.
+**Groups: `{ list; }` and `( list )`** (0.7.0; POSIX.2 XCU 2.9.4, 4.4BSD-Lite2
+sh's TBEGIN/TEND and NSUBSHELL). `{` and `}` are reserved words, so only where a
+command starts: `echo {` prints it, and `{echo a;}` is `"}" unexpected` as on sh.
+`(` and `)` are operators and end a word. A group is a `group` node; `runSimple`
+opens its redirects like a command with no words and then pushes its body as one
+frame, so one `>` catches the whole list and the group is one stage of a pipe. A
+group is not a command of its own for the pipe stepper (`job.ran`): the first
+command inside it is. The brackets push a frame marked `sub` that copies the
+variables, the exported set, the functions, the working directory and `$@` the way
+`pushCapture` does for a `$( )`, and `popFrame` puts them back; `exit`, `return` and
+`break` stop at it as they stop at a capture. A function body may be any compound
+command, `f() ( list )` included (`n->nfunc.body = command()`).
 
-**`case` and the bracket.** `)` is **not** an operator on this machine, there is no
-subshell grouping here, and making one of it now would turn every `echo (hi)` a
-survivor has already written into a syntax error, so the `)` that closes a pattern is
-taken off the *end* of the pattern word instead (`takeClose`). That is not a shortcut:
-only an **unquoted** `)` closes a pattern on a real sh, and the test is whether the
-last piece of the word was bare literal text, so `"a)"` is a pattern with a bracket in
-it and `[)]` is a set holding one. `;;` **is** one operator now (it was two separators,
-so `echo a;;` quietly ran as `echo a`), and `parseProgram` stops at it the way it stops
-at a reserved word. POSIX's optional `(` in front of a pattern is taken off the front
-the same way. `case` and `esac` joined the reserved words, so `help`, `type` and Tab
+**`case` and the bracket.** `(` and `)` are operators, so the brackets round a
+pattern are tokens of their own: `"a)"` is a pattern with a bracket in it, and a bare
+`[)]` is the syntax error it is on sh (write `[\)]`). Until 0.7.0 the `)` was taken
+off the end of the pattern word, which is how `echo (hi)` printed its brackets; it is
+a syntax error now. `;;` **is** one operator (it was two separators, so `echo a;;`
+quietly ran as `echo a`), and `parseProgram` stops at it the way it stops at a
+reserved word. `case` and `esac` joined the reserved words, so `help`, `type` and Tab
 know them.
 
 The patterns are expanded and compared **one at a time, in order, and no further than
@@ -244,7 +249,7 @@ is special only before `$`, `` ` ``, `"`, `\` and a newline, and is kept before
 anything else, as sh(1) and POSIX.2 say: `"a\.c"` is `a\.c`, and the shell makes no
 `\n` -- printf reads its own escapes, echo reads none); `#` comments; `;`, `&&`, `||` and a
 trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
-`continue`, `exit`, `return`; `name() { list; }`; `case word in pattern) … ;; esac` with `|` between
+`continue`, `exit`, `return`; `name() { list; }`; `{ list; }` and `( list )`; `case word in pattern) … ;; esac` with `|` between
 alternatives, the shell's own globs (`*`, `?`, `[…]`) in the patterns and `*)` as the
 default; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
 `=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep

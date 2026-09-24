@@ -18,6 +18,13 @@ The suites, in the order they run:
   empty, whitespace vs. non-whitespace delimiters, a delimiter split across two
   parts of the same word, `"$*"`'s join character, and `read`'s last-name-gets-
   the-remainder rule. Every expected value was checked against `dash` first.
+- `groups_test.lua` — `{ list; }` and `( list )` (POSIX.2 XCU 2.9.4): a
+  redirect, a pipe and `&&`/`||` take the group whole; a group in front of a
+  finished reader runs its first command; nothing a subshell changes (variables,
+  `cd`, `set --`, `shift`, functions, traps) reaches the parent, on the same line
+  or the next; `exit`, `return` and `break` stop at the brackets and not at the
+  braces; a function body that is a subshell; the braces as reserved words;
+  empty and unclosed groups refused; nesting past the ceiling refused.
   The hostile shape of it -- a word that is nothing but delimiters -- is in
   `hostile_test.lua` instead, because its calibration lives in that process.
 - `newline_test.lua` — a file's last line carries its newline: what `echo` and
@@ -499,7 +506,7 @@ any kind, and therefore the world, the save file, the wire and the sync.
   every read, while `v`, `on` and `facing` ride into the save file weighed by
   nothing — drop `facing` and a computer picked up and put down faces the wrong
   way, with a green suite behind it.
-- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 252 cases, each a
+- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 260 cases, each a
   line typed at a prompt on a scratch machine — `CeroSecOS.newState`, the
   constructor a first power-on uses, made once and deep-copied for every case —
   with what the screen must show, what `$?` must be and, where the point is a

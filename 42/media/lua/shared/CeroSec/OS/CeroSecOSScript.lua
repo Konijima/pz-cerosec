@@ -86,12 +86,16 @@ CeroSecOS.MAX_FUNCS = 16
 CeroSecOS.MAX_STAGES = 8
 
 -- The words that are only words in command position. `echo done` prints
--- "done"; `done` on its own is the end of a loop, or a mistake.
+-- "done"; `done` on its own is the end of a loop, or a mistake. The braces
+-- are among them (POSIX.2 XCU 2.4; 4.4BSD-Lite2 sh's TBEGIN and TEND in
+-- bin/sh/mktokens): `echo {` prints it, `{echo a;}` is the word `{echo` and
+-- then a `}` where a command starts, which is `"}" unexpected` on sh.
 CeroSecOS.RESERVED = {
 	["if"] = true, ["then"] = true, ["elif"] = true, ["else"] = true, ["fi"] = true,
 	["for"] = true, ["in"] = true, ["while"] = true, ["until"] = true,
 	["do"] = true, ["done"] = true,
 	["case"] = true, ["esac"] = true,
+	["{"] = true, ["}"] = true,
 }
 
 local function isNameStart(c)
@@ -632,7 +636,9 @@ local function tokenize(text, depth)
 			-- `name ( )` and a case pattern's brackets; anywhere else one is
 			-- `"(" unexpected`, as `echo (a)` is on sh. Inside quotes, $( ),
 			-- ${ } and backquotes they are text, read by those readers.
-			tokens[#tokens + 1] = { t = "op", v = c, line = line }
+			-- stop, as a word has: a function whose body is a subshell ends
+			-- on its ")" and keeps its source up to it (parseFunc).
+			tokens[#tokens + 1] = { t = "op", v = c, line = line, stop = i }
 			i = i + 1
 		else
 			-- One word: bare text, quoted runs and expansions, until a blank or
@@ -852,6 +858,8 @@ local function skipNewlines(P)
 end
 
 local parseProgram
+local parseGroup
+local parsePiece
 
 -- A word token, or nil when what is next is not one.
 local function wordAt(P)
@@ -1170,8 +1178,10 @@ end
 --
 -- `{` is a reserved word, not an operator: it needs a blank after it, and
 -- `t(){echo a;}` is a syntax error on dash ("}" unexpected) and here. The body is
--- a brace group and nothing else: 4.4BSD sh took any compound command there, and
--- `f() ( list )` is refused here as `word unexpected (expecting "{")`.
+-- any compound command, as POSIX.2 XCU 2.9.5 and 4.4BSD sh's parser.c
+-- (`n->nfunc.body = command()`) have it: a brace group most of the time, and
+-- `f() ( list )`, `f() if ...; fi` or a loop. A simple command is not one:
+-- `f() echo x` is `word unexpected (expecting "{")`, as on dash.
 --
 -- The SOURCE of the definition travels with it (`src`). The console keeps a
 -- function between one line and the next, and what it keeps has to survive being
@@ -1185,6 +1195,24 @@ local function parseFunc(P, depth, name, tokens, braced)
 	P.i = P.i + tokens
 	if not braced then
 		skipNewlines(P)
+		-- Any other compound command: `f() ( list )` runs in a copy of the
+		-- shell at every call, and a redirect after its ")" is the call's.
+		-- The body is a program of that one command, and the source ends
+		-- on its last token, a ")" or the done, fi or esac that closed it.
+		local lp = peek(P)
+		local w = wordAt(P)
+		if (lp.t == "op" and lp.v == "(") or (w ~= nil and (w.plain == "if"
+				or w.plain == "for" or w.plain == "while" or w.plain == "until"
+				or w.plain == "case")) then
+			local node, reason, where = parsePiece(P, depth)
+			if node == nil then return nil, reason, where end
+			local last = P.tokens[P.i - 1]
+			local src = string.sub(P.text or "", at, last.stop or at)
+			if #src > CeroSecOS.MAX_FUNC_BYTES then
+				return nil, "function too large", line
+			end
+			return { k = "func", line = line, name = name, body = { node }, src = src }
+		end
 		local open = wordAt(P)
 		if open == nil or open.plain ~= "{" then
 			return nil, unexpected(peek(P), "{"), peek(P).line
@@ -1235,7 +1263,7 @@ end
 -- A list is at least one command in either (the "}" or ")" unexpected dash gives
 -- `{ }` and `( )`), and what follows the closer is a redirect or the end of the
 -- command: `{ echo; } foo` is `word unexpected`, as on sh.
-local function parseGroup(P, depth)
+parseGroup = function(P, depth)
 	local open = take(P)
 	local sub = open.t == "op"
 	local closer = "}"
@@ -1273,7 +1301,7 @@ local function parseGroup(P, depth)
 	return node
 end
 
-local function parsePiece(P, depth)
+parsePiece = function(P, depth)
 	if depth > CeroSecOS.MAX_NEST then
 		return nil, "too deeply nested", peek(P).line
 	end

@@ -21,7 +21,7 @@ have can notice is in the shell: a script you saved that used `echo "a\nb"` now 
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
-- The debug window's Self-test also runs 252 shell lines on a scratch
+- The debug window's Self-test also runs 260 shell lines on a scratch
   machine, spread over a few seconds, and writes
   `CeroSec shell selftest: PASS n FAIL m` to the log and console.txt.
 - `test` and `[` refuse a bad number the way 4.4BSD did:
@@ -32,6 +32,19 @@ and a command whose redirect is refused no longer runs.
 - A file name may begin with `-`, as on any Unix: `echo x > -f` makes it,
   and `rm -- -f` or `rm ./-f` takes it away. Account and group names still
   may not.
+- The shell has `{ list; }` and `( list )`, as sh does. Braces make a list
+  one command: `{ date; who; } > log` puts both in the file, and a group
+  can sit in a pipe or around `&&` and `||`. Round brackets run the list in
+  a copy of the shell: `(cd /etc; ls)` leaves you where you were, and
+  `(exit 3)` ends only the brackets, with 3 in `$?`. A function's body may
+  be any of these too: `f() ( cd /; ls )`.
+- Because of that, `(` and `)` are part of the shell's grammar now, and
+  `{` and `}` are where a command starts. `echo (hi)` is a syntax error, as
+  on sh: quote the brackets, `echo '(hi)'`. A case pattern that is a set
+  holding a bracket is written `[\)]`. Check any script of yours that
+  prints bare brackets.
+- `exit` with no number ends with the status of the last command, as sh
+  does: `false; (exit); echo $?` prints 1, where it printed 0.
 - `kill -l` folds its list at a space to fit the screen, so no signal's name
   is cut in half across two lines.
 - The shell now refuses an `if`, `while`, `until`, `for` or function whose

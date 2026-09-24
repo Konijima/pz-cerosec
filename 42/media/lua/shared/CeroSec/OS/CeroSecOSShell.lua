@@ -1087,7 +1087,8 @@ CeroSecOS.DEVIATIONS = {
 	-- written or not (CeroSecOSVM's pipeline stepper, stage.ran). A real
 	-- sh runs every stage to its end; write(2) raises SIGPIPE only on the
 	-- next write into the closed pipe (pipe(7)). So `{ echo a > f; echo b
-	-- > g; } | true` never makes g, and `sleep 5 | true` ends at once.
+	-- > g; } | true` makes f and never g -- a group is not a command of its
+	-- own here, its first one is -- and `sleep 5 | true` ends at once.
 	{ name = "pipe", world = true,
 		phrase = "A stage of a pipe stops as soon as the command reading it",
 		why = "a stage is stopped when its reader ends, not on its next write" },

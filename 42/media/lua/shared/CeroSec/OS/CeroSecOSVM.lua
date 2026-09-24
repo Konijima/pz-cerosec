@@ -2651,8 +2651,11 @@ builtins["."] = function(job, args, state, env, redirect, sinks)
 	return 0
 end
 
+-- With no n, the status of the last command run (POSIX.2 XCU exit; 4.4BSD-
+-- Lite2 bin/sh/main.c exitcmd sets exitstatus only when argc > 1), so
+-- `false; (exit); echo $?` prints 1.
 builtins.exit = function(job, args)
-	local n = 0
+	local n = job.status or 0
 	if args[2] ~= nil then n = CeroSecOS.intOf(args[2]) or 0 end
 	job.sig = { k = "exit", n = n }
 	return n
@@ -4913,8 +4916,11 @@ stepOnce = function(state, job, env)
 		job.again = nil
 		-- A command has run: in a stage, from here on a closed pipe in front of
 		-- it is a SIGPIPE (pipeStep), and not before -- the first command opens
-		-- its redirect even when the reader is already gone.
-		job.ran = true
+		-- its redirect even when the reader is already gone. A group is not
+		-- that command: walking it only opens its redirects and pushes its
+		-- list, so the first command INSIDE it is the one that counts --
+		-- `{ echo a > f; echo b > g; } | true` makes f, as the page says.
+		if f.node.k ~= "group" then job.ran = true end
 		local cost = runSimple(state, job, f, env)
 		if job.again ~= nil and job.state == "running" then pushFrame(job, f) end
 		job.again = nil
