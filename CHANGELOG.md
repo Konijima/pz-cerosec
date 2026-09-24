@@ -8,6 +8,244 @@ date.
 
 ## Unreleased
 
+## 0.7.0 - 2026-09-23
+
+A computer that opens with a left click, an editor that no longer stops at the
+edge of the screen, three new cabling options for servers, and a shell that behaves
+much more like the real one. Nothing here needs a new save, and every new option
+is off, or set to the reach a cable always had, until a server owner changes it.
+One thing in a world you already have does change, once, on load: every text
+file on a computer or a floppy gains the newline a real file ends with, so
+`ls -l` shows each of them one byte bigger. The rest of what a world you already
+have can notice is in the shell: a script you saved that used `echo "a\nb"` now prints the two characters
+`\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
+and a command whose redirect is refused no longer runs.
+
+- The debug window's Self-test also runs 356 shell lines on a scratch
+  machine, spread over a few seconds, and writes
+  `CeroSec shell selftest: PASS n FAIL m` to the log and console.txt.
+- `test` and `[` refuse a bad number the way 4.4BSD did:
+  `test: x: expected integer`, or `test: 12ab: trailing non-numeric
+  characters`. An expression it cannot read is `test: syntax error`, and a
+  `[` with no `]` says `test: missing ]`. A script that looked for the old
+  `integer expected` wording needs the new one; `$?` is still 2.
+- A file name may begin with `-`, as on any Unix: `echo x > -f` makes it,
+  and `rm -- -f` or `rm ./-f` takes it away. Account and group names still
+  may not.
+- The shell has `{ list; }` and `( list )`, as sh does. Braces make a list
+  one command: `{ date; who; } > log` puts both in the file, and a group
+  can sit in a pipe or around `&&` and `||`. Round brackets run the list in
+  a copy of the shell: `(cd /etc; ls)` leaves you where you were, and
+  `(exit 3)` ends only the brackets, with 3 in `$?`. A function's body may
+  be any of these too: `f() ( cd /; ls )`.
+- A redirect after a function's closing brace is the function's own, as
+  in sh: `log() { echo ran; } >> ~/log` appends to the file every time
+  `log` runs. It used to be refused with `redirection unexpected`.
+- Because of that, `(` and `)` are part of the shell's grammar now, and
+  `{` and `}` are where a command starts. `echo (hi)` is a syntax error, as
+  on sh: quote the brackets, `echo '(hi)'`. A case pattern that is a set
+  holding a bracket is written `[\)]`. Check any script of yours that
+  prints bare brackets.
+- `exit` with no number ends with the status of the last command, as sh
+  does: `false; (exit); echo $?` prints 1, where it printed 0.
+- `kill -l` folds its list at a space to fit the screen, so no signal's name
+  is cut in half across two lines.
+- The shell now refuses an `if`, `while`, `until`, `for` or function whose
+  body is empty (`if true; then fi`), as sh does; write `true` for a body
+  that does nothing.
+- The manual page "This machine may not be new." now gives commands that
+  actually work on a found machine, and says which of them need root.
+- The shell reads `IFS`, as sh does: `IFS=:; x=a:b; for i in $x` gives `a` and
+  `b`, `read` splits on it, and `"$*"` joins with its first character. `$( )`
+  keeps the newlines inside what it catches and drops only the trailing ones,
+  so `echo "$(printf 'a\nb')"` prints two lines. A script that never sets
+  `IFS` splits exactly as before.
+- A file now ends its last line with a newline, like on a real Unix:
+  `echo a > f` makes a file of two bytes and `wc -c` says 2, `printf a > f`
+  makes one, and `wc -l` counts newlines. A file without one prints without
+  one, so `printf a | cat; echo b` shows `ab` on one line, and `>>` adds
+  straight after the last byte. Your existing files, on the computer and on
+  floppies, get their missing newline added once, when the world loads or the
+  disk goes in, so each text file in `ls -l` grows by one byte; a full disk is
+  never pushed past what it holds, and saved scripts run as before. An older
+  version of the mod will refuse to open a computer or a floppy this one has
+  touched, rather than show its files wrong.
+- The editor never refuses or changes a file you save unchanged. When the
+  final newline is the one byte that doesn't fit (the 4096-byte file limit, a
+  full machine, a full floppy), the last line is saved open and the editor
+  says `[Incomplete last line]`. A file holding one empty line stays that way.
+- Old worlds now get `expr`, `uname` and `rmdir`, and an update no longer puts
+  back a command or file you deleted.
+- Numbers typed to `printf`, `expr`, `$(( ))`, `test`, `kill`, `tail`,
+  `head`, `sleep`, `read -n` and `shift` are read the way 4.4BSD read them:
+  `printf %x 1e999` no longer hangs the machine, `printf %d 123456789012345`
+  prints its digits, and `tail -n +3` starts at line 3.
+- Every shell starts with `IFS` set to space, tab and newline, so the usual
+  `OIFS="$IFS" ... IFS="$OIFS"` puts splitting back as it was. Bare `$@`
+  splits like `$*`, `set +e` no longer replaces `$1`, and `--` ends the
+  options of every command.
+- A few refusals now read as 4.4BSD's did: `cd nosuch` says `cd: can't cd to
+  nosuch`, `sh nosuch.sh` says `nosuch.sh: Can't open nosuch.sh`, `. nosuch`
+  says `.: Can't open nosuch`, a wrong old password to `passwd` is followed by
+  `passwd: /etc/passwd: unchanged`, and a failed `su` in a found machine's
+  log reads `su: BAD SU <name> to root`.
+- After output with no newline at its end, the prompt still starts on the
+  next row; the manual's "What is not Unix here" now says so.
+- A shell function can be defined without a space before the brace, as in
+  `t(){ echo a; }`, like on any sh. Glued to the brace, `t(){echo a;}`
+  answers `"}" unexpected`, as 4.4BSD's sh did.
+- The shell has `set` (`set -- a b` for new `$1 $2`, `set` alone to list the
+  variables), `unset` and `unset -f`, `exec`, and `trap '...' EXIT` to clean
+  up when a script ends. `${x:-default}`, `${x:=...}`, `${x:?...}`,
+  `${x:+...}`, `${#x}` and the `${x#...}`, `${x%...}` trims work, `${1:-...}`
+  and `${10}` too. A variable you did not `export` no longer leaks into the
+  commands of a pipeline (`Q=1; env | cat`).
+- A computer that's already on now opens with a left click, same as the
+  menu's Use computer.
+- The editor no longer refuses a line wider than the screen. It wraps onto the
+  row below and scrolls to follow you, like a real terminal, instead of
+  stopping your typing dead at the sixtieth character.
+- The editor now shows a line number down the left of every row, like `vi
+  -- :set number`. A wrapped row's number stays blank, so it can't be
+  mistaken for a new line.
+- Running a cable to a fixture in your own basement, or from the basement to
+  the house above it, no longer costs any wire. Some basements are drawn on
+  the map as their own building rather than part of the house's, and a
+  computer down there could see only its own switches; the cable between them
+  is still needed, but it's free now, the way running wire down to your own
+  basement should be -- and it's offered however many floors apart the two
+  are, whatever the cable range.
+- Two new server options, both off by default. **Cabling required indoors
+  too** (`CeroSec.RequireWiring`) turns off the free ride a computer's own
+  building normally gives it: nothing is in `/dev`, inside or out, until a
+  cable has actually been run to it. **Cabling costs nothing**
+  (`CeroSec.FreeWiring`) leaves the wire in your bag wherever a cable is
+  needed, without ever buying extra reach -- the cable range stays exactly
+  what it was, and `dev find` still says such a device is linked. Under
+  **Cabling required indoors too**, a shop that was automated before the
+  outbreak comes with its cables already run, as far as the cable range
+  reaches -- and a shop you first found dark gets them the moment you bring
+  it power and switch its computer on. A shop already wired before the
+  option was switched on doesn't: its fixtures wait for a cable like any
+  you fitted yourself.
+  Fixed: with **Hardware required** off, the "Link to
+  computer" submenu could vanish entirely with no way to get a bare fixture
+  onto `/dev` at all -- most completely under **Cabling required indoors
+  too**, but also for a generator, an outdoor fixture, a fixture in another
+  building, and a basement built as its own separate lot: none of those were
+  ever covered by the free ride in the first place. Every one of them is
+  cabled now, same as a fixture that carries a real module always was.
+- New server option, **Cable range, in tiles** (`CeroSec.LinkRange`), thirty
+  by default -- the same reach a cable has always had, and forty-eight at
+  most. A server can raise it
+  to cover more of a building off fewer machines, or lower it to spread
+  computers out. Lowering it never strips a cable already run: only a new
+  one feels the change.
+- A command whose redirect is refused no longer runs. `rm notes > /etc/x`
+  used to say "permission denied" and delete `notes` anyway; now the shell
+  opens the file first, like a real one, and nothing happens. The other side
+  of it: `cat nosuch > out` now leaves an empty `out` behind, as on any Unix.
+- `2>` works: `cat nosuch 2>/dev/null` says nothing, `2>errors` keeps the
+  errors in a file, `> log 2>&1` puts both in one, and `echo oops >&2` sends
+  a line where errors go. `cat f 2>/dev/null` no longer looks for a file
+  named `2`.
+- A function or script with its own redirect in a pipeline now writes to
+  its file and not down the pipe: `g > out | wc -l` fills `out` and counts
+  0, as in a real shell. The redirect used to be ignored there, leaving
+  `out` empty; `>>`, `2>`, `2>&1` and `>&2` on such a call now work too.
+- `echo a > f | true` now leaves `a` in `f`. A command in a pipeline was
+  stopped before it ran when the command after it finished first, so its
+  file was never made; now every command in a pipeline gets to run, and one
+  writing into its own file is not stopped at all.
+- `x=$(g > f)` now puts what `g` prints in `f` and leaves `x` empty, as in
+  a real shell. A function's or script's own `>` or `>>` used to lose to
+  the `$( )`, leaving the file empty.
+- `$( )` no longer catches error text. `x=$(cat nosuch)` shows the error on
+  the screen and leaves `x` empty; write `x=$(cat nosuch 2>&1)` to catch it.
+- A backslash inside double quotes now stays put unless it's in front of `$`,
+  a backquote, `"` or another backslash, as on a real sh. `grep "a\.c"` now
+  finds `a.c` and no longer `abc`, and `echo "C:\dos"` prints `C:\dos`. The
+  shell no longer turns `\n` into a new line or `\t` into a tab: that is
+  printf's job, and `printf "a\nb\n"` works as before. A script you already
+  saved that used `echo "a\nb"` now prints the two characters `\n`; change
+  it to `printf "a\nb\n"`.
+- `read` takes several names: `read cmd rest` puts the first word in `cmd` and
+  the rest of the line in `rest`. Plain `read` now takes a backslash away and
+  keeps the character after it, as a real sh does (`a\ b` is one word, `a b`);
+  `read -r` keeps backslashes as typed. `read -n 3` keeps three characters
+  instead of only one, and reading from a pipe it leaves the rest of the line
+  for the next `read`, as bash does.
+- `cp` onto a file that's already there now writes over it, like a real cp,
+  and the file keeps its owner and mode. `cp f f` says "f and f are
+  identical (not copied).", 4.4BSD cp's own words.
+- `ls` takes several names at once, and `ls /etc/passwd` now prints
+  `/etc/passwd` as typed.
+- `cat -` reads the pipe among files (`echo top | cat - notes`), `cat -n`
+  numbers the lines, and `--` ends the options.
+- A `[` missing its `]`, or a `sleep` with no number, no longer stops a
+  script: the error is printed, `$?` is 2 (or 1 for sleep), and the script
+  carries on. `sleep abc` reads its word as 4.4BSD's did, as nought: it
+  sleeps no time and says nothing. sleep counts whole seconds, as 4.4BSD's
+  did: `sleep 0.5` no longer waits at all, and `sleep 1.5` waits one
+  second, so a loop that paused on a fraction wants `sleep 1`. Their errors go where errors go:
+  `2>/dev/null` hides them, and they no longer land in a `> file`, a `$( )`
+  or down a pipe.
+- `$?` after a command that is not found is now 127, and 126 for a file you may not
+  run, so a script can tell "failed" from "wasn't there".
+- `$*` and `$!` work, and a bare `$@` splits its words like `$*`. `x=$@` and
+  `x="$@"` with two arguments or more no longer break the script: `x` gets
+  them joined by a space. A new login starts with an empty `$!`.
+- A file a function or script wrote through `>` or `2>` is complete for the
+  very next command: `f > out; wc -l out` no longer counts short.
+- A script left running by 0.6.x in the middle of a command writing to a file
+  goes on adding to that file under 0.7.0 instead of emptying it again.
+- The manual's "What is not Unix here" pages are now the complete list, and
+  checked both ways against the machine: every difference from a 1993 Unix
+  that is kept is on them, and nothing on them is untrue. New are
+  `read -p/-s/-n` and `!!` being later shells' words, the passwd file,
+  the `#` prompt, the little left of the old error wording (the shell's
+  `sh:` signature, reasons no errno named), a pipe stopping its left side as soon as
+  the right side is done (`sleep 5 | true` ends at once), and the commands and
+  flags that are not here (`set -e/-x/-u`, a `trap` on anything but `EXIT`,
+  `exec > file` with no command, `expr :`, `uname -m`, `printf %f`, `sh -c`,
+  the link count in `ls -l`, a time zone in `date`), and each line typed at
+  the prompt being a shell of its own for `set --`, `trap` and `exec`. The
+  error appendix also gained grep's pattern errors, `passwd: Permission
+  denied`, `export: not a name` and `wait: too many jobs`.
+- `grep` ends with `$?` 2 on an error -- a pattern it cannot read, a file it
+  cannot open, a bad flag -- and keeps 1 for "nothing found", so a script
+  can tell the two apart. A backwards range such as `[z-a]` now says
+  "invalid character range", the words of 4.4BSD's regular expressions.
+- New commands `rmdir`, `expr` (sums and comparisons, exit status 0, 1 or 2)
+  and `uname`, and the flags scripts reach for first: `rm -f` (a file that is
+  not there is no error), `kill -9 %1`, `kill -s KILL`, `kill -l`, `tail +N`,
+  `touch` with several files, and `test -s`, `-h` and `-L`. `printf` now
+  takes a width, a precision, the `-` and `0` flags, `%x`, `%o` and `%c`,
+  repeats its format for extra arguments, and understands `\101`-style octal
+  escapes (never a control character).
+- Some output now looks the way a 1993 BSD printed it: `wc` gives each number
+  eight columns, `uniq -c` four, and `which nosuch` says
+  `no nosuch in /bin /usr/local/bin` instead of nothing. `useradd` and
+  `userdel` now say nothing when they succeed, like the real ones --
+  remember that a new account has an empty password until you run `passwd`.
+- Error messages now read the way a 1993 BSD printed them. A command's
+  refusal is the full sentence (`cat: notes: No such file or directory`,
+  `Permission denied`, `Is a directory`, `File exists`). A flag a command
+  does not have is `cat: illegal option -- z` followed by its usage line.
+  The shell speaks for itself in its own lower-case words: `foo: not found`,
+  `foo: permission denied`, and `cannot create /etc/x: permission denied`
+  for a `>` it could not open. Syntax errors read `Syntax error: "fi"
+  unexpected`, and in a script `broken.sh: 3: Syntax error: ...`. A wrong
+  password to `su` is `Sorry`, and to `passwd` it is `passwd: Permission
+  denied`; the login prompt says `Login incorrect`. A script that looked
+  for the old words in an error (`no such file`, `command not found`)
+  needs the new ones; `$?` is unchanged (127 not found, 126 not runnable).
+- `x=$(false); echo $?` prints 1, as on a real sh: a line that is only
+  assignments answers with the status of its last `$( )`. A `return`
+  with no number gives the status of the last command instead of 0. And
+  a function written `f ( ) { ...; }`, with blanks between the brackets,
+  is no longer lost when the world is saved and loaded again.
+
 ## 0.6.1 - 2026-09-21
 
 Doors that close on cars and a keyboard nobody else could hear. A garage door, a

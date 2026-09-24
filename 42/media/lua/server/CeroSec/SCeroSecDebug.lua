@@ -962,6 +962,11 @@ function CeroSecDebug.dump(luaObject)
 	end
 
 	say("machine at " .. pos(luaObject.x, luaObject.y, luaObject.z))
+	-- Where it stands, ahead of the state walk and never behind it: the state
+	-- of a machine with a big disk hits DUMP_MAX on its own (below), and the
+	-- premises lines are the ones a report about "wrong /dev" needs most.
+	local premises = CeroSecDebug.premises(luaObject)
+	for i = 1, #premises do say(premises[i]) end
 	local state = luaObject:osState()
 	if state == nil then
 		say("  (no state)")

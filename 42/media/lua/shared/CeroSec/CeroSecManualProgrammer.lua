@@ -157,14 +157,14 @@ the machine walks the directories named in PATH, left to right, looking
 for a file by that name with x on it, and runs the first it finds. Fresh
 out of the crate PATH holds two directories -- /bin, the machine's own
 commands, and /usr/local/bin, empty and yours -- which is why a word you
-made up is "command not found".
+made up is "not found".
 
 Make a directory of your own, add it to PATH, and your scripts become
 commands with no dot-slash and no sh in front of them:
 
   admin@ksp-04-11:~$ mkdir bin
   admin@ksp-04-11:~$ lights on
-  lights: command not found
+  lights: not found
   admin@ksp-04-11:~$ PATH=$PATH:$HOME/bin
   admin@ksp-04-11:~$ lights on
   lights on
@@ -295,11 +295,15 @@ is how you get a space into a word without quoting the lot:
   admin@ksp-04-11:~$ echo a\ b
   a b
 
+Inside double quotes a backslash works only before $ ` " another
+backslash, or the end of a line, which it joins to the next. Before
+anything else it stays: "C:\dos" is C:\dos.
+
 Leave a quote open and nothing runs at all -- not the good half of the
 line, nothing:
 
   admin@ksp-04-11:~$ echo "unfinished
-  sh: syntax error: unterminated quote]],
+  Syntax error: Unterminated quoted string]],
 
 [[Comments, and two commands on one line.
 
@@ -319,7 +323,7 @@ one. This is the trap the whole page exists for:
 
   admin@ksp-04-11:~$ echo a;b
   a
-  b: command not found
+  b: not found
   admin@ksp-04-11:~$ echo "a;b"
   a;b
 
@@ -372,7 +376,7 @@ what you would have typed at it except read, which chapter 3 covers.
 
 Classic mistake. Writing a line with a space around an equals sign. x = 5
 is not an assignment: it is the command x with two words after it, and the
-machine answers "x: command not found", which reads like nonsense until
+machine answers "x: not found", which reads like nonsense until
 you know this. An assignment is NAME=value with no blanks anywhere near
 the equals sign. It is the single most common line in a broken script.]],
 
@@ -505,6 +509,26 @@ the answer, because a one-character answer leaves the cursor where it is.
 While a script is waiting like this, the prompt is not yours. Escape is
 the ^C that takes the question away and the script with it.]],
 
+[[read with more than one name.
+
+Give read several names and it cuts the line into words: the first word
+to the first name, the next word to the next name, and the whole rest of
+the line to the last one. A name with no word left for it is empty.
+
+  admin@ksp-04-11:~$ cat split.sh
+  read cmd rest
+  echo "$cmd / $rest"
+  admin@ksp-04-11:~$ sh split.sh
+  cp a b
+  cp / a b
+
+A backslash keeps the blank behind it inside the word, and goes away
+itself. read -r keeps every backslash just as it was typed.
+
+read -n 3 keeps the first three characters of what you type and drops
+the rest. It still waits for Enter: this screen has one typing line. From
+a pipe, the rest of the line waits for the next read.]],
+
 [[printf, for when echo is not tidy enough.
 
 echo prints its words with a space between them and a new line at the end,
@@ -514,7 +538,7 @@ on the same line instead.
 printf takes a shape first and the things to put in it after. A percent
 sign and a letter is a hole: %s for a word, %d for a whole number, %% for
 a real percent sign. A backslash and a letter is a key you cannot type in
-the middle of a word: \n a new line, \t a tab.
+a word: \n a new line, \t a tab, \\ a backslash; echo reads none.
 
   admin@ksp-04-11:~$ printf "%s is %d years old\n" hda 4
   hda is 4 years old
@@ -577,8 +601,11 @@ The spaces inside those brackets are not optional and they are not style.
 The bracket is a command, exactly like ls, and a command has to be a word
 of its own. The closing bracket is an argument it insists on:
 
-  admin@ksp-04-11:~$ [ 3 -lt 4
-  sh: test: missing ']'
+  admin@ksp-04-11:~$ [ 3 -lt 4 ; echo $?
+  test: missing ]
+  2
+
+Two, not one: the question could not be asked. A script goes on.
 
 Try both. Then try man [ and read its usage line, which is real.]],
 
@@ -589,6 +616,8 @@ About a file, with the name after the flag:
   -f  is it a plain file
   -d  is it a directory
   -e  is it there at all, either kind
+  -s  is it there, and not empty
+  -h  is it a symbolic link (-L is the same question)
   -r  may I read it
   -w  may I write it
   -x  may I run it
@@ -653,9 +682,9 @@ test signs its refusals with its own name, and each one says what it could
 not do rather than guessing:
 
   admin@ksp-04-11:~$ [ a -eq 3 ]
-  test: integer expected
+  test: a: expected integer
   admin@ksp-04-11:~$ [ 3 -foo 4 ]
-  test: unknown operator
+  test: syntax error
 
 The first is the important one. -eq and its five friends read numbers, and
 "a" is not one. Use = for text and -eq for numbers, and remember that a
@@ -756,6 +785,9 @@ does. return leaves it, with a number if you give one:
   ok() { if [ -f "$1" ]; then return 0; fi; return 1; }
   if ok notes.txt; then echo it is there; fi
 
+A bare return gives back the status of the last command run, so
+`f() { false; return; }` answers 1.
+
 exit is not return. exit inside a function ends the whole script, the way
 it would anywhere else; return ends the function and nothing more.]],
 
@@ -808,7 +840,14 @@ is room, the same loop reads better:
   done
 
 The list is words, split on blanks like any other line, so quotes work in
-it the way they work everywhere. And the list can come from a command,
+it the way they work everywhere. What splits is IFS: space, tab and
+newline in every new shell. Save it, change it, put it back:
+
+  OIFS="$IFS"; IFS=:
+  for d in $PATH; do echo $d; done
+  IFS="$OIFS"
+
+And the list can come from a command,
 which is what makes for useful rather than merely tidy -- that is chapter
 6, and it is the one thing in this book worth reading twice.
 
@@ -981,7 +1020,7 @@ One level, and no further, the same for backquotes. A $( ) inside a $( )
 is refused where it is typed, before anything runs:
 
   admin@ksp-04-11:~$ x=$(echo $(date))
-  sh: syntax error: bad substitution
+  Syntax error: Bad substitution
 
 There is no script worth writing on this desk that needs two, in
 either spelling or a mix, and the machine would rather say so than let
@@ -1142,7 +1181,7 @@ $( ) is refused where it is typed, and putting a sum between them does not
 buy you a second one:
 
   admin@ksp-04-11:~$ echo $(( $(echo $(date)) ))
-  sh: syntax error: bad substitution
+  Syntax error: Bad substitution
 
 A catch inside a sum meets the word's ceiling like any other catch, and a
 catch that comes back as something that is not a number counts as nought,
@@ -1275,7 +1314,37 @@ shell:
   kate
 
 Remember the rule as a sentence: a pipe carries text out, never variables
-back. If you need the value, catch it.]],
+back. If you need the value, catch it.
+
+A catch hands back its status too: a line that is only assignments
+answers with it, so x=$(false); echo $? prints 1.]],
+
+[[Braces and brackets: a list as one command.
+
+Put a list between braces and it is one command: one redirect catches all
+of it, one pipe carries all of it, and && and || judge it by its last:
+
+  admin@ksp-04-11:~$ { date; who; } > log
+  admin@ksp-04-11:~$ { echo a; echo b; } | wc -l
+         2
+
+The braces are words, so they want a blank inside them, and the list
+before } ends in a semicolon or a new line.
+
+Round brackets make the same list a subshell: a copy of this shell, like
+a stage of a pipe. What it changes stays inside it:
+
+  admin@ksp-04-11:~$ x=1; (x=2; cd /etc); echo $x; pwd
+  1
+  /home/admin
+
+And exit leaves the brackets and nothing more: (exit 3); echo $?
+prints 3, and you are still logged in. A bracket is grammar now,
+so echo (a) is a syntax error: quote it, echo '(a)'.
+
+A function's body takes a redirect the same way, and it is opened at
+every call: after f() { echo a; } > o, each f writes o, and f > p
+still does, leaving p empty.]],
 
 [[Sending output to a file, and to nowhere.
 
@@ -1302,11 +1371,31 @@ command's work and not its noise:
 That line asks "is kate in the log?" and says nothing at all while
 asking. The answer is in $?, which is what an if wants.
 
-One command sends its output to one file. Two redirects on a line, or none
+One command sends its output to one file. Two > on a line, or none
 after the sign, and nothing runs:
 
   admin@ksp-04-11:~$ echo x > a > b
-  sh: syntax error: bad redirect]],
+  Syntax error: redirection unexpected]],
+
+[[Errors, and where they go.
+
+What a failed command says is not its output. It reaches the glass when
+> points at a file, when a pipe is waiting, even inside a catch:
+x=$(cat nosuch) says so on the screen and leaves x empty. 2> sends the
+errors to a file of their own; 2>&1 sends them where the output goes:
+
+  admin@ksp-04-11:~$ cat nosuch 2>/dev/null
+  admin@ksp-04-11:~$ cat nosuch > log 2>&1
+  admin@ksp-04-11:~$ cat log
+  cat: nosuch: No such file or directory
+
+Order counts, left to right: 2>&1 > log sends the errors where the output
+WAS, the glass, and only the output into log. >&2 is the other way round,
+and it is how a script complains: echo "no such user" >&2.
+
+The file is opened before the command runs. If it cannot be, nothing runs:
+rm notes > /etc/x is refused and notes is still there. And cat nosuch >
+out still leaves out behind, empty, the way every Unix does.]],
 
 [[Two more on redirects, and one on the wire.
 
@@ -1342,7 +1431,7 @@ word that started it. So one sign catches everything the file prints:
   admin@ksp-04-11:~$ sh nightly.sh > log
   admin@ksp-04-11:~$ cat log
 
-Nothing appears on the screen while it runs. ./nightly.sh and . nightly.sh
+Nothing appears while it runs. ./nightly.sh and . nightly.sh
 do the same, and so does a script that script runs: nothing closed the
 file.
 
@@ -1350,12 +1439,12 @@ Two things still come to the glass. A REFUSAL, because a refusal is not
 output and never goes where output was going:
 
   admin@ksp-04-11:~$ sh nightly.sh > log
-  ls: /nope: no such file
+  ls: /nope: No such file or directory
 
-That line is on the screen; log holds only what was printed. And the end of
-it if the file fills, a file being 4096 bytes:
+That line is on the screen; log holds only what was printed. And sh's
+own word when the file fills at 4096 bytes:
 
-  sh: log: file too large
+  cannot create log: file too large
 
 Use it for the nightly job you want a record of, and >> to make the records
 add up instead of replacing each other.
@@ -2249,12 +2338,12 @@ A program is a list of commands, separated by a semicolon or a new line.
   cmd >> file      output onto the end of a file
   cmd &            run it behind the prompt
 
-The thirteen reserved words. They mean this only where a command starts,
+The fifteen reserved words. They mean this only where a command starts,
 so echo done prints "done":
 
   if then elif else fi
   for in while until do done
-  case esac
+  case esac { }
 
 The shapes they build:
 
@@ -2263,10 +2352,8 @@ The shapes they build:
   while LIST; do LIST; done
   until LIST; do LIST; done
   case WORD in PAT|PAT) LIST;; PAT) LIST;; esac
-  NAME() { LIST; }
-
-Sixteen deep is as far as these nest, and eight is as long as a pipeline
-may be.]],
+  { LIST; }    ( LIST )
+  NAME() { LIST; }    NAME() ( LIST )]],
 
 [[The dollar signs, all of them.
 
@@ -2274,9 +2361,11 @@ may be.]],
   $1 .. $9        the words handed to this script
   $0              the script's own name
   $#              how many words were handed over
-  $@              all of them
+  $@              all of them; "$@" one word each
+  $*              all of them, joined by IFS's first byte
   $?              the number the last command finished on
   $$              this job's number
+  $!              the last & job's number
   $(command)      what the command printed, as a word
   $((2 + 3))      arithmetic: + - * / % and brackets
 
@@ -2284,12 +2373,18 @@ Assignment is NAME=value with no blanks near the equals sign.
 
 Quoting: double quotes hold a word together and let a dollar sign work;
 single quotes let nothing through; a backslash takes the meaning off one
-character. A pound sign starts a comment.
+character. A pound sign starts a comment.]],
 
-Thirteen words the shell runs itself, with no file in /bin needed:
+[[The shell's own words.
 
-  . break cd continue export exit fg
-  history jobs read shift type wait
+The shapes on the page before go inside one another. Sixteen deep is as
+far as these nest, and eight is as long as a pipeline may be.
+
+Seventeen words the shell runs itself, with no file in /bin needed:
+
+  . break cd continue exec exit export fg
+  history jobs read set shift trap type
+  unset wait
 
 Everything else you type is a FILE, found by walking PATH: echo, printf
 and test are files in /bin, which is why ls /bin is the honest list of
@@ -2301,7 +2396,8 @@ what this machine can do.]],
       put one or more names in the environment, with a
       value or with the one they already have. With no
       name at all it lists what is in it, one a line,
-      in the shape you would type back
+      in the shape you would type back; a word that
+      is not a name is export: not a name
   env
       the environment as it will be handed over,
       NAME=value, one a line, sorted
@@ -2309,42 +2405,81 @@ what this machine can do.]],
       read the file in THIS shell, so what it sets is
       still set afterwards. It wants r on the file and
       not x, because nothing runs it
+  set, unset
+      set alone lists every variable the same way; set --
+      word... replaces $1.. and $#. unset NAME... drops a
+      variable, unset -f NAME... a function
 
 sh <file> is the other half of the last one: that runs the file as a
 program, which is handed a copy of the environment and can change nothing
 of yours. Chapter 1 has the pair side by side and chapter 3 has export.]],
 
-[[What the shell says before anything runs. A script that meets one never
-becomes a job: not one line of it happens. A script signs these with its
-own name and line -- broken.sh: line 3: -- a typed line with sh: alone.
+[[exec and trap: how a script ends.
 
-  syntax error: unexpected 'fi'
-      a closing word where a command should be; also
-      'done', 'then', 'else', 'elif', 'do', 'esac',
-      ';;' and '<'
-  syntax error: missing 'done'
-      a loop never closed; also 'fi', 'then', 'do',
-      'esac', 'in', ';;' and ')'
-  syntax error: not a name
+  exec command [word...]
+      run the command in place of the script: the
+      script ends there, with the command's status,
+      and its trap does not run
+  trap 'command' EXIT
+      run the command when this shell ends, off its
+      last line or by exit. $? in it is the status the
+      shell is leaving with, and exit n in it changes
+      that. 0 is another name for EXIT
+  trap - EXIT
+      take it back; trap alone shows it, the way you
+      would type it
+
+A script's trap is the script's, and a $( ) starts with none. EXIT is
+the only one there is: kill ends a job outright.]],
+
+[[Inside the braces.
+
+  ${name:-word}  word, if name is unset or empty
+  ${name:=word}  the same, and name is set to it
+  ${name:?word}  stop the script, saying word
+  ${name:+word}  word, if name is set and not empty
+  ${name-word}   and the rest without the colon:
+                 then only an unset name counts
+  ${#name}       how many characters name holds
+  ${name#pat}    name with the shortest start that
+                 matches pat cut off; ## the longest
+  ${name%pat}    the same off the end; %% the longest
+  ${1:-word}     all of them work on $1 too; ${10}
+
+pat is * ? and [ ] as case has them; quote a character to take its
+meaning away. The word may hold $name, not a $( ) or a second ${ }.]],
+
+[[What the shell says before anything runs. A script that meets one never
+becomes a job. In a script the name and line come first -- broken.sh: 3:
+
+  Syntax error: "fi" unexpected
+      a closing word where a command should be,
+      or an empty { } or ( )
+  Syntax error: "(" unexpected
+      a bracket that opens nothing: quote it
+  Syntax error: end of file unexpected (expecting "done")
+      a loop never closed; also "fi", "then", "esac",
+      "in", ")" and "}"
+  Syntax error: word unexpected (expecting "do")
+      a word where the grammar wanted another
+  Syntax error: Bad for loop variable
       for wants a name after it
-  syntax error: unterminated quote
-      a quote opened and never closed
-  syntax error: bad substitution
-      a $( ) in a $( ), an unclosed ${ or $(( , or
-      braces round something that is not a name
-  syntax error: bad redirect
-      two redirects on one command
-  syntax error: missing redirect target
-      a > or >> with no file after it
-  syntax error: missing '{'
-      a NAME() with no block after it; also '}']],
+  Syntax error: Unterminated quoted string
+  Syntax error: Bad substitution
+      a $( ) in a $( ) or a ${ }, an unclosed ${
+      or $((, or braces round no parameter
+  Syntax error: redirection unexpected
+      two > or two 2> on one command, or a <
+  Syntax error: Bad fd number
+      a >& that is not >&1 or >&2]],
 
 [[And what the shell says about a script that is too BIG, which is also said
 before anything runs: these are the machine's own ceilings and not sh's, and
 every one of them is a number this book names where it belongs.
 
   too deeply nested
-      past sixteen levels of if, for, while or case,
+      past sixteen levels of if, for, while, case,
+      { } or ( ),
       or eight of sh running sh
   too many stages
       more than eight in one pipeline
@@ -2372,26 +2507,51 @@ line is named and the script ends there.
   ambiguous redirect
       the name after > came out as two words, or none
   sort: input too large
-      sort and uniq must see all their input before
-      they answer, so they hold a hundred lines and
-      four kilobytes of it and no more
-  test: integer expected
-      -eq and its five friends, handed something that
+      sort and uniq hold all input first: a
+      hundred lines, four kilobytes, no more
+  test: <x>: expected integer
+      -eq and five friends, handed something that
       is not a number
-  test: unknown operator, missing ']', argument
-      expected
+  test: syntax error
+  test: missing ]
   read: not a name
-  sleep: invalid interval
+  read: <n>: bad number
+  read: Illegal option -x
+  usage: sleep seconds
   sleep: no clock
+      test's exit 2, sleep's 1; the script goes on
   edit: not a terminal
-      also su:, passwd:, sudo: and rlogin:; all
-      five want a pair of hands, and a cron line, an
-      ampersand and a pipeline stage have none]],
+      also su:, passwd:, sudo:, rlogin:; a cron
+      line, an & and a pipe stage have no hands]],
 
-[[What the machine says about jobs. No script signs these, because they
-are not a script's to say.
+[[What the shell's own words and the braces say. These stop the script on
+their line too.
+
+  unset: <name>: bad variable name
+  <n>: bad variable name
+      ${1:=word}: a number is not a variable
+  set: Illegal option -e
+      and -x and -u, which are not here; +e too
+  set: Illegal option -o <name>
+  Illegal option -x
+      sh -x file: bare, sh has no name yet
+  trap: <name>: bad trap
+      anything but EXIT or 0
+  exec: redirect with no command
+  <name>: parameter null or not set
+      ${name:?} on a name unset or empty
+  <name>: parameter not set
+      ${name?}, which minds unset only
+  <name>: <word>
+      ${name:?word} says your word instead
+  <name>: pattern too long
+      a pattern past 32 pieces]],
+
+[[What the machine says about jobs. No script signs these: they are
+not a script's to say.
 
   sh: too many jobs
+  wait: too many jobs
       a fifth job; four is the ceiling
   kill: <id>: no such job
   fg: no current job
@@ -2408,35 +2568,65 @@ are not a script's to say.
 
 And the ones about finding a program at all:
 
-  <name>: command not found
-      nothing on PATH answers to it
+  <name>: not found
+      nothing on PATH answers; $? is 127
   ./thing: permission denied
-      it is there and it has no x on it for you
+      it has no x on it for you; $? is 126
   too many PATH entries
       PATH may name eight directories
   type: <name>: not found
   sh: usage: sh <file> [args]
   sh: !<n>: event not found
 
-The shapes of the words this volume leans on, which no card in Volumes 1
-and 2 carries:
+The shapes of the words this volume leans on, which no other card
+carries:
 
   sh <file> [args]        test <expression>
   [ <expression> ]        wait [id]...
   printf <format> [arg...]    true    false]],
 
-[[The reasons off the disk, each wearing the command's name and the path
-first: cat: notes: no such file.
+[[What the newer tools say when a line is wrong.
 
-  no such file          is a directory
-  not a directory       permission denied
-  invalid characters    invalid destination
-  path too deep         directory not empty
-  file too large        directory full
-  file exists   invalid name   is a device
-  disk full     /dev: read-only
+  rmdir: illegal option -- p
+      getopt's words, and then the usage line;
+      uname says it the same way
+  syntax error
+  non-numeric argument
+  Divide by zero
+  Remainder by zero
+  yacc stack overflow
+      expr's, bare; $? is 2, and 0 and 1 its answer
+  kill: unknown signal <x>; valid signals:
+      and then the list, as kill -l prints it
+  kill: illegal signal number: <x>
+  kill: option requires an argument -- s
+  printf: <x>: illegal number
+  printf: <x>: Result too large
+      printf stops there, and $? is 1
+  test: <x>: overflow
+      or underflow: past the machine's word
+  test: <x>: trailing non-numeric characters
+  kill: stop: not honoured
+      a signal that would only pause a job
+  no <name> in /bin /usr/local/bin
+      which, finding nothing; $? is still 0
 
-A device answers in its OWN name and no command's:
+And the one shape no other card carries:
+
+  expr <expression>]],
+
+[[The reasons off the disk, each after the command's name and the path:
+cat: notes: No such file or directory.
+
+  No such file or directory   Not a directory
+  Is a directory   Permission denied   File exists
+  Directory not empty   File too large
+  No space left on device   invalid characters
+  invalid destination   path too deep   directory full
+  invalid name   is a device   are identical
+  /dev: read-only
+
+A device answers in its OWN name:
 
   light0: no power       lock0: no such device
   win0: smashed          win0: barricaded

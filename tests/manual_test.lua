@@ -275,9 +275,19 @@ local FS_REASONS = {
 	-- has something in it: rename(2)'s ENOTEMPTY, in this machine's own words.
 	"directory not empty",
 }
+-- Carried the way a command PRINTS them: strerror(3)'s sentence where the
+-- reason has an errno (CeroSecOS.STRERROR), the bare words where it has not.
 for i = 1, #FS_REASONS do
-	check("error appendix carries the reason \"" .. FS_REASONS[i] .. "\"",
-		string.find(errText, FS_REASONS[i], 1, true) ~= nil)
+	local said = CeroSecOS.strerror(FS_REASONS[i])
+	check("error appendix carries the reason \"" .. said .. "\"",
+		string.find(errText, said, 1, true) ~= nil)
+end
+-- And sh's own words for the same reasons at a redirect it could not open
+-- (CeroSecOS.cannotCreate), and at a command it could not run.
+for _, said in ipairs({ "cannot create", "directory nonexistent", "file system full",
+		"permission denied", "is a directory", "not found" }) do
+	check("error appendix carries sh's own \"" .. said .. "\"",
+		string.find(errText, said, 1, true) ~= nil)
 end
 
 -- The bare reasons the shell itself hands to fail(cmd, arg, reason) as a
@@ -301,25 +311,113 @@ end
 check("scanned at least a dozen fail() reasons out of the engine source",
 	#scannedReasons >= 12)
 for i = 1, #scannedReasons do
-	check("error appendix carries the scanned reason \"" .. scannedReasons[i] .. "\"",
-		string.find(errText, scannedReasons[i], 1, true) ~= nil)
+	-- fail() hands every reason through CeroSecOS.strerror, so what the
+	-- glass shows -- and the appendix must carry -- is the sentence.
+	local said = CeroSecOS.strerror(scannedReasons[i])
+	check("error appendix carries the scanned reason \"" .. said .. "\"",
+		string.find(errText, said, 1, true) ~= nil)
+end
+
+-- And the refusals that never pass through fail() at all: the ones the VM,
+-- the parser and the shell RETURN, as `return nil, "..."` (a builtin's or the
+-- parser's reason) or `return false, { "..." }` (a command's whole answer).
+-- Every string literal on such a line is lifted, and each piece that is text a
+-- player reads must be in an appendix:
+--
+--   * a piece that is only a command's prefix ("wait: ", "read: ") is the
+--     caller's frame and not a reason, and one with no letter in it ("'") is
+--     the other half of a quote;
+--   * a leading ": " and a trailing ": " are the joins either side of an
+--     argument, and are cut;
+--   * a usage line is pinned by the quick reference, above;
+--   * a piece that ends in a quoted token -- syntax error: missing 'fi' -- is
+--     found either literally or as its entry's "also 'fi', ..." list: the
+--     text up to the quote must be an appendix line and the token must be
+--     inside the same entry, which runs to the next line in the entry column;
+--   * the four below are guards against a caller that is not the console and
+--     are never printed; each names where it is caught.
+local INTERNAL_RETURNS = {
+	-- CeroSecOSVM's runner turns this into "<name>: not found" and
+	-- $? 127 before anything is shown (the `reason == "not a function"` test).
+	["not a function"] = true,
+	-- CeroSecOS.promptJob's type guards: the console always hands it a state
+	-- with a filesystem, a logged-in session and a string.
+	["no filesystem"] = true,
+	["not logged in"] = true,
+	["sh: syntax error"] = true,
+	-- The BRE compiler's own type guard: grep hands it the typed word.
+	["bad expression"] = true,
+	-- The pager's continuation, handed a saved answer that is not one: the
+	-- console only ever hands back the rest it was given.
+	["more: nothing to answer"] = true,
+}
+local function inEntry(piece)
+	if string.find(errText, piece, 1, true) ~= nil then return true end
+	local head, token = string.match(piece, "^(.-')([^']+)'$")
+	if head == nil then return false end
+	local from = 1
+	while true do
+		local at = string.find(errText, head, from, true)
+		if at == nil then return false end
+		local rest = string.sub(errText, at + #head)
+		local stop = string.find(rest, "\n  %S") or string.find(rest, "\n\n") or #rest
+		if string.find(string.sub(rest, 1, stop), "'" .. token .. "'", 1, true) ~= nil
+				or string.sub(rest, 1, #token + 1) == token .. "'" then
+			return true
+		end
+		from = at + 1
+	end
+end
+local directPieces, seenDirect = {}, {}
+for _, name in ipairs({ "CeroSecOSVM", "CeroSecOSScript", "CeroSecOSShell" }) do
+	local f = io.open(OS_DIR .. name .. ".lua", "r")
+	if f == nil then error("cannot read " .. name .. " as text") end
+	for line in f:lines() do
+		if string.find(line, "return nil, \"", 1, true) ~= nil
+				or string.find(line, "return false, { \"", 1, true) ~= nil then
+			-- Only what the return hands back: a line may test a type first.
+			local handed = string.match(line, "return nil, (\".*)$")
+				or string.match(line, "return false, { (\".*)$")
+			for lit in string.gmatch(handed, '"([^"]*)"') do
+				local piece = string.gsub(string.gsub(lit, "^: ", ""), "[: ]+$", "")
+				if not INTERNAL_RETURNS[lit] and string.find(piece, "%a") ~= nil
+						and string.find(lit, "^[%w_%.%[]+: $") == nil
+						and string.find(piece, "usage", 1, true) == nil
+						and not seenDirect[piece] then
+					seenDirect[piece] = true
+					directPieces[#directPieces + 1] = piece
+				end
+			end
+		end
+	end
+	f:close()
+end
+check("scanned at least thirty returned refusals out of the engine source (" ..
+	#directPieces .. ")", #directPieces >= 30)
+for i = 1, #directPieces do
+	check("error appendix carries the returned refusal \"" .. directPieces[i] .. "\"",
+		inEntry(directPieces[i]) or inEntry(CeroSecOS.strerror(directPieces[i])))
 end
 
 -- Everything else worth listing is built at runtime -- string concatenation
 -- (a command's own name, ".. reason", a user's own name in the sudoers
--- refusal) or assembled a piece at a time (the parser's three syntax
+-- refusal) or assembled a piece at a time (the parser's syntax
 -- errors, none of which go through fail() at all) -- so there is no bare
 -- literal in the source for a scan to lift. Hand-kept, and exactly as
 -- CeroSecOSShell.lua and SCeroSecSystem.lua produce them.
 local LITERAL_MESSAGES = {
-	"command not found",
+	"not found",
 	"is not in the sudoers file.",
-	"login incorrect",
-	"passwd: authentication failure",
+	"Login incorrect",
+	"passwd: Permission denied",
+	"passwd: /etc/passwd: unchanged",
+	"cd: can't cd to <dir>",
+	"<file>: Can't open <file>",
+	".: Can't open <file>",
+	"Sorry",
 	"passwd: passwords do not match",
 	"passwd: password too long",
 	"passwd: no such user",
-	"su: authentication failure",
 	"su: too many levels",
 	"sudo: authentication failure",
 	"useradd: <name>: already exists",
@@ -332,12 +430,23 @@ local LITERAL_MESSAGES = {
 	"help: no commands in " .. CeroSecOS.BIN_PATH .. ": the system is damaged.",
 	"help: switch the computer off and on to repair it.",
 	"cerosec: nothing to answer",
-	"syntax error: bad redirect",
-	"syntax error: unterminated quote",
-	"syntax error: missing redirect target",
+	"Syntax error: redirection unexpected",
+	"Syntax error: Bad fd number",
+	"Syntax error: Unterminated quoted string",
+	"Syntax error: end of file unexpected",
+	"unexpected (expecting",
+	"sudo: <name>: command not found",
+	"<cmd>: illegal option -- <flag>",
 	-- rung 5b: the pipeline's own two, neither of which goes through fail()
 	"too many stages",
 	"input too large",
+	-- The braces and exec (CeroSecOSVM's expandStep and runSimple): built
+	-- round a name, or handed to jobError, where the scan cannot lift them.
+	"<name>: parameter null or not set",
+	"<name>: parameter not set",
+	"<name>: pattern too long",
+	"<n>: bad variable name",
+	"exec: redirect with no command",
 }
 for i = 1, #LITERAL_MESSAGES do
 	check("error appendix carries \"" .. LITERAL_MESSAGES[i] .. "\"",
@@ -389,13 +498,14 @@ for i = 1, #DOOR_LINES do
 		string.find(errText, DOOR_LINES[i], 1, true) ~= nil)
 end
 
--- Confirm the three syntax errors really are in the engine source, spelled
+-- Confirm the syntax errors really are in the engine source, spelled
 -- exactly as the appendix quotes them -- caught by the scan above only if
 -- they went through fail(), and they do not.
 local SYNTAX_ERRORS = {
-	"syntax error: bad redirect",
-	"syntax error: unterminated quote",
-	"syntax error: missing redirect target",
+	"Syntax error: redirection unexpected",
+	"Syntax error: Unterminated quoted string",
+	"Syntax error: Bad fd number",
+	" (expecting ",
 }
 for i = 1, #SYNTAX_ERRORS do
 	check("engine source really contains \"" .. SYNTAX_ERRORS[i] .. "\"",
@@ -567,9 +677,10 @@ end
 -- a regression in any one of them fails with its own message).
 do
 	local MISSING_BEFORE = {
-		"unknown option", "invalid mode", "no manual entry", "no clock",
-		"syntax error: bad redirect", "syntax error: unterminated quote",
-		"syntax error: missing redirect target",
+		"illegal option", "invalid mode", "no manual entry", "no clock",
+		"Syntax error: redirection unexpected",
+		"Syntax error: Unterminated quoted string",
+		"Syntax error: end of file unexpected",
 	}
 	for i = 1, #MISSING_BEFORE do
 		check("previously-missing error string now in the appendix: \""
@@ -851,7 +962,7 @@ do
 	local DELIBERATE = {
 		-- chapter 8 has the reader make this one himself, in ~/bin
 		hello = true,
-		-- chapter 2 types this on purpose, to show "command not found"
+		-- chapter 2 types this on purpose, to show "not found"
 		sl = true,
 	}
 
@@ -899,10 +1010,25 @@ do
 	states("the screen", "Screen: " .. CeroSecOS.COLS .. " columns wide, "
 		.. CeroSec.ROWS .. " rows tall")
 	states("the editor's rows", "gets " .. CeroSec.EDIT_ROWS .. " of those rows")
+	-- The WRAP width and not the screen's: the line-number gutter takes its
+	-- columns out of COLS, plus the one space after it (CeroSec.editScreen).
+	-- editGutterWidth(1) is the gutter of every file this mod ships.
 	states("the editor's line width",
-		"a line stops at " .. CeroSec.EDIT_MAX_LINE .. " characters")
+		"a line wraps past " .. (CeroSec.COLS - CeroSec.editGutterWidth(1) - 1)
+			.. " characters")
 	states("the typing line", "typing line takes " .. CeroSec.INPUT_MAX .. " characters")
 	states("one file's ceiling", "One file: " .. CeroSecOS.MAX_FILE_BYTES .. " bytes.")
+	-- "This machine may not be new": the four places to look on a found machine,
+	-- each with who can look there. os_test runs every one of these lines on a
+	-- prefilled machine as the reader named, so a row changed here is a row to
+	-- run there. It used to send everybody to `cat /etc/passwd`, which is mode
+	-- 600 and root's, and to `cat .sh_history`, which is the reader's own.
+	states("who is on a found machine", "who is on it ls /home anybody")
+	states("who last sat at it", "who last sat here last anybody")
+	states("what it has done", "what it has done cat /var/log/messages root")
+	states("what he typed", "what he typed cat /home/<name>/.sh_history root")
+	states("his own history", "Logged in as him, his own is cat .sh_history.")
+	states("root reads /etc/passwd", "root also reads /etc/passwd")
 	states("the drive", "The drive: " .. CeroSecOS.DISK_BYTES .. " bytes and "
 		.. CeroSecOS.MAX_NODES .. " files")
 	states("one directory's ceiling",
@@ -962,19 +1088,29 @@ do
 	--
 	do
 		local TITLE = "What is not Unix here"
+		-- Where the list ENDS: the paragraph that says so. The pages run on past
+		-- it in the same chapter ("This machine may not be new"), and a bench that
+		-- read those as part of the list would be reading someone else's words.
+		local END = "That is the whole list."
 		local pages = {}
 		for ci = 1, #vol.chapters do
 			local ch = vol.chapters[ci]
 			for pi = 1, #ch.pages do
-				-- The page itself, and every page after it in the same chapter: the
-				-- list is longer than a thousand characters and a page may not be, so
-				-- it runs onto continuation pages that do not repeat the title.
+				-- The page itself, and every page after it in the same chapter up to
+				-- the one that closes the list: the list is longer than a thousand
+				-- characters and a page may not be, so it runs onto continuation
+				-- pages.
 				if string.find(ch.pages[pi], TITLE, 1, true) ~= nil and #pages == 0 then
-					for k = pi, #ch.pages do pages[#pages + 1] = ch.pages[k] end
+					for k = pi, #ch.pages do
+						pages[#pages + 1] = ch.pages[k]
+						if string.find(ch.pages[k], END, 1, true) ~= nil then break end
+					end
 				end
 			end
 		end
 		check("Volume 1 carries the \"" .. TITLE .. "\" page", #pages > 0)
+		check("and the list ends with \"" .. END .. "\"",
+			string.find(pages[#pages] or "", END, 1, true) ~= nil)
 		local page = table.concat(pages, "\n")
 
 		-- Every word of it, so a name is matched WHOLE: "more" is inside "moreover"
@@ -992,27 +1128,35 @@ do
 			check("deviation " .. i .. " says why",
 				type(one.why) == "string" and one.why ~= "")
 			check("the deviations page names " .. one.name, said[one.name] == true)
-			-- An entry carrying a `phrase` is held to it LITERALLY, and the whole
-			-- of the collected run is where it may be. A name is not always enough:
-			-- `login` is a word this very page uses about the login: prompt, so the
-			-- check above is green on a page that never mentioned that deviation at
-			-- all, and `ln`'s declaration is worth nothing unless the answer a
-			-- player really gets is printed beside it.
-			if one.phrase ~= nil then
-				check("deviation " .. one.name .. "'s phrase is a string",
-					type(one.phrase) == "string" and #one.phrase > 0)
-				check("the deviations page says \"" .. tostring(one.phrase) .. "\"",
-					string.find(page, tostring(one.phrase), 1, true) ~= nil)
-			end
+			-- Every entry is held to its `phrase` LITERALLY, and the whole of the
+			-- collected run is where it may be. A name is not enough: `login` is a
+			-- word this very page uses about the login: prompt, so the check above
+			-- is green on a page that never mentioned that deviation at all, and
+			-- `ln`'s declaration is worth nothing unless the answer a player really
+			-- gets is printed beside it. It is also what the page is read back by,
+			-- below, so it is not optional on any entry.
+			check("deviation " .. one.name .. " carries a phrase",
+				type(one.phrase) == "string" and #one.phrase > 0)
+			check("the deviations page says \"" .. tostring(one.phrase) .. "\"",
+				string.find(page, tostring(one.phrase), 1, true) ~= nil)
 			-- And the engine agrees about whether it is there at all.
 			if one.world then
-				-- The third kind: not a command, so there is no file and no
-				-- COMMAND_INFO entry to weigh it against. A `phrase` is what one of
-				-- these is checked by instead, so it is not optional here.
+				-- Not a command: no file and no COMMAND_INFO entry to weigh it
+				-- against, so the phrase is all it is checked by.
 				check(one.name .. " is not a command",
 					CeroSecOS.COMMAND_INFO[one.name] == nil)
-				check("deviation " .. one.name .. " carries the phrase it owes",
-					type(one.phrase) == "string" and #one.phrase > 0)
+			elseif one.shell then
+				-- A word of the shell: no file, and `help` lists it as the shell's.
+				check(one.name .. " is a word of the shell",
+					CeroSecOS.SHELL_BUILTINS[one.name] == true)
+			elseif one.absent then
+				-- A name 1993 had and this machine has not, in any of its forms.
+				check(one.name .. " really is absent",
+					CeroSecOS.COMMAND_INFO[one.name] == nil
+					and not CeroSecOS.BUILTINS[one.name]
+					and not CeroSecOS.BUILTIN_FILES[one.name]
+					and not CeroSecOS.SHELL_BUILTINS[one.name]
+					and (CeroSecOS.RETIRED_BIN or {})[one.name] == nil)
 			elseif one.gone then
 				check(one.name .. " really is gone from the machine",
 					CeroSecOS.COMMAND_INFO[one.name] == nil)
@@ -1026,12 +1170,80 @@ do
 		end
 		check("and there really are some of them (" .. flagged .. ")", flagged >= 7)
 
-		-- The other direction: every name the engine RETIRED whose replacement is
-		-- not a name of its own is on the page too. A player who used `readlink`
-		-- last week will type it and get "command not found" with no hint at all,
-		-- and this page is where he finds out where it went. adduser, deluser and
-		-- gpasswd are not on it because their replacements are commands Volume 2
-		-- teaches by name.
+		-- The other direction, which is what makes the page's own "they are all
+		-- of them" something a bench holds it to: everything the PAGE declares is
+		-- in the list. The page is read a paragraph at a time -- each page split on
+		-- its own, because pages are joined by a single "\n" above and the last
+		-- paragraph of one would run into the title of the next -- and a prose
+		-- paragraph, together with the screens that follow it, must hold the
+		-- phrase of at least one entry. So a deviation written on the page and not
+		-- in CeroSecOS.DEVIATIONS goes red here, and one in the list and not on
+		-- the page goes red above.
+		--
+		-- What is NOT a declaration is named, and is short: the titles (one line
+		-- each, beginning with the page's title or listed here), and the few
+		-- sentences that frame the list. A new paragraph that declares something
+		-- has to earn an entry; one that only frames has to be added here, where
+		-- a reviewer reads it.
+		local FRAMING = {
+			"If you have never used a Unix, skip this page;",
+			"Two commands are narrower here than you remember them:",
+			"A real Unix would have printed notes there.",
+			"Symbolic links are the whole of what is here;",
+			"ls /bin is the whole list of what this machine can run,",
+		}
+		local phrases = {}
+		for i = 1, #CeroSecOS.DEVIATIONS do
+			phrases[#phrases + 1] = tostring(CeroSecOS.DEVIATIONS[i].phrase)
+		end
+		local function framing(para)
+			if string.find(para, TITLE, 1, true) == 1 then
+				return string.find(para, "\n", 1, true) == nil
+			end
+			for k = 1, #FRAMING do
+				if string.find(para, FRAMING[k], 1, true) == 1 then return true end
+			end
+			return false
+		end
+		local units, ended = 0, false
+		for pi = 1, #pages do
+			local paras = {}
+			for para in (pages[pi] .. "\n\n"):gmatch("(.-)\n\n") do
+				if para ~= "" then paras[#paras + 1] = para end
+			end
+			local k = 1
+			while k <= #paras and not ended do
+				local para = paras[k]
+				if string.find(para, END, 1, true) == 1 then
+					ended = true
+				else
+					-- The prose, and the screens under it.
+					local unit = para
+					while paras[k + 1] ~= nil and string.sub(paras[k + 1], 1, 2) == "  " do
+						k = k + 1
+						unit = unit .. "\n\n" .. paras[k]
+					end
+					if string.sub(para, 1, 2) ~= "  " and not framing(para) then
+						local held = false
+						for q = 1, #phrases do
+							if string.find(unit, phrases[q], 1, true) ~= nil then held = true end
+						end
+						check("the deviations page declares nothing CeroSecOS.DEVIATIONS" ..
+							" lacks: \"" .. string.sub(para, 1, 60) .. "...\"", held)
+						units = units + 1
+					end
+				end
+				k = k + 1
+			end
+		end
+		check("read the page back to its end", ended)
+		check("and read back some declarations (" .. units .. ")", units >= flagged / 3)
+
+		-- And every name the engine RETIRED whose replacement is not a name of its
+		-- own is on the page too. A player who used `readlink` last week will type
+		-- it and get "not found" with no hint at all, and this page is
+		-- where he finds out where it went. adduser, deluser and gpasswd are not
+		-- on it because their replacements are commands Volume 2 teaches by name.
 		local TAUGHT = { adduser = true, deluser = true, gpasswd = true }
 		for name, _ in pairs(CeroSecOS.RETIRED_BIN or {}) do
 			if not TAUGHT[name] then
@@ -1299,7 +1511,7 @@ do
 		"light0: no power", "lock0: no such device", "win0: smashed",
 		"win0: barricaded", "lock1: no padlock", "door0: locked",
 		"door0: barricaded", "door0: blocked", "light0: invalid value",
-		"light0: permission denied", "win0: cannot toggle",
+		"light0: Permission denied", "win0: cannot toggle",
 		"door0: operation not supported",
 		"dev: <word>: unknown kind", "dev: <id>: no such device",
 		CeroSecOS.DEV_PATH .. ": read-only",

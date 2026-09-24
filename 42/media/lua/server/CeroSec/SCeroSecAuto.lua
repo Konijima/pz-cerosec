@@ -82,7 +82,14 @@ require "CeroSec/SCeroSecNet"
 --     wired   = true           -- and its fixtures have all been fitted
 --     rooms   = { [tag] = true } -- the rooms already walked, while it is not
 --                                -- finished; dropped the minute it is
+--     later   = { {x=,y=,z=} }  -- fixtures still owed their cable, under
+--                                -- RequireWiring; dropped once it is spent
+--                                -- (cablePreFitted, resolveLater)
 --   }
+--
+-- A list, so a table reached by a NUMERIC key: KahluaTableImpl.save writes
+-- those as it writes any other (docs/notes/modules-proofs.md, the recursion
+-- at type byte 2).
 --
 -- `on = false` is written and kept, and that is deliberate: the roll is a hash and
 -- would answer the same next time, but a premises with no entry is a premises that
@@ -222,6 +229,81 @@ local function premisesRoomsOf(square, b1, b2)
 	return CeroSecNet.roomsOf(def)
 end
 
+-- AND UNDER CeroSec.RequireWiring, THE CABLE TO THE MACHINE. With that option on
+-- nothing reaches /dev without a cable (CeroSecDevices.find, skipFixtures), and a
+-- pre-fitted fixture is no exception: the electrician of 1991 ran the wire as well
+-- as the box. Off (the default), no cable is written -- the building walk already
+-- finds the fixture for free, and a cable would be four fields of modData on every
+-- fixture of every automated shop in the county buying nothing.
+--
+-- Commands.linkmodule's own order, both ends or neither: the machine's room
+-- (LINKS_PER_MACHINE) is asked first, the fixture's end is written, then the
+-- machine's. The price is CeroSecModules.linkWire's, the one the menu quotes, so
+-- CeroSec.FreeWiring and the nested-basement waiver apply as they would to a
+-- survivor's cable -- and what an unlink gives back is that price, for the reason
+-- a pre-fitted module comes off as an item (CeroSecAuto.fit): it is real hardware.
+--
+-- The range is checked HERE and not left to linkOn: linkOn only bounds the price,
+-- and under FreeWiring the price is 0 whatever the distance. A fixture past the
+-- range, a fixture already carrying LINKS_MAX cables, a machine already carrying
+-- LINKS_PER_MACHINE: no cable, no error, and the sweep goes on. The fixture is
+-- marked pre-fitted all the same, so the walk does not come back for it; a
+-- survivor can run that cable himself, which is what a fixture the electrician
+-- could not reach is for.
+--
+-- GOING FORWARD ONLY. A premises the walk finished (`wired`) before this existed,
+-- or while the option was off, is not walked again when a server switches it on,
+-- and a room already in `record.rooms` is not either: re-walking would need a new
+-- key in the save and a second walk of every automated shop in the county. Those
+-- fixtures then stand exactly where a survivor's own fitted-but-uncabled fixture
+-- stands under the option -- off /dev until a cable is run -- which is the one
+-- rule the option has, with no exception for who screwed the box on.
+--
+-- A MACHINE WITH NO STATE YET is the first walk of all: the decision fits the
+-- hardware BEFORE it switches the machine on (CeroSecAuto.decide says why), and
+-- the state is made by that switching on -- asking osState here would make it
+-- first and cost the machine its prefill (SCeroSecObject:turnOn, `bare`). So
+-- that answer is "later", and the walk writes the fixture's filing square into
+-- the record (`record.later`), SAVED, because the machine may not come up in
+-- that minute at all -- a shop first found with its grid already gone -- and a
+-- list in memory would be lost with the minute. The cables are run by the next
+-- turnOn of THAT machine that succeeds, whenever it comes: the decision's own a
+-- moment later, or a survivor's with a generator a month after
+-- (CeroSecAuto.resolveLater, called from SCeroSecObject:turnOn).
+--
+-- A SAVE FROM BEFORE `later` has no such field and reads it as nothing owed: a
+-- shop found dark under the old build keeps its fixtures uncabled, as it did.
+--
+-- true when both ends were written; false and "later" when only the missing
+-- state stopped it.
+local function cablePreFitted(luaObject, object)
+	if not CeroSecModules.wiringRequired() then return false end
+	local fSquare = object:getSquare()
+	if fSquare == nil then return false end
+	local state = luaObject.os
+	if type(state) ~= "table" then return false, "later" end
+	local fx, fy, fz = fSquare:getX(), fSquare:getY(), fSquare:getZ()
+	local mx, my, mz = luaObject.x, luaObject.y, luaObject.z
+	if not CeroSecModules.nestedFree(fx, fy, fz, mx, my, mz)
+			and CeroSecModules.linkSpan(fx, fy, fz, mx, my, mz)
+				> CeroSecModules.linkRange() then
+		return false
+	end
+	-- The machine's book names the FILING square, a gate's anchor (Commands.
+	-- linkmodule says why).
+	local ax, ay, az = CeroSecModules.placeOf(object)
+	if ax == nil then ax, ay, az = fx, fy, fz end
+	local book = CeroSecOS.linkSquares(state)
+	if CeroSecOS.linkAt(book, ax, ay, az) == nil
+			and #book >= CeroSecOS.LINKS_PER_MACHINE then
+		return false
+	end
+	local wire = CeroSecModules.linkWire(fx, fy, fz, mx, my, mz)
+	if not CeroSecModules.linkOn(object, mx, my, mz, wire) then return false end
+	CeroSecOS.addLink(state, ax, ay, az)
+	return true
+end
+
 -- Fit whatever of this premises' fixtures the world can answer for right now, and
 -- write down that it is finished when every room of it has been walked once.
 --
@@ -252,7 +334,25 @@ end
 -- returns before this for one that is), so a save from before this change -- which
 -- has no set and may have `wired` already -- reads exactly as it did.
 --
--- Answers how many fixtures were fitted.
+-- Answers how many fixtures were fitted. Those whose cable waits on the
+-- machine's state go into `record.later` (cablePreFitted says why).
+--
+-- By the FILING square (CeroSecModules.placeOf), the one a machine's cable book
+-- names too: a gate's walked leaf is re-made on another square at every toggle
+-- and its anchor is not. Once per square: two fixtures on one square (a switch
+-- and a window) are one entry, and resolveLater tries every fixture on it.
+local function owe(record, object)
+	local x, y, z = CeroSecModules.placeOf(object)
+	if x == nil then return end
+	if type(record.later) ~= "table" then record.later = {} end
+	local owed = record.later
+	for i = 1, #owed do
+		local at = owed[i]
+		if at.x == x and at.y == y and at.z == z then return end
+	end
+	owed[#owed + 1] = { x = x, y = y, z = z }
+end
+
 local function wirePremises(luaObject, b1, b2, record)
 	-- No square, no world to ask: a machine whose chunk is away costs the two table
 	-- lookups in CeroSecAuto.wire and this one test, and is asked again next minute.
@@ -267,15 +367,30 @@ local function wirePremises(luaObject, b1, b2, record)
 		CeroSecAuto.ROOMS_PER_MINUTE)
 	for i = 1, #walked do done[walked[i]] = true end
 
-	local fitted = 0
+	local fitted, cabled = 0, 0
 	for i = 1, #list do
 		local object = list[i].object
 		if not CeroSecModules.preFitted(object) then
 			local q1, q2 = CeroSecNet.premisesOfSquare(list[i].square)
 			if q1 == b1 and q2 == b2 then
-				if CeroSecAuto.fit(object) then fitted = fitted + 1 end
+				if CeroSecAuto.fit(object) then
+					fitted = fitted + 1
+					local ok, why = cablePreFitted(luaObject, object)
+					if ok then
+						cabled = cabled + 1
+					elseif why == "later" then
+						owe(record, object)
+					end
+				end
 			end
 		end
+	end
+	-- Once for the walk and not per cable: the menu counts a machine's cables off
+	-- this mirror (Commands.linkmodule), and the /dev cache is dropped again
+	-- because fit dropped it BEFORE the cable was on.
+	if cabled > 0 then
+		luaObject:publishOS()
+		CeroSecDevices.invalidate()
 	end
 
 	-- Finished only when the SET covers the premises. Counted over the room list
@@ -291,9 +406,74 @@ local function wirePremises(luaObject, b1, b2, record)
 	end
 	if fitted > 0 then
 		CeroSec.log("the premises " .. b1 .. "." .. b2 .. " was already wired: "
-			.. fitted .. " fixture(s) got their modules")
+			.. fitted .. " fixture(s) got their modules, " .. cabled .. " a cable")
 	end
 	return fitted
+end
+
+-- The cables the first walk could not run for want of a state, run once the
+-- machine is up and has one. Same rule, same skips, same publish. Called from
+-- SCeroSecObject:turnOn, every power-on of every machine, once the state and
+-- the network record exist -- so it is written to cost a machine that carries
+-- no premises two table lookups, the same door CeroSecAuto.wire uses.
+--
+-- ONE PLACE, and settle does not call it a second time: settle's own turnOn is
+-- a turnOn, so its cables are run inside it and the list is spent by then.
+--
+-- THE LIST IS SPENT IN ONE GO. The state exists now, so cablePreFitted can no
+-- longer answer "later": every other false is the range, LINKS_MAX or
+-- LINKS_PER_MACHINE, which the next power-on would answer the same, and the
+-- survivor's cable to run (see the head of cablePreFitted). So is a square
+-- with no pre-fitted fixture on it any more, which somebody took down. What is
+-- KEPT is a square that is not loaded: a fixture in a chunk that is away is
+-- still a fixture, exactly as scanLinked keeps a cable it cannot see.
+--
+-- A fixture a survivor cabled to this machine himself in the meantime is
+-- refused by linkOn ("linked") and writes nothing.
+--
+-- Answers how many cables were run.
+function CeroSecAuto.resolveLater(system, luaObject)
+	if type(system) ~= "table" or type(system.auto) ~= "table" then return 0 end
+	local net = CeroSecOS.netRecord(luaObject.os)
+	if net == nil then return 0 end
+	local record = CeroSecAuto.recordOf(system, net.b1, net.b2)
+	if record == nil or type(record.later) ~= "table" then return 0 end
+	if not CeroSecAuto.isMachineAt(system, net.b1, net.b2,
+			luaObject.x, luaObject.y, luaObject.z) then
+		return 0
+	end
+	local owed, kept = record.later, {}
+	local cell = nil
+	if getCell ~= nil then cell = getCell() end
+	local cabled = 0
+	for i = 1, #owed do
+		local at = owed[i]
+		if type(at) == "table" and type(at.x) == "number"
+				and type(at.y) == "number" and type(at.z) == "number" then
+			local square = cell ~= nil and cell:getGridSquare(at.x, at.y, at.z) or nil
+			if square == nil then
+				kept[#kept + 1] = { x = at.x, y = at.y, z = at.z }
+			else
+				local objects = square:getObjects()
+				for k = 0, (objects ~= nil and objects:size() or 0) - 1 do
+					local object = objects:get(k)
+					if CeroSecModules.isFittable(object)
+							and CeroSecModules.preFitted(object)
+							and cablePreFitted(luaObject, object) then
+						cabled = cabled + 1
+					end
+				end
+			end
+		end
+	end
+	if #kept > 0 then record.later = kept else record.later = nil end
+	if cabled > 0 then
+		luaObject:publishOS()
+		CeroSecDevices.invalidate()
+		CeroSec.log("the premises' machine at " .. luaObject.x .. "," .. luaObject.y
+			.. "," .. luaObject.z .. " is up: " .. cabled .. " cable(s) run to it")
+	end
+	return cabled
 end
 
 -- The sweep's own door into the walk above, and it is written to cost NOTHING in a
@@ -321,7 +501,10 @@ function CeroSecAuto.wire(system, luaObject)
 			luaObject.x, luaObject.y, luaObject.z) then
 		return 0
 	end
-	return wirePremises(luaObject, net.b1, net.b2, record)
+	-- Only the count: a machine this far has a network record, and so a state,
+	-- so nothing here waits on one.
+	local fitted = wirePremises(luaObject, net.b1, net.b2, record)
+	return fitted
 end
 
 --
@@ -416,5 +599,7 @@ function CeroSecAuto.settle(system, luaObject)
 	end
 	CeroSec.log("the machine at " .. luaObject.x .. "," .. luaObject.y .. ","
 		.. luaObject.z .. " was left running by its premises, with its crontab")
+	-- Up, so it has a state now, and the cables the walk above had to leave
+	-- were run by that turnOn itself (CeroSecAuto.resolveLater): not here too.
 	return true
 end

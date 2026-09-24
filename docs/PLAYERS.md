@@ -88,17 +88,18 @@ Commands:
 
 | command | does |
 | --- | --- |
-| `ls [-1laACF] [path]` | list a directory; columns when a person is reading, one name per line when anything else is (a pipe, a `$( )`, a file), `-1` and `-C` force either; `-l` adds owner, group, size and date, `-F` marks directories with `/` and links with `@`, `-a` shows hidden names plus `.` and `..`, `-A` shows hidden names without them |
+| `ls [-1laACF] [path]...` | list a directory; columns when a person is reading, one name per line when anything else is (a pipe, a `$( )`, a file), `-1` and `-C` force either; `-l` adds owner, group, size and date, `-F` marks directories with `/` and links with `@`, `-a` shows hidden names plus `.` and `..`, `-A` shows hidden names without them |
 | `cd [dir]` | change directory (home if no argument) |
 | `pwd` | print the working directory |
-| `cat <file>...` | print a file |
+| `cat [-n] [file]...` | print files; `-` among them is the pipe, `-n` numbers the lines |
 | `edit <file>` | open the file in the editor |
-| `touch <file>` | create an empty file, or move an existing one's date to now |
+| `touch <file>...` | create empty files, or move existing ones' dates to now |
 | `mkdir <dir>` | create a directory |
-| `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
+| `rm [-rf] <path>...` | remove a file, or a directory tree with `-r`; `-f` is silent about a name that is not there |
+| `rmdir <dir>...` | remove an empty directory (4.4BSD's has no `-p`) |
 | `mv <src> <dst>` | move or rename; a destination that exists is replaced (the directory's `w`, not the destination's mode, is what decides), an existing directory is moved *into*, and one that is not empty answers `directory not empty` |
 | `ln -s <target> <name>` | make a symbolic link; there are no hard links here, so the `-s` is not optional, `ln a b` answers `ln: usage: ln -s <target> <name>` and makes nothing. It is a **declared deviation**: a 1993 `ln` with no flag made a second name for one file |
-| `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
+| `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r`; onto a file that is already there it writes over it and keeps that file's owner and mode |
 | `chmod <mode> <path>` | set permissions: three octal digits, or letters applied to the mode it already wears, `u+x`, `go-w`, `a=r`, `ug+rw,o-rwx` |
 | `chown <user> <path>` | change the owner |
 | `chgrp <group> <path>` | change the group (owner or root; the group must exist) |
@@ -112,12 +113,13 @@ Commands:
 | `useradd [-G group[,group...]] login` | make an account with an empty password (root only); `-G wheel` makes it an administrator |
 | `userdel [-r] login` | remove an account (root only); `-r` removes its home directory too, and either way its name is swept out of `/etc/sudoers` and every group |
 | `hostname` | print the machine's name |
+| `uname [-asnrv]` | the system's name, `-n` the machine's, `-r` and `-v` the version; `-a` all four |
 | `passwd [user]` | change a password (root may change anyone's) |
 | `mkpasswd <text> [salt]` | show what a password would hash to (CeroSec Systems' own, no 1993 Unix had this) |
-| `grep [-cinv] [-e pattern] [pattern] <file>...` | find a **basic regular expression** in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines that do *not* match, `-c` prints how many instead of which, `-e` gives the pattern as an option-argument, the only spelling for one starting with a dash, and twice means either of two). POSIX.2's BRE cut to six pieces: `^` and `$` where they anchor (first and last), `.` for one character, `*` for any number of the piece in front of it, `[abc]`/`[a-z]` and `[^abc]` for a set, and `\` to take the meaning off any of them. **Not** here: `\( \)` and `\{m,n\}`. A pattern of more than 32 pieces is `expression too long`, an unclosed set is `unmatched [`, a reversed range is `bad range`. A literal pattern is a C call whatever the file; a pattern with a piece in it is a walk of every byte for every piece, and grep charges the job for that walk in steps (see "Design rules") |
+| `grep [-cinv] [-e pattern] [pattern] <file>...` | find a **basic regular expression** in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines that do *not* match, `-c` prints how many instead of which, `-e` gives the pattern as an option-argument, the only spelling for one starting with a dash, and twice means either of two). POSIX.2's BRE cut to six pieces: `^` and `$` where they anchor (first and last), `.` for one character, `*` for any number of the piece in front of it, `[abc]`/`[a-z]` and `[^abc]` for a set, and `\` to take the meaning off any of them. **Not** here: `\( \)` and `\{m,n\}`. A pattern of more than 32 pieces is `expression too long`, an unclosed set is `unmatched [`, a reversed range is `invalid character range`, and any of them ends grep with `$?` 2, where nothing found is 1. A literal pattern is a C call whatever the file; a pattern with a piece in it is a walk of every byte for every piece, and grep charges the job for that walk in steps (see "Design rules") |
 | `head [-n N\|-N] <file>` | the first N lines, 10 by default; `head -1` is the older spelling and works |
-| `tail [-n N\|-N] <file>` | the last N lines, 10 by default; `tail -5` likewise |
-| `wc [-clw] <file>...` | lines, words and bytes, or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
+| `tail [-n N\|-N\|+N] <file>` | the last N lines, 10 by default; `tail -5` likewise; `tail +N` from line N to the end |
+| `wc [-clw] <file>...` | lines, words and bytes, or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, eight columns each as 4.4BSD's `wc`, with a `total` row for several files |
 | `more [file]...` | a pager: one screenful, then `--More--(NN%)`; **Space** is the next screenful, **Return** one more line, **q** quits. Works as the *last* stage of a pipe (`ls -l \| more`). Where its output is not a screen, a redirect, a `$( )`, a stage that is not the last, it copies through and pages nothing, which is what `more(1)` itself does; where the output *is* a screen but nobody is there (a `&` job, a crontab line) it answers `more: not a terminal`. One deviation, and it is the console's: this machine reads a *line*, so Space is a space and then Enter |
 | `find <path>... [expression]` | walk a tree depth-first, one path a line, the directory before what is in it. The expression is `-name <glob>` (matches the **last component**, with `*`, `?` and `[…]`; a leading `!` or `^` negates a set), `-type f\|d`, `-print` (implied when no action is named, as POSIX says, and accepted anyway) and `-exec`. Both tests together must both be true. A link is a leaf: find does not follow one. A directory it may not read is named and not entered, and the walk goes on **unsuccessfully**, so `find / \| wc -l` as an ordinary account prints the paths instead of counting them, exactly as `cat good bad \| wc -l` does |
 | `find … -exec <cmd> {} \;` | run the command once for every name found, in find's own order, with `{}` replaced by the name. POSIX's rule: only an argument that is *exactly* `{}`. The `\;` is the shell being told to leave the semicolon alone. Naming an action takes the implied `-print` away; an explicit `-print` prints where you wrote it. The expression is AND-ed, so `-exec test -f {} \; -exec rm {} \;` runs the second only where the first was true. find does **one exec per turn** and hands the machine back, so a sweep of a hundred names takes a few seconds of game time and prints as it goes, no command on this machine may spend a whole pass |
@@ -136,7 +138,7 @@ Commands:
 | `mount <device> <dir>` | graft the disk onto a directory; from then on that directory **is** the disk, and what was under it is covered |
 | `umount <dir>` | take it off again, refused with `Device busy` while any session's working directory is inside it |
 | `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, one worked, or a whole kind worked, `dev door1 open`, `dev light0 off`, `dev lock1 toggle`, and `dev window close` for every window the machine can reach, one answer line each in the table's order, the line failing if any of them refused (no kind means *everything*: `off` means one thing to a light and another to a generator); `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
-| `which <name>` | where a bare name would be found on `PATH`, and nothing at all when it would not |
+| `which <name>` | where a bare name would be found on `PATH`; `no <name> in <PATH>` when it would not, as 4.3BSD's csh script said |
 | `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
 | `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
@@ -158,7 +160,8 @@ Commands:
 | `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
 | `!!` / `!<n>` | run the last line again, or line `<n>` |
 | `sleep <seconds>` | wait, costing the machine nothing while it does |
-| `printf <format> [arg...]` | `%s`, `%d`, `%%`, `\n` and `\t` |
+| `printf <format> [arg...]` | `%s %c %d %x %o %%` with a width, a precision and the `-` and `0` flags, `\n`, `\t` and `\NNN` (never a control byte); the format repeats for extra arguments |
+| `expr <expression>` | integer sums and comparisons, `\|` and `&`; `$?` is 0, 1, or 2 for an error. No `:` |
 | `test <expr>` / `[ <expr> ]` | the file and string tests, as in any `sh` |
 | `true` / `false` | a status and nothing else |
 | `echo <text>` | print text |
@@ -172,10 +175,10 @@ contents are the one-line description `help` prints. `cat /bin/ls` prints
 puts it out of everybody's reach but root's. That holds for the small ones the
 engine runs without leaving the house too, `echo`, `printf`, `test`, `[`, `true`,
 `false` and `sleep` are resolved through `/bin/<name>` first and then executed
-inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
+inside the engine, so `rm /bin/sleep` gives `sleep: not found` and
 `chmod 600 /bin/echo` gives `echo: permission denied` to an ordinary account.
 `/bin/sh` is the shell itself: delete it and every line typed answers
-`sh: command not found`, and the BIOS repair brings it back.
+`sh: not found`, and the BIOS repair brings it back.
 
 Which directories a bare name is looked for in is `PATH`, an ordinary shell
 variable. A login sets it to `/bin`, sets `HOME` beside it and **exports** both; a
@@ -186,7 +189,7 @@ with `HOME` and nothing else, which is the oldest trap in `cron` and is why a
 crontab line spells the whole path. The walk is POSIX's: left to right, the first
 file with `x` on it for whoever typed it wins, and something in the way without `x`
 does not stop the search, found everywhere and runnable nowhere is
-`permission denied`, found nowhere at all is `command not found`. A file found in
+`permission denied`, found nowhere at all is `not found`. A file found in
 `/bin` is the machine's own executable and the engine is behind it; a file found
 anywhere else is run as a **script**, so `~/bin` is where an account's own commands
 go and a name there shadows one in `/bin` when `PATH` says so. A symlink in `/bin`
@@ -240,8 +243,15 @@ would become a second file the first time somebody picked the computer up.
 **`/dev/null`** reads as nothing at all and swallows anything written to it, so
 `sh nightly.sh > /dev/null` throws output away. It is a device, `rm`, `mv`, `cp`
 and `edit` all answer `is a device`, it is mode `666`, and it costs the disk
-nothing however much goes into it. Only *output* goes there: this machine has no
-`2>`, and errors always reach the glass.
+nothing however much goes into it. `>` sends it the output; errors are the
+other stream and `2>` sends those: `cat nosuch 2>/dev/null` says nothing, `cat
+nosuch > log 2>&1` puts the error in `log`, and `echo oops >&2` sends a line to
+where errors go. A `$( )` catches the output only, so `x=$(cat nosuch)` shows the
+error on the glass and leaves `x` empty. The shell opens the file before the
+command runs: if it cannot, the command does not run at all (`rm notes > /etc/x`
+keeps `notes`), and `cat nosuch > out` still leaves an empty `out`. One thing is not
+Unix: a command that half fails (`cat notes nosuch`) hands back its output and its
+error as one stream, so all of it counts as the error.
 
 **`/var/tmp`** is the one directory anybody may write in (`drwxrwxrwx`) and the one
 where only the owner of a file, or root, may delete it or rename it out again.
@@ -253,9 +263,13 @@ quota exemptions are.
 `edit` turns the screen into a small editor: Tab saves, Esc leaves, and asks
 `Save modified buffer? (y/n)` first when there is something unsaved. Those two are
 the only keys the game hands a focused text box, which is why they are the two the
-key bar names. A file is capped at 4096 bytes and a line at 60 characters; the game's own text
-box stops accepting new keystrokes at 2000 characters typed in one sitting, though a
-bigger file still opens and still saves.
+key bar names. A line wider than the sixty-column screen wraps onto the row below,
+the way a real terminal folds a long line rather than losing it, and a file is
+capped at 4096 bytes; the game's own text box stops accepting new keystrokes at
+2000 characters typed in one sitting, though a bigger file still opens and still
+saves. A line-number gutter runs down the left of the buffer, `:set number`
+fashion: the number shows only on a wrapped line's first screen row, blank
+underneath it, so a folded row is never mistaken for a new one.
 
 `passwd` asks for the old password (skipped for root), the new one, and a retype.
 Putting text in a file is `echo text > file`, a redirection, the way it has
@@ -291,9 +305,9 @@ process's standard output belongs to the process: `sh nightly.sh > log` puts
 everything the script prints in `log` and nothing on the glass, `>>` adds to it, and
 a script the script runs writes there too. `./nightly.sh`, a script of your own on
 `PATH`, and `. nightly.sh` all do the same. What still comes to the screen is a
-**refusal**, `ls: /nope: no such file` is not output, here as on any Unix, and a
+**refusal**, `ls: /nope: No such file or directory` is not output, here as on any Unix, and a
 script whose output fills the file to its 4096 bytes is stopped there with
-`sh: log: file too large`.
+`cannot create log: file too large`.
 
 `shutdown` and `reboot` are the power button typed instead of pressed, and they are
 root's alone. `shutdown` turns the machine off: the sprite goes dark, the screen is
@@ -465,7 +479,7 @@ command's:
 | `door0: barricaded` | planks on it, and no machine takes those off |
 | `door0: blocked` | the doorway is not clear: a solid tile, a tree, or a vehicle across it, the game's own test, so a survivor could not open it by hand either |
 | `light0: invalid value` | that word means nothing to that kind |
-| `light0: permission denied` | the mode says no |
+| `light0: Permission denied` | the mode says no |
 | `win0: cannot toggle` | smashed or barricaded: no opposite for `toggle` to turn it into |
 | `sensor0: invalid value` | a sensor takes no word at all: every write to one says this |
 
@@ -484,7 +498,7 @@ path you mistyped.
 
 Devices are owner `root`, group `sudo`, mode `660`, so root and anybody
 `/etc/sudoers` names read and work them, with no `sudo` typed and no password
-asked, and everybody else gets `light0: permission denied` from the device itself.
+asked, and everybody else gets `light0: Permission denied` from the device itself.
 A sensor is born `440` instead, `cr--r-----`, because it is read-only by nature
 and the mode says so before anybody tries.
 Root may open one up to everybody with `chmod 666 /dev/light0`, that lasts.
@@ -700,9 +714,11 @@ ksp-back-02, 3 tiles, 7 wire
 One `Base.ElectricWire` a tile, straight across the ground, corners cost
 nothing, the crow's distance is what you pay, and **four tiles more for every
 floor between you and it**, which is why the machine on the landing above costs
-seven for three tiles. **Thirty tiles is as far as a cable goes**, floors
-included. Further than that and the answer is a second computer for that end of
-the building, worked from the first one down the coax or over the telephone.
+seven for three tiles. **Thirty tiles, by default, is as far as a cable
+goes**, floors included -- a server can set it further or shorter (see
+**Cable range, in tiles**, below). Further than that and the answer is a
+second computer for that end of the building, worked from the first one down
+the coax or over the telephone.
 
 It does not have to be switched on. A cable goes to the back of the machine and
 not to a login, and a survivor who had to boot the thing first to wire his porch
@@ -710,8 +726,8 @@ light would be wiring it in the dark. Nothing asks where you stand either, or
 that the door be open, or that you be inside: those are rules about reaching a
 thing with your hands, and this is the answer to not being able to. You need the
 screwdriver, the wire in your bag and the same level of Electricity the box
-itself wanted. The job takes as long as the walk, it is thirty tiles of reel you
-are paying out, and the greyed lines say why:
+itself wanted. The job takes as long as the walk, it is up to the range's
+worth of reel you are paying out, and the greyed lines say why:
 
 | the line says | what to do about it |
 | --- | --- |
@@ -721,8 +737,8 @@ are paying out, and the greyed lines say why:
 | *This computer already has 32 cables.* | cut one of that machine's other cables |
 | *This is somebody else's safehouse.* | with **Safehouse members only** on |
 
-A machine further away than thirty tiles is not on the list at all, and neither
-is one whose part of the map nobody has loaded.
+A machine further away than that is not on the list at all, and neither is
+one whose part of the map nobody has loaded.
 
 Then it is in that machine's `/dev` like anything in the building, same kinds,
 same numbers, same words, and `dev find` tells you what the run cost:
@@ -743,6 +759,19 @@ whether the box is still on the fixture, because a module that came off a fixtur
 you had cabled leaves the cable run and the reel owed. And if the fixture itself
 leaves the world, you pick the light switch up, somebody takes the door down,
 the wire drops on the floor where it stood, beside the boxes.
+
+A server may run a few options of its own about all of this. **Cabling
+required indoors too** (`CeroSec.RequireWiring`, off by default) turns off
+the free ride your own building normally gives you: nothing is in `/dev`,
+inside or out, until you have actually run a cable to it. **Cabling costs
+nothing** (`CeroSec.FreeWiring`, off by default) leaves the wire in your bag
+wherever a cable is needed -- it never buys you extra reach, whatever the
+range is set to it is still that, only the reel is free. **Cable range, in
+tiles** (`CeroSec.LinkRange`, thirty by default) is that reach itself: a
+server can raise it so fewer machines cover a big building, or lower it so
+you spread computers out more. If it drops after you have already run a
+longer cable, that cable keeps working -- the setting only decides what a
+NEW cable can reach.
 
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.

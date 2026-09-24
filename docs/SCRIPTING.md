@@ -24,7 +24,8 @@ admin@ksp-04-11:~$ kill %1
 ```
 
 Multi-line constructs go on one line, all of it. There is no continuation prompt:
-a line with an unfinished construct answers `sh: syntax error: missing 'done'` and
+a line with an unfinished construct answers
+`Syntax error: end of file unexpected (expecting "done")` and
 nothing runs. A refusal the shell itself makes carries no line number, a typed line
 is line one of nothing, but past the first level it is inside a file again
 (`sh backup.sh`) and that file's name and line come back.
@@ -105,21 +106,26 @@ it defines afterwards is its own), and **none** for a script, which is a new `sh
 which is the whole reason the dot exists. A logout takes them, as it takes the
 variables.
 
-The braces are **not** reserved words here. `{` and `}` are POSIX reserved words, and
-making them so would mean a brace group (`{ list; }` as a command) this machine has not
-got, plus a refusal for every `echo {` already written. What is needed is that `}`
-*stops the body*, and that falls out of the stops table `parseProgram` already takes.
+**Groups: `{ list; }` and `( list )`** (0.7.0; POSIX.2 XCU 2.9.4, 4.4BSD-Lite2
+sh's TBEGIN/TEND and NSUBSHELL). `{` and `}` are reserved words, so only where a
+command starts: `echo {` prints it, and `{echo a;}` is `"}" unexpected` as on sh.
+`(` and `)` are operators and end a word. A group is a `group` node; `runSimple`
+opens its redirects like a command with no words and then pushes its body as one
+frame, so one `>` catches the whole list and the group is one stage of a pipe. A
+group is not a command of its own for the pipe stepper (`job.ran`): the first
+command inside it is. The brackets push a frame marked `sub` that copies the
+variables, the exported set, the functions, the working directory and `$@` the way
+`pushCapture` does for a `$( )`, and `popFrame` puts them back; `exit`, `return` and
+`break` stop at it as they stop at a capture. A function body may be any compound
+command, `f() ( list )` included (`n->nfunc.body = command()`).
 
-**`case` and the bracket.** `)` is **not** an operator on this machine, there is no
-subshell grouping here, and making one of it now would turn every `echo (hi)` a
-survivor has already written into a syntax error, so the `)` that closes a pattern is
-taken off the *end* of the pattern word instead (`takeClose`). That is not a shortcut:
-only an **unquoted** `)` closes a pattern on a real sh, and the test is whether the
-last piece of the word was bare literal text, so `"a)"` is a pattern with a bracket in
-it and `[)]` is a set holding one. `;;` **is** one operator now (it was two separators,
-so `echo a;;` quietly ran as `echo a`), and `parseProgram` stops at it the way it stops
-at a reserved word. POSIX's optional `(` in front of a pattern is taken off the front
-the same way. `case` and `esac` joined the reserved words, so `help`, `type` and Tab
+**`case` and the bracket.** `(` and `)` are operators, so the brackets round a
+pattern are tokens of their own: `"a)"` is a pattern with a bracket in it, and a bare
+`[)]` is the syntax error it is on sh (write `[\)]`). Until 0.7.0 the `)` was taken
+off the end of the pattern word, which is how `echo (hi)` printed its brackets; it is
+a syntax error now. `;;` **is** one operator (it was two separators, so `echo a;;`
+quietly ran as `echo a`), and `parseProgram` stops at it the way it stops at a
+reserved word. `case` and `esac` joined the reserved words, so `help`, `type` and Tab
 know them.
 
 The patterns are expanded and compared **one at a time, in order, and no further than
@@ -224,10 +230,26 @@ typing its name alone. `/bin` is first, so nothing installed can shadow a shippe
 command.
 
 The language is the one you already know from a 1993 `/bin/sh`, cut to what fits on
-a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$?`,
-`$$`; single and double quotes and backslash; `#` comments; `;`, `&&`, `||` and a
+a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$*`, `$?`,
+`$$`, `$!` (`"$@"` is one field per argument, `"$*"` one field in all, joined by
+`IFS`'s first byte -- a blank when `IFS` is unset, nothing at all when it is set
+empty (POSIX.2 2.5.3); bare `$@`/`$*` are split on `IFS` like any unquoted
+expansion -- blanks, tabs and newlines by default, and whatever else `IFS` holds
+besides; where nothing is split, `x=$@`, `x="$@"` and `case "$@" in`, `$@` is one
+word joined the same way as `$*`; `$!` is the id of the last job an `&` started,
+empty until one has, and a new login starts with none); `IFS` (POSIX.2 2.6.5: unset
+reads as space, tab and newline; a script that never sets it is unchanged); `read`
+with several names (splits on `IFS` too, a word each, the rest of the line to the
+last; `-r` keeps backslashes, `-n N` keeps N characters, and from a pipe leaves the
+rest of the line, newline included, to the next read as bash does); a command not
+found (`foo: not found`) sets `$?` to 127
+and one found but not executable to 126; `test`/`[` and `sleep` are programs, so
+their errors print, set `$?` (2 and 1) and the script goes on; single and double quotes and backslash (inside double quotes a backslash
+is special only before `$`, `` ` ``, `"`, `\` and a newline, and is kept before
+anything else, as sh(1) and POSIX.2 say: `"a\.c"` is `a\.c`, and the shell makes no
+`\n` -- printf reads its own escapes, echo reads none); `#` comments; `;`, `&&`, `||` and a
 trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
-`continue`, `exit`, `return`; `name() { list; }`; `case word in pattern) … ;; esac` with `|` between
+`continue`, `exit`, `return`; `name() { list; }`; `{ list; }` and `( list )`; `case word in pattern) … ;; esac` with `|` between
 alternatives, the shell's own globs (`*`, `?`, `[…]`) in the patterns and `*)` as the
 default; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
 `=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep
@@ -247,9 +269,12 @@ second one, `$(( $(echo $(date)) ))` is still `bad substitution`. A catch inside
 sum meets the **word's** ceiling, at the write, exactly as one inside a word does;
 what comes back and is not a number is nought, the rule an empty variable already
 follows. A `$(( ))` inside a `$(( ))` is not read (write the brackets plainly
-instead); and `echo [-n]`,
-`printf`, `read`, `sleep`
-and `shift` as builtins that work even on a machine whose `/bin` has been emptied.
+instead); `read` and `shift`, which are the shell's own words; and `echo [-n]`,
+`printf` and `sleep`, which the engine runs itself but which are still found
+through `/bin` first, as `ls` is -- so on a machine whose `/bin` has been emptied
+`echo` is `not found`, and what still answers is the shell's own words
+(`. break cd continue export exit fg history jobs read shift type wait`) and
+`help`, which says the system is damaged.
 
     #!/bin/sh
     for d in light0 light1 light2; do
@@ -265,8 +290,10 @@ A loop over a whole kind of device has a command of its own:
 `dev window`'s order, and the line fails if any one of them refused (the
 [`dev` page](PLAYERS.md) has the grammar). The loop is still what a script wants
 when it needs the answers device by device, because a command that half failed
-keeps its output on the screen and out of a redirect, the way every other command
-on this machine does:
+hands back its output and its errors as one list, and the shell takes the whole of
+it for errors: it stays on the screen and out of a `>` (or goes into a `2>`), the
+way every other command's does on this machine. That is a declared deviation
+(`stderr` in `CeroSecOS.DEVIATIONS`, Volume 1's *What is not Unix here*):
 
     for d in $(ls /dev | grep ^window); do
       echo close > /dev/$d
@@ -393,6 +420,10 @@ died with it, so `echo $x` after it prints nothing. Every shell behaves this way
 `x=$(cat notes | head -n 1)` is how you keep it. `$?` after a pipeline is the last
 stage's status, and `|` works inside `$(...)`.
 
+**A call's own `>` wins over a `$( )`** the way it wins over a pipe:
+`x=$(g > f)` fills `f` and leaves `x` empty. `rdto.depth` records how many
+captures were open when the file was, and `capturing` asks it.
+
 **And so is a `$( )`.** POSIX.2 runs a command substitution in a subshell
 environment, so what it sets dies with it: `x=1; y=$(x=2; echo $x); echo $x` prints
 `1`, and an `export` inside one marks the subshell's environment and not the
@@ -424,7 +455,10 @@ A pipe holds **a hundred lines and four kilobytes**, and what happens when it is
 full is back-pressure and not an error: the writer simply does not run again until
 the reader has drained it, exactly as a job that has filled the screen does not.
 A reader that stops reading kills the writer with **141**, `SIGPIPE`, as `sh`
-reports it, so the flood in front of a `head` ends at once:
+reports it, so the flood in front of a `head` ends at once. Only a writer that
+has run its first command and whose output is *the pipe*: SIGPIPE is what
+write(2) earns on a pipe nobody reads, so `echo a > f | true` still leaves `a`
+in `f`, and a function inside its own `>` runs on into its file:
 
     admin@ksp-04-11:~$ while true; do echo y; done | head -n 1
     y
@@ -543,7 +577,7 @@ somebody loosened (which is the `setgid mail` of a real spool, done the way this
 machine can do it). What it does **not** inherit is the quota exemption above:
 that exemption is for the machine writing about *itself*, so the bytes a message
 somebody typed really adds are charged to the drive and put back when they do not
-fit, `mail: /var/mail/bob: disk full`, and nothing written.
+fit, `mail: /var/mail/bob: No space left on device`, and nothing written.
 
 Across the wire it is `cat note | rsh gate mail -s Hi bob`: `rsh` drains its own
 standard input before it dials and hands it to the far command as an ordinary
@@ -657,7 +691,11 @@ the three that were already there: `tty` is false through it, so `ls` inside the
 script prints one name a line; a **refusal** is not output and goes to the screen, as
 `ls /nope > f` already does; the line goes over whole, unwrapped, because a file is
 not sixty columns; and the lines wait in a buffer the **pass** writes, because
-`outLine` is handed a job and a write needs a filesystem and a clock. The buffer
+`outLine` is handed a job and a write needs a filesystem and a clock. When the call
+that owns the redirect is over, what is left of its buffer (`rdDone`) is written
+before the next step (`flushDone` at the top of `stepOnce`), so `f > o; wc -l o` and
+`f 2> e; wc -l e` count every line even when both run in one pass, as they would
+after a real sh closed the file. The buffer
 meets the screen's own forty-line limiter, a redirected script puts nothing in
 `job.out`, so without that the limiter that bounds every other flood would never
 fire, but the runaway clock is *not* stopped while it waits: nothing is holding the
@@ -686,7 +724,7 @@ permission, a script in `~/bin`, all of it, with `tty` and `keys` false, because
 nobody is standing behind one; an out-of-band order (`edit`) is refused there with
 the line the engine gives a command in that position, since a marker must never
 travel out through find. A word the *shell* is gets sudo's answer,
-`cd: command not found`: find execs a program.
+`cd: not found`: find execs a program.
 
 An exec is a **command's** worth of work, and find runs `FIND_EXEC_TURN` of them
 before handing the machine back, so the turn is charged the one command every
@@ -697,9 +735,10 @@ kept on the frame (`f.rd.carry`) exactly as a pipe reader's carry is. That is wh
 keeps the invariant every `jobStep` call is held to, *a pass may go over its budget
 by at most one command*, with a sweep of five hundred files behind it: it trickles
 at a command a turn, printing as it goes, and `-exec … +` (64 names to a command) is
-the form POSIX gives you for doing it in one. A resumed command's redirect appends
-from the second turn on, through the same door a stage's does, so `find … -exec cat
-{} \; > all.txt` does not truncate the file it is filling.
+the form POSIX gives you for doing it in one. A resumed command's redirect was
+opened once, before its first turn, and every turn's write appends, through the
+same door a stage's does, so `find … -exec cat {} \; > all.txt` does not truncate
+the file it is filling.
 
 `tar` takes another turn the same way, and for the same reason measured: a member
 is a file read or a file written, twenty of them in one call cost 0.9 ms against
@@ -720,6 +759,43 @@ walk once a target is hung on the front, so no path through there fails to end.
 `/etc/passwd` should be reads as no passwd at all, which the boot check calls a
 machine with no operating system and the BIOS repairs.
 
+
+## Redirects are opened first, and the second stream
+
+**The shell opens what `>` and `2>` name before the command runs**, which is
+sh(1)'s order: fork, open the redirections, then exec. `runSimple` calls
+`CeroSecOS.openRedirect` on both right after the glob stage, before a function, a
+builtin or `PATH` is even looked at. A target that cannot be opened is a command
+that never runs (`rm f > /etc/hosts` refuses and `f` is still there, `touch zz >
+/etc/hosts` makes nothing), and one that can is there, created or emptied, whatever
+happens next: `cat nosuch > out` and `nosuchcmd > out` both leave an empty `out`.
+Every write after the open appends, so a pipe reader or a command that asks for
+another turn (`f.opened` marks the frame) never empties what it already wrote. A
+command that has not finished (a question, the editor, a script handed back, an
+`rsh` gone to wait) writes nothing yet and carries the opened target to where its
+lines land, as it did before.
+
+**`2>file`, `2>>file`, `2>&1`, `>&2` and `1>`** are sh(1)'s `[n]>word` and
+`[n]>&digit`, for the two descriptors this machine has. A digit is a descriptor only
+where a word would start and only with `>` right after it (`a2>f` is the word `a2`);
+`3>f` is still the word `3`. One redirect per descriptor, or `Syntax error:
+redirection unexpected`, and so is a `>&` that is not `>&1` or `>&2`. They are read left to right:
+`> f 2>&1` puts both in `f`, `2>&1 > f` puts the errors where the output *was*.
+
+The engine still has one list per command, so the second stream is a **sink**
+(`job.errRd`, `routeErr` in CeroSecOSVM): a file (buffered and flushed like
+`job.rdto`), or the standard output as it was when `2>&1` was read (the captures
+under a depth and the `rdto` of that moment). A simple command's sink lives for the
+call; a function's, a script's and a dot's ride the frame (`hadErd`, `oldErd`) and
+close onto `rdDone` like `rdto`. A stage with no sink of its own hands its errors up
+`errTo`, so `f 2>/dev/null` silences a pipeline inside `f`. A `sudo` question and an
+`rsh` carry theirs (`contErd`, `dialErd`) to the answer.
+
+A command that failed hands back its lines as its errors, with one exception a
+command declares itself: `sh.outOnFail`, which grep sets when it read every file
+and found nothing. grep(1) writes `-c`'s `0` to the standard output and exits 1,
+so the lines are routed as output and the status stays 1: `$(grep -c x f)` is `0`,
+and `grep -c x f > n` writes it.
 
 ## Underneath: the step machine, the job, and the scheduler
 
@@ -885,7 +961,10 @@ them, so the answer would run the command with nothing on its input.
 `outLine` is the one door output goes through, and it now has three: a capture, a
 pipe, or the screen. `errLine` is the other half, a stage's *refusals* go to the
 screen and not down the pipe, which is the rule `>` already had ("output goes to the
-file only when the command succeeded").
+file only when the command succeeded"). Nor into a capture: `$( )` substitutes the
+standard output only, so `x=$(cat nosuch)` prints the error and leaves `x` empty.
+Where an error goes instead of the screen is `2>`'s business (`routeErr`, see
+*Redirects are opened first* above).
 
 A command that reads a pipe is handed a reader as a fifth argument
 (`fn(state, session, args, env, stdin)`), and is **run again** until its input is

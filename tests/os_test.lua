@@ -42,10 +42,8 @@ end
 local function addUser(state, name, password, home, admin)
 	local user = CeroSecOS.newUser(name, password or "", home or ("/home/" .. name), admin)
 	local node = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
-	local text = node.data
-	if text ~= "" then text = text .. "\n" end
 	local done, reason = CeroSecOS.setData(state, CeroSecOS.rootSession(),
-		CeroSecOS.PASSWD_PATH, text .. CeroSecOS.passwdLine(user))
+		CeroSecOS.PASSWD_PATH, CeroSecOS.appendLine(node.data, CeroSecOS.passwdLine(user)))
 	if done == nil then error("cannot add " .. name .. ": " .. tostring(reason), 2) end
 	-- And the HOME, which `useradd` makes and which an account without one is not a
 	-- machine anybody could have: a line in /etc/passwd naming a directory that is
@@ -326,14 +324,14 @@ do
 	eq("readable and writable by everybody", null.mode, 666)
 	eq("with nothing in it", null.state, "")
 	eq("and it costs the disk nothing", select(2, CeroSecOS.subtreeUsage(null)), 0)
-	eq("/etc/hostname data", state.fs.children.etc.children.hostname.data, "ksp-front-01")
-	eq("/etc/motd data", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
+	eq("/etc/hostname data", state.fs.children.etc.children.hostname.data, "ksp-front-01\n")
+	eq("/etc/motd data", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD .. "\n")
 	eq("/etc/motd fits the screen", #CeroSecOS.MOTD <= 60, true)
 	-- The banner over the login prompt, with this machine's own name written into
 	-- it: the file is static, so the name is in the bytes and not in a token.
 	local issue = state.fs.children.etc.children.issue
 	eq("/etc/issue data", issue.data,
-		"CeroSec OS " .. CeroSecOS.VERSION .. " (ksp-front-01) (console)")
+		"CeroSec OS " .. CeroSecOS.VERSION .. " (ksp-front-01) (console)\n")
 	eq("/etc/issue owner", issue.owner, "root")
 	eq("/etc/issue mode", issue.mode, 644)
 	eq("/etc/issue fits the screen", #issue.data <= 60, true)
@@ -365,7 +363,7 @@ do
 	local nodes, bytes = CeroSecOS.usage(state)
 	eq("skeleton node count", nodes, 10 + 3 + 7 + #binNames + 6)
 	eq("skeleton byte count", bytes,
-		#"ksp-front-01" + #CeroSecOS.MOTD + #issue.data + #passwd.data + #sudoers.data
+		#"ksp-front-01\n" + #(CeroSecOS.MOTD .. "\n") + #issue.data + #passwd.data + #sudoers.data
 			+ #group.data + #hosts.data + #equiv.data + binBytes)
 
 	eq("default hostname", CeroSecOS.newState().hostname, CeroSecOS.DEFAULT_HOSTNAME)
@@ -576,7 +574,20 @@ do
 	ok(state, admin, "echo", { "" })
 	ok(state, admin, 'echo "a  b"', { "a  b" })
 	ok(state, admin, 'echo "a \\"q\\" b"', { 'a "q" b' })
-	ok(state, admin, 'echo "a\\nb"', { "a", "b" })
+	-- Inside double quotes the backslash is special only before $ ` " \
+	-- and newline (sh(1) of 4.4BSD, POSIX.2 2.2.3); before anything else
+	-- it stays. The shell makes no \n: echo prints it, printf reads it.
+	ok(state, admin, 'echo "a\\nb"', { "a\\nb" })
+	ok(state, admin, 'printf "a\\nb\\n"', { "a", "b" })
+	ok(state, admin, 'echo "a\\.c"', { "a\\.c" })
+	ok(state, admin, 'echo "C:\\dos"', { "C:\\dos" })
+	ok(state, admin, 'echo "a\\"b"', { 'a"b' })
+	ok(state, admin, 'echo "a\\\\b"', { "a\\b" })
+	ok(state, admin, 'echo "\\$HOME"', { "$HOME" })
+	ok(state, admin, 'echo "a\\`b"', { "a`b" })
+	ok(state, admin, 'echo "a\\\nb"', { "ab" })
+	bad(state, admin, 'echo "a\\"', "Syntax error: Unterminated quoted string")
+	ok(state, admin, "echo 'a\\nb' 'a\\.c' 'a\\\\b'", { "a\\nb a\\.c a\\\\b" })
 	ok(state, admin, "cat /etc/motd", { CeroSecOS.MOTD })
 	-- An empty or missing motd greets nobody: the built-in line only seeds a
 	-- fresh disk, it never speaks for a file root emptied on purpose.
@@ -645,15 +656,15 @@ do
 	ok(state, admin, "cd ~", {})
 
 	-- A tilde that is not the shortcut is a name, and a name may not hold one.
-	bad(state, admin, "cd ~root", "cd: ~root: no such file")
-	bad(state, admin, "cd ~/nope", "cd: /home/admin/nope: no such file")
-	bad(state, admin, "cd a~b", "cd: a~b: no such file")
+	bad(state, admin, "cd ~root", "cd: can't cd to ~root")
+	bad(state, admin, "cd ~/nope", "cd: can't cd to /home/admin/nope")
+	bad(state, admin, "cd a~b", "cd: can't cd to a~b")
 	ok(state, admin, "echo a~b", { "a~b" })         -- not a path, not touched
 
 	ok(state, admin, "touch notes.txt", {})
 	ok(state, admin, "cat notes.txt", {})           -- an empty file prints nothing
 	ok(state, admin, "touch notes.txt", {})         -- touching twice is fine
-	ok(state, admin, 'echo "one\\ntwo" > notes.txt', {})
+	ok(state, admin, 'printf "one\\ntwo\\n" > notes.txt', {})
 	ok(state, admin, "cat notes.txt", { "one", "two" })
 	ok(state, admin, "cp notes.txt copy.txt", {})
 	ok(state, admin, "cat copy.txt", { "one", "two" })
@@ -673,10 +684,9 @@ do
 	eq("four-digit chmod took", state.fs.children.home.children.admin.children["notes.txt"].mode, 640)
 	ok(state, admin, "cat notes.txt notes.txt", { "one", "two", "one", "two" })
 
-	-- cat of several files in one go, and rm of several paths.
-	bad(state, admin, "touch a.txt b.txt", "touch: usage: touch <file>")
-	ok(state, admin, "touch a.txt", {})
-	ok(state, admin, "touch b.txt", {})
+	-- cat of several files in one go, touch of several names in one go, and
+	-- rm of several paths.
+	ok(state, admin, "touch a.txt b.txt", {})
 	ok(state, admin, "rm a.txt b.txt", {})
 	ok(state, admin, "ls", { "notes.txt" })
 
@@ -705,79 +715,147 @@ do
 	local rootSession = open(state, "root")
 	ok(state, rootSession, 'echo "classified" > /root/secret.txt', {})
 
-	bad(state, admin, "frobnicate", "frobnicate: command not found")
-	bad(state, admin, "cat notes.txt", "cat: notes.txt: no such file")
-	bad(state, admin, "cat /etc", "cat: /etc: is a directory")
-	bad(state, admin, "cat", "cat: usage: cat [file]...")
-	bad(state, admin, "cd /root", "cd: /root: permission denied")
-	bad(state, admin, "cd /nope", "cd: /nope: no such file")
-	bad(state, admin, "cd /etc/motd", "cd: /etc/motd: not a directory")
+	bad(state, admin, "frobnicate", "frobnicate: not found")
+	bad(state, admin, "cat notes.txt", "cat: notes.txt: No such file or directory")
+	bad(state, admin, "cat /etc", "cat: /etc: Is a directory")
+	bad(state, admin, "cat", "cat: usage: cat [-n] [file]...")
+	-- "-" is the standard input, read where it stands among the files, and
+	-- -n numbers every line of the lot (4.4BSD cat.c, "%6d\t").
+	ok(state, admin, 'echo "body" > /home/admin/p', {})
+	ok(state, admin, "echo x | cat - /home/admin/p", { "x", "body" })
+	ok(state, admin, "echo x | cat /home/admin/p - /home/admin/p", { "body", "x", "body" })
+	ok(state, admin, "echo x | cat - -", { "x" })
+	-- Even when the line and the end of the pipe come in one and the same turn.
+	local rd = { lines = { "x" }, eof = true, carry = {} }
+	local _, twice = CeroSecOS.runArgs(state, admin, { "cat", "-", "-" }, nil, {}, rd, nil)
+	eq("a second - reads nothing", table.concat(twice, "|"), "x")
+	ok(state, admin, "cat -n /home/admin/p /home/admin/p", { "     1\tbody", "     2\tbody" })
+	ok(state, admin, "echo x | cat -n", { "     1\tx" })
+	-- No pipe behind it: "-" is at its end at once.
+	ok(state, admin, "cat - /home/admin/p", { "body" })
+	expect(state, admin, "cat -z /home/admin/p", false, { "cat: illegal option -- z",
+		"usage: cat [-n] [file]..." })
+	bad(state, admin, "cd /root", "cd: can't cd to /root")
+	bad(state, admin, "cd /nope", "cd: can't cd to /nope")
+	bad(state, admin, "cd /etc/motd", "cd: can't cd to /etc/motd")
 	bad(state, admin, "cd a b", "cd: usage: cd [dir]")
-	bad(state, admin, "cat /root/secret.txt", "cat: /root/secret.txt: permission denied")
-	bad(state, admin, "ls /root/x", "ls: /root/x: permission denied")
-	bad(state, admin, "ls /nope", "ls: /nope: no such file")
-	bad(state, admin, "ls -z", "ls: -z: unknown option")
-	bad(state, admin, "ls a b", "ls: usage: ls [-1laACF] [path]")
+	bad(state, admin, "cat /root/secret.txt", "cat: /root/secret.txt: Permission denied")
+	bad(state, admin, "ls /root/x", "ls: /root/x: Permission denied")
+	bad(state, admin, "ls /nope", "ls: /nope: No such file or directory")
+	expect(state, admin, "ls -z", false, { "ls: illegal option -- z",
+		"usage: ls [-1laACF] [path]..." })
+	-- Several operands are several answers: 4.4BSD ls names every one it
+	-- could not find, in order, and lists the rest.
+	expect(state, admin, "ls a b", false, { "ls: a: No such file or directory", "ls: b: No such file or directory" })
 	bad(state, admin, "mkdir", "mkdir: usage: mkdir <dir>")
 	bad(state, admin, "mkdir a b", "mkdir: usage: mkdir <dir>")
-	bad(state, admin, "mkdir /etc/x", "mkdir: /etc/x: permission denied")
-	bad(state, admin, "mkdir /nope/x", "mkdir: /nope/x: no such file")
+	bad(state, admin, "mkdir /etc/x", "mkdir: /etc/x: Permission denied")
+	bad(state, admin, "mkdir /nope/x", "mkdir: /nope/x: No such file or directory")
 	bad(state, admin, 'mkdir "/home/admin/bad name"', "mkdir: /home/admin/bad name: invalid name")
-	bad(state, admin, "touch /etc/x", "touch: /etc/x: permission denied")
-	bad(state, admin, "touch /etc", "touch: /etc: is a directory")
-	bad(state, admin, "touch", "touch: usage: touch <file>")
-	bad(state, admin, "rm", "rm: usage: rm [-r] <path>...")
-	bad(state, admin, "rm /", "rm: /: permission denied")
-	bad(state, admin, "rm /etc/motd", "rm: /etc/motd: permission denied")
-	bad(state, admin, "rm /nope", "rm: /nope: no such file")
-	bad(state, admin, "rm -z x", "rm: -z: unknown option")
+	bad(state, admin, "touch /etc/x", "touch: /etc/x: Permission denied")
+	bad(state, admin, "touch /etc", "touch: /etc: Is a directory")
+	bad(state, admin, "touch", "touch: usage: touch <file>...")
+	bad(state, admin, "rm", "rm: usage: rm [-rf] <path>...")
+	bad(state, admin, "rm /", "rm: /: Permission denied")
+	bad(state, admin, "rm /etc/motd", "rm: /etc/motd: Permission denied")
+	bad(state, admin, "rm /nope", "rm: /nope: No such file or directory")
+	expect(state, admin, "rm -z x", false, { "rm: illegal option -- z",
+		"usage: rm [-rf] <path>..." })
 	bad(state, admin, "mv", "mv: usage: mv <src>... <dst>")
 	bad(state, admin, "mv a", "mv: usage: mv <src>... <dst>")
-	bad(state, admin, "mv /nope /home/admin/x", "mv: /nope: no such file")
+	bad(state, admin, "mv /nope /home/admin/x", "mv: /nope: No such file or directory")
 	bad(state, admin, "cp", "cp: usage: cp [-r] <src>... <dst>")
-	bad(state, admin, "cp /etc /home/admin/x", "cp: /etc: is a directory")
-	bad(state, admin, "cp /nope /home/admin/x", "cp: /nope: no such file")
+	bad(state, admin, "cp /etc /home/admin/x", "cp: /etc: Is a directory")
+	bad(state, admin, "cp /nope /home/admin/x", "cp: /nope: No such file or directory")
 	bad(state, admin, "chmod", "chmod: usage: chmod <mode> <path>...")
 	bad(state, admin, "chmod 999 /etc/motd", "chmod: 999: invalid mode")
 	bad(state, admin, "chmod 75 /etc/motd", "chmod: 75: invalid mode")
 	bad(state, admin, "chmod rwx /etc/motd", "chmod: rwx: invalid mode")
-	bad(state, admin, "chmod 755 /etc/motd", "chmod: /etc/motd: permission denied")
+	bad(state, admin, "chmod 755 /etc/motd", "chmod: /etc/motd: Permission denied")
 	bad(state, admin, "chown", "chown: usage: chown <user> <path>...")
 	bad(state, admin, "chown nobody /etc/motd", "chown: nobody: no such user")
-	bad(state, admin, "chown admin /etc/motd", "chown: /etc/motd: permission denied")
-	bad(state, admin, 'echo "hi" > /etc/x', "echo: /etc/x: permission denied")
+	bad(state, admin, "chown admin /etc/motd", "chown: /etc/motd: Permission denied")
+	bad(state, admin, 'echo "hi" > /etc/x', "cannot create /etc/x: permission denied")
 	bad(state, admin, "pwd x", "pwd: usage: pwd")
 	bad(state, admin, "whoami x", "whoami: usage: whoami")
-	bad(state, admin, "hostname x", "hostname: permission denied")
+	bad(state, admin, "hostname x", "hostname: Permission denied")
 	bad(state, admin, "hostname a b", "hostname: usage: hostname [name]")
 
 	-- Syntax. A prompt line that will not parse never becomes a job, and the
 	-- refusal is the SHELL's -- "sh: ..." -- because the shell is what could
 	-- not read it. There is no line number: a typed line is line one of nothing.
-	bad(state, admin, 'echo "abc', "sh: syntax error: unterminated quote")
-	bad(state, admin, 'echo "abc\\', "sh: syntax error: unterminated quote")
-	bad(state, admin, "echo >", "sh: syntax error: missing redirect target")
-	bad(state, admin, "echo a > b > c", "sh: syntax error: bad redirect")
+	bad(state, admin, 'echo "abc', "Syntax error: Unterminated quoted string")
+	bad(state, admin, 'echo "abc\\', "Syntax error: Unterminated quoted string")
+	bad(state, admin, "echo >", "Syntax error: end of file unexpected")
+	bad(state, admin, "echo a > b > c", "Syntax error: redirection unexpected")
 	-- The whole grammar of chapter 15 is the prompt's now, so its refusals are
 	-- the prompt's too.
-	bad(state, admin, "while true; do echo x", "sh: syntax error: missing 'done'")
-	bad(state, admin, "if true", "sh: syntax error: missing 'then'")
-	bad(state, admin, "done", "sh: syntax error: unexpected 'done'")
+	bad(state, admin, "while true; do echo x", "Syntax error: end of file unexpected (expecting \"done\")")
+	bad(state, admin, "if true", "Syntax error: end of file unexpected (expecting \"then\")")
+	bad(state, admin, "done", "Syntax error: \"done\" unexpected")
 
 	-- Existing target, and a directory into itself.
 	ok(state, admin, "mkdir /home/admin/d1", {})
-	bad(state, admin, "mkdir /home/admin/d1", "mkdir: /home/admin/d1: file exists")
+	bad(state, admin, "mkdir /home/admin/d1", "mkdir: /home/admin/d1: File exists")
 	ok(state, admin, "touch /home/admin/f1", {})
-	bad(state, admin, "cp /home/admin/f1 /home/admin/f1", "cp: /home/admin/f1: file exists")
+	bad(state, admin, "cp /home/admin/f1 f1",
+		"cp: f1 and /home/admin/f1 are identical (not copied).")
 	bad(state, admin, "mv /home/admin/d1 /home/admin/d1/inner",
 		"mv: /home/admin/d1/inner: invalid destination")
-	bad(state, admin, "rm /home/admin/d1", "rm: /home/admin/d1: is a directory")
+	bad(state, admin, "rm /home/admin/d1", "rm: /home/admin/d1: Is a directory")
 
 	-- Several failures in one command line, in order.
 	expect(state, admin, "cat /nope1 /nope2", false, {
-		"cat: /nope1: no such file",
-		"cat: /nope2: no such file",
+		"cat: /nope1: No such file or directory",
+		"cat: /nope2: No such file or directory",
 	})
+end
+
+--
+-- 6b. cp writes over a file that is already there.
+--
+-- 4.4BSD cp.c opens an existing target O_TRUNC and writes into it: the
+-- contents are the source's, the owner and the mode stay the target's, and
+-- what decides is w on the FILE. Two names for one file are refused.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	ok(state, admin, 'echo "new" > p.txt', {})
+	ok(state, admin, 'echo "old" > q.txt', {})
+	local q = CeroSecOS.getNode(state, admin, "q.txt")
+	q.owner = "kate"
+	q.mode = 666
+	ok(state, admin, "cp p.txt q.txt", {})
+	ok(state, admin, "cat q.txt", { "new" })
+	local after = CeroSecOS.getNode(state, admin, "q.txt")
+	eq("cp writes into the same file", after == q, true)
+	eq("which keeps its owner", after.owner, "kate")
+	eq("and its mode", after.mode, 666)
+
+	-- w on the file decides, and a refusal leaves it as it was.
+	ok(state, admin, 'echo "kept" > r.txt', {})
+	ok(state, admin, "chmod 400 r.txt", {})
+	bad(state, admin, "cp p.txt r.txt", "cp: r.txt: Permission denied")
+	ok(state, admin, "cat r.txt", { "kept" })
+
+	-- Into a directory, onto a name already in it: written over too.
+	ok(state, admin, "mkdir box", {})
+	ok(state, admin, 'echo "older" > box/p.txt', {})
+	ok(state, admin, "cp p.txt box", {})
+	ok(state, admin, "cat box/p.txt", { "new" })
+
+	-- One file under two names, whichever way it is spelt.
+	ok(state, admin, "ln -s p.txt link.txt", {})
+	bad(state, admin, "cp link.txt p.txt", "cp: p.txt and link.txt are identical (not copied).")
+	bad(state, admin, "cp p.txt box/../p.txt",
+		"cp: box/../p.txt and p.txt are identical (not copied).")
+	ok(state, admin, "cat p.txt", { "new" })
+
+	-- A directory is never written over a file.
+	ok(state, admin, "mkdir d", {})
+	bad(state, admin, "cp -r d q.txt", "cp: q.txt: Not a directory")
 end
 
 --
@@ -808,7 +886,7 @@ do
 	-- The directory's mode decides everything. /etc is root's at 755, so a name
 	-- in it is not admin's to write over.
 	ok(state, admin, 'echo "x" > mine.txt', {})
-	bad(state, admin, "mv mine.txt /etc/motd", "mv: /etc/motd: permission denied")
+	bad(state, admin, "mv mine.txt /etc/motd", "mv: /etc/motd: Permission denied")
 	ok(state, admin, "cat mine.txt", { "x" })
 
 	-- A directory destination is still moved INTO, and the collision that then
@@ -828,17 +906,17 @@ do
 
 	ok(state, admin, "mkdir full", {})
 	ok(state, admin, "touch into/full", {})
-	bad(state, admin, "mv full into", "mv: into/full: not a directory")
+	bad(state, admin, "mv full into", "mv: into/full: Not a directory")
 	ok(state, admin, "rm into/full", {})
 	ok(state, admin, "mkdir into/full", {})
 	ok(state, admin, "touch into/full/held.txt", {})
-	bad(state, admin, "mv full into", "mv: into/full: directory not empty")
+	bad(state, admin, "mv full into", "mv: into/full: Directory not empty")
 	ok(state, admin, "ls into/full", { "held.txt" })
 
 	-- And a file is never written over a directory, whichever way round.
 	ok(state, admin, "touch loose.txt", {})
 	ok(state, admin, "mkdir into/loose.txt", {})
-	bad(state, admin, "mv loose.txt into", "mv: into/loose.txt: is a directory")
+	bad(state, admin, "mv loose.txt into", "mv: into/loose.txt: Is a directory")
 
 	-- The bytes the destination held are freed BY the replacement: the disk after
 	-- it holds the source's bytes where the destination's used to be.
@@ -846,11 +924,11 @@ do
 	ok(state, admin, 'echo "ab" > short.txt', {})
 	ok(state, admin, 'echo "' .. string.rep("y", 200) .. '" > long.txt', {})
 	local _, both = CeroSecOS.usage(state)
-	eq("two files on the disk", both, before + 202)
+	eq("two files on the disk", both, before + 204)
 	ok(state, admin, "mv short.txt long.txt", {})
 	local _, after = CeroSecOS.usage(state)
 	eq("and one of them after the replacement, holding the short file's bytes",
-		after, before + 2)
+		after, before + 3)
 	ok(state, admin, "cat long.txt", { "ab" })
 end
 
@@ -867,37 +945,37 @@ do
 	ok(state, admin, "mkdir /home/admin/box", {})
 	ok(state, admin, "touch /home/admin/box/thing", {})
 	ok(state, admin, "chmod 600 /home/admin/box", {})
-	bad(state, admin, "cd /home/admin/box", "cd: /home/admin/box: permission denied")
-	bad(state, admin, "cat /home/admin/box/thing", "cat: /home/admin/box/thing: permission denied")
+	bad(state, admin, "cd /home/admin/box", "cd: can't cd to /home/admin/box")
+	bad(state, admin, "cat /home/admin/box/thing", "cat: /home/admin/box/thing: Permission denied")
 	ok(state, rootSession, "cat /home/admin/box/thing", {})
 
 	-- r is what lets you list.
 	ok(state, admin, "chmod 100 /home/admin/box", {})
-	bad(state, admin, "ls /home/admin/box", "ls: /home/admin/box: permission denied")
+	bad(state, admin, "ls /home/admin/box", "ls: /home/admin/box: Permission denied")
 	ok(state, admin, "cat /home/admin/box/thing", {})   -- x alone still traverses
 
 	-- w is what lets you create and delete inside.
 	ok(state, admin, "chmod 500 /home/admin/box", {})
-	bad(state, admin, "touch /home/admin/box/other", "touch: /home/admin/box/other: permission denied")
-	bad(state, admin, "rm /home/admin/box/thing", "rm: /home/admin/box/thing: permission denied")
+	bad(state, admin, "touch /home/admin/box/other", "touch: /home/admin/box/other: Permission denied")
+	bad(state, admin, "rm /home/admin/box/thing", "rm: /home/admin/box/thing: Permission denied")
 	ok(state, admin, "chmod 700 /home/admin/box", {})
 	ok(state, admin, "rm /home/admin/box/thing", {})
 
 	-- Owner may chmod, a stranger may not; root always may.
 	ok(state, rootSession, 'echo "x" > /root/note.txt', {})
 	ok(state, rootSession, "chmod 701 /root", {})        -- open the door, not the file
-	bad(state, admin, "chmod 777 /root/note.txt", "chmod: /root/note.txt: permission denied")
+	bad(state, admin, "chmod 777 /root/note.txt", "chmod: /root/note.txt: Permission denied")
 	ok(state, rootSession, "chown admin /root/note.txt", {})
 	ok(state, admin, "chmod 777 /root/note.txt", {})     -- now admin owns it
 	eq("owner chmod took", state.fs.children.root.children["note.txt"].mode, 777)
 	ok(state, admin, "chown root /root/note.txt", {})    -- owner may give it away
-	bad(state, admin, "chown admin /root/note.txt", "chown: /root/note.txt: permission denied")
+	bad(state, admin, "chown admin /root/note.txt", "chown: /root/note.txt: Permission denied")
 
 	-- rm -r refuses a subtree the user cannot fully enter.
 	ok(state, rootSession, "mkdir /home/admin/sealed", {})
 	ok(state, rootSession, "mkdir /home/admin/sealed/inner", {})
 	ok(state, rootSession, "chmod 700 /home/admin/sealed/inner", {})
-	bad(state, admin, "rm -r /home/admin/sealed", "rm: /home/admin/sealed: permission denied")
+	bad(state, admin, "rm -r /home/admin/sealed", "rm: /home/admin/sealed: Permission denied")
 	ok(state, rootSession, "rm -r /home/admin/sealed", {})
 end
 
@@ -933,13 +1011,84 @@ do
 	ok(state, admin, 'echo ">" > arrow.txt', {})        -- a quoted > is data
 	ok(state, admin, "cat arrow.txt", { ">" })
 
-	-- A failing command writes nothing: errors behave like stderr.
-	bad(state, admin, "cat /nope > out.txt", "cat: /nope: no such file")
-	bad(state, admin, "cat out.txt", "cat: out.txt: no such file")
+	-- A failing command writes nothing: errors behave like stderr. But the
+	-- shell opened the file BEFORE the command ran, as every sh does, so it is
+	-- there and empty -- and so it is for a command that does not exist.
+	bad(state, admin, "cat /nope > out.txt", "cat: /nope: No such file or directory")
+	ok(state, admin, "cat out.txt", {})
+	eq("the failed command's target was made",
+		state.fs.children.home.children.admin.children["out.txt"].type, "file")
+	bad(state, admin, "nosuchcmd > out2.txt", "nosuchcmd: not found")
+	ok(state, admin, "cat out2.txt", {})
 
 	-- A redirect the user may not perform reports against the target.
-	bad(state, admin, "echo hi > /etc/x", "echo: /etc/x: permission denied")
-	bad(state, admin, "echo hi > /etc", "echo: /etc: is a directory")
+	bad(state, admin, "echo hi > /etc/x", "cannot create /etc/x: permission denied")
+	bad(state, admin, "echo hi > /etc", "cannot create /etc: is a directory")
+
+	-- The shell opens what ">" names BEFORE the command runs, which is sh(1)'s
+	-- order: a target it cannot open is a command that never ran at all.
+	local home = state.fs.children.home.children.admin.children
+	ok(state, admin, "echo keep > keep.txt", {})
+	bad(state, admin, "rm keep.txt > /etc/x", "cannot create /etc/x: permission denied")
+	ok(state, admin, "cat keep.txt", { "keep" })
+	bad(state, admin, "touch zz > /etc/hosts", "cannot create /etc/hosts: permission denied")
+	eq("a refused redirect ran nothing", home["zz"], nil)
+
+	-- 2>, 2>&1 and >&2 (sh(1) of 4.4BSD: "[n]>word", "[n]>&digit").
+	ok(state, admin, "cat keep.txt 2>/dev/null", { "keep" })
+	expect(state, admin, "cat nosuch 2>/dev/null", false, {})
+	expect(state, admin, "cat nosuch 2>err.txt", false, {})
+	ok(state, admin, "cat err.txt", { "cat: nosuch: No such file or directory" })
+	expect(state, admin, "cat nosuch > both.txt 2>&1", false, {})
+	ok(state, admin, "cat both.txt", { "cat: nosuch: No such file or directory" })
+	-- Left to right: `2>&1 > f` sends the errors where the output WAS.
+	expect(state, admin, "cat nosuch 2>&1 > was.txt", false, { "cat: nosuch: No such file or directory" })
+	ok(state, admin, "cat was.txt", {})
+	ok(state, admin, "echo hi > hi.txt 2>&1", {})
+	ok(state, admin, "cat hi.txt", { "hi" })
+	ok(state, admin, "cat nosuch 2>&1 | wc -l", { "       1" })
+	ok(state, admin, "echo a2>a2.txt", {})
+	ok(state, admin, "cat a2.txt", { "a2" })
+	expect(state, admin, "cd /nope 2>/dev/null", false, {})
+	-- And one of the walker's own builtins, whose refusal is printed by the VM.
+	expect(state, admin, "history -x 2>/dev/null", false, {})
+	expect(state, admin, "history -x 2>hist.txt", false, {})
+	ok(state, admin, "cat hist.txt", { "history: usage: history [-c]" })
+	-- A $( ) catches the standard output and nothing else.
+	ok(state, admin, 'x=$(cat nosuch); echo "[$x]"', { "cat: nosuch: No such file or directory", "[]" })
+	ok(state, admin, 'x=$(cat nosuch 2>&1); echo "[$x]"', { "[cat: nosuch: No such file or directory]" })
+	ok(state, admin, 'x=$(echo boom >&2); echo "[$x]"', { "boom", "[]" })
+	-- One per descriptor, and only the two this machine has.
+	bad(state, admin, "echo a > b > c", "Syntax error: redirection unexpected")
+	bad(state, admin, "cat nosuch 2>x 2>y", "Syntax error: redirection unexpected")
+	bad(state, admin, "echo x >&3", "Syntax error: Bad fd number")
+	-- A function's and a script's `2>` is the whole of it, like their ">".
+	ok(state, admin, "g() { cat nosuch; echo in-g; }", {})
+	ok(state, admin, "g 2>/dev/null", { "in-g" })
+	ok(state, admin, "g > g.txt 2>&1", {})
+	ok(state, admin, "cat g.txt", { "cat: nosuch: No such file or directory", "in-g" })
+	ok(state, admin, "g 2>&1 > g2.txt", { "cat: nosuch: No such file or directory" })
+	ok(state, admin, "cat g2.txt", { "in-g" })
+	ok(state, admin, "echo 'cat nosuch; echo s-out' > s.sh", {})
+	ok(state, admin, "sh s.sh 2>s.err", { "s-out" })
+	ok(state, admin, "cat s.err", { "cat: nosuch: No such file or directory" })
+	-- A command that half failed hands back ONE list: all of it is the errors'
+	-- (the declared deviation, CeroSecOS.DEVIATIONS "stderr").
+	expect(state, admin, "cat keep.txt nosuch > half.txt", false,
+		{ "keep", "cat: nosuch: No such file or directory" })
+	ok(state, admin, "cat half.txt", {})
+	expect(state, admin, "cat keep.txt nosuch 2>/dev/null", false, {})
+	-- Except a command that SAYS its lines are output though it failed: grep -c
+	-- that counted nothing writes "0" to the standard output and exits 1.
+	ok(state, admin, 'x=$(grep -c zzz keep.txt); echo "[$x]"', { "[0]" })
+	expect(state, admin, "grep -c zzz keep.txt > c.txt", false, {})
+	ok(state, admin, "cat c.txt", { "0" })
+	ok(state, admin, "grep -c zzz keep.txt | wc -l", { "       1" })
+	-- The dot's own refusals are errors too.
+	expect(state, admin, ". nosuch.sh 2>/dev/null", false, {})
+	local _, dotLines = exec(state, admin, 'x=$(. nosuch.sh); echo "[$x]"')
+	eq("a dot's refusal reached the glass", #dotLines, 2)
+	eq("and not the word", dotLines[2], "[]")
 end
 
 --
@@ -1048,9 +1197,9 @@ do
 	local _, full = CeroSecOS.usage(state)
 	eq("disk exactly full", full, CeroSecOS.DISK_BYTES)
 	ok(state, rootSession, "touch /nothing", {})            -- an empty file costs no bytes
-	bad(state, rootSession, 'echo "x" > /nothing', "echo: /nothing: disk full")
-	bad(state, rootSession, 'echo "x" > /brand', "echo: /brand: disk full")
-	bad(state, rootSession, "cp /b1 /copy", "cp: /copy: disk full")
+	bad(state, rootSession, 'echo "x" > /nothing', "cannot create /nothing: file system full")
+	bad(state, rootSession, 'echo "x" > /brand', "cannot create /brand: file system full")
+	bad(state, rootSession, "cp /b1 /copy", "cp: /copy: No space left on device")
 end
 
 do
@@ -1083,8 +1232,8 @@ do
 	local last = "/p" .. dir .. "/last"
 	check("the last directory is not full itself",
 		CeroSecOS.countEntries(state.fs.children["p" .. dir]) < 64)
-	bad(state, rootSession, "touch " .. last, "touch: " .. last .. ": disk full")
-	bad(state, rootSession, "mkdir /lastdir", "mkdir: /lastdir: disk full")
+	bad(state, rootSession, "touch " .. last, "touch: " .. last .. ": No space left on device")
+	bad(state, rootSession, "mkdir /lastdir", "mkdir: /lastdir: No space left on device")
 	eq("state at the ceiling is still valid", CeroSecOS.validate(state), true)
 end
 
@@ -1132,35 +1281,35 @@ do
 	eq("ls -l group",
 		etc[1],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultGroup()), 5)
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultGroup() + 1), 5)
 			.. "  " .. EPOCH .. "  group")
 	-- hostname, hosts and hosts.equiv sort in that order: "hostn" is before
 	-- "hosts", and the dotted name is behind the bare one.
 	eq("ls -l hosts",
 		etc[3],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultHosts()), 5)
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultHosts() + 1), 5)
 			.. "  " .. EPOCH .. "  hosts")
 	eq("ls -l hosts.equiv",
 		etc[4],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultEquiv()), 5)
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultEquiv() + 1), 5)
 			.. "  " .. EPOCH .. "  hosts.equiv")
 	-- issue sorts between the dotted name and the motd.
 	eq("ls -l issue",
 		etc[5],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
 			.. CeroSecOS.padLeft(
-				tostring(#CeroSecOS.issueText(CeroSecOS.hostname(state))), 5)
+				tostring(#CeroSecOS.issueText(CeroSecOS.hostname(state)) + 1), 5)
 			.. "  " .. EPOCH .. "  issue")
 	eq("ls -l motd",
 		etc[6],
-		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "   52"
+		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "   53"
 			.. "  " .. EPOCH .. "  motd")
 	eq("ls -l sudoers",
 		etc[8],
 		"-r--r-----" .. "  " .. "root  " .. " " .. "root  " .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers()), 5)
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers() + 1), 5)
 			.. "  " .. EPOCH .. "  sudoers")
 	eq("ls -l /etc has 8 lines", #etc, 8)
 
@@ -1204,8 +1353,8 @@ do
 	local grp = ok(state, rootSession, "ls -l /home/admin/perm", nil)
 	eq("the long group is cut with a tilde", string.sub(grp[1], 20, 25), "admin~")
 
-	-- Plain ls of a single file prints its name.
-	ok(state, admin, "ls /etc/motd", { "motd" })
+	-- Plain ls of a single file prints it as it was typed, as 4.4BSD ls does.
+	ok(state, admin, "ls /etc/motd", { "/etc/motd" })
 
 	-- Nothing the core prints is ever wider than the screen: a long echo wraps.
 	local wrapped = ok(state, admin, "echo " .. string.rep("w", 130), nil)
@@ -1334,7 +1483,7 @@ do
 	-- And every further write on it is refused until room is made.
 	eq("a write on a full disk is refused",
 		select(2, CeroSecOS.setData(overTotal, CeroSecOS.rootSession(),
-			"/etc/motd", CeroSecOS.MOTD .. "!", nil)), "disk full")
+			"/etc/motd", CeroSecOS.MOTD .. "\n!", nil)), "disk full")
 	eq("a shorter line over a longer one is room being MADE, and goes in",
 		CeroSecOS.setData(overTotal, CeroSecOS.rootSession(), "/etc/motd", "x", nil), true)
 
@@ -1500,7 +1649,7 @@ do
 	local set, sreason = CeroSecOS.setData(state, rootSession, "/etc/motd", "\1CLEAR")
 	eq("setData refuses control bytes", set, nil)
 	eq("setData reason", sreason, "invalid characters")
-	eq("the file was left alone", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
+	eq("the file was left alone", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD .. "\n")
 
 	-- createNode refuses a file carrying them, and a whole subtree carrying
 	-- them: a network rung will hand over trees, not just single files.
@@ -1520,20 +1669,33 @@ do
 
 	-- Through the shell, the refusal reads like every other error.
 	bad(state, admin, 'echo "' .. string.char(1) .. '" > dirty.txt',
-		"echo: dirty.txt: invalid characters")
+		"cannot create dirty.txt: invalid characters")
+	-- The shell opened the target before echo ran, so it is there -- EMPTY: the
+	-- write was what was refused, and nothing dirty ever reached the disk.
 	eq("no dirty file exists",
-		state.fs.children.home.children.admin.children["dirty.txt"], nil)
+		state.fs.children.home.children.admin.children["dirty.txt"].data, "")
 
-	-- The escape table cannot manufacture one: \1 is a backslash escape that
-	-- yields the character "1", not the byte 1.
-	ok(state, admin, 'echo "\\1"', { "1" })
+	-- The shell's own double quotes make no escape at all: inside them \1 is
+	-- the two characters \ and 1, sh(1)'s own rule (only $ ` " \ and newline
+	-- are special there). What printf's OWN \ddd table does with the two
+	-- characters it is handed is a separate question, asked right below.
+	ok(state, admin, 'echo "\\1"', { "\\1" })
 	ok(state, admin, 'echo "\\1" > tame.txt', {})
-	ok(state, admin, "cat tame.txt", { "1" })
-	eq("the file holds the digit, not the byte",
-		state.fs.children.home.children.admin.children["tame.txt"].data, "1")
+	ok(state, admin, "cat tame.txt", { "\\1" })
+	eq("the file holds backslash and digit, not the byte",
+		state.fs.children.home.children.admin.children["tame.txt"].data, "\\1\n")
+	-- printf(1) of 4.4BSD, its own \ddd: "\1" is the octal escape for the
+	-- single digit 1, which names the byte 0x01 -- not the two characters
+	-- backslash and one that reached it. (printf.c's chkfields/escape table,
+	-- shared with the C escape K&R A2.5.2 names it after.)
+	-- printf's own \NNN names a byte, but never a control byte: \1 makes
+	-- nothing at all, so no escape can manufacture one (a declared
+	-- deviation, "printf"). \101 is an A.
+	ok(state, admin, 'printf "\\1"', {})
+	ok(state, admin, 'printf "\\101"', { "A" })
 
-	-- Newline and tab still go in and come back out.
-	ok(state, admin, 'echo "a\\nb\\tc" > good.txt', {})
+	-- Newline and tab still go in, through printf, and come back out.
+	ok(state, admin, 'printf "a\\nb\\tc\\n" > good.txt', {})
 	ok(state, admin, "cat good.txt", { "a", "b\tc" })
 
 	-- So cat can never produce a control, whatever a file holds.
@@ -1840,7 +2002,7 @@ do
 	ok(state, session, 'mkpasswd x "a$b"', nil)
 
 	-- And the old name is gone from the machine, not aliased to the new one.
-	bad(state, session, "hash x abcdef", "hash: command not found")
+	bad(state, session, "hash x abcdef", "hash: not found")
 end
 
 --
@@ -1898,12 +2060,14 @@ do
 	check("the old password is refused", CeroSecOS.login(state, "admin", "") == nil)
 	check("the new password is taken", CeroSecOS.login(state, "admin", "hunter2") ~= nil)
 
-	-- Wrong old password: one line, and nothing changed.
+	-- Wrong old password: pw_error's two lines, and nothing changed.
 	cont = asks(run(state, session, "passwd"), "Old password: ", true)
 	local refused = answer(state, session, cont, "wrong")
 	eq("a wrong old password fails", refused.ok, false)
 	eq("and ends the chain", refused.control, nil)
-	says(refused, "passwd: authentication failure")
+	eq("pw_error says two lines", #refused.lines, 2)
+	eq("the reason first", refused.lines[1], "passwd: Permission denied")
+	eq("then that the file is unchanged", refused.lines[2], "passwd: /etc/passwd: unchanged")
 	eq("the password is untouched", holds(state, "admin", "hunter2"), true)
 
 	-- Mismatch: the retype has to be the same string.
@@ -1923,7 +2087,7 @@ do
 	eq("the password is empty again", holds(state, "admin", ""), true)
 
 	-- Somebody else's password is root's business and nobody else's.
-	says(run(state, session, "passwd root"), "passwd: permission denied")
+	says(run(state, session, "passwd root"), "passwd: Permission denied")
 	says(run(state, session, "passwd nobody"), "passwd: no such user")
 	eq("no such user fails", run(state, session, "passwd nobody").ok, false)
 	says(run(state, session, "passwd a b"), "passwd: usage: passwd [user]")
@@ -1951,10 +2115,15 @@ do
 	-- A password the machine will not store.
 	cont = asks(run(state, session, "passwd admin"), "New password: ", true)
 	cont = asks(answer(state, session, cont, string.rep("x", 33)), "Retype new password: ", true)
-	says(answer(state, session, cont, string.rep("x", 33)), "passwd: password too long")
+	local long = answer(state, session, cont, string.rep("x", 33))
+	eq("a store refused is pw_error too", long.lines[1], "passwd: password too long")
+	eq("with its unchanged line", long.lines[2], "passwd: /etc/passwd: unchanged")
+	eq("and only those", #long.lines, 2)
 	cont = asks(run(state, session, "passwd admin"), "New password: ", true)
 	cont = asks(answer(state, session, cont, "a\1b"), "Retype new password: ", true)
-	says(answer(state, session, cont, "a\1b"), "passwd: invalid characters")
+	local ctl = answer(state, session, cont, "a\1b")
+	eq("a control byte is refused", ctl.lines[1], "passwd: invalid characters")
+	eq("the same way", ctl.lines[2], "passwd: /etc/passwd: unchanged")
 	eq("admin's password survived both", holds(state, "admin", "letmein"), true)
 
 	-- The state a chain leaves behind is still storable.
@@ -2002,21 +2171,21 @@ do
 	addUser(state, "bob", "", "/home/bob", false)
 	local session = open(state, "bob")
 
-	says(run(state, session, "passwd root"), "passwd: permission denied")
+	says(run(state, session, "passwd root"), "passwd: Permission denied")
 
 	-- The token the command refused to hand out, handed in anyway.
 	local forged = { cmd = "passwd", step = "new", user = "root" }
 	local step = answer(state, session, forged, "pwned")
 	eq("a forged token is refused", step.ok, false)
 	eq("and asks nothing", step.control, nil)
-	says(step, "passwd: permission denied")
+	says(step, "passwd: Permission denied")
 
 	-- Every step of it, not just the first.
 	says(answer(state, session, { cmd = "passwd", step = "old", user = "root" }, ""),
-		"passwd: permission denied")
+		"passwd: Permission denied")
 	says(answer(state, session, { cmd = "passwd", step = "retype", user = "root",
 		salt = "abcdef", want = CeroSecOS.hashPassword("pwned", "abcdef") }, "pwned"),
-		"passwd: permission denied")
+		"passwd: Permission denied")
 
 	check("root's password is untouched", holds(state, "root", ""))
 	check("and the forged one never took", not holds(state, "root", "pwned"))
@@ -2107,23 +2276,23 @@ do
 		CeroSecOS.getNode(state, session, "fresh.txt"), nil)
 
 	-- A directory that is not there: the same refusal as any other command.
-	bad(state, session, "edit nowhere/a.txt", "edit: nowhere/a.txt: no such file")
-	bad(state, session, "edit /etc/deep/a.txt", "edit: /etc/deep/a.txt: no such file")
+	bad(state, session, "edit nowhere/a.txt", "edit: nowhere/a.txt: No such file or directory")
+	bad(state, session, "edit /etc/deep/a.txt", "edit: /etc/deep/a.txt: No such file or directory")
 	-- A directory that is there but is not writable by this user.
-	bad(state, session, "edit /etc/new.txt", "edit: /etc/new.txt: permission denied")
+	bad(state, session, "edit /etc/new.txt", "edit: /etc/new.txt: Permission denied")
 	-- A directory is not a file.
-	bad(state, session, "edit /etc", "edit: /etc: is a directory")
-	bad(state, session, "edit /", "edit: /: is a directory")
-	bad(state, session, "edit notes.txt/x", "edit: notes.txt/x: not a directory")
+	bad(state, session, "edit /etc", "edit: /etc: Is a directory")
+	bad(state, session, "edit /", "edit: /: Is a directory")
+	bad(state, session, "edit notes.txt/x", "edit: notes.txt/x: Not a directory")
 	-- A name the machine cannot create is refused at the name, not at the save.
-	bad(state, session, "edit -bad", "edit: -bad: invalid name")
+	bad(state, session, "edit a:b", "edit: a:b: invalid name")
 	bad(state, session, "edit " .. string.rep("a", 33), "edit: " .. string.rep("a", 33) .. ": invalid name")
 	bad(state, session, "edit", "edit: usage: edit <file>")
 	bad(state, session, "edit a b", "edit: usage: edit <file>")
 
 	-- A file the user may not even look at.
 	ok(state, session, "chmod 000 notes.txt", {})
-	bad(state, session, "edit notes.txt", "edit: notes.txt: permission denied")
+	bad(state, session, "edit notes.txt", "edit: notes.txt: Permission denied")
 	-- Readable but not writable: it opens, marked read-only.
 	ok(state, session, "chmod 400 notes.txt", {})
 	step = run(state, session, "edit notes.txt")
@@ -2138,7 +2307,7 @@ do
 	local admin = open(state, "admin")
 	local root = open(state, "root")
 
-	bad(state, admin, "edit /root/secret.txt", "edit: /root/secret.txt: permission denied")
+	bad(state, admin, "edit /root/secret.txt", "edit: /root/secret.txt: Permission denied")
 	local step = run(state, root, "edit /root/secret.txt")
 	eq("root opens a new file in its own home", step.control, "edit")
 	eq("root is never read-only", step.data.readonly, false)
@@ -2215,7 +2384,6 @@ do
 	defs()
 	eq("the editor's byte ceiling is the file ceiling",
 		CeroSec.EDIT_MAX_BYTES, CeroSecOS.MAX_FILE_BYTES)
-	eq("the editor's line width is the screen width", CeroSec.EDIT_MAX_LINE, CeroSecOS.COLS)
 	eq("the screen is as wide as the core thinks", CeroSec.COLS, CeroSecOS.COLS)
 	-- And as tall. The core learned the height when it got a PAGER: `more` fills a
 	-- screenful, and a core that thought the glass was twenty-four rows deep would
@@ -2246,15 +2414,15 @@ do
 
 	-- The two error lines, in full.
 	ok(state, rootSession, "rm /bin/ls", {})
-	bad(state, admin, "ls", "ls: command not found")
-	bad(state, rootSession, "ls", "ls: command not found")
+	bad(state, admin, "ls", "ls: not found")
+	bad(state, rootSession, "ls", "ls: not found")
 	-- Everything else still runs.
 	ok(state, admin, "pwd", { "/home/admin" })
 
 	-- Put it back by hand: an executable is an ordinary file, so root can.
 	ok(state, rootSession, 'echo "list a directory" > /bin/ls', {})
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
-	ok(state, admin, "ls /etc/motd", { "motd" })
+	ok(state, admin, "ls /etc/motd", { "/etc/motd" })
 
 	-- Not executable: refused for everybody the bits refuse, and refused for
 	-- root too. Root walks through r and w and through any directory, but x on
@@ -2266,22 +2434,22 @@ do
 	-- One x bit anywhere is enough for root, and for nobody else: the bit for
 	-- other, which admin is, still refuses admin.
 	ok(state, rootSession, "chmod 001 /bin/ls", {})
-	ok(state, rootSession, "ls /etc/motd", { "motd" })
+	ok(state, rootSession, "ls /etc/motd", { "/etc/motd" })
 	ok(state, rootSession, "chmod 010 /bin/ls", {})
-	ok(state, rootSession, "ls /etc/motd", { "motd" })
+	ok(state, rootSession, "ls /etc/motd", { "/etc/motd" })
 	ok(state, rootSession, "chmod 100 /bin/ls", {})
-	ok(state, rootSession, "ls /etc/motd", { "motd" })
+	ok(state, rootSession, "ls /etc/motd", { "/etc/motd" })
 	bad(state, admin, "ls /etc/motd", "ls: permission denied")
 	-- x for the owner only is x for root only.
 	ok(state, rootSession, "chmod 700 /bin/ls", {})
 	bad(state, admin, "ls /etc/motd", "ls: permission denied")
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
-	ok(state, admin, "ls /etc/motd", { "motd" })
+	ok(state, admin, "ls /etc/motd", { "/etc/motd" })
 
 	-- A directory called /bin/pwd is not a command.
 	ok(state, rootSession, "rm /bin/pwd", {})
 	ok(state, rootSession, "mkdir /bin/pwd", {})
-	bad(state, admin, "pwd", "pwd: command not found")
+	bad(state, admin, "pwd", "pwd: not found")
 
 	-- /bin shut to everybody but root: the way in is what refuses, and it says
 	-- so rather than pretending the command was never there.
@@ -2293,7 +2461,7 @@ do
 	-- A file in /bin with no command behind it is not a command either.
 	ok(state, rootSession, 'echo "not yet" > /bin/telnet', {})
 	ok(state, rootSession, "chmod 755 /bin/telnet", {})
-	bad(state, admin, "telnet", "telnet: command not found")
+	bad(state, admin, "telnet", "telnet: not found")
 
 	-- A copy of an executable somewhere else is not a second `ls`: a BARE name
 	-- is /bin/<name> and nothing else, and a name with a slash in it is a
@@ -2306,7 +2474,7 @@ do
 	-- one: it runs one level deeper inside the prompt's own, the way a shell's
 	-- child would. What runs is the TEXT of the copied file -- "list a
 	-- directory" -- whose first word is not a command.
-	bad(state, admin, "./ls", "list: command not found")
+	bad(state, admin, "./ls", "list: not found")
 	-- Without x on it, it is not runnable at all.
 	ok(state, admin, "chmod 644 /home/admin/ls", {})
 	bad(state, admin, "./ls", "./ls: permission denied")
@@ -2357,9 +2525,9 @@ do
 	local rootSession = open(state, "root")
 	ok(state, rootSession, "rm -r /bin", {})
 
-	bad(state, rootSession, "ls", "ls: command not found")
-	bad(state, rootSession, "cat /etc/motd", "cat: command not found")
-	bad(state, rootSession, "passwd", "passwd: command not found")
+	bad(state, rootSession, "ls", "ls: not found")
+	bad(state, rootSession, "cat /etc/motd", "cat: not found")
+	bad(state, rootSession, "passwd", "passwd: not found")
 	local damaged = expect(state, rootSession, "help", false, nil)
 	eq("help says the system is damaged", damaged[1],
 		"help: no commands in /bin: the system is damaged.")
@@ -2404,7 +2572,7 @@ do
 		string.match(lines[2], "^[^:]*:[^:]*:[^:]*:([^:]*)$"), "user")
 
 	-- Root reads it; nobody else does.
-	bad(state, admin, "cat /etc/passwd", "cat: /etc/passwd: permission denied")
+	bad(state, admin, "cat /etc/passwd", "cat: /etc/passwd: Permission denied")
 	local shown = ok(state, rootSession, "cat /etc/passwd", nil)
 	check("root reads it", #shown > 0)
 
@@ -2548,7 +2716,7 @@ do
 	local admin = open(state, "admin")
 
 	ok(state, admin, "hostname", { "ksp-front-01" })
-	bad(state, admin, "hostname other", "hostname: permission denied")
+	bad(state, admin, "hostname other", "hostname: Permission denied")
 	eq("and nothing was written", CeroSecOS.hostname(state), "ksp-front-01")
 
 	ok(state, rootSession, "hostname ksp-back-02", {})
@@ -2634,14 +2802,14 @@ do
 	-- What was there is still there.
 	local kept = CeroSecOS.systemNode(state, "/home/admin/work/notes.txt")
 	check("a file in /home survived", kept ~= nil)
-	eq("with its contents", kept.data, "keep me")
+	eq("with its contents", kept.data, "keep me\n")
 	eq("the name survived", CeroSecOS.hostname(state), "ksp-mine")
 	check("and the root password survived", holds(state, "root", "hunter2"))
 	-- A banner deleted with /etc is put back, naming the machine as it stands now
 	-- and not as it shipped: a repair is not a rename.
 	eq("the banner is back and names this machine",
 		CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH).data,
-		CeroSecOS.issueText("ksp-mine"))
+		CeroSecOS.issueText("ksp-mine") .. "\n")
 	check("the empty one does not work", not holds(state, "root", ""))
 
 	-- The commands are back, all of them, and runnable.
@@ -2700,7 +2868,7 @@ do
 	eq("with its description", ls.data, CeroSecOS.commandDesc("ls"))
 	local mine = CeroSecOS.systemNode(state, "/bin/mine")
 	check("a file of his own is still there", mine ~= nil)
-	eq("untouched", mine.data, "not ours")
+	eq("untouched", mine.data, "not ours\n")
 
 	-- Nothing at all to work with, and nothing thrown.
 	eq("no state, no repair", CeroSecOS.restoreSystem(nil), nil)
@@ -2731,11 +2899,11 @@ do
 	ok(state, rootSession, "reboot", {}, "reboot")
 	-- And `restart`, which was here until SYSTEM_VERSION 16, is gone: no Unix ever
 	-- had one, and the two real spellings are the two lines above.
-	bad(state, rootSession, "restart", "restart: command not found")
+	bad(state, rootSession, "restart", "restart: not found")
 
 	-- Root's alone, and each refusal wears the name that was typed.
-	bad(state, admin, "shutdown", "shutdown: permission denied")
-	bad(state, admin, "reboot", "reboot: permission denied")
+	bad(state, admin, "shutdown", "shutdown: Permission denied")
+	bad(state, admin, "reboot", "reboot: Permission denied")
 
 	-- `now` is what "no time at all" means, so the two lines are one order.
 	ok(state, rootSession, "shutdown now", {}, "shutdown")
@@ -2749,12 +2917,12 @@ do
 		"shutdown: usage: shutdown [-h|-r] now|+N")
 	bad(state, rootSession, "reboot -f", "reboot: usage: reboot")
 	bad(state, rootSession, "halt now", "halt: usage: halt")
-	bad(state, admin, "halt", "halt: permission denied")
+	bad(state, admin, "halt", "halt: Permission denied")
 
 	-- Executables like every other command: taking the file away takes the
 	-- order away, and the machine cannot be talked into going down by a name.
 	ok(state, rootSession, "rm /bin/shutdown", {})
-	bad(state, rootSession, "shutdown", "shutdown: command not found")
+	bad(state, rootSession, "shutdown", "shutdown: not found")
 	eq("and reboot is untouched",
 		select(3, exec(state, rootSession, "reboot")), "reboot")
 
@@ -2812,7 +2980,7 @@ do
 	eq("owner", node.owner, "root")
 	eq("mode", node.mode, CeroSecOS.SUDOERS_MODE)
 	local adminSession = open(state, "admin")
-	bad(state, adminSession, "cat /etc/sudoers", "cat: /etc/sudoers: permission denied")
+	bad(state, adminSession, "cat /etc/sudoers", "cat: /etc/sudoers: Permission denied")
 end
 
 --
@@ -2868,7 +3036,7 @@ do
 	eq("and moves nobody", admin.cwd, "/home/admin")
 
 	-- What sudo is for: a file admin cannot read.
-	bad(state, admin, "cat /etc/passwd", "cat: /etc/passwd: permission denied")
+	bad(state, admin, "cat /etc/passwd", "cat: /etc/passwd: Permission denied")
 	local catted = answer(state, admin, run(state, admin, "sudo cat /etc/passwd").data.cont, "")
 	eq("sudo cat /etc/passwd succeeds", catted.ok, true)
 	check("and prints the file", string.find(catted.lines[1], "root:$cs1$", 1, true) == 1)
@@ -2886,12 +3054,12 @@ do
 
 	-- A name sudo has nothing at all to run: SUDO is what went looking, so sudo
 	-- is what signs the refusal -- real sudo prints its own name in front of a
-	-- "command not found" and so does the shell-word refusal above it.
+	-- "not found" and so does the shell-word refusal above it.
 	bad(state, admin, "sudo nosuch", "sudo: nosuch: command not found")
 	-- A command whose EXECUTABLE is gone is the PATH lookup answering, and that
 	-- refusal is signed the command's own name everywhere on this machine.
 	ok(state, rootSession, "rm /bin/ls", {})
-	bad(state, admin, "sudo ls", "ls: command not found")
+	bad(state, admin, "sudo ls", "ls: not found")
 	CeroSecOS.restoreSystem(state)
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
 
@@ -2935,7 +3103,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	eq("admin may not touch root's password",
-		run(state, admin, "passwd root").lines[1], "passwd: permission denied")
+		run(state, admin, "passwd root").lines[1], "passwd: Permission denied")
 
 	local gate = run(state, admin, "sudo passwd root")
 	eq("sudo asks for admin's password first", gate.data.text, "[sudo] password for admin: ")
@@ -2983,7 +3151,7 @@ do
 	eq("a new file under /root opens", made.control, "edit")
 	eq("as root", made.data.user, "root")
 	eq("empty", made.data.text, "")
-	bad(state, admin, "edit /root/notes.txt", "edit: /root/notes.txt: permission denied")
+	bad(state, admin, "edit /root/notes.txt", "edit: /root/notes.txt: Permission denied")
 end
 
 -- The repair, and /etc/sudoers.
@@ -2999,18 +3167,18 @@ do
 	CeroSecOS.restoreSystem(state)
 	eq("a sudoers that still names somebody is kept, with the wheel line added",
 		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data,
-		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP)
+		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP .. "\n")
 	CeroSecOS.restoreSystem(state)
 	eq("and it is added once and not again",
 		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data,
-		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP)
+		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP .. "\n")
 	eq("kate is still not asked", CeroSecOS.sudoer(state, "kate").nopasswd, true)
 
 	-- One that names nobody is not a list.
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "rubbish line here")
 	CeroSecOS.restoreSystem(state)
 	local node = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
-	eq("an unparseable one is written back", node.data, CeroSecOS.defaultSudoers())
+	eq("an unparseable one is written back", node.data, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 	eq("root's", node.owner, "root")
 	eq("440", node.mode, CeroSecOS.SUDOERS_MODE)
 	eq("and admin is on it again", CeroSecOS.sudoer(state, "admin").name, "admin")
@@ -3019,7 +3187,7 @@ do
 	CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH).children.sudoers = nil
 	CeroSecOS.restoreSystem(state)
 	eq("a missing one comes back",
-		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, CeroSecOS.defaultSudoers())
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 	local before = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
 	CeroSecOS.restoreSystem(state)
 	eq("and a second repair changes nothing",
@@ -3081,7 +3249,7 @@ do
 	check("/etc/sudoers was written", sudoers ~= nil)
 	eq("root's", sudoers.owner, "root")
 	eq("440", sudoers.mode, CeroSecOS.SUDOERS_MODE)
-	eq("with the shipped list", sudoers.data, CeroSecOS.defaultSudoers())
+	eq("with the shipped list", sudoers.data, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 	eq("so admin may sudo again", CeroSecOS.sudoer(state, "admin").name, "admin")
 
 	-- Nothing else was touched.
@@ -3105,7 +3273,7 @@ do
 	ok(state, rootSession, "rm /bin/ls", {})
 	eq("the upgrade does nothing", CeroSecOS.upgradeSystem(state), false)
 	eq("ls stays deleted", state.fs.children.bin.children.ls, nil)
-	bad(state, rootSession, "ls /", "ls: command not found")
+	bad(state, rootSession, "ls /", "ls: not found")
 	-- Through the load path too, which is where it would bite.
 	CeroSecOS.migrate(state, "ksp-front-01")
 	eq("and stays deleted across a load", state.fs.children.bin.children.ls, nil)
@@ -3135,7 +3303,7 @@ do
 	-- And the BIOS is what puts that one right.
 	CeroSecOS.restoreSystem(state)
 	eq("the repair rewrites it",
-		state.fs.children.etc.children.sudoers.data, CeroSecOS.defaultSudoers())
+		state.fs.children.etc.children.sudoers.data, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 	eq("and the executable is an executable again",
 		state.fs.children.bin.children.sudo.type, "file")
 end
@@ -3219,6 +3387,15 @@ local function badAt(state, session, line, wantLine, env)
 	eq("`" .. line .. "` refused", r.ok, false)
 	eq("`" .. line .. "` line count", #r.lines, 1)
 	eq("`" .. line .. "` says", r.lines[1], wantLine)
+end
+
+-- A refusal of more than one line: getopt(3)'s "illegal option -- x" and
+-- the usage() line every 4.4BSD command prints right after it.
+local function badAtLines(state, session, line, wantLines, env)
+	local r = runAt(state, session, line, env or ENV)
+	eq("`" .. line .. "` refused", r.ok, false)
+	eq("`" .. line .. "` line count", #r.lines, #wantLines)
+	for i = 1, #wantLines do eq("`" .. line .. "` line " .. i, r.lines[i], wantLines[i]) end
 end
 
 -- 20a. The arithmetic. A calendar in, the same calendar out.
@@ -3416,11 +3593,11 @@ do
 	eq("the write still happens", r, true)
 	eq("and leaves the stamp where it was",
 		CeroSecOS.mtimeOf(home.children.d.children["moved.txt"]), was)
-	eq("the data did change", home.children.d.children["moved.txt"].data, "no clock here")
+	eq("the data did change", home.children.d.children["moved.txt"].data, "no clock here\n")
 
 	-- A stamp is a write. Somebody who may not write the file may not move it.
 	okAt(state, rootSession, "touch /root/his.txt", {})
-	badAt(state, admin, "touch /root/his.txt", "touch: /root/his.txt: permission denied")
+	badAt(state, admin, "touch /root/his.txt", "touch: /root/his.txt: Permission denied")
 
 	eq("and all of it still validates", CeroSecOS.validate(state), true)
 end
@@ -3515,12 +3692,12 @@ do
 	okAt(state, admin, "mkdir sub", {}, ENV2)
 
 	okAt(state, admin, "ls -l", {
-		"-rw-r--r--  admin  admin       5  Jul  8 14:32  notes.txt",
+		"-rw-r--r--  admin  admin       6  Jul  8 14:32  notes.txt",
 		"drwxr-xr-x  admin  admin       0  Jul  8 15:32  sub",
 	})
 	-- The flags are letters, so every spelling is the same line.
 	local want = {
-		"-rw-r--r--  admin  admin       5  Jul  8 14:32  notes.txt",
+		"-rw-r--r--  admin  admin       6  Jul  8 14:32  notes.txt",
 		"drwxr-xr-x  admin  admin       0  Jul  8 15:32  sub/",
 	}
 	okAt(state, admin, "ls -lF", want)
@@ -3529,9 +3706,28 @@ do
 	okAt(state, admin, "ls -F -l", want)
 	-- One bad letter in a run of good ones is still a bad option, and the
 	-- refusal names the argument as typed.
-	badAt(state, admin, "ls -lz", "ls: -lz: unknown option")
-	badAt(state, admin, "ls -zl", "ls: -zl: unknown option")
-	badAt(state, admin, "ls -l a b", "ls: usage: ls [-1laACF] [path]")
+	badAtLines(state, admin, "ls -lz", { "ls: illegal option -- z",
+		"usage: ls [-1laACF] [path]..." })
+	badAtLines(state, admin, "ls -zl", { "ls: illegal option -- z",
+		"usage: ls [-1laACF] [path]..." })
+	expect(state, admin, "ls -l a b", false, { "ls: a: No such file or directory", "ls: b: No such file or directory" })
+
+	-- Files first, as typed and in order; then each directory under its own
+	-- name, a blank line between. The flags are every operand's.
+	okAt(state, admin, "mkdir d1", {})
+	okAt(state, admin, "mkdir d2", {})
+	okAt(state, admin, "touch d1/x", {})
+	okAt(state, admin, "touch d2/y", {})
+	okAt(state, admin, "touch z", {})
+	okAt(state, admin, "ls -1 d2 z d1 /etc/motd", { "/etc/motd", "z", "", "d1:", "x", "", "d2:", "y" })
+	okAt(state, admin, "ls -1F d1 d2", { "d1:", "x", "", "d2:", "y" })
+	-- One operand is still one listing, with no name over it.
+	okAt(state, admin, "ls -1 d1", { "x" })
+	-- A name that is missing says so first, and the rest is still listed --
+	-- as errors, since this machine has one stream (docs/SCRIPTING.md). Two
+	-- operands were given, so the directory still wears its name: ls.c's
+	-- "If multiple arguments, precede each directory with its name."
+	expect(state, admin, "ls -1 d1 nope", false, { "ls: nope: No such file or directory", "d1:", "x" })
 end
 
 -- 20g. df, against a state whose numbers are known.
@@ -3561,7 +3757,8 @@ do
 	local after = okAt(state, admin, "df", nil)
 	local usedBefore = tonumber(string.match(lines[2], "^%a+%s+%d+%s+(%d+)"))
 	local usedAfter = tonumber(string.match(after[2], "^%a+%s+%d+%s+(%d+)"))
-	eq("a thousand bytes written is a thousand bytes used", usedAfter - usedBefore, 1000)
+	eq("a thousand bytes and echo's newline are that many used",
+		usedAfter - usedBefore, 1001)
 	local nodesAfter = tonumber(string.match(after[3], "^%a+%s+%d+%s+(%d+)"))
 	eq("and one more node", nodesAfter - nodes, 1)
 
@@ -3600,6 +3797,8 @@ do
 	okAt(state, admin, 'echo "a.b\naxb" > dots.txt', {})
 	okAt(state, admin, "grep a.b dots.txt", { "a.b", "axb" })
 	okAt(state, admin, "grep 'a\\.b' dots.txt", { "a.b" })
+	-- Double quotes keep a backslash before a full stop, so grep gets it.
+	okAt(state, admin, 'grep "a\\.b" dots.txt', { "a.b" })
 	okAt(state, admin, "grep 'a[.]b' dots.txt", { "a.b" })
 	-- Two files, so the name goes in front.
 	okAt(state, admin, "cp a.txt b.txt", {})
@@ -3636,10 +3835,11 @@ do
 		"grep: usage: grep [-cinv] [-e pattern] [pattern] [file]...")
 	badAt(state, admin, "grep alpha",
 		"grep: usage: grep [-cinv] [-e pattern] [pattern] [file]...")
-	badAt(state, admin, "grep -q alpha a.txt", "grep: -q: unknown option")
-	badAt(state, admin, "grep alpha /nope", "grep: /nope: no such file")
-	badAt(state, admin, "grep alpha /etc", "grep: /etc: is a directory")
-	badAt(state, admin, "grep alpha /etc/passwd", "grep: /etc/passwd: permission denied")
+	badAtLines(state, admin, "grep -q alpha a.txt", { "grep: illegal option -- q",
+		"usage: grep [-cinv] [-e pattern] [pattern] [file]..." })
+	badAt(state, admin, "grep alpha /nope", "grep: /nope: No such file or directory")
+	badAt(state, admin, "grep alpha /etc", "grep: /etc: Is a directory")
+	badAt(state, admin, "grep alpha /etc/passwd", "grep: /etc/passwd: Permission denied")
 
 	-- head and tail. Ten lines by default.
 	okAt(state, admin, "head a.txt",
@@ -3667,51 +3867,64 @@ do
 	badAt(state, admin, "head", "head: usage: head [-n N|-N] [file]")
 	badAt(state, admin, "head -n a.txt", "head: usage: head [-n N|-N] [file]")
 	badAt(state, admin, "head -n -3 a.txt", "head: usage: head [-n N|-N] [file]")
-	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N|-N] [file]")
+	-- The count's SIGN is what it means (4.4BSD tail.c's ARG()): +N from the
+	-- top, -N and N from the bottom; head reads a "+" and ignores it. Read
+	-- by strtol: tonumber("+3") is not a number on every VM this runs on.
+	okAt(state, admin, "tail -n +11 a.txt", { "eleven", "twelve" })
+	okAt(state, admin, "tail -n+11 a.txt", { "eleven", "twelve" })
+	okAt(state, admin, "tail -n -2 a.txt", { "eleven", "twelve" })
+	okAt(state, admin, "head -n +2 a.txt", { "alpha beta", "gamma" })
+	okAt(state, admin, "cat a.txt | tail -n +12", { "twelve" })
+	okAt(state, admin, "tail -n +0 a.txt | head -n 1", { "alpha beta" })
+	okAt(state, admin, "tail -n 99999999999999999999 a.txt | head -1", { "alpha beta" })
+	badAt(state, admin, "tail -n 1e9 a.txt", "tail: usage: tail [-n N|-N|+N] [file]")
+	badAt(state, admin, "tail -n inf a.txt", "tail: usage: tail [-n N|-N|+N] [file]")
+	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N|-N|+N] [file]")
 	-- Digits and nothing else: `-2x` is not a number and is not a flag either.
 	badAt(state, admin, "head -2x a.txt", "head: usage: head [-n N|-N] [file]")
 	badAt(state, admin, "head -l a.txt", "head: usage: head [-n N|-N] [file]")
 	-- An option is an option before the first file and a file after it, which is
 	-- one file too many for head.
 	badAt(state, admin, "head a.txt -2", "head: usage: head [-n N|-N] [file]")
-	badAt(state, admin, "head /nope", "head: /nope: no such file")
-	badAt(state, admin, "tail /etc", "tail: /etc: is a directory")
+	badAt(state, admin, "head /nope", "head: /nope: No such file or directory")
+	badAt(state, admin, "tail /etc", "tail: /etc: Is a directory")
 
 	-- wc: lines, words, bytes, name, and a total when there is more than one.
-	okAt(state, admin, "wc dots.txt", { "     2      2      7 dots.txt" })
-	okAt(state, admin, "wc empty.txt", { "     0      0      0 empty.txt" })
+	okAt(state, admin, "wc dots.txt", { "       2       2       8 dots.txt" })
+	okAt(state, admin, "wc empty.txt", { "       0       0       0 empty.txt" })
 	okAt(state, admin, "wc dots.txt empty.txt", {
-		"     2      2      7 dots.txt",
-		"     0      0      0 empty.txt",
-		"     2      2      7 total",
+		"       2       2       8 dots.txt",
+		"       0       0       0 empty.txt",
+		"       2       2       8 total",
 	})
 	local counted = okAt(state, admin, "wc a.txt", nil)
-	eq("wc counts a.txt", counted[1], "    12     14     " .. #text .. " a.txt")
+	eq("wc counts a.txt", counted[1], "      12      14      " .. #text + 1 .. " a.txt")
 
 	-- -l, -w and -c: only what was asked for, and always in POSIX's order
 	-- whatever order the flags were written in. The row is the same width, so
 	-- the name has 7 more columns for every number left out.
-	okAt(state, admin, "wc -l a.txt", { "    12 a.txt" })
-	okAt(state, admin, "wc -w a.txt", { "    14 a.txt" })
-	okAt(state, admin, "wc -c dots.txt", { "     7 dots.txt" })
-	okAt(state, admin, "wc -lc dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -cl dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -c -l dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -wc dots.txt", { "     2      7 dots.txt" })
-	okAt(state, admin, "wc -lw dots.txt", { "     2      2 dots.txt" })
+	okAt(state, admin, "wc -l a.txt", { "      12 a.txt" })
+	okAt(state, admin, "wc -w a.txt", { "      14 a.txt" })
+	okAt(state, admin, "wc -c dots.txt", { "       8 dots.txt" })
+	okAt(state, admin, "wc -lc dots.txt", { "       2       8 dots.txt" })
+	okAt(state, admin, "wc -cl dots.txt", { "       2       8 dots.txt" })
+	okAt(state, admin, "wc -c -l dots.txt", { "       2       8 dots.txt" })
+	okAt(state, admin, "wc -wc dots.txt", { "       2       8 dots.txt" })
+	okAt(state, admin, "wc -lw dots.txt", { "       2       2 dots.txt" })
 	-- All three, asked for, is what all three are by default.
-	okAt(state, admin, "wc -lwc dots.txt", { "     2      2      7 dots.txt" })
-	okAt(state, admin, "wc -ll dots.txt", { "     2 dots.txt" })
+	okAt(state, admin, "wc -lwc dots.txt", { "       2       2       8 dots.txt" })
+	okAt(state, admin, "wc -ll dots.txt", { "       2 dots.txt" })
 	-- The total row carries the same columns as the rows above it.
 	okAt(state, admin, "wc -l dots.txt empty.txt",
-		{ "     2 dots.txt", "     0 empty.txt", "     2 total" })
+		{ "       2 dots.txt", "       0 empty.txt", "       2 total" })
 	okAt(state, admin, "wc -c dots.txt empty.txt",
-		{ "     7 dots.txt", "     0 empty.txt", "     7 total" })
+		{ "       8 dots.txt", "       0 empty.txt", "       8 total" })
 
 	badAt(state, admin, "wc", "wc: usage: wc [-clw] [file]...")
-	badAt(state, admin, "wc -q dots.txt", "wc: -q: unknown option")
-	badAt(state, admin, "wc /nope", "wc: /nope: no such file")
-	badAt(state, admin, "wc -l /nope", "wc: /nope: no such file")
+	badAtLines(state, admin, "wc -q dots.txt", { "wc: illegal option -- q",
+		"usage: wc [-clw] [file]..." })
+	badAt(state, admin, "wc /nope", "wc: /nope: No such file or directory")
+	badAt(state, admin, "wc -l /nope", "wc: /nope: No such file or directory")
 end
 
 -- 20i. cp -r.
@@ -3723,11 +3936,11 @@ do
 	okAt(state, admin, 'echo "buried" > tree/inner/deep.txt', {})
 	okAt(state, admin, 'echo "surface" > tree/top.txt', {})
 
-	badAt(state, admin, "cp tree copy", "cp: tree: is a directory")
+	badAt(state, admin, "cp tree copy", "cp: tree: Is a directory")
 	okAt(state, admin, "cp -r tree copy", {}, ENV2)
 	local copy = state.fs.children.home.children.admin.children.copy
-	eq("the tree came over", copy.children.inner.children["deep.txt"].data, "buried")
-	eq("and the file at the top", copy.children["top.txt"].data, "surface")
+	eq("the tree came over", copy.children.inner.children["deep.txt"].data, "buried\n")
+	eq("and the file at the top", copy.children["top.txt"].data, "surface\n")
 	eq("the copy is the caller's", copy.children.inner.owner, "admin")
 	eq("every node of it is stamped now",
 		CeroSecOS.mtimeOf(copy.children.inner.children["deep.txt"]), LATER)
@@ -3741,7 +3954,8 @@ do
 	badAt(state, admin, "cp -r tree tree/inner/../x", "cp: tree/inner/../x: invalid destination")
 	badAt(state, admin, "cp -r tree tree", "cp: tree/tree: invalid destination")
 	badAt(state, admin, "cp -r . here", "cp: here: invalid destination")
-	badAt(state, admin, "cp -z tree x", "cp: -z: unknown option")
+	badAtLines(state, admin, "cp -z tree x", { "cp: illegal option -- z",
+		"usage: cp [-r] <src>... <dst>" })
 	badAt(state, admin, "cp -r tree", "cp: usage: cp [-r] <src>... <dst>")
 
 	-- A tree you cannot walk is a tree you cannot copy, and nothing of it is
@@ -3750,7 +3964,7 @@ do
 	okAt(state, rootSession, "mkdir /home/admin/shut", {})
 	okAt(state, rootSession, 'echo "his" > /home/admin/shut/secret.txt', {})
 	okAt(state, rootSession, "chmod 700 /home/admin/shut", {})
-	badAt(state, admin, "cp -r shut mine", "cp: shut: permission denied")
+	badAt(state, admin, "cp -r shut mine", "cp: shut: Permission denied")
 	eq("and nothing was written",
 		state.fs.children.home.children.admin.children.mine, nil)
 
@@ -3759,7 +3973,7 @@ do
 	okAt(state, admin, "cp -r tree box", {})
 	eq("it landed under its name",
 		state.fs.children.home.children.admin.children.box.children.tree.children["top.txt"].data,
-		"surface")
+		"surface\n")
 	eq("the state is still plain and legal", CeroSecOS.validate(state), true)
 end
 
@@ -3767,7 +3981,7 @@ end
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	okAt(state, admin, "man ls", { "ls - list a directory", "usage: ls [-1laACF] [path]" })
+	okAt(state, admin, "man ls", { "ls - list a directory", "usage: ls [-1laACF] [path]..." })
 	okAt(state, admin, "man date", { "date - print the date and time", "usage: date [+FORMAT]" })
 	badAt(state, admin, "man", "man: usage: man <command>")
 	badAt(state, admin, "man ls date", "man: usage: man <command>")
@@ -3776,7 +3990,7 @@ do
 	-- The description is the FILE's: rewrite /bin/ls and man says what it says.
 	local rootSession = open(state, "root")
 	okAt(state, rootSession, 'echo "shows you things" > /bin/ls', {})
-	okAt(state, admin, "man ls", { "ls - shows you things", "usage: ls [-1laACF] [path]" })
+	okAt(state, admin, "man ls", { "ls - shows you things", "usage: ls [-1laACF] [path]..." })
 	-- And a command that is gone has no manual.
 	okAt(state, rootSession, "rm /bin/ls", {})
 	badAt(state, admin, "man ls", "man: ls: no manual entry")
@@ -3876,24 +4090,23 @@ do
 
 	-- Root's, and root's alone -- which is what makes `sudo useradd` the way an
 	-- admin does it.
-	badAt(state, admin, "useradd bob", "useradd: permission denied")
+	badAt(state, admin, "useradd bob", "useradd: Permission denied")
 	eq("and nothing was made", CeroSecOS.getUser(state, "bob"), nil)
 
 	badAt(state, rootSession, "useradd", "useradd: usage: useradd [-G group[,group...]] login")
 	badAt(state, rootSession, "useradd bob carl", "useradd: usage: useradd [-G group[,group...]] login")
-	badAt(state, rootSession, "useradd -x bob", "useradd: -x: unknown option")
+	badAtLines(state, rootSession, "useradd -x bob", { "useradd: illegal option -- x",
+		"usage: useradd [-G group[,group...]] login" })
 	-- A name that begins with "-" is read as a flag, the way every shell reads
 	-- one, and the refusal is about the flag it looks like.
-	badAt(state, rootSession, "useradd -bob", "useradd: -bob: unknown option")
+	badAtLines(state, rootSession, "useradd -bob", { "useradd: illegal option -- b",
+		"usage: useradd [-G group[,group...]] login" })
 	badAt(state, rootSession, "useradd Bob", "useradd: Bob: invalid name")
 	badAt(state, rootSession, "useradd 1bob", "useradd: 1bob: invalid name")
 	badAt(state, rootSession, "useradd admin", "useradd: admin: already exists")
 	badAt(state, rootSession, "useradd root", "useradd: root: already exists")
 
-	okAt(state, rootSession, "useradd bob", {
-		"useradd: bob: created",
-		"useradd: set a password with passwd bob",
-	})
+	okAt(state, rootSession, "useradd bob", {})
 
 	local bob = CeroSecOS.getUser(state, "bob")
 	check("the account is in the file", bob ~= nil)
@@ -3921,15 +4134,12 @@ do
 	okAt(state, session, "pwd", { "/home/bob" })
 	okAt(state, session, "whoami", { "bob" })
 	-- 750: nobody else goes in there.
-	badAt(state, admin, "ls /home/bob", "ls: /home/bob: permission denied")
+	badAt(state, admin, "ls /home/bob", "ls: /home/bob: Permission denied")
 
 	-- -G wheel is what `adduser -a` was: the membership 4.4BSD gates su on, the
 	-- group the shipped /etc/sudoers grants, and the flag on the /etc/passwd line
 	-- written from it.
-	okAt(state, rootSession, "useradd -G wheel kate", {
-		"useradd: kate: created",
-		"useradd: set a password with passwd kate",
-	})
+	okAt(state, rootSession, "useradd -G wheel kate", {})
 	eq("the flag is on the line", CeroSecOS.getUser(state, "kate").admin, true)
 	check("and she really is in wheel",
 		CeroSecOS.inGroup(state, "kate", CeroSecOS.WHEEL_GROUP))
@@ -3962,18 +4172,15 @@ do
 	okAt(state, rootSession, "chmod 700 /home/carl", {})
 	okAt(state, rootSession, "echo \"keep me\" > /home/carl/notes.txt", {})
 
-	okAt(state, rootSession, "useradd carl", {
-		"useradd: carl: created",
-		"useradd: set a password with passwd carl",
-	})
+	okAt(state, rootSession, "useradd carl", {})
 	local home = CeroSecOS.systemNode(state, "/home/carl")
 	eq("it changed hands", home.owner, "carl")
 	eq("and kept the mode it had", home.mode, 700)
-	eq("and everything in it", home.children["notes.txt"].data, "keep me")
+	eq("and everything in it", home.children["notes.txt"].data, "keep me\n")
 
 	-- A file at that name is not a home, and the refusal says so.
 	okAt(state, rootSession, "echo hello > /home/dave", {})
-	badAt(state, rootSession, "useradd dave", "useradd: /home/dave: not a directory")
+	badAt(state, rootSession, "useradd dave", "useradd: /home/dave: Not a directory")
 	eq("and no account was made", CeroSecOS.getUser(state, "dave"), nil)
 end
 
@@ -3983,7 +4190,7 @@ do
 	local rootSession = open(state, "root")
 	okAt(state, rootSession, "rm -r /home", {})
 
-	badAt(state, rootSession, "useradd eve", "useradd: /home/eve: no such file")
+	badAt(state, rootSession, "useradd eve", "useradd: /home/eve: No such file or directory")
 	eq("the line that was written is taken back out", CeroSecOS.getUser(state, "eve"), nil)
 	check("and the accounts that were there are still there", holds(state, "admin", ""))
 	eq("the machine still validates", CeroSecOS.validate(state), true)
@@ -3997,7 +4204,8 @@ do
 	eq("sudo asks for admin's password", asked.data.text, "[sudo] password for admin: ")
 	local made = answer(state, admin, asked.data.cont, "")
 	eq("it succeeds", made.ok, true)
-	eq("and says so", made.lines[1], "useradd: bob: created")
+	-- and says nothing, as SVR4's useradd(1M) said nothing
+	eq("and says nothing", #made.lines, 0)
 	eq("the account is there", CeroSecOS.getUser(state, "bob").admin, true)
 	eq("the home is his", CeroSecOS.systemNode(state, "/home/bob").owner, "bob")
 	eq("and the console is still admin's", admin.user, "admin")
@@ -4011,9 +4219,10 @@ do
 	okAt(state, rootSession, "useradd bob", nil)
 	okAt(state, rootSession, "useradd carl", nil)
 
-	badAt(state, admin, "userdel bob", "userdel: permission denied")
+	badAt(state, admin, "userdel bob", "userdel: Permission denied")
 	badAt(state, rootSession, "userdel", "userdel: usage: userdel [-r] login")
-	badAt(state, rootSession, "userdel -x bob", "userdel: -x: unknown option")
+	badAtLines(state, rootSession, "userdel -x bob", { "userdel: illegal option -- x",
+		"usage: userdel [-r] login" })
 	badAt(state, rootSession, "userdel bob carl", "userdel: usage: userdel [-r] login")
 	badAt(state, rootSession, "userdel nosuch", "userdel: nosuch: no such user")
 	-- Root is the way back into the machine and is not one of the accounts.
@@ -4032,7 +4241,7 @@ do
 
 	-- Without -r the home stays exactly where it is, owned by a name the
 	-- machine no longer knows.
-	okAt(state, rootSession, "userdel bob", { "userdel: bob: removed" })
+	okAt(state, rootSession, "userdel bob", {})
 	eq("the account is gone", CeroSecOS.getUser(state, "bob"), nil)
 	check("and cannot log in", CeroSecOS.login(state, "bob", "") == nil)
 	local home = CeroSecOS.systemNode(state, "/home/bob")
@@ -4043,7 +4252,7 @@ do
 
 	-- With -r it goes, and everything under it.
 	okAt(state, rootSession, "echo hello > /home/carl/notes.txt", {})
-	okAt(state, rootSession, "userdel -r carl", { "userdel: carl: removed" })
+	okAt(state, rootSession, "userdel -r carl", {})
 	eq("the account is gone", CeroSecOS.getUser(state, "carl"), nil)
 	eq("and so is the home", CeroSecOS.systemNode(state, "/home/carl"), nil)
 	eq("the machine still validates", CeroSecOS.validate(state), true)
@@ -4058,16 +4267,16 @@ do
 		"# who may\nadmin\nbob NOPASSWD")
 	eq("bob may sudo", CeroSecOS.sudoer(state, "bob").nopasswd, true)
 
-	okAt(state, rootSession, "userdel bob", { "userdel: bob: removed" })
+	okAt(state, rootSession, "userdel bob", {})
 	eq("and now he is nobody", CeroSecOS.sudoer(state, "bob"), nil)
 	eq("admin kept his line", CeroSecOS.sudoer(state, "admin").name, "admin")
 	eq("and the comment is still in the file",
-		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, "# who may\nadmin")
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, "# who may\nadmin\n")
 
 	-- A machine with no /etc/sudoers at all has nothing to take out of it.
 	okAt(state, rootSession, "useradd dan", nil)
 	okAt(state, rootSession, "rm /etc/sudoers", {})
-	okAt(state, rootSession, "userdel dan", { "userdel: dan: removed" })
+	okAt(state, rootSession, "userdel dan", {})
 end
 
 -- `sudo userdel` on the account at the glass: the borrowed session knows who
@@ -4080,7 +4289,7 @@ do
 	check("and he is still there", CeroSecOS.getUser(state, "admin") ~= nil)
 	-- Somebody else, though, goes.
 	okAt(state, admin, "sudo useradd bob", nil)
-	okAt(state, admin, "sudo userdel bob", { "userdel: bob: removed" })
+	okAt(state, admin, "sudo userdel bob", {})
 end
 
 -- id.
@@ -4176,12 +4385,12 @@ do
 	eq("no hash of one either", asked.data.cont.want, nil)
 	eq("and no salt to make one with", asked.data.cont.salt, nil)
 
-	says(answer(state, admin, asked.data.cont, "wrong"), "su: authentication failure")
+	says(answer(state, admin, asked.data.cont, "wrong"), "Sorry")
 	eq("and nobody was switched", admin.user, "admin")
 	eq("nor given a stack", admin.stack, nil)
 
 	-- The right one, and the target's own -- not the caller's.
-	says(answer(state, admin, { cmd = "su", user = "bob" }, ""), "su: authentication failure")
+	says(answer(state, admin, { cmd = "su", user = "bob" }, ""), "Sorry")
 	local switched = answer(state, admin, asked.data.cont, "hunter2")
 	eq("it succeeds", switched.ok, true)
 	eq("silently", #switched.lines, 0)
@@ -4208,7 +4417,7 @@ do
 	-- An account taken out of the file between the question and the answer.
 	local gone = run(state, admin, "su bob")
 	okAt(state, rootSession, "userdel bob", nil)
-	says(answer(state, admin, gone.data.cont, "hunter2"), "su: authentication failure")
+	says(answer(state, admin, gone.data.cont, "hunter2"), "Sorry")
 	eq("and nobody was switched", admin.user, "admin")
 end
 
@@ -4384,7 +4593,7 @@ do
 	check("/etc/group was seeded", groupNode ~= nil)
 	eq("/etc/group is root's", groupNode.owner, "root")
 	eq("/etc/group is 644", groupNode.mode, CeroSecOS.GROUP_MODE)
-	eq("/etc/group holds the shipped four", groupNode.data, CeroSecOS.defaultGroup())
+	eq("/etc/group holds the shipped four", groupNode.data, CeroSecOS.terminated(CeroSecOS.defaultGroup()))
 	eq("the player's file was not touched", old.data, "keep me")
 	eq("and still has no group of its own", old.group, nil)
 	eq("which reads as its owner", CeroSecOS.groupOf(old), "admin")
@@ -4400,7 +4609,7 @@ do
 	CeroSecOS.upgradeSystem(kept)
 	eq("a group file that is there is left alone, wheel apart",
 		kept.fs.children.etc.children.group.data,
-		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":")
+		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":\n")
 	check("and nobody is in it", not CeroSecOS.inGroup(kept, "admin", CeroSecOS.WHEEL_GROUP))
 
 	-- The BIOS repair, on the same terms: a file that still holds a group is
@@ -4412,19 +4621,19 @@ do
 	check("the repair puts groupadd back", broken.fs.children.bin.children.groupadd ~= nil)
 	eq("and keeps a group file that still parses, wheel apart",
 		broken.fs.children.etc.children.group.data,
-		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":")
+		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":\n")
 
 	local wiped = fresh()
 	CeroSecOS.setData(wiped, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "# nothing but this")
 	CeroSecOS.restoreSystem(wiped)
 	eq("a group file that parses to nothing is written back",
-		wiped.fs.children.etc.children.group.data, CeroSecOS.defaultGroup())
+		wiped.fs.children.etc.children.group.data, CeroSecOS.terminated(CeroSecOS.defaultGroup()))
 
 	local gone = fresh()
 	gone.fs.children.etc.children.group = nil
 	CeroSecOS.restoreSystem(gone)
 	eq("and a missing one is written back too",
-		gone.fs.children.etc.children.group.data, CeroSecOS.defaultGroup())
+		gone.fs.children.etc.children.group.data, CeroSecOS.terminated(CeroSecOS.defaultGroup()))
 end
 
 -- A machine from the rung before this one is topped up with /bin/dev, and
@@ -4586,7 +4795,7 @@ do
 	-- Named straight rather than listed.
 	okAt(state, session, "ls -l /dev/lock1",
 		{ "crw-rw----  root  sudo  lock1    kitchen-hal~  N  unlocked" }, env)
-	okAt(state, session, "ls /dev/lock1", { "lock1" }, env)
+	okAt(state, session, "ls /dev/lock1", { "/dev/lock1" }, env)
 end
 
 -- 21b. Reading one.
@@ -4684,12 +4893,12 @@ do
 	local long = okAt(state, session, "ls -l /dev", nil, env)
 	-- The four that are there, plus the machine's own hole in the disk.
 	eq("nor in the long listing", #long, 5 + 1)
-	badAt(state, session, "ls /dev/lock9", "ls: /dev/lock9: no such file", env)
+	badAt(state, session, "ls /dev/lock9", "ls: /dev/lock9: No such file or directory", env)
 	badAt(state, session, "cat /dev/lock9", "lock9: no such device", env)
 	badAt(state, session, "echo lock > /dev/lock9", "lock9: no such device", env)
 
 	-- A name nobody ever gave out is an ordinary miss.
-	badAt(state, session, "cat /dev/light7", "cat: /dev/light7: no such file", env)
+	badAt(state, session, "cat /dev/light7", "cat: /dev/light7: No such file or directory", env)
 end
 
 -- 21e. The mode, and that it lasts.
@@ -4712,8 +4921,8 @@ do
 	okAt(state, admin, "echo on > /dev/light0", {}, env)
 
 	local reached = #devices.writes
-	badAt(state, bob, "cat /dev/light0", "light0: permission denied", env)
-	badAt(state, bob, "echo off > /dev/light0", "light0: permission denied", env)
+	badAt(state, bob, "cat /dev/light0", "light0: Permission denied", env)
+	badAt(state, bob, "echo off > /dev/light0", "light0: Permission denied", env)
 	eq("and nothing of bob's reached the world", #devices.writes, reached)
 	-- The listing is the directory's business, not the device's: /dev is 755.
 	okAt(state, bob, "ls -l /dev", nil, env)
@@ -4726,7 +4935,7 @@ do
 	eq("and it is not a line of /etc/group that put him there",
 		string.find(CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH).data, "bob", 1, true), nil)
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin")
-	badAt(state, bob, "cat /dev/light0", "light0: permission denied", env)
+	badAt(state, bob, "cat /dev/light0", "light0: Permission denied", env)
 	-- admin's own way in is the shipped /etc/group line, which outlives the
 	-- sudoers file being emptied.
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "# nobody")
@@ -4754,8 +4963,8 @@ do
 	-- Shut again, and root still walks through it -- and so does nobody else,
 	-- sudo group or not.
 	okAt(state, root, "chmod 000 /dev/light0", {}, env)
-	badAt(state, admin, "cat /dev/light0", "light0: permission denied", env)
-	badAt(state, bob, "cat /dev/light0", "light0: permission denied", env)
+	badAt(state, admin, "cat /dev/light0", "light0: Permission denied", env)
+	badAt(state, bob, "cat /dev/light0", "light0: Permission denied", env)
 	okAt(state, root, "cat /dev/light0", { "off" }, env)
 
 	-- And a device's group is not given away: it is what makes 660 mean what it
@@ -4787,9 +4996,12 @@ do
 	badAt(state, session, "mkdir /dev/mine", "/dev: read-only", env)
 	badAt(state, session, "touch /dev/mine", "/dev: read-only", env)
 	badAt(state, session, "edit /dev/mine", "/dev: read-only", env)
-	badAt(state, session, "echo hi > /dev/mine", "echo: /dev/mine: read-only", env)
+	badAt(state, session, "echo hi > /dev/mine", "cannot create /dev/mine: read-only", env)
 	okAt(state, session, "echo hi > /root/x.txt", {}, env)
 	badAt(state, session, "cp /root/x.txt /dev/mine", "cp: /dev/mine: read-only", env)
+	-- cp writes over a file that is there; a device is not one, and is not
+	-- reached round devWrite by it.
+	badAt(state, session, "cp /root/x.txt /dev/light0", "cp: /dev/light0: read-only", env)
 	badAt(state, session, "mv /root/x.txt /dev/mine", "mv: /dev/mine: read-only", env)
 	check("and nothing landed there",
 		state.fs.children.dev.children.mine == nil)
@@ -4829,7 +5041,7 @@ do
 	okAt(state, session, "ls /dev", { "null" }, { now = FIXED })
 	okAt(state, session, "ls -l /dev", { "crw-rw-rw-  root  root  null" },
 		{ now = FIXED })
-	badAt(state, session, "cat /dev/light0", "cat: /dev/light0: no such file", { now = FIXED })
+	badAt(state, session, "cat /dev/light0", "cat: /dev/light0: No such file or directory", { now = FIXED })
 end
 
 -- 21h. A chain that ends in a device: the mount is under continue too.
@@ -5085,7 +5297,7 @@ do
 		"usage: " .. CeroSecOS.commandUsage("dev"))
 
 	-- /dev is not a directory anybody writes in, and dev is not a way in.
-	badAt(state, session, "dev light1 on > /dev/mine", "dev: /dev/mine: read-only", env)
+	badAt(state, session, "dev light1 on > /dev/mine", "cannot create /dev/mine: read-only", env)
 end
 
 -- 21m. Who may. The node's own 660 and group sudo, reached through dev instead
@@ -5107,9 +5319,9 @@ do
 
 	-- bob, who is in no group of the machine's but his own.
 	local reached = #devices.writes
-	badAt(state, bob, "dev light0", "light0: permission denied", env)
-	badAt(state, bob, "dev light0 off", "light0: permission denied", env)
-	badAt(state, bob, "dev light0 toggle", "light0: permission denied", env)
+	badAt(state, bob, "dev light0", "light0: Permission denied", env)
+	badAt(state, bob, "dev light0 off", "light0: Permission denied", env)
+	badAt(state, bob, "dev light0 toggle", "light0: Permission denied", env)
 	eq("and nothing of bob's reached the world", #devices.writes, reached)
 
 	-- The table is the DIRECTORY's business and /dev is 755, exactly as
@@ -5132,7 +5344,7 @@ do
 	okAt(state, bob, "dev light0", { "light0: off" }, env)
 	okAt(state, bob, "dev light0 on", { "light0: on" }, env)
 	okAt(state, root, "chmod 000 /dev/light0", {}, env)
-	badAt(state, admin, "dev light0", "light0: permission denied", env)
+	badAt(state, admin, "dev light0", "light0: Permission denied", env)
 	okAt(state, root, "dev light0", { "light0: on" }, env)
 end
 
@@ -5192,8 +5404,8 @@ do
 	local bob = open(state, "bob")
 
 	okAt(state, admin, "dev find light0", { "light0: blinking" }, env)
-	badAt(state, bob, "dev find light0", "light0: permission denied", env)
-	badAt(state, bob, "dev find lock1", "lock1: permission denied", env)
+	badAt(state, bob, "dev find light0", "light0: Permission denied", env)
+	badAt(state, bob, "dev find lock1", "lock1: Permission denied", env)
 
 	-- 640 for everybody: bob may read it and may not write it. He may point at
 	-- the door and may not blink the light.
@@ -5201,8 +5413,8 @@ do
 	okAt(state, root, "chmod 644 /dev/lock1", {}, env)
 	okAt(state, bob, "dev lock1", { "lock1: unlocked" }, env)
 	okAt(state, bob, "dev find lock1", { "lock1: highlighted" }, env)
-	badAt(state, bob, "dev find light0", "light0: permission denied", env)
-	badAt(state, bob, "dev light0 off", "light0: permission denied", env)
+	badAt(state, bob, "dev find light0", "light0: Permission denied", env)
+	badAt(state, bob, "dev light0 off", "light0: Permission denied", env)
 	-- ...and with the write digit, he may.
 	okAt(state, root, "chmod 646 /dev/light0", {}, env)
 	okAt(state, bob, "dev find light0", { "light0: blinking" }, env)
@@ -5447,7 +5659,7 @@ do
 	okAt(state, admin, "cat /dev/sensor0", { "clear" }, env)
 	okAt(state, session, "useradd bob", nil)
 	local bob = open(state, "bob")
-	badAt(state, bob, "cat /dev/sensor0", "sensor0: permission denied", env)
+	badAt(state, bob, "cat /dev/sensor0", "sensor0: Permission denied", env)
 	okAt(state, session, "chmod 444 /dev/sensor0", {}, env)
 	eq("the chmod went back to the caller", devices.chmods[1], "sensor0=444")
 	okAt(state, bob, "cat /dev/sensor0", { "clear" }, env)
@@ -5455,7 +5667,7 @@ do
 	-- the same one: the mode is judged BEFORE the vocabulary, so a stranger with
 	-- no `w` is told he may not and root is told there is nothing to say. Both are
 	-- true and the order is the one every other device already runs on.
-	badAt(state, bob, "echo motion > /dev/sensor0", "sensor0: permission denied", env)
+	badAt(state, bob, "echo motion > /dev/sensor0", "sensor0: Permission denied", env)
 	okAt(state, session, "chmod 446 /dev/sensor0", {}, env)
 	badAt(state, bob, "echo motion > /dev/sensor0", "sensor0: invalid value", env)
 	eq("and a w on the mode still wrote nothing to the world", #devices.writes, 0)
@@ -5517,7 +5729,7 @@ do
 
 	-- Written by nobody. The mode stops everybody but root; root is stopped by
 	-- the device, with write(2)'s own word for it.
-	badAt(state, admin, "echo open > /dev/door0", "door0: permission denied", env)
+	badAt(state, admin, "echo open > /dev/door0", "door0: Permission denied", env)
 	badAt(state, root, "echo open > /dev/door0", "door0: operation not supported", env)
 	badAt(state, root, "dev door0 open", "door0: operation not supported", env)
 	-- And the word makes no difference, because it cannot: a device with nothing
@@ -5715,8 +5927,8 @@ do
 	local r3 = runAt(state, bob, "dev light off", env)
 	eq("refused, every one", r3.ok, false)
 	eq("once per device", #r3.lines, 2)
-	eq("the first", r3.lines[1], "light0: permission denied")
-	eq("the second", r3.lines[2], "light1: permission denied")
+	eq("the first", r3.lines[1], "light0: Permission denied")
+	eq("the second", r3.lines[2], "light1: Permission denied")
 	eq("and nothing of bob's reached the world", #devices.writes, reached)
 
 	-- A failed command's lines stay on the GLASS, which is the rule every command
@@ -5745,7 +5957,10 @@ do
 	local r4 = runAt(state, session, "dev window close > /root/half", env)
 	eq("the boarded window failed the line", r4.ok, false)
 	eq("and said so on the screen", #r4.lines, 3)
-	badAt(state, session, "cat /root/half", "cat: /root/half: no such file", env)
+	-- The file is there, because the shell opened it before the command ran,
+	-- and EMPTY, because a command that half failed hands the whole of what it
+	-- said to the errors (docs/SCRIPTING.md).
+	okAt(state, session, "cat /root/half", {}, env)
 end
 
 --
@@ -5917,9 +6132,9 @@ do
 	file.group = "crew"
 	okAt(state, bobS, "cat /home/admin/notes.txt", { "shared" })
 	badAt(state, kateS, "cat /home/admin/notes.txt",
-		"cat: /home/admin/notes.txt: permission denied")
+		"cat: /home/admin/notes.txt: Permission denied")
 	badAt(state, bobS, "echo x > /home/admin/notes.txt",
-		"echo: /home/admin/notes.txt: permission denied")
+		"cannot create /home/admin/notes.txt: permission denied")
 	okAt(state, rootSession, "chmod 660 /home/admin/notes.txt", {})
 	okAt(state, bobS, "echo mine > /home/admin/notes.txt", {})
 	okAt(state, kateS, "ls /home/admin", nil)
@@ -5954,11 +6169,11 @@ do
 	-- file and not about the group.
 	okAt(state, rootSession, "chmod 777 /home/admin", {})
 	badAt(state, bob, "chgrp bob /home/admin/notes.txt",
-		"chgrp: /home/admin/notes.txt: permission denied")
+		"chgrp: /home/admin/notes.txt: Permission denied")
 	-- Root always may.
 	okAt(state, rootSession, "chgrp users /home/admin/notes.txt", {})
 
-	badAt(state, admin, "chgrp users /home/admin/nosuch", "chgrp: /home/admin/nosuch: no such file")
+	badAt(state, admin, "chgrp users /home/admin/nosuch", "chgrp: /home/admin/nosuch: No such file or directory")
 	badAt(state, admin, "chgrp users", "chgrp: usage: chgrp <group> <path>")
 	badAt(state, admin, "chgrp a b c", "chgrp: usage: chgrp <group> <path>")
 
@@ -5988,9 +6203,9 @@ do
 	okAt(state, rootSession, "useradd bob", nil)
 
 	-- Root only, for all three.
-	badAt(state, admin, "groupadd crew", "groupadd: permission denied")
-	badAt(state, admin, "groupdel users", "groupdel: permission denied")
-	badAt(state, admin, "usermod -G users bob", "usermod: permission denied")
+	badAt(state, admin, "groupadd crew", "groupadd: Permission denied")
+	badAt(state, admin, "groupdel users", "groupdel: Permission denied")
+	badAt(state, admin, "usermod -G users bob", "usermod: Permission denied")
 
 	okAt(state, rootSession, "groupadd crew", {})
 	check("the line is in the file",
@@ -6156,48 +6371,98 @@ do
 	parses("cat a |\n\tgrep b")
 	parses("cat a | grep b &")
 	parses(string.rep("cat a | ", CeroSecOS.MAX_STAGES - 1) .. "cat b")
-	parses("for i in a b; do done")
 	parses("")
 
+	-- A body is at least one command. Every list in if, while, until, for and a
+	-- function's braces is a compound_list (POSIX XCU 2.10.2), which is one command
+	-- or more, and dash refuses the empty one with `"fi" unexpected` -- said here
+	-- in this shell's words, naming the word that came where a command should be.
+	-- `do done` used to parse, and a script that did nothing looked like one that
+	-- worked.
+	refuses("if true; then fi", 'Syntax error: "fi" unexpected', 1)
+	refuses("if true; then else echo a; fi", 'Syntax error: "else" unexpected', 1)
+	refuses("if true; then echo a; elif false; then fi",
+		'Syntax error: "fi" unexpected', 1)
+	refuses("if true; then echo a; elif false; then else echo b; fi",
+		'Syntax error: "else" unexpected', 1)
+	refuses("if true; then echo a; else fi", 'Syntax error: "fi" unexpected', 1)
+	refuses("while true; do done", 'Syntax error: "done" unexpected', 1)
+	refuses("until false; do done", 'Syntax error: "done" unexpected', 1)
+	refuses("for i in a b; do done", 'Syntax error: "done" unexpected', 1)
+	refuses("for i; do done", 'Syntax error: "done" unexpected', 1)
+	refuses("f() { }", 'Syntax error: "}" unexpected', 1)
+	refuses("f()\n{\n}", 'Syntax error: "}" unexpected', 3)
+	-- And the conditions, which are the same compound_list: dash says `"then"
+	-- unexpected` to `if then`.
+	refuses("if then echo a; fi", 'Syntax error: "then" unexpected', 1)
+	refuses("if true; then echo a; elif then echo b; fi",
+		'Syntax error: "then" unexpected', 1)
+	refuses("while do echo a; done", 'Syntax error: "do" unexpected', 1)
+	refuses("until do echo a; done", 'Syntax error: "do" unexpected', 1)
+	-- A comment or a blank line is not a command either, and the line named is
+	-- the one the closing word is on.
+	refuses("if true; then\n# nothing yet\n\nfi", 'Syntax error: "fi" unexpected', 4)
+	refuses("while true\ndo\n  # later\ndone", 'Syntax error: "done" unexpected', 4)
+	refuses("f() {\n# later\n}", 'Syntax error: "}" unexpected', 3)
+	-- A list that runs into the end of the file is still missing its closing word.
+	refuses("if true; then",
+		"Syntax error: end of file unexpected (expecting \"fi\")", 1)
+	refuses("while true; do",
+		"Syntax error: end of file unexpected (expecting \"done\")", 1)
+	-- A body that does nothing is written with a command that does nothing:
+	-- `true` here, `:` not being one of this machine's commands.
+	parses("if true; then true; fi")
+	parses("if true; then true; elif false; then true; else true; fi")
+	parses("while false; do true; done")
+	parses("until true; do true; done")
+	parses("for i in a b; do true; done")
+	parses("f() { true; }")
+	parses("if true; then\n# a comment\ntrue\nfi")
+	-- What POSIX lets be empty stays so: a case clause (`pattern) ;;`) and a for
+	-- with no words after in.
+	parses("case x in a) ;; esac")
+	parses("case x in a) ;; b) echo b ;; esac")
+	parses("for i in; do true; done")
+
 	-- And every way of getting one wrong.
-	refuses("fi", "syntax error: unexpected 'fi'", 1)
-	refuses("done", "syntax error: unexpected 'done'", 1)
-	refuses("then echo a", "syntax error: unexpected 'then'", 1)
-	refuses("else", "syntax error: unexpected 'else'", 1)
-	refuses("elif true; then a; fi", "syntax error: unexpected 'elif'", 1)
-	refuses("do echo a; done", "syntax error: unexpected 'do'", 1)
-	refuses("if true; then echo a", "syntax error: missing 'fi'", 1)
+	refuses("fi", "Syntax error: \"fi\" unexpected", 1)
+	refuses("done", "Syntax error: \"done\" unexpected", 1)
+	refuses("then echo a", "Syntax error: \"then\" unexpected", 1)
+	refuses("else", "Syntax error: \"else\" unexpected", 1)
+	refuses("elif true; then a; fi", "Syntax error: \"elif\" unexpected", 1)
+	refuses("do echo a; done", "Syntax error: \"do\" unexpected", 1)
+	refuses("if true; then echo a", "Syntax error: end of file unexpected (expecting \"fi\")", 1)
 	-- `then` never came, and what turned up where a command should be is `fi`:
 	-- the parser names what it found, which is the half a reader can see.
-	refuses("if true; echo a; fi", "syntax error: unexpected 'fi'", 1)
-	refuses("if true\necho a", "syntax error: missing 'then'", 2)
-	refuses("while true; do echo a", "syntax error: missing 'done'", 1)
-	refuses("until true; do echo a", "syntax error: missing 'done'", 1)
-	refuses("for i in a; do echo a", "syntax error: missing 'done'", 1)
-	refuses("for i in a; echo a; done", "syntax error: missing 'do'", 1)
-	refuses("for 9bad in a; do x; done", "syntax error: not a name", 1)
-	refuses("echo 'open", "syntax error: unterminated quote", 1)
-	refuses("echo \"open", "syntax error: unterminated quote", 1)
-	refuses("echo $(echo $(echo x))", "syntax error: bad substitution", 1)
-	refuses("echo $(echo x", "syntax error: bad substitution", 1)
-	refuses("echo ${x", "syntax error: bad substitution", 1)
-	refuses("echo ${not a name}", "syntax error: bad substitution", 1)
-	refuses("echo $((1 + 2)", "syntax error: bad substitution", 1)
+	refuses("if true; echo a; fi", "Syntax error: \"fi\" unexpected", 1)
+	refuses("if true\necho a", "Syntax error: end of file unexpected (expecting \"then\")", 2)
+	refuses("while true; do echo a", "Syntax error: end of file unexpected (expecting \"done\")", 1)
+	refuses("until true; do echo a", "Syntax error: end of file unexpected (expecting \"done\")", 1)
+	refuses("for i in a; do echo a", "Syntax error: end of file unexpected (expecting \"done\")", 1)
+	refuses("for i in a; echo a; done", "Syntax error: word unexpected (expecting \"do\")", 1)
+	refuses("for 9bad in a; do x; done", "Syntax error: Bad for loop variable", 1)
+	refuses("echo 'open", "Syntax error: Unterminated quoted string", 1)
+	refuses("echo \"open", "Syntax error: Unterminated quoted string", 1)
+	refuses("echo $(echo $(echo x))", "Syntax error: Bad substitution", 1)
+	refuses("echo $(echo x", "Syntax error: Bad substitution", 1)
+	refuses("echo ${x", "Syntax error: Bad substitution", 1)
+	refuses("echo ${not a name}", "Syntax error: Bad substitution", 1)
+	refuses("echo $((1 + 2)", "Syntax error: Bad substitution", 1)
 	-- A pipeline parses now (rung 5b). What does not is a "|" with nothing on
 	-- one side of it, and a pipeline longer than the machine will run.
-	refuses("| grep b", "syntax error: unexpected '|'", 1)
-	refuses("cat a |", "syntax error: unexpected end of file", 1)
-	refuses("cat a | | grep b", "syntax error: unexpected '|'", 1)
+	refuses("| grep b", "Syntax error: \"|\" unexpected", 1)
+	refuses("cat a |", "Syntax error: end of file unexpected", 1)
+	refuses("cat a | | grep b", "Syntax error: \"|\" unexpected", 1)
 	refuses(string.rep("cat a | ", CeroSecOS.MAX_STAGES) .. "cat b",
 		"too many stages", 1)
-	refuses("cat < a", "syntax error: unexpected '<'", 1)
-	refuses("echo a >", "syntax error: missing redirect target", 1)
-	refuses("echo a > b > c", "syntax error: bad redirect", 1)
-	refuses("echo a && ", "syntax error: unexpected end of file", 1)
+	refuses("cat < a", "Syntax error: redirection unexpected", 1)
+	refuses("echo a >", "Syntax error: end of file unexpected", 1)
+	refuses("echo a > b > c", "Syntax error: redirection unexpected", 1)
+	refuses("echo a && ", "Syntax error: end of file unexpected", 1)
 
 	-- The line a mistake is on is the line it was typed on.
-	refuses("echo one\necho two\nfi", "syntax error: unexpected 'fi'", 3)
-	refuses("echo one\n\n\nwhile true; do x", "syntax error: missing 'done'", 4)
+	refuses("echo one\necho two\nfi", "Syntax error: \"fi\" unexpected", 3)
+	refuses("echo one\n\n\nwhile true; do x", "Syntax error: end of file unexpected (expecting \"done\")", 4)
 
 	-- Nesting has a floor under it, and the parser is where a script meets it.
 	refuses(string.rep("if true; then ", CeroSecOS.MAX_NEST + 4) .. "echo x"
@@ -6378,11 +6643,12 @@ do
 		runScript(state, admin, "y=$(printf %s " .. string.rep("c", 1023) ..
 			")\necho done").out[1], "bench.sh: line 1: word too large")
 
-	-- Two lines, to prove the separator is counted: what a capture hands back is
-	-- its lines joined by one space, and that space is a byte of the value like
-	-- any other.
+	-- Two lines, to prove the separator is counted: what a capture hands back
+	-- keeps the newline BETWEEN its lines (POSIX.2 2.6.3, Command
+	-- Substitution: only trailing newlines are removed), and that newline is
+	-- a byte of the value like any other.
 	local pair = runScript(state, admin, "y=$(printf '%s\\n%s' one two)\necho done")
-	eq("a two-line capture is joined by one space", pair.job.vars.y, "one two")
+	eq("a two-line capture keeps its internal newline", pair.job.vars.y, "one\ntwo")
 
 	-- A capture is bounded by the BYTES and by nothing else. There was a
 	-- hundred-line ceiling here as well and the two did not agree: a capture past
@@ -6394,9 +6660,9 @@ do
 	for i = 1, 150 do rows[#rows + 1] = "r" .. i end
 	put(state, admin, "/home/admin/rows", table.concat(rows, "\n"))
 	check("150 short lines still fit a word",
-		#table.concat(rows, " ") <= CeroSecOS.MAX_VAR_BYTES - 2)
+		#table.concat(rows, "\n") <= CeroSecOS.MAX_VAR_BYTES - 2)
 	local lots = runScript(state, admin, "y=$(cat /home/admin/rows)\necho done")
-	eq("a 150-line capture comes back whole", lots.job.vars.y, table.concat(rows, " "))
+	eq("a 150-line capture comes back whole", lots.job.vars.y, table.concat(rows, "\n"))
 	eq("and the script ran on", lots.out[1], "done")
 
 	-- And 150 lines that do NOT fit a word are refused, which is the answer a
@@ -6451,6 +6717,27 @@ do
 	eq("$# and $1 and $@", run.out[1], "2 [one] [two] [one two]")
 	eq("shift moves them along", run.out[2], "1 [two]")
 
+	-- $* and $@: one string, or one field an argument when "$@" is quoted.
+	-- Bare, both are split on blanks, so an argument with a blank in it is
+	-- two words there (POSIX.2 2.5.2).
+	local cnt = 'n() { echo $#; }\n'
+	run = runScript(state, admin, cnt .. 'n "$*"\nn "$@"\nn $*\nn $@\nfor i in $*; do echo [$i]; done',
+		{ "a b", "c" })
+	eq('"$*" is one field', run.out[1], "1")
+	eq('"$@" is one an argument', run.out[2], "2")
+	eq("bare $* is split", run.out[3], "3")
+	eq("bare $@ is split too", run.out[4], "3")
+	eq("for i in $* walks the words", table.concat(run.out, "|", 5), "[a]|[b]|[c]")
+	-- $!: nothing until an & has started a job, then that job's number.
+	run = runScript(state, admin, 'echo "[$!]"')
+	eq("$! is empty with no job behind it", run.out[1], "[]")
+	local bj = CeroSecOS.newJob({ id = 1, prog = CeroSecOS.parseScript('echo "[$!]" $(($! + 1))'),
+		args = {}, name = "sh", cmd = "sh", session = admin, lastBg = 7 })
+	CeroSecOS.jobStep(state, bj, { now = 100, nowMs = 1000, jobs = { bj } }, 100)
+	eq("$! is the last & job", bj.out[1], "[7] 8")
+	local pj = CeroSecOS.promptJob(state, admin, "echo $!", nil, 0, nil, nil, nil, 9)
+	eq("and the prompt hands its $! to the line", pj.lastBg, 9)
+
 	-- And the same four inside $(( )), which is where a real sh expands them too:
 	-- POSIX.2 does the parameter expansion first and hands the reader an
 	-- expression with the argument already in it. Every form, because the reader
@@ -6494,7 +6781,7 @@ do
 
 	-- Exit codes travel out of a command and into $?.
 	prints(state, admin, "cat /nope\necho $?",
-		{ "cat: /nope: no such file", "1" })
+		{ "cat: /nope: No such file or directory", "1" })
 end
 
 --
@@ -6622,14 +6909,58 @@ do
 
 	-- A malformed test says so and is neither true nor false.
 	local run = runScript(state, admin, "[ a -zz b ]\necho $?")
-	eq("an unknown operator says so", run.out[1], "test: unknown operator")
+	-- 4.4BSD-Lite2 test.c 8.3: an expression it cannot read is syntax(),
+	-- err(2, "syntax error"); an operand of -eq is get_int's to refuse.
+	eq("an unknown operator says so", run.out[1], "test: syntax error")
 	eq("and the status is 2", run.out[2], "2")
 	run = runScript(state, admin, "[ 1 -eq x ]\necho $?")
-	eq("and a number that is not one says that", run.out[1], "test: integer expected")
-	-- The bracket wants its other half.
-	run = runScript(state, admin, "[ a = a\necho never")
-	eq("a [ with no ] stops the script", run.job.state, "error")
-	eq("and says where", run.out[1], "bench.sh: line 1: test: missing ']'")
+	eq("and a number that is not one says that", run.out[1], "test: x: expected integer")
+	run = runScript(state, admin, "[ 12ab -lt 3 ]\necho $?")
+	eq("digits and then junk are get_int's other refusal", run.out[1],
+		"test: 12ab: trailing non-numeric characters")
+	-- get_int reads the left operand whole before the right one.
+	run = runScript(state, admin, "[ 99999999999999999999 -eq x ]\n[ x -eq 99999999999999999999 ]")
+	eq("the left operand is judged first", run.out[1], "test: 99999999999999999999: overflow")
+	eq("whichever way round", run.out[2], "test: x: expected integer")
+	eq("too many words is a syntax error", runScript(state, admin, "[ 1 2 3 4 ]").out[1],
+		"test: syntax error")
+	-- The bracket wants its other half: test.c's errx(2, "missing ]"), exit 2,
+	-- and the script goes on, since [ is a program and not the shell.
+	run = runScript(state, admin, "[ 1 -eq 1\necho after=$?")
+	eq("a [ with no ] says so", run.out[1], "test: missing ]")
+	eq("and the script goes on, status 2", run.out[2], "after=2")
+	eq("to its end", run.job.state, "done")
+	-- A command that could not be run at all has a status of its own: 127 for
+	-- one not found, 126 for one found and not executable (POSIX.2 2.8.2).
+	run = runScript(state, admin, "nosuchcmd\necho s=$?\nfalse\necho s=$?")
+	eq("not found is 127", table.concat(run.out, "|"), "nosuchcmd: not found|s=127|s=1")
+	run = runScript(state, admin, "nosuchcmd > nf.txt\necho s=$?")
+	eq("and with a redirect on it too", run.out[2], "s=127")
+	eq("which still made the file", CeroSecOS.getNode(state, admin, "nf.txt") ~= nil, true)
+	ok(state, admin, "mkdir /home/admin/bin", {})
+	ok(state, admin, 'echo "echo hi" > /home/admin/bin/noexec', {})
+	run = runScript(state, admin, "PATH=/home/admin/bin:/bin\nnoexec\necho s=$?\n./nope\necho s=$?")
+	eq("found and not executable is 126", run.out[2], "s=126")
+	eq("a path that is not there is 127", run.out[4], "s=127")
+	ok(state, admin, "chmod 644 /home/admin/bin/noexec", {})
+	run = runScript(state, admin, "/home/admin/bin/noexec\necho s=$?")
+	eq("a path with no x on it is 126", run.out[2], "s=126")
+	-- A command /bin has lost is one not found, through the builtin door too.
+	local rootS = open(state, "root")
+	ok(state, rootS, "mv /bin/sleep /bin/sleep.gone", {})
+	run = runScript(state, admin, "sleep 1\necho s=$?")
+	eq("a builtin whose file is gone is 127", run.out[2], "s=127")
+	ok(state, rootS, "mv /bin/sleep.gone /bin/sleep", {})
+	-- sleep too: sleep.c's usage() for a wrong count of operands, exit 1.
+	run = runScript(state, admin, "sleep\necho after=$?")
+	eq("sleep with no operand says so", run.out[1], "usage: sleep seconds")
+	eq("and the script goes on, status 1", run.out[2], "after=1")
+	-- And atoi(): a word that is not a number is a sleep of nought, silent.
+	run = runScript(state, admin, "sleep abc\necho after=$?")
+	eq("sleep abc is atoi's 0", run.out[1], "after=0")
+	run = runScript(state, admin, "sleep -5\necho after=$?")
+	eq("sleep -5 is getopt's", run.out[1], "sleep: illegal option -- 5")
+	eq("and then usage", run.out[2], "usage: sleep seconds")
 end
 
 --
@@ -6648,6 +6979,24 @@ do
 	-- -n 1 takes the first character and nothing else.
 	run = runScript(state, admin, 'read -n 1 -p "y/n? " a\necho [$a]', nil, { "yes" })
 	eq("-n 1 takes one character", run.out[1], "[y]")
+	run = runScript(state, admin, 'read -n 2 a\necho [$a]', nil, { "yes" })
+	eq("-n 2 takes two", run.out[1], "[ye]")
+	run = runScript(state, admin, 'read -n x a\necho never', nil, { "yes" })
+	eq("-n wants a number", run.out[1], "bench.sh: line 1: read: x: bad number")
+
+	-- Several names: a word each, and the rest of the line to the last one.
+	run = runScript(state, admin, 'read x y\necho "[$x][$y]"', nil, { "a b  c " })
+	eq("read x y splits the line", run.out[1], "[a][b  c]")
+	run = runScript(state, admin, 'read x y z\necho [$x][$y][$z]', nil, { "  a" })
+	eq("names past the words are empty", run.out[1], "[a][][]")
+	-- A backslash protects the blank behind it; -r keeps it as typed.
+	run = runScript(state, admin, 'read x y\necho "[$x][$y]"', nil, { "a\\ b c" })
+	eq("a backslash is an escape", run.out[1], "[a b][c]")
+	run = runScript(state, admin, 'read -r x y\necho "[$x][$y]"', nil, { "a\\ b c" })
+	eq("-r keeps it", run.out[1], "[a\\][b c]")
+	-- And from a pipe, through the same splitting.
+	run = runScript(state, admin, 'echo 1 2 3 | while read a b; do echo [$a][$b]; done')
+	eq("read from a pipe splits too", run.out[1], "[1][2 3]")
 
 	-- -s is the mask flag, and it is the console that hides it.
 	script(state, "/home/admin/secret.sh", 'read -s -p "pw: " p\necho [$p]')
@@ -6686,17 +7035,149 @@ do
 	eq("having printed both lines", nap.out[2], "after")
 
 	-- A machine with no clock cannot sleep, and says so rather than hanging.
-	script(state, "/home/admin/nap.sh", "sleep 1")
+	-- It is a program that could not do its work: exit 1, and the script goes on.
+	script(state, "/home/admin/nap.sh", "sleep 1\necho after=$?")
 	local _, _, c3, d3 = CeroSecOS.startScript(state, admin, "sh", "/home/admin/nap.sh", {}, "sh /home/admin/nap.sh", { jobs = {} }, false)
 	local dry = CeroSecOS.newJob({ id = 3, prog = d3.prog, args = {}, name = d3.name,
 		cmd = d3.cmd, session = admin })
 	CeroSecOS.jobStep(state, dry, { jobs = {} }, 100)
-	eq("no clock, no sleep", dry.state, "error")
-	eq("and it says so", dry.out[1], "nap.sh: line 1: sleep: no clock")
+	eq("no clock, no sleep", dry.state, "done")
+	eq("and it says so", dry.out[1], "sleep: no clock")
+	eq("and the script went on", dry.out[2], "after=1")
 
 	-- A background job has nobody in front of it: read is end of file.
 	local bg = runScript(state, admin, 'read x\necho [$x] $?', nil, nil, { bg = true })
 	eq("a background read reads nothing", bg.out[1], "[] 1")
+end
+
+--
+-- 27b. Pre-release review, 0.7.0: streams, "$@" where nothing splits, a 0.6
+-- frame, read -n on a stream, a closed redirect read back at once, cat --.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local function data(path)
+		local node = CeroSecOS.getNode(state, admin, path)
+		if node == nil then return nil end
+		return node.data
+	end
+
+	-- sleep's and test's complaints are on the standard ERROR, where sleep.c's
+	-- usage() and test.c's err() write them: not in the file, not in the word,
+	-- not down the pipe, and gone under 2>/dev/null.
+	expect(state, admin, "sleep > s.txt", false, { "usage: sleep seconds" })
+	eq("sleep's complaint is not in the file", data("/home/admin/s.txt"), "")
+	ok(state, admin, 'x=$(sleep); echo "[$x]"', { "usage: sleep seconds", "[]" })
+	ok(state, admin, "sleep 2>/dev/null; echo $?", { "1" })
+	expect(state, admin, "sleep 1 2 2>se.txt", false, {})
+	eq("and it is in the file 2> named", data("/home/admin/se.txt"), "usage: sleep seconds\n")
+	ok(state, admin, "[ 1 -eq x ] 2>/dev/null; echo $?", { "2" })
+	ok(state, admin, "[ 1 -eq x ] | wc -l", { "test: x: expected integer", "       0" })
+	ok(state, admin, "test 1 -eq x > t.txt; echo $?", { "test: x: expected integer", "2" })
+	eq("test's complaint is not in the file", data("/home/admin/t.txt"), "")
+	ok(state, admin, 'x=$([ 1 -eq 1); echo "[$x]"', { "test: missing ]", "[]" })
+	-- A name may begin with a dash: 4.4BSD's namei refuses "/" and NUL and
+	-- nothing else, and getopt(3)'s "--" is how such a file is handed over.
+	ok(state, admin, "echo x > -f; cat -- -f; cat ./-f", { "x", "x" })
+	eq("a file named -f is on the disk", data("/home/admin/-f"), "x\n")
+	ok(state, admin, "rm -- -f; echo $?", { "0" })
+	eq("and rm -- took it away", data("/home/admin/-f"), nil)
+	ok(state, admin, "mkdir -- -d; touch -- -d/-t; ls -- -d; rm -r -- -d", { "-t" })
+	-- An ACCOUNT still may not: a login is written into lines other
+	-- programs read, where a leading dash would be a flag.
+	check("a login that begins with a dash is still refused",
+		not CeroSecOS.isValidName("-f"))
+	-- No clock: the same stream.
+	local _, noClock = exec(state, admin, "sleep 1 > nc.txt")
+	eq("no clock is said on the glass", noClock[1], "sleep: no clock")
+	eq("and not into the file", data("/home/admin/nc.txt"), "")
+
+	-- $@ where nothing is split is ONE word, joined by a blank as $* is: dash
+	-- and bash both set x to "a b" for `x=$@` and `x="$@"` with a and b.
+	local shapes = { { {}, "[]" }, { { "a" }, "[a]" }, { { "a", "b" }, "[a b]" },
+		{ { "a", "b c" }, "[a b c]" } }
+	for i = 1, #shapes do
+		local args, want = shapes[i][1], shapes[i][2]
+		local run = runScript(state, admin,
+			'x=$@\necho "[$x]"\ny="$@"\necho "[$y]"', args)
+		eq("x=$@ with " .. #args .. " arguments", run.out[1], want)
+		eq('x="$@" with ' .. #args .. " arguments", run.out[2], want)
+		eq("and the script ran to its end (" .. #args .. ")", run.job.state, "done")
+	end
+	local run = runScript(state, admin,
+		'case "$@" in "a b") echo joined;; *) echo apart;; esac\n' ..
+		'case "a b" in "$@") echo pattern;; *) echo nope;; esac', { "a", "b" })
+	eq('case "$@" is one word', run.out[1], "joined")
+	eq('and so is a pattern "$@"', run.out[2], "pattern")
+
+	-- read -n N on a stream leaves the rest for the next read, newline too:
+	-- bash gives [ab][cd][ef][][xy][] for this very line.
+	run = runScript(state, admin,
+		'printf "abcdef\\nxy\\n" | while read -n 2 a; do echo "[$a]"; done')
+	eq("read -n 2 walks the stream two at a time", table.concat(run.out),
+		"[ab][cd][ef][][xy][]")
+	run = runScript(state, admin, 'printf "abcde\\nxy\\n" | while read -n 2 a; do read b; echo "[$a][$b]"; done')
+	eq("and a plain read after it gets the rest of the line", table.concat(run.out),
+		"[ab][cde][xy][]")
+
+	-- A redirect is closed when its command is over, and the next command
+	-- reads it whole -- the same pass or not.
+	ok(state, admin, "h() { i=0; while [ $i -lt 100 ]; do echo o; i=$((i+1)); done; }", {})
+	ok(state, admin, "h > o.txt; wc -l o.txt", { "     100 o.txt" })
+	ok(state, admin, "f() { i=0; while [ $i -lt 100 ]; do cat nosuch; i=$((i+1)); done; }", {})
+	ok(state, admin, "f 2> e.txt; wc -l e.txt", { "     100 e.txt" })
+
+	-- cat ends its options at "--", as getopt(3) ends them for cat.c.
+	-- (A name may not begin with "-" on this disk, so the flag after it is
+	-- only ever a name that is not there.)
+	ok(state, admin, "echo dash > dn", {})
+	ok(state, admin, "cat -- dn", { "dash" })
+	bad(state, admin, "cat -- -n", "cat: -n: No such file or directory")
+	bad(state, admin, "cat -n -- -z", "cat: -z: No such file or directory")
+
+	-- A job saved by 0.6 in the middle of a command whose `>` it had already
+	-- emptied and written: its frame says so with rd.wrote and has no `opened`.
+	-- The first turn under this build must add to the file, not empty it again.
+	local job = CeroSecOS.promptJob(state, admin,
+		'i=0; while [ $i -lt 150 ]; do echo l$i; i=$((i+1)); done | cat > old.txt',
+		admin.shvars, nil, nil, nil, admin.shfuncs)
+	local env = { now = 740000000, nowMs = 1000, jobs = {} }
+	local function oldShape(frames)
+		local n = 0
+		for i = 1, #frames do
+			local f = frames[i]
+			if f.opened and f.rd ~= nil and f.rd.wrote == true then
+				f.opened = nil
+				n = n + 1
+			end
+			if f.stages ~= nil then
+				for k = 1, #f.stages do n = n + oldShape(f.stages[k].frames) end
+			end
+		end
+		return n
+	end
+	local made, passes = 0, 0
+	while made == 0 and passes < 200 and not CeroSecOS.jobIsOver(job) do
+		passes = passes + 1
+		CeroSecOS.jobStep(state, job, env, 40)
+		job.out = {}
+		made = oldShape(job.frames)
+	end
+	check("a frame of the 0.6 shape was made mid-command", made > 0)
+	local before = data("/home/admin/old.txt") or ""
+	check("with lines already in its file", #before > 0)
+	while not CeroSecOS.jobIsOver(job) and passes < 400 do
+		passes = passes + 1
+		CeroSecOS.jobStep(state, job, env, 40)
+		job.out = {}
+	end
+	local text = data("/home/admin/old.txt") or ""
+	eq("the file kept what the 0.6 turn wrote", string.sub(text, 1, #before), before)
+	local lines = 0
+	for _ in string.gmatch(text, "\n") do lines = lines + 1 end
+	eq("and holds every line", lines, 150)
 end
 
 --
@@ -6744,17 +7225,17 @@ do
 	okAt(state, admin, "chmod 700 /home/admin/go.sh", {})
 	okAt(state, rootSession, "chown root /home/admin/go.sh", {})
 	badAt(state, admin, "./go.sh", "./go.sh: permission denied")
-	badAt(state, admin, "sh /home/admin/go.sh", "sh: /home/admin/go.sh: permission denied")
+	badAt(state, admin, "sh /home/admin/go.sh", "/home/admin/go.sh: Can't open /home/admin/go.sh")
 
-	badAt(state, admin, "sh /nope.sh", "sh: /nope.sh: no such file")
-	badAt(state, admin, "sh /home", "sh: /home: is a directory")
-	badAt(state, admin, "/home/admin", "/home/admin: is a directory")
+	badAt(state, admin, "sh /nope.sh", "/nope.sh: Can't open /nope.sh")
+	badAt(state, admin, "sh /home", "sh: /home: Is a directory")
+	badAt(state, admin, "/home/admin", "/home/admin: permission denied")
 	badAt(state, admin, "sh", "sh: usage: sh <file> [args]")
 
 	-- A script that will not parse never becomes a job, and the refusal names
 	-- the file and the line.
 	script(state, "/home/admin/bad.sh", "echo one\nfi\n")
-	badAt(state, admin, "sh /home/admin/bad.sh", "bad.sh: line 2: syntax error: unexpected 'fi'")
+	badAt(state, admin, "sh /home/admin/bad.sh", "bad.sh: 2: Syntax error: \"fi\" unexpected")
 end
 
 --
@@ -7025,8 +7506,8 @@ do
 	-- 9. The dot's own refusals. A file that is not there, a directory, a file it
 	-- may not read, no operand at all -- and it wants r and NOT x, because
 	-- nothing executes it.
-	says(". /home/admin/nope", { ".: /home/admin/nope: no such file" })
-	says(". /etc", { ".: /etc: is a directory" })
+	says(". /home/admin/nope", { ".: Can't open /home/admin/nope" })
+	says(". /etc", { ".: /etc: Is a directory" })
 	says(".", { ".: usage: . <file>" })
 	says(". a b", { ".: usage: . <file>" })
 	local noX = script(state, "/home/admin/noexec.sh", "echo read anyway")
@@ -7034,18 +7515,19 @@ do
 	says(". ./noexec.sh", { "read anyway" })
 	badAt(state, admin, "./noexec.sh", "./noexec.sh: permission denied")
 	noX.mode = 000
-	says(". ./noexec.sh", { ".: ./noexec.sh: permission denied" })
+	says(". ./noexec.sh", { ".: Can't open ./noexec.sh" })
 	noX.mode = 644
 	-- A file the shell cannot parse is named and nothing of it runs.
 	script(state, "/home/admin/broken.sh", "echo one\nwhile true; do echo x")
-	says(". ./broken.sh", { "broken.sh: line 2: syntax error: missing 'done'" })
+	says(". ./broken.sh", { "broken.sh: 2: Syntax error: end of file unexpected (expectin",
+		"g \"done\")" })
 
 	-- 10. The dot looks on PATH when the name has no "/" in it, which is what
 	-- POSIX.2 says of it, and tries the name as it was typed when PATH has
 	-- nothing.
 	says("mkdir /home/admin/bin", {})
 	script(state, "/home/admin/bin/onpath.sh", "w=frompath")
-	says(". onpath.sh", { ".: onpath.sh: no such file" }, "not on PATH yet")
+	says(". onpath.sh", { ".: Can't open onpath.sh" }, "not on PATH yet")
 	says("PATH=$PATH:$HOME/bin", {})
 	says(". onpath.sh", {})
 	says('echo "[$w]"', { "[frompath]" })
@@ -7303,7 +7785,8 @@ do
 	ok, lines = exec(state, admin, "kill 99", env)
 	eq("a job that is not there", lines[1], "kill: 99: no such job")
 	ok, lines = exec(state, admin, "kill", env)
-	eq("and kill with nothing to kill says how", lines[1], "kill: usage: kill <id>|%<n>")
+	eq("and kill with nothing to kill says how", lines[1],
+		"kill: usage: kill [-<signal>|-s <signal>] <id>|%<n>")
 
 	-- WHOSE job it is. kill(2) is root, or the account the process belongs to, and
 	-- EPERM for anybody else. It is the one rule the jobs deviation does NOT touch:
@@ -7393,7 +7876,7 @@ do
 	-- Ownership is the same rule it has always been.
 	local rootSession = CeroSecOS.rootSession()
 	ok(state, rootSession, "chmod 644 /etc/motd", {})
-	bad(state, admin, "chmod u+x /etc/motd", "chmod: /etc/motd: permission denied")
+	bad(state, admin, "chmod u+x /etc/motd", "chmod: /etc/motd: Permission denied")
 end
 
 --
@@ -7501,7 +7984,7 @@ do
 	check("the file is there", node ~= nil)
 	eq("owned by the account", node.owner, "admin")
 	eq("and readable by nobody else", node.mode, CeroSecOS.HISTORY_MODE)
-	eq("holding both lines", node.data, "ls -l\necho two")
+	eq("holding both lines", node.data, "ls -l\necho two\n")
 
 	-- history prints the last HISTORY_SHOW with numbers, bash's way.
 	okAt(state, admin, "history", { "    1  ls -l", "    2  echo two" }, env)
@@ -7566,7 +8049,7 @@ do
 	CeroSecOS.historyAppend(state, bobs, "id", FIXED)
 	eq("and goes in his own home", #CeroSecOS.historyLines(state, bobs), 1)
 	badAt(state, bobs, "cat /home/admin/" .. CeroSecOS.HISTORY_NAME,
-		"cat: /home/admin/" .. CeroSecOS.HISTORY_NAME .. ": permission denied", env)
+		"cat: /home/admin/" .. CeroSecOS.HISTORY_NAME .. ": Permission denied", env)
 end
 
 -- 34a. The quota exemption is bounded where it is GRANTED
@@ -7690,9 +8173,9 @@ do
 	eq("and migrate hands the same machine back", CeroSecOS.migrate(state, "ksp-front-01"), state)
 
 	-- And every further write says so until room is made.
-	badAt(state, admin, "echo more >> " .. loot, "echo: " .. loot .. ": disk full", env)
+	badAt(state, admin, "echo more >> " .. loot, "cannot create " .. loot .. ": file system full", env)
 	badAt(state, admin, "touch /home/admin/another",
-		"touch: /home/admin/another: disk full", env)
+		"touch: /home/admin/another: No space left on device", env)
 	okAt(state, admin, "rm " .. loot, {}, env)
 	okAt(state, admin, "touch /home/admin/another", {}, env)
 end
@@ -7710,16 +8193,16 @@ do
 	local xs = open(state, "x")
 	eq("x's history goes in", CeroSecOS.historyAppend(state, xs, "id", FIXED), true)
 	eq("and it is exempt where his passwd line says his home is",
-		CeroSecOS.exemptUsage(state), #"id")
+		CeroSecOS.exemptUsage(state), #"id\n")
 
 	-- And root's own, which is exempt whatever /etc/passwd has been edited into.
 	eq("root's history goes in", CeroSecOS.historyAppend(state, rootSession, "ls", FIXED), true)
-	eq("and is exempt too", CeroSecOS.exemptUsage(state), #"id" + #"ls")
+	eq("and is exempt too", CeroSecOS.exemptUsage(state), #"id\n" + #"ls\n")
 	local passwd = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
 	local kept = passwd.data
 	passwd.data = "nonsense"
 	eq("root's history is exempt with no passwd line at all",
-		CeroSecOS.exemptUsage(state), #"ls")
+		CeroSecOS.exemptUsage(state), #"ls\n")
 	passwd.data = kept
 
 	-- Four histories' worth on a whole machine, and the fifth account writes
@@ -7774,7 +8257,7 @@ do
 	eq("and is at this build's shape now", state.v, CeroSecOS.STATE_VERSION)
 	eq("the flag is off the history", hist.nq, nil)
 	eq("and off every other node", state.fs.children.etc.children.motd.nq, nil)
-	eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi")
+	eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi\n")
 end
 
 --
@@ -7814,7 +8297,8 @@ do
 	okAt(state, admin, "cat .profile", { "hi" }, env)
 	okAt(state, admin, "cp .profile .copy", {}, env)
 	okAt(state, admin, "rm .copy", {}, env)
-	badAt(state, admin, "ls -z", "ls: -z: unknown option", env)
+	badAtLines(state, admin, "ls -z", { "ls: illegal option -- z",
+		"usage: ls [-1laACF] [path]..." }, env)
 end
 
 --
@@ -7841,7 +8325,7 @@ do
 	-- Delete one and the command is gone with it.
 	okAt(state, admin, "echo works", { "works" }, env)
 	okAt(state, root, "rm /bin/echo", {}, env)
-	badAt(state, admin, "echo works", "echo: command not found", env)
+	badAt(state, admin, "echo works", "echo: not found", env)
 
 	-- Shut one and it is out of everybody's reach, root's included: 600 leaves
 	-- no x bit at all, and that is the one thing a mode still says to root.
@@ -7854,7 +8338,7 @@ do
 	okAt(state, root, "printf hi", { "hi" }, env)
 
 	okAt(state, root, "rm /bin/[", {}, env)
-	badAt(state, admin, "[ 1 = 1 ]", "[: command not found", env)
+	badAt(state, admin, "[ 1 = 1 ]", "[: not found", env)
 	okAt(state, admin, "test 1 = 1", {}, env)
 
 	-- The reserved words and the state builtins have no file and need none:
@@ -7905,7 +8389,7 @@ do
 	-- of /bin, and that is the point of the section above.
 	okAt(state, admin, "if history; then history; fi", {}, env)
 	okAt(state, admin, "for i in a; do history; done", {}, env)
-	badAt(state, admin, "true", "true: command not found", env)
+	badAt(state, admin, "true", "true: not found", env)
 	-- cd on a machine with no /bin at all: it is the shell, and the shell is
 	-- still standing.
 	okAt(state, admin, "cd /etc", {}, env)
@@ -7933,7 +8417,7 @@ do
 	-- the same rule.
 	okAt(state, root, 'echo "not yet" > /bin/telnet', {}, env)
 	okAt(state, root, "chmod 755 /bin/telnet", {}, env)
-	badAt(state, admin, "telnet", "telnet: command not found", env)
+	badAt(state, admin, "telnet", "telnet: not found", env)
 
 	-- help lists the files, and then the words that are not files.
 	local helpLines = okAt(state, admin, "help", nil, env)
@@ -7993,12 +8477,12 @@ do
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
 	local WANT = "[ arp at atq atrm cat chgrp chmod chown clear cp crontab cu cut date dev df"
-		.. " echo edit env false find grep groupadd groupdel groups halt head"
+		.. " echo edit env expr false find grep groupadd groupdel groups halt head"
 		.. " help hostname id ifconfig kill last ln ls mail man mkdir mkpasswd more mount"
 		.. " mv newfs passwd ping"
-		.. " printf ps pwd rcp reboot rlogin rm rsh ruptime rwho"
+		.. " printf ps pwd rcp reboot rlogin rm rmdir rsh ruptime rwho"
 		.. " sh shutdown"
-		.. " sleep sort su sudo tail tar tee test touch tr true umount uniq uptime"
+		.. " sleep sort su sudo tail tar tee test touch tr true umount uname uniq uptime"
 		.. " useradd userdel usermod w wall wc which who whoami"
 
 	eq("/bin holds exactly these",
@@ -8132,7 +8616,7 @@ do
 	badAt(state, root, "shutdown -r +5", "shutdown: no clock", { now = FIXED, jobs = {} })
 
 	-- Root's, all of it.
-	badAt(state, admin, "shutdown -r +5", "shutdown: permission denied", env)
+	badAt(state, admin, "shutdown -r +5", "shutdown: Permission denied", env)
 end
 
 
@@ -8298,6 +8782,12 @@ do
 	completes(state, admin, "cat $x", nil)
 	completes(state, admin, "cat no\\t", nil)
 	completes(state, admin, "echo $((1+no", nil)
+	-- Inside double quotes a backslash before anything but $ ` " \ is
+	-- kept, as the tokenizer keeps it: "q\.x" names q\.x, never q.x.
+	put("q.x")
+	completes(state, admin, "cat \"q\\.", nil)
+	completes(state, admin, "cat \"q.", "q.x\" ", 6)
+	state.fs.children.home.children.admin.children["q.x"] = nil
 
 	--
 	-- Where a command begins. Word one, and after each separator.
@@ -8478,7 +8968,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	local C = CeroSecOS.STEP_COST_COMMAND
-	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig")
+	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig\n")
 	put(state, admin, "/home/admin/nums", "3\n20\n100")
 
 	-- The lines travel, and nothing of the pipe reaches the screen but the last
@@ -8489,12 +8979,12 @@ do
 	ok(state, admin, "cat fruit | grep -n pear", { "1:pear", "3:pear" })
 	ok(state, admin, "cat fruit | head -n 2", { "pear", "apple" })
 	ok(state, admin, "cat fruit | tail -n 1", { "fig" })
-	ok(state, admin, "cat fruit | wc", { "     4      4     19" })
+	ok(state, admin, "cat fruit | wc", { "       4       4      20" })
 	-- The flags work on a pipe exactly as they work on a file: there is no name
 	-- to put after the numbers, and wc has never invented one.
-	ok(state, admin, "cat fruit | wc -l", { "     4" })
-	ok(state, admin, "cat fruit | wc -c", { "    19" })
-	ok(state, admin, "cat fruit | wc -lc", { "     4     19" })
+	ok(state, admin, "cat fruit | wc -l", { "       4" })
+	ok(state, admin, "cat fruit | wc -c", { "      20" })
+	ok(state, admin, "cat fruit | wc -lc", { "       4      20" })
 	ok(state, admin, "cat fruit | grep -v pear", { "apple", "fig" })
 	ok(state, admin, "cat fruit | grep -c pear", { "2" })
 	ok(state, admin, "cat fruit | grep -cv pear", { "2" })
@@ -8505,7 +8995,7 @@ do
 	-- Three stages, and the middle one really is in the middle.
 	ok(state, admin, "cat fruit | sort | uniq", { "apple", "fig", "pear" })
 	ok(state, admin, "cat fruit | sort | uniq -c",
-		{ "      1 apple", "      1 fig", "      2 pear" })
+		{ "   1 apple", "   1 fig", "   2 pear" })
 	ok(state, admin, "cat fruit | sort | head -n 1", { "apple" })
 
 	-- -u: the repeats dropped, which on a sorted list is what uniq does after it
@@ -8513,7 +9003,7 @@ do
 	ok(state, admin, "sort -u fruit", { "apple", "fig", "pear" })
 	ok(state, admin, "cat fruit | sort -u", { "apple", "fig", "pear" })
 	ok(state, admin, "sort -ur fruit", { "pear", "fig", "apple" })
-	ok(state, admin, "sort -u fruit | wc -l", { "     3" })
+	ok(state, admin, "sort -u fruit | wc -l", { "       3" })
 	-- What counts as a repeat is a line the comparison cannot tell from the one
 	-- before it, and that comparison ends in the bytes: two spellings of the same
 	-- number are two lines.
@@ -8533,11 +9023,13 @@ do
 	-- uniq drops the line it has just seen and nothing else: it does not sort.
 	ok(state, admin, "uniq fruit", { "pear", "apple", "pear", "fig" })
 	ok(state, admin, "uniq -c fruit",
-		{ "      1 pear", "      1 apple", "      1 pear", "      1 fig" })
-	bad(state, admin, "sort -q nums", "sort: -q: unknown option")
-	bad(state, admin, "uniq -q fruit", "uniq: -q: unknown option")
-	bad(state, admin, "sort nope", "sort: nope: no such file")
-	bad(state, admin, "uniq nope", "uniq: nope: no such file")
+		{ "   1 pear", "   1 apple", "   1 pear", "   1 fig" })
+	expect(state, admin, "sort -q nums", false, { "sort: illegal option -- q",
+		"usage: sort [-r] [-n] [-u] [file]..." })
+	expect(state, admin, "uniq -q fruit", false, { "uniq: illegal option -- q",
+		"usage: uniq [-c] [file]" })
+	bad(state, admin, "sort nope", "sort: nope: No such file or directory")
+	bad(state, admin, "uniq nope", "uniq: nope: No such file or directory")
 	-- No file and no pipe is no standard input at all, and the usage line is
 	-- what a machine with no terminal input can honestly answer.
 	bad(state, admin, "sort", "sort: usage: sort [-r] [-n] [-u] [file]...")
@@ -8547,12 +9039,12 @@ do
 	-- The status of a pipeline is the LAST stage's.
 	ok(state, admin, "cat fruit | grep pear && echo yes", { "pear", "pear", "yes" })
 	ok(state, admin, "cat fruit | grep plum || echo no", { "no" })
-	ok(state, admin, "cat nope | wc", { "cat: nope: no such file", "     0      0      0" })
+	ok(state, admin, "cat nope | wc", { "cat: nope: No such file or directory", "       0       0       0" })
 	ok(state, admin, "echo $?", { "0" })
 	-- A stage's REFUSAL is not output: it goes to the screen and not down the
 	-- pipe, exactly as it stays on the screen when output is redirected.
 	ok(state, admin, "ls /nope | wc",
-		{ "ls: /nope: no such file", "     0      0      0" })
+		{ "ls: /nope: No such file or directory", "       0       0       0" })
 
 	-- Every stage is a subshell. `read` in one really does read the pipe -- it
 	-- answers 0, which is a line read and not end of file -- and the variable it
@@ -8560,12 +9052,13 @@ do
 	ok(state, admin, "x=here; echo there | read x; echo $x", { "here" })
 	ok(state, admin, "echo there | read x; echo $?", { "0" })
 	ok(state, admin, "printf '' | read x; echo $?", { "1" })
-	ok(state, admin, "cd /tmp | echo x", { "x" })
+	-- A directory that exists: every stage runs, so a cd that fails says so.
+	ok(state, admin, "cd /etc | echo x", { "x" })
 	ok(state, admin, "pwd", { "/home/admin" })
 
 	-- A pipe inside $(...), which is the shape a script really uses.
 	ok(state, admin, "echo $(cat fruit | sort | head -n 1)", { "apple" })
-	ok(state, admin, "x=$(cat fruit | wc); echo $x", { "4 4 19" })
+	ok(state, admin, "x=$(cat fruit | wc); echo $x", { "4 4 20" })
 	ok(state, admin, "x=$(cat fruit | wc -l); echo $x", { "4" })
 
 	-- A redirect on a stage writes the stage's output, once: a command that
@@ -8614,6 +9107,19 @@ do
 		"while true; do echo y; done | head -n 1\necho done=$?\n")
 	eq("the pipeline's status is the reader's", status.out[2], "done=0")
 
+	-- cat - in the middle of a flood: the pipe comes over many turns, and the
+	-- count of -n and the place in the line are carried from one to the next.
+	run = runScript(state, admin,
+		"echo top > t\nwhile true; do echo y; done | cat -n t - t | head -n 4\n")
+	eq("cat - through a flood ends", run.job.state, "done")
+	eq("the file before the pipe comes first, once", run.out[1], "     1\ttop")
+	eq("then the pipe, numbered on", run.out[2], "     2\ty")
+	eq("and on, across turns", run.out[4], "     4\ty")
+	-- And the file after it, on the turn the pipe ends.
+	run = runScript(state, admin,
+		"i=0; while [ $i -lt 30 ]; do echo y; i=$((i+1)); done | cat -n - t | tail -n 1\n")
+	eq("the file after the pipe, numbered after all of it", run.out[1], "    31\ttop")
+
 	-- The 141 itself, on the stage that was killed. Asked of the engine, because
 	-- nothing prints it: a writer killed by a pipe closing is the ordinary end
 	-- of `yes | head`, not something a player has to read about.
@@ -8652,7 +9158,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	local C = CeroSecOS.STEP_COST_COMMAND
-	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig")
+	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig\n")
 
 	-- Every stage is charged to the job that asked for the pipeline, and a
 	-- command that reads a pipe is charged every time it runs: cat once, and
@@ -8682,7 +9188,7 @@ do
 		"i=0\nwhile [ $i -lt 200 ]; do echo line$i; i=$((i+1)); done | wc\n",
 		nil, nil, { passes = 2000 })
 	eq("wc counts a flood it will never hold", counted.out[#counted.out],
-		"   200    200   1489")
+		"     200     200    1490")
 end
 
 --
@@ -8927,10 +9433,10 @@ do
 	okAt(state, admin, "crontab -l", { "* * * * * echo tick", "0 4 * * * echo four" })
 	-- And the file itself is still out of reach of the account it belongs to:
 	-- crontab is the only way in.
-	badAt(state, admin, "cat " .. spool, "cat: " .. spool .. ": permission denied")
+	badAt(state, admin, "cat " .. spool, "cat: " .. spool .. ": Permission denied")
 	badAt(state, admin, "ls " .. CeroSecOS.CRON_PATH,
-		"ls: " .. CeroSecOS.CRON_PATH .. ": permission denied")
-	badAt(state, admin, "edit " .. spool, "edit: " .. spool .. ": permission denied")
+		"ls: " .. CeroSecOS.CRON_PATH .. ": Permission denied")
+	badAt(state, admin, "edit " .. spool, "edit: " .. spool .. ": Permission denied")
 
 	-- -e on a crontab that is there hands the editor what is in it.
 	local again = runAt(state, admin, "crontab -e")
@@ -8967,7 +9473,7 @@ do
 	eq("the mailbox belongs to the account", box.owner, "admin")
 	eq("and nobody else reads it", box.mode, CeroSecOS.MAIL_MODE)
 	badAt(state, bob, "cat " .. CeroSecOS.mailPath("admin"),
-		"cat: " .. CeroSecOS.mailPath("admin") .. ": permission denied")
+		"cat: " .. CeroSecOS.mailPath("admin") .. ": Permission denied")
 end
 
 --
@@ -8998,7 +9504,7 @@ do
 	-- An ordinary account cannot read it at all.
 	local admin = open(state, "admin")
 	badAt(state, admin, "cat " .. CeroSecOS.CRON_LOG_PATH,
-		"cat: " .. CeroSecOS.CRON_LOG_PATH .. ": permission denied")
+		"cat: " .. CeroSecOS.CRON_LOG_PATH .. ": Permission denied")
 	okAt(state, root, "cat " .. CeroSecOS.CRON_LOG_PATH, nil)
 
 	-- The mailbox, the same way: bounded, exempt, and the oldest dropped.
@@ -9072,7 +9578,7 @@ do
 	eq("the box belongs to the recipient", node.owner, "bob")
 	eq("at 600", node.mode, CeroSecOS.MAIL_MODE)
 	badAt(state, admin, "cat " .. CeroSecOS.mailPath("bob"),
-		"cat: " .. CeroSecOS.mailPath("bob") .. ": permission denied")
+		"cat: " .. CeroSecOS.mailPath("bob") .. ": Permission denied")
 	-- And bob reads it exactly as he reads cron's, which is the whole point of
 	-- going through mailAppend: one file, one reader.
 	okAt(state, bob, "mail", box)
@@ -9219,8 +9725,8 @@ do
 
 	local r = runAt(state, admin, "echo hi | mail bob")
 	eq("a full disk refuses the send", r.ok, false)
-	eq("in the words the machine uses for a full disk", r.lines[1],
-		"mail: " .. CeroSecOS.mailPath("bob") .. ": disk full")
+	eq("in strerror(3)'s words for ENOSPC", r.lines[1],
+		"mail: " .. CeroSecOS.mailPath("bob") .. ": No space left on device")
 	eq("and nothing was written", boxLines(state, "bob"), nil)
 	local _, after = CeroSecOS.usage(state)
 	eq("the drive did not move", after, full)
@@ -9280,7 +9786,7 @@ do
 		CeroSecOS.splitLines(job.data)[1], "at admin 742190400")
 	eq("and the commands after it", CeroSecOS.splitLines(job.data)[2], "halt")
 	badAt(state, admin, "cat /var/spool/at/1",
-		"cat: /var/spool/at/1: permission denied", env)
+		"cat: /var/spool/at/1: Permission denied", env)
 
 	-- The listing, which is at -l and atq and the same thing twice.
 	local WANT = { "1  Fri Jul  9 04:00:00 1993", "2  Thu Jul  8 23:30:00 1993" }
@@ -9524,6 +10030,15 @@ do
 	check("the accounts file is longer than a screen line",
 		#CeroSecOS.splitLines(passwd)[1] > CeroSecOS.COLS)
 
+	-- `2>` waits for the answer the same way: the error the command gives once it
+	-- runs goes into the file, and nothing reaches the screen but the question.
+	local se = typed(state, admin, "sudo cat /nosuch 2>serr.txt", { "" })
+	eq("sudo 2> was asked for a password", se.asked[1], "[sudo] password for admin: ")
+	eq("its error went into the file", contents(state, "/home/admin/serr.txt"),
+		"cat: /nosuch: No such file or directory\n")
+	eq("and not onto the screen", #se.out, 0)
+	eq("and the status is the command's", se.status, 1)
+
 	-- The whole of it, and not a word of it on the screen.
 	local copy = typed(state, admin, "sudo cat /etc/passwd > copie.txt", { "" })
 	eq("the password was asked for", copy.asked[1], "[sudo] password for admin: ")
@@ -9538,7 +10053,7 @@ do
 	ok(state, admin, "echo first > log", {})
 	local added = typed(state, admin, "sudo echo second >> log", { "" })
 	eq("the append succeeded", added.status, 0)
-	eq("and added one line", contents(state, "/home/admin/log"), "first\nsecond")
+	eq("and added one line", contents(state, "/home/admin/log"), "first\nsecond\n")
 
 	-- A wrong password writes nothing -- but the file is there and empty, because
 	-- a shell opens what ">" names before the command runs and this one is no
@@ -9555,7 +10070,7 @@ do
 	local shut = typed(state, admin, "sudo cat /etc/passwd > /root/copie.txt", { "" })
 	eq("nothing was asked", #shut.asked, 0)
 	eq("the refusal names the target", shut.out[1],
-		"sudo: /root/copie.txt: permission denied")
+		"cannot create /root/copie.txt: permission denied")
 	eq("the line failed", shut.status, 1)
 	eq("and nothing was made", contents(state, "/root/copie.txt"), nil)
 
@@ -9595,12 +10110,12 @@ do
 	-- Whose redirect is whose: the question is the first stage's and the file is
 	-- the last stage's, and neither loses its place.
 	put(state, CeroSecOS.rootSession(), "/root/secret", "alpha\nbeta")
-	bad(state, admin, "cat /root/secret", "cat: /root/secret: permission denied")
+	bad(state, admin, "cat /root/secret", "cat: /root/secret: Permission denied")
 	local first = typed(state, admin, "sudo cat /root/secret | head -n 1 > first.txt", { "" })
 	eq("the question was asked once", #first.asked, 1)
 	eq("nothing reached the screen", #first.out, 0)
 	eq("and the last stage wrote what it read",
-		contents(state, "/home/admin/first.txt"), "alpha")
+		contents(state, "/home/admin/first.txt"), "alpha\n")
 
 	-- A stage that reads a pipe is still refused a question: its answer would
 	-- come back to a command with nothing on its input.
@@ -9621,7 +10136,7 @@ do
 	eq("and the retype", chain.asked[3], "Retype new password: ")
 	eq("nothing reached the screen", #chain.out, 0)
 	eq("the line it printed is in the file", contents(state, "/home/admin/done.txt"),
-		"passwd: password updated")
+		"passwd: password updated\n")
 	check("and root's password is the one that was typed", holds(state, "root", "hunter2"))
 
 	-- The refusal in the middle of a chain stays on the screen, and the file that
@@ -9883,7 +10398,7 @@ do
 	local node = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
 	eq("the file is root's", node.owner, "root")
 	eq("and 644", node.mode, CeroSecOS.WTMP_MODE)
-	eq("with the record in it", node.data, "in admin console - " .. FIXED)
+	eq("with the record in it", node.data, "in admin console - " .. FIXED .. "\n")
 	check("and a logout behind it", CeroSecOS.wtmpAppend(state, "out", "admin",
 		CeroSecOS.CONSOLE_LINE, nil, FIXED + 60))
 	eq("two lines now", #CeroSecOS.parseWtmp(node.data), 2)
@@ -10583,7 +11098,12 @@ do
 	local job = CeroSecOS.newJob({ prog = {} })
 	eq("a job nobody handed an environment starts with the default PATH",
 		job.vars.PATH, CeroSecOS.DEFAULT_PATH)
-	eq("and with nothing else in it", job.nvars, 1)
+	-- Nothing else but IFS, which every sh sets at its start and nobody
+	-- exports (POSIX.2 2.5.3): space, tab, newline.
+	eq("and IFS, at space, tab and newline", job.vars.IFS, " \t\n")
+	eq("and with nothing else in it", job.nvars, 2)
+	eq("a login sets IFS too", CeroSecOS.loginVars("/root").IFS, " \t\n")
+	check("and does not export it", CeroSecOS.loginExported().IFS == nil)
 end
 
 -- How many directories a PATH may name. The ceiling is met where the value is
@@ -10610,7 +11130,7 @@ do
 	local long = path(CeroSecOS.MAX_PATH_DIRS + 20) .. ":/bin"
 	local found, reason, walked = CeroSecOS.lookupPath(state, admin, "ls", long)
 	eq("nothing is found past the ceiling", found, nil)
-	eq("and it reads as a missing command", reason, "command not found")
+	eq("and it reads as a missing command", reason, "not found")
 	eq("having walked exactly the ceiling", walked, CeroSecOS.MAX_PATH_DIRS)
 	-- What the walk COST comes back with it, because the shell charges it.
 	local hit, noReason, hitWalk = CeroSecOS.lookupPath(state, admin, "ls", "/d1:/d2:/bin")
@@ -10631,7 +11151,7 @@ do
 
 	-- Not on the PATH yet: a file with x on it is not a command until a
 	-- directory PATH names holds it.
-	bad(state, admin, "hello", "hello: command not found")
+	bad(state, admin, "hello", "hello: not found")
 	-- ...and the same file, by path, runs -- a word with a slash in it is never
 	-- looked up at all.
 	ok(state, admin, "/home/admin/bin/hello", { "hello from bin" })
@@ -10651,7 +11171,7 @@ do
 	ok(state, admin, "cp /bin/ls /home/admin/bin/ls", {})
 	ok(state, admin, "chmod 644 /home/admin/bin/ls", {})
 	ok(state, admin, "PATH=/home/admin/bin:/bin", {})
-	ok(state, admin, "ls /etc/motd", { "motd" })
+	ok(state, admin, "ls /etc/motd", { "/etc/motd" })
 	eq("and which names the one that would run",
 		okAt(state, admin, "which ls")[1], "/bin/ls")
 	-- With x on it, the one in front wins -- and it is a script, so its text is
@@ -10663,29 +11183,27 @@ do
 	ok(state, admin, "rm /home/admin/bin/ls", {})
 
 	-- Found everywhere and runnable nowhere is "permission denied"; found
-	-- nowhere at all is "command not found". The reason the walk carries is the
+	-- nowhere at all is "not found". The reason the walk carries is the
 	-- best one it met.
 	ok(state, admin, "cp /bin/ls /home/admin/bin/ls", {})
 	ok(state, admin, "chmod 644 /home/admin/bin/ls", {})
 	ok(state, admin, "PATH=/home/admin/bin", {})
 	bad(state, admin, "ls /etc/motd", "ls: permission denied")
-	bad(state, admin, "pwd", "pwd: command not found")
+	bad(state, admin, "pwd", "pwd: not found")
 	-- /bin is off the PATH, so the walk cannot even find which: the refusal is
 	-- about the command that was typed, as every refusal here is.
-	bad(state, admin, "which ls", "which: command not found")
-	-- Back on a PATH that holds it, `which` says nothing at all about a name it
-	-- cannot answer for and comes back unsuccessful -- which is what
-	-- `which x > /dev/null` has always been used as.
+	bad(state, admin, "which ls", "which: not found")
+	-- Back on a PATH that holds it, `which` answers a name it cannot find
+	-- with the csh script's own line, and $? 0: the script ended on the echo.
 	ok(state, admin, "PATH=/bin", {})
-	local silent = expect(state, admin, "which nosuch", false, {})
-	eq("which prints nothing when it finds nothing", #silent, 0)
+	expect(state, admin, "which nosuch", true, { "no nosuch in /bin" })
 	ok(state, admin, "PATH=/home/admin/bin", {})
 
 	-- An empty field is the working directory. Standing in the directory the
 	-- script is in is not enough on a PATH that does not say so...
 	ok(state, admin, "cd /home/admin/bin", {})
 	ok(state, admin, "PATH=/bin", {})
-	bad(state, admin, "hello", "hello: command not found")
+	bad(state, admin, "hello", "hello: not found")
 	-- ...and a leading colon is what says so.
 	ok(state, admin, "PATH=:/bin", {})
 	ok(state, admin, "hello", { "hello from bin" })
@@ -10693,13 +11211,13 @@ do
 	-- An empty PATH is one empty field and nothing else: the working directory,
 	-- where there is no echo to run what was found.
 	ok(state, admin, "PATH=", {})
-	bad(state, admin, "hello", "echo: command not found")
+	bad(state, admin, "hello", "echo: not found")
 	ok(state, admin, "cd /etc", {})
-	bad(state, admin, "hello", "hello: command not found")
+	bad(state, admin, "hello", "hello: not found")
 	-- The shell's own words are never looked up, so they still work: that is
 	-- what "cd cannot be a file" means. pwd is a file and is not found.
 	ok(state, admin, "cd /var", {})
-	bad(state, admin, "pwd", "pwd: command not found")
+	bad(state, admin, "pwd", "pwd: not found")
 end
 
 -- The shell's own words are the shell's, whatever PATH says. Asked with an
@@ -10709,12 +11227,12 @@ do
 	local admin = open(state, "admin")
 	admin.shvars = { PATH = "" }
 	ok(state, admin, "cd /var", {})
-	ok(state, admin, 'if true; then echo unreachable; fi', { "true: command not found" },
+	ok(state, admin, 'if true; then echo unreachable; fi', { "true: not found" },
 		nil)
 	-- ...because `true` is a FILE on this machine and is looked up like any
 	-- other. The grammar around it is not, and neither is cd: the line above ran
 	-- its `if` and only the command inside it was missing.
-	bad(state, admin, "echo hi", "echo: command not found")
+	bad(state, admin, "echo hi", "echo: not found")
 end
 
 -- type: the three kinds of word, in sh's own wording.
@@ -10743,8 +11261,9 @@ do
 		end
 		return true
 	end)())
-	local silent = expect(state, admin, "which cd", false, {})
-	eq("which finds nothing for a shell word", #silent, 0)
+	local silent = expect(state, admin, "which cd", true,
+		{ "no cd in " .. string.gsub(CeroSecOS.DEFAULT_PATH, ":", " ") })
+	eq("which finds no file for a shell word", #silent, 1)
 	ok(state, admin, "which which", { "/bin/which" })
 
 	-- Both take one name and say so otherwise.
@@ -10790,7 +11309,7 @@ do
 	local run = runScript(state, admin, "echo $PATH\nhello")
 	eq("a script starts with the default PATH", run.out[1], CeroSecOS.DEFAULT_PATH)
 	eq("so the command the prompt found is not found in a script", run.out[2],
-		"hello: command not found")
+		"hello: not found")
 end
 
 --
@@ -10809,10 +11328,20 @@ end
 
 -- The target off the arrow, or nil for a name that has none. Through `ls -l`,
 -- which is the whole point: the answer has to be legible ON THE SCREEN.
+-- Read out of the directory's own listing: `ls -l` of the path itself prints
+-- the path as typed (4.4BSD ls), and a long one is cut to the screen before
+-- the arrow is reached.
 local function pointsAt(state, session, path)
-	local ok_, lines = exec(state, session, "ls -l " .. path)
-	if not ok_ or #lines ~= 1 then return nil end
-	return string.match(lines[1], " %-> (.+)$")
+	local dir, name = string.match(path, "^(.*)/([^/]+)$")
+	if dir == nil then dir, name = ".", path end
+	if dir == "" then dir = "/" end
+	local ok_, lines = exec(state, session, "ls -l " .. dir)
+	if not ok_ then return nil end
+	for i = 1, #lines do
+		local at = string.find(lines[i], "  " .. name .. " -> ", 1, true)
+		if at ~= nil then return string.sub(lines[i], at + #name + 6) end
+	end
+	return nil
 end
 
 do
@@ -10836,9 +11365,9 @@ do
 	-- A name that is not a link has no arrow, which is the honest answer: there is
 	-- nothing to point at.
 	eq("a file has no arrow", pointsAt(state, admin, "notes.txt"), nil)
-	badAt(state, admin, "ls -l nosuch", "ls: nosuch: no such file")
+	badAt(state, admin, "ls -l nosuch", "ls: nosuch: No such file or directory")
 	-- And the name that used to answer this is not on the machine at all.
-	badAt(state, admin, "readlink link", "readlink: command not found")
+	badAt(state, admin, "readlink link", "readlink: not found")
 
 	-- What ls says about one.
 	local long = okAt(state, admin, "ls -l link")
@@ -10910,8 +11439,8 @@ do
 	ok(state, admin, "ln -s nowhere dangle", {})
 	-- Making one is allowed: a link to a file that is not there yet is a link
 	-- somebody meant to make, and it says so the moment it is used.
-	badAt(state, admin, "cat dangle", "cat: dangle: no such file")
-	badAt(state, admin, "cd dangle", "cd: dangle: no such file")
+	badAt(state, admin, "cat dangle", "cat: dangle: No such file or directory")
+	badAt(state, admin, "cd dangle", "cd: can't cd to dangle")
 	eq("and the arrow still says where it was aimed",
 		pointsAt(state, admin, "dangle"), "nowhere")
 	local shown = okAt(state, admin, "ls -l dangle")
@@ -10922,15 +11451,15 @@ do
 	-- A loop costs the hop ceiling and then says which ceiling it met.
 	ok(state, admin, "ln -s b a", {})
 	ok(state, admin, "ln -s a b", {})
-	badAt(state, admin, "cat a", "cat: a: too many levels of symbolic links")
-	badAt(state, admin, "ls -l a/x", "ls: a/x: too many levels of symbolic links")
+	badAt(state, admin, "cat a", "cat: a: Too many levels of symbolic links")
+	badAt(state, admin, "ls -l a/x", "ls: a/x: Too many levels of symbolic links")
 	-- A link to itself is the same answer.
 	ok(state, admin, "ln -s self self", {})
-	badAt(state, admin, "cat self", "cat: self: too many levels of symbolic links")
+	badAt(state, admin, "cat self", "cat: self: Too many levels of symbolic links")
 	-- ...and the LINKS are still readable, which is what lets somebody fix it.
 	eq("the arrow is still legible", pointsAt(state, admin, "a"), "b")
 	ok(state, admin, "rm a", {})
-	badAt(state, admin, "cat b", "cat: b: no such file")
+	badAt(state, admin, "cat b", "cat: b: No such file or directory")
 
 	-- A chain shorter than the ceiling is followed all the way.
 	local names = {}
@@ -10945,7 +11474,7 @@ do
 	ok(state, admin, "cat " .. names[#names], { "the end" })
 	-- One more hop than the ceiling and it stops.
 	ok(state, admin, "ln -s " .. names[#names] .. " over", {})
-	badAt(state, admin, "cat over", "cat: over: too many levels of symbolic links")
+	badAt(state, admin, "cat over", "cat: over: Too many levels of symbolic links")
 end
 
 -- The permissions are the TARGET's: a link is a name and grants nothing.
@@ -10965,7 +11494,7 @@ do
 	eq("and he can read the arrow", pointsAt(state, bob, "/home/bob/peek"),
 		"/root/secret.txt")
 	-- ...and it buys him nothing at all: /root is 700.
-	badAt(state, bob, "cat /home/bob/peek", "cat: /home/bob/peek: permission denied")
+	badAt(state, bob, "cat /home/bob/peek", "cat: /home/bob/peek: Permission denied")
 	ok(state, root, "cat /home/bob/peek", { "the code is 1234" })
 end
 
@@ -10998,17 +11527,24 @@ do
 	badAt(state, bob, "hello", "hello: permission denied")
 	ok(state, root, "hello", { "hello from the tools" })
 	-- And the link is what `ls -l /bin` says it is.
-	local shown = okAt(state, root, "ls -l /bin/hello")
+	-- Its own line out of the listing: `ls -l /bin/hello` would print the path
+	-- as typed, which is 4.4BSD's answer and a longer line.
+	local listing = okAt(state, root, "ls -l /bin")
+	local shown = {}
+	for i = 1, #listing do
+		if string.find(listing[i], " hello -> ", 1, true) then shown[1] = listing[i] end
+	end
 	eq("the link in /bin describes itself", shown[1],
 		"lrwxrwxrwx  root   root    hello -> /home/admin/tools/hello")
 	eq("in sixty columns exactly", #shown[1], CeroSecOS.COLS - 1)
 
 	-- A target too long for the columns is what gets cut, and the name is kept
-	-- whole: the name is what somebody typed.
+	-- whole: the name is what somebody typed -- here the whole path, since that
+	-- is what was typed.
 	ok(state, root, "ln -s /home/admin/tools/a/very/long/way/down/there /bin/far", {})
 	local cut = okAt(state, root, "ls -l /bin/far")
 	eq("the target is cut with a tilde", cut[1],
-		"lrwxrwxrwx  root   root    far -> /home/admin/tools/a/very/~")
+		"lrwxrwxrwx  root   root    /bin/far -> /home/admin/tools/a/~")
 	eq("and the line is the width of the screen", #cut[1], CeroSecOS.COLS)
 end
 
@@ -11031,7 +11567,7 @@ do
 	ok(state, admin, "cat copy/also", { "body" })
 	eq("a link is one node like anything else", after - before, 3)
 	eq("and its target text is bytes on the disk", bytesAfter - bytesBefore,
-		#"body" + #"real.txt")
+		#"body\n" + #"real.txt")
 
 	-- A dangling link inside a tree is copied too: nothing is resolved.
 	ok(state, admin, "ln -s gone tree/broken", {})
@@ -11046,14 +11582,18 @@ do
 	local admin = open(state, "admin")
 	-- The ceiling is the longest path this machine can address.
 	local tooLong = "/" .. string.rep("a", CeroSecOS.MAX_LINK_BYTES)
-	badAt(state, admin, "ln -s " .. tooLong .. " big", "ln: big: file too large")
+	badAt(state, admin, "ln -s " .. tooLong .. " big", "ln: big: File too large")
 	eq("nothing was made", CeroSecOS.getNode(state, admin, "/home/admin/big"), nil)
 	-- The name is a name like any other, and a flag after the first operand is a
-	-- name too -- which isValidName refuses, the way it refuses one everywhere.
-	badAt(state, admin, "ln -s x -bad", "ln: -bad: invalid name")
-	badAt(state, admin, "ln -z x y", "ln: -z: unknown option")
+	-- name too (4.4BSD getopt stops at the first operand): -bad is made, a
+	-- name with a character the disk will not keep is refused.
+	okAt(state, admin, "ln -s x -bad", {})
+	eq("and -bad is the link", CeroSecOS.getNode(state, admin, "/home/admin/-bad", true).type, "link")
+	badAt(state, admin, "ln -s x a:b", "ln: a:b: invalid name")
+	badAtLines(state, admin, "ln -z x y", { "ln: illegal option -- z",
+		"usage: ln -s <target> <name>" })
 	ok(state, admin, 'echo "x" > taken.txt', {})
-	badAt(state, admin, "ln -s x taken.txt", "ln: taken.txt: file exists")
+	badAt(state, admin, "ln -s x taken.txt", "ln: taken.txt: File exists")
 	-- A directory as the second argument puts the link inside it, under the
 	-- target's own last name.
 	ok(state, admin, "mkdir here", {})
@@ -11202,18 +11742,18 @@ do
 	ok(state, bob, "cat /var/tmp/mine.txt", { "admin here" })
 
 	-- And nobody may take away what is not his.
-	badAt(state, bob, "rm /var/tmp/mine.txt", "rm: /var/tmp/mine.txt: permission denied")
-	badAt(state, admin, "rm /var/tmp/bobs.txt", "rm: /var/tmp/bobs.txt: permission denied")
+	badAt(state, bob, "rm /var/tmp/mine.txt", "rm: /var/tmp/mine.txt: Permission denied")
+	badAt(state, admin, "rm /var/tmp/bobs.txt", "rm: /var/tmp/bobs.txt: Permission denied")
 	-- Nor rename it out from under him, which is the same thing done sideways.
 	badAt(state, bob, "mv /var/tmp/mine.txt /home/bob/taken",
-		"mv: /home/bob/taken: permission denied")
+		"mv: /home/bob/taken: Permission denied")
 	badAt(state, bob, "mv /var/tmp/mine.txt /var/tmp/taken",
-		"mv: /var/tmp/taken: permission denied")
+		"mv: /var/tmp/taken: Permission denied")
 	-- Nor write over it, which is the same thing done the other way round: a
 	-- rename ONTO a name in here destroys what the name meant, and destroying
 	-- somebody else's file is the one thing 777 in here does not allow.
 	badAt(state, bob, "mv /var/tmp/bobs.txt /var/tmp/mine.txt",
-		"mv: /var/tmp/mine.txt: permission denied")
+		"mv: /var/tmp/mine.txt: Permission denied")
 	ok(state, bob, "cat /var/tmp/mine.txt", { "admin here" })
 	check("and it is all still there",
 		CeroSecOS.systemNode(state, "/var/tmp/mine.txt") ~= nil)
@@ -11229,7 +11769,7 @@ do
 	-- NODE's owner and not about what is under it.
 	ok(state, admin, "mkdir /var/tmp/work", {})
 	ok(state, admin, 'echo "x" > /var/tmp/work/a.txt', {})
-	badAt(state, bob, "rm -r /var/tmp/work", "rm: /var/tmp/work: permission denied")
+	badAt(state, bob, "rm -r /var/tmp/work", "rm: /var/tmp/work: Permission denied")
 	ok(state, admin, "rm -r /var/tmp/work", {})
 
 	-- Nowhere else on the machine works this way: a directory somebody may write
@@ -11274,7 +11814,7 @@ do
 	-- screen, and the one on the right is.
 	ok(state, admin, "ls / | cat", { "bin", "dev", "etc", "home", "mnt", "root", "usr", "var" })
 	ok(state, admin, "ls / | grep e", { "dev", "etc", "home" })
-	ok(state, admin, "ls / | wc -l", { "     8" })
+	ok(state, admin, "ls / | wc -l", { "       8" })
 	-- Which is the whole point: a loop over a listing gets the names and not the
 	-- rows they were packed into.
 	ok(state, admin, "for f in $(ls /); do echo [$f]; done",
@@ -11298,7 +11838,8 @@ do
 	-- -l was always a line each and neither flag has anything to say about it.
 	local long = okAt(state, admin, "ls -l1 /")
 	eq("a long listing is a line each whatever else is asked", #long, 8)
-	badAt(state, admin, "ls -q /", "ls: -q: unknown option")
+	badAtLines(state, admin, "ls -q /", { "ls: illegal option -- q",
+		"usage: ls [-1laACF] [path]..." })
 
 	-- The last stage of a pipeline IS writing to the glass, so it packs: `cat`
 	-- hands the lines over and the ls at the end of it is the one in front of a
@@ -11355,9 +11896,9 @@ do
 
 	-- Every command that wants the drive says the same thing about a slot with
 	-- nothing in it, in the filesystem's own grammar: there is no such file.
-	badAt(state, admin, "newfs /dev/fd0", "newfs: /dev/fd0: no such file")
-	badAt(state, admin, "mount /dev/fd0 /mnt", "mount: /dev/fd0: no such file")
-	badAt(state, admin, "cat /dev/fd0", "cat: /dev/fd0: no such file")
+	badAt(state, admin, "newfs /dev/fd0", "newfs: /dev/fd0: No such file or directory")
+	badAt(state, admin, "mount /dev/fd0 /mnt", "mount: /dev/fd0: No such file or directory")
+	badAt(state, admin, "cat /dev/fd0", "cat: /dev/fd0: No such file or directory")
 	badAt(state, admin, "umount /mnt", "umount: /mnt: not mounted")
 	-- df is one disk's worth of rows.
 	eq("df has a header and two rows", #okAt(state, admin, "df", nil), 3)
@@ -11457,7 +11998,7 @@ do
 	-- The file underneath is out of sight and still on the hard disk, which is
 	-- what a mount point has meant since there were two filesystems.
 	okAt(state, admin, "ls /mnt", {})
-	badAt(state, admin, "cat /mnt/hidden.txt", "cat: /mnt/hidden.txt: no such file")
+	badAt(state, admin, "cat /mnt/hidden.txt", "cat: /mnt/hidden.txt: No such file or directory")
 	eq("and it is still costing the hard disk what it costs",
 		select(2, CeroSecOS.usage(state)), under)
 
@@ -11469,7 +12010,7 @@ do
 	okAt(state, admin, "ls /mnt", { "notes.txt  sub" })
 	okAt(state, admin, "cat /mnt/sub/copy.txt", { "hello" })
 	okAt(state, admin, "grep hello /mnt/notes.txt", { "hello" })
-	okAt(state, admin, "wc -l /mnt/notes.txt", { "     1 /mnt/notes.txt" })
+	okAt(state, admin, "wc -l /mnt/notes.txt", { "       1 /mnt/notes.txt" })
 	okAt(state, admin, "mv /mnt/notes.txt /mnt/renamed.txt", {})
 	okAt(state, admin, "ls /mnt", { "renamed.txt  sub" })
 	okAt(state, admin, "rm -r /mnt/sub", {})
@@ -11649,8 +12190,8 @@ do
 	-- Every write of a BYTE is refused. An empty file and a directory cost the
 	-- disk no byte and still go in, which is the same answer the machine's own
 	-- drive gives when it is full: the two ceilings are two ceilings.
-	badAt(state, admin, "echo x > /mnt/more", "echo: /mnt/more: disk full")
-	badAt(state, admin, "cp /mnt/big /mnt/copy", "cp: /mnt/copy: disk full")
+	badAt(state, admin, "echo x > /mnt/more", "cannot create /mnt/more: file system full")
+	badAt(state, admin, "cp /mnt/big /mnt/copy", "cp: /mnt/copy: No space left on device")
 	okAt(state, admin, "touch /mnt/empty", {})
 	okAt(state, admin, "rm /mnt/empty", {})
 
@@ -11688,7 +12229,7 @@ do
 	eq("the machine is exactly full",
 		select(2, CeroSecOS.usage(state)), CeroSecOS.MAX_TOTAL_BYTES)
 	badAt(state, admin, "echo x > /home/admin/no.txt",
-		"echo: /home/admin/no.txt: disk full")
+		"cannot create /home/admin/no.txt: file system full")
 	okAt(state, admin, "echo yes > /mnt/still.txt", {})
 	okAt(state, admin, "cat /mnt/still.txt", { "yes" })
 end
@@ -11708,7 +12249,7 @@ do
 	eq("the disk is at its node ceiling",
 		select(1, CeroSecOS.subtreeUsage(CeroSecOS.floppyRoot(state))),
 		CeroSecOS.FLOPPY_NODES)
-	badAt(state, admin, "touch /mnt/one-more", "touch: /mnt/one-more: disk full")
+	badAt(state, admin, "touch /mnt/one-more", "touch: /mnt/one-more: No space left on device")
 	-- And the machine, which has hundreds left, is untouched by it.
 	okAt(state, admin, "touch /home/admin/plenty", {})
 end
@@ -11756,8 +12297,8 @@ do
 	state.floppy = CeroSecOS.newFloppy()
 	okAt(state, admin, "newfs /dev/fd0", nil)
 
-	badAt(state, admin, "mount /dev/fd0 /etc/motd", "mount: /etc/motd: not a directory")
-	badAt(state, admin, "mount /dev/fd0 /nowhere", "mount: /nowhere: no such file")
+	badAt(state, admin, "mount /dev/fd0 /etc/motd", "mount: /etc/motd: Not a directory")
+	badAt(state, admin, "mount /dev/fd0 /nowhere", "mount: /nowhere: No such file or directory")
 	badAt(state, admin, "mount /dev/fd0 /", "mount: /: Device busy")
 	-- /dev is the one other place a mount cannot be undone from: the device file
 	-- umount reads to find out which drive it is unmounting lives there, so a disk
@@ -11831,13 +12372,13 @@ do
 	state.floppy = CeroSecOS.newFloppy()
 
 	-- bob is in no group the device names, so both bits are shut to him.
-	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: permission denied")
-	badAt(state, bob, "mount /dev/fd0 /mnt", "mount: /dev/fd0: permission denied")
-	badAt(state, bob, "cat /dev/fd0", "fd0: permission denied")
+	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: Permission denied")
+	badAt(state, bob, "mount /dev/fd0 /mnt", "mount: /dev/fd0: Permission denied")
+	badAt(state, bob, "cat /dev/fd0", "fd0: Permission denied")
 	-- admin is named in /etc/sudoers, which IS membership of the sudo group.
 	okAt(state, admin, "newfs /dev/fd0", nil)
 	okAt(state, admin, "mount /dev/fd0 /mnt", {})
-	badAt(state, bob, "umount /mnt", "umount: /mnt: permission denied")
+	badAt(state, bob, "umount /mnt", "umount: /mnt: Permission denied")
 	okAt(state, admin, "umount /mnt", {})
 
 	-- And the mode really is the whole of the rule: open it and bob may format.
@@ -11849,21 +12390,21 @@ do
 	okAt(state, rootSession, "chmod 664 /dev/fd0", {})
 	okAt(state, bob, "mount /dev/fd0 /mnt", {})
 	okAt(state, bob, "umount /mnt", {})
-	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: permission denied")
+	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: Permission denied")
 
 	-- The mode is the DRIVE's and outlives the disk that was in it: it is
 	-- remembered on the machine between commands, not on the disk.
 	eq("the chmod was remembered by the machine", state.fdmode, 664)
 	state.floppy = CeroSecOS.newFloppy("OTHER")
 	okAt(state, bob, "cat /dev/fd0", { "blank" })
-	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: permission denied")
+	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: Permission denied")
 	-- And an empty slot forgets nothing either: the drive is bolted to the case.
 	state.floppy = nil
 	okAt(state, rootSession, "ls /dev", { "null" })
 	state.floppy = CeroSecOS.newFloppy()
 	okAt(state, rootSession, "ls -l /dev", nil)
 	eq("the drive is still wearing the mode it was given", state.fdmode, 664)
-	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: permission denied")
+	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: Permission denied")
 end
 
 -- 47k. A disk carried to another machine keeps everything, owners included.
@@ -11880,7 +12421,7 @@ do
 		CeroSecOS.newFile("bob", 600, "bob's notes"), nil)
 	local LINE = "-rw-------  bob    bob        11  Jan  1 00:00  secret.txt"
 	okAt(a, admin, "ls -l /mnt", { LINE })
-	badAt(a, admin, "cat /mnt/secret.txt", "cat: /mnt/secret.txt: permission denied")
+	badAt(a, admin, "cat /mnt/secret.txt", "cat: /mnt/secret.txt: Permission denied")
 
 	-- Out of the drive: the disk becomes a plain table, the way it does on its
 	-- way into an item's modData, and back again on the other machine.
@@ -11903,7 +12444,7 @@ do
 	-- Same name, same mode, same owner -- and the same account, because an
 	-- account is a NAME and the name went with the file.
 	okAt(b, adminB, "ls -l /mnt", { LINE })
-	badAt(b, adminB, "cat /mnt/secret.txt", "cat: /mnt/secret.txt: permission denied")
+	badAt(b, adminB, "cat /mnt/secret.txt", "cat: /mnt/secret.txt: Permission denied")
 	local bobB = open(b, "bob")
 	okAt(b, bobB, "cat /mnt/secret.txt", { "bob's notes" })
 	-- Root reads all of it, here as anywhere.
@@ -11934,13 +12475,13 @@ do
 	eq("a disk that is not a table", CeroSecOS.validateDisk("floppy"), false)
 	eq("a disk of an unknown version", CeroSecOS.validateDisk({ v = 99 }), false)
 	eq("a label longer than a sticker",
-		CeroSecOS.validateDisk({ v = 1, label = string.rep("x", CeroSecOS.LABEL_MAX + 1) }),
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, label = string.rep("x", CeroSecOS.LABEL_MAX + 1) }),
 		false)
 	eq("a label of exactly a sticker is fine",
-		CeroSecOS.validateDisk({ v = 1, label = string.rep("x", CeroSecOS.LABEL_MAX) }),
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, label = string.rep("x", CeroSecOS.LABEL_MAX) }),
 		true)
 	eq("a root that is not a directory",
-		CeroSecOS.validateDisk({ v = 1, fs = CeroSecOS.newFile("root", 644, "x") }), false)
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = CeroSecOS.newFile("root", 644, "x") }), false)
 
 	-- Past the disk's own ceilings, which NEITHER the boot gate nor the slot asks
 	-- about -- and they are the same gate, which is the point of this block.
@@ -11959,7 +12500,7 @@ do
 	for i = 1, CeroSecOS.FLOPPY_NODES do
 		many.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
 	end
-	local over = { v = 1, fs = many }
+	local over = { v = CeroSecOS.FLOPPY_VERSION, fs = many }
 	eq("the boot gate runs on a disk past its node ceiling",
 		CeroSecOS.validateDisk(over), true)
 	eq("and the slot, which walks it on every command after, does not",
@@ -11968,7 +12509,7 @@ do
 	fat.children["big"] = CeroSecOS.newFile("root", 644,
 		string.rep("x", CeroSecOS.FLOPPY_BYTES))
 	fat.children["more"] = CeroSecOS.newFile("root", 644, "x")
-	local heavy = { v = 1, fs = fat }
+	local heavy = { v = CeroSecOS.FLOPPY_VERSION, fs = fat }
 	eq("the boot gate runs on a disk past its byte ceiling",
 		CeroSecOS.validateDisk(heavy), true)
 	eq("and the slot does not take that either", CeroSecOS.diskFromData(heavy), nil)
@@ -11986,7 +12527,7 @@ do
 		machine.floppy = heavy
 		okAt(machine, who, "mount /dev/fd0 /mnt", {})
 		-- Over its ceiling, and it says so rather than pretending.
-		badAt(machine, who, "echo x > /mnt/y", "echo: /mnt/y: disk full")
+		badAt(machine, who, "echo x > /mnt/y", "cannot create /mnt/y: file system full")
 		-- And one `rm` is the way out, which is the reason the gate lets it boot.
 		okAt(machine, who, "rm /mnt/big", {})
 		okAt(machine, who, "echo x > /mnt/y", {})
@@ -12000,7 +12541,7 @@ do
 		named.children["d" .. i] = sub
 	end
 	eq("in a sentence with its separator in it",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = named })), "floppy: too many nodes")
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = named })), "floppy: too many nodes")
 	-- The boot gate still bounds what a walk costs, at the machine's own ceiling:
 	-- a save file is a thing somebody can write.
 	local huge = CeroSecOS.newDir("root", 755)
@@ -12010,16 +12551,16 @@ do
 		huge.children["d" .. i] = sub
 	end
 	eq("a forged tree past the machine's own node ceiling is refused",
-		CeroSecOS.validateDisk({ v = 1, fs = huge }), false)
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = huge }), false)
 
 	-- The copy refuses what it cannot carry, rather than dropping it quietly.
 	eq("a function on a disk is not a disk",
-		CeroSecOS.diskFromData({ v = 1, fs = print }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = print }), nil)
 	-- Hung on `fs`, which is one of the three keys the slot takes off an item at all:
 	-- a chain under a name nobody here declared is not refused any more, it is left
 	-- on the item and never copied (ownKeysOf), so it would prove nothing about the
 	-- copy's own bound.
-	local deep = { v = 1, fs = {} }
+	local deep = { v = CeroSecOS.FLOPPY_VERSION, fs = {} }
 	local at = deep.fs
 	for i = 1, CeroSecOS.DISK_COPY_DEPTH + 2 do
 		at.down = {}
@@ -12035,7 +12576,7 @@ do
 		forged.children["d" .. i] = sub
 	end
 	eq("a disk past what ANY filesystem here may hold is refused at the slot",
-		CeroSecOS.diskFromData({ v = 1, fs = forged }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = forged }), nil)
 end
 
 -- 47l2. The disk has a chain of its own, and a number of its own to count against.
@@ -12326,7 +12867,7 @@ do
 	end
 	-- So rm really takes one away.
 	okAt(state, open(state, "root"), "rm /bin/newfs", {})
-	badAt(state, admin, "newfs /dev/fd0", "newfs: command not found")
+	badAt(state, admin, "newfs /dev/fd0", "newfs: not found")
 	okAt(state, admin, "mount", { "/dev/hda on / type ufs (rw)" })
 end
 
@@ -12361,7 +12902,7 @@ do
 		select(1, CeroSecOS.subtreeUsage(CeroSecOS.floppyRoot(state))),
 		CeroSecOS.FLOPPY_NODES)
 	badAt(state, admin, "touch /home/admin/gate/one-more",
-		"touch: /home/admin/gate/one-more: disk full")
+		"touch: /home/admin/gate/one-more: No space left on device")
 	-- The machine, which has hundreds left, is untouched by it.
 	okAt(state, admin, "touch /home/admin/plenty", {})
 	for i = 1, CeroSecOS.FLOPPY_NODES - 1 do
@@ -12374,7 +12915,11 @@ do
 		CeroSecOS.writeFile(state, rootSession, "/home/admin/gate/big", block, false, nil),
 		true)
 	badAt(state, admin, "echo x > /home/admin/gate/more",
-		"echo: /home/admin/gate/more: disk full")
+		"cannot create /home/admin/gate/more: file system full")
+	-- The open came first and an empty file fits a full disk; the WRITE was
+	-- refused. Taken away again so the listings below are the ones they were.
+	okAt(state, admin, "cat /home/admin/gate/more", {})
+	okAt(state, admin, "rm /home/admin/gate/more", {})
 	okAt(state, admin, "echo x > /home/admin/fine", {})
 	okAt(state, rootSession, "rm /home/admin/gate/big", {})
 
@@ -12652,11 +13197,11 @@ do
 	-- A write that CANNOT be made leaves the item exactly as it was, which is the
 	-- ordering the disaster was made of: cleared first, a failed copy left the item
 	-- blank and the machine's own copy already dropped.
-	local keep = { v = 1, fs = CeroSecOS.newDir("root", 755), label = "KEEP" }
+	local keep = { v = CeroSecOS.FLOPPY_VERSION, fs = CeroSecOS.newDir("root", 755), label = "KEEP" }
 	local held = keep.fs
 	eq("a copy that cannot be made writes nothing",
-		CeroSecOS.writeDiskTo(keep, { v = 1, fs = print }), false)
-	eq("the item still has its version", keep.v, 1)
+		CeroSecOS.writeDiskTo(keep, { v = CeroSecOS.FLOPPY_VERSION, fs = print }), false)
+	eq("the item still has its version", keep.v, CeroSecOS.FLOPPY_VERSION)
 	eq("its label", keep.label, "KEEP")
 	eq("and the very filesystem it was carrying", keep.fs, held)
 
@@ -12698,46 +13243,46 @@ do
 	eq("a disk is its own three keys",
 		table.concat(CeroSecOS.DISK_KEYS, " "), "v fs label")
 	eq("and a fourth on a RECORD is a refusal that names it",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, junk = "x" }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, junk = "x" }, true)),
 		"floppy: unknown field 'junk'")
 	eq("a numeric one too",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, [3] = "x" }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, [3] = "x" }, true)),
 		"floppy: unknown field '3'")
 	-- A key that is not a name a screen can carry is said by what it is, and never
 	-- quoted onto the glass: the sentence goes in a halo and on a console, and
 	-- nothing shapes a line there except this machine.
 	eq("a key of the wrong type is named by its type",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, [true] = "x" }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, [true] = "x" }, true)),
 		"floppy: unknown field of type boolean")
 	eq("and one carrying control bytes by its size",
 		select(2, CeroSecOS.validateDisk(
-			{ v = 1, fs = tiny, ["a\1b"] = "x" }, true)),
+			{ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, ["a\1b"] = "x" }, true)),
 		"floppy: unknown field of 3 bytes")
 	-- At the SLOT it is not a refusal at all: what arrives there is an item's
 	-- modData, which is the game's table and not a record of ours, so a name nobody
 	-- here declared is left on the item -- unread, uncopied, and not paid for.
-	local payload = { v = 1, fs = tiny, junk = string.rep("x", 100000) }
+	local payload = { v = CeroSecOS.FLOPPY_VERSION, fs = tiny, junk = string.rep("x", 100000) }
 	local taken = CeroSecOS.diskFromData(payload)
 	check("the slot takes the disk beside a stranger's key", taken ~= nil)
 	eq("and the payload is not on what it took", taken.junk, nil)
 	-- The three themselves still go in, label and all.
 	check("an honest disk is untouched by the rule",
-		CeroSecOS.diskFromData({ v = 1, fs = tiny, label = "WORK" }) ~= nil)
-	check("and one with no label", CeroSecOS.diskFromData({ v = 1, fs = tiny }) ~= nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny, label = "WORK" }) ~= nil)
+	check("and one with no label", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = tiny }) ~= nil)
 
 	-- No device on a disk. newfs never makes one, and the boot gate lets the null
 	-- kind through only because its walk is shared with the machine's own drive.
 	local devs = CeroSecOS.newDir("root", 755)
 	devs.children.null = CeroSecOS.newNull()
 	eq("a device on a disk is a refusal, and it is named",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = devs }, true)), "floppy/null: bad type")
-	eq("at the slot", CeroSecOS.diskFromData({ v = 1, fs = devs }), nil)
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = devs }, true)), "floppy/null: bad type")
+	eq("at the slot", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = devs }), nil)
 	-- However deep it is buried, and however little the ceilings can see of it.
 	local deep = CeroSecOS.newDir("root", 755)
 	local sub = CeroSecOS.newDir("root", 755)
 	sub.children.null = CeroSecOS.newNull()
 	deep.children.d = sub
-	eq("buried as deep as you like", CeroSecOS.diskFromData({ v = 1, fs = deep }), nil)
+	eq("buried as deep as you like", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = deep }), nil)
 	-- A thousand of them weigh nothing and count nothing, which is the whole reason
 	-- the rule is about the TYPE and not about the weight.
 	local many = CeroSecOS.newDir("root", 755)
@@ -12746,21 +13291,21 @@ do
 	eq("ninety devices weigh nothing", bytes, 0)
 	eq("and count as nothing", nodes, 1)
 	eq("and are refused all the same",
-		CeroSecOS.diskFromData({ v = 1, fs = many }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = many }), nil)
 
 	-- The blank disk is the shape the rule was half a rule on: a floppy off a shelf
 	-- has no filesystem, so the gate used to answer "nothing to check" and take
 	-- whatever else was written on it -- and then one `newfs` gave it a filesystem
 	-- and the disk could never come out of the drive again. The trap is shut at the
 	-- other end now: the junk is not refused, it is simply not taken.
-	local blank = CeroSecOS.diskFromData({ v = 1, junk = string.rep("x", 100000) })
+	local blank = CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, junk = string.rep("x", 100000) })
 	check("a blank disk beside somebody's payload still goes in", blank ~= nil)
 	eq("and the payload did not come in with it", blank.junk, nil)
 	blank.fs = CeroSecOS.newFloppyRoot("root")
 	eq("so the newfs that follows cannot trap it in the drive",
 		CeroSecOS.validateDisk(blank, true), true)
 	check("and an honest blank one still goes in",
-		CeroSecOS.diskFromData({ v = 1 }) ~= nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION }) ~= nil)
 
 	-- The same rule one level down, which is where the rest of it was hiding: a
 	-- node's fields are its kind's and nothing else, and a `children` table on a
@@ -12771,11 +13316,11 @@ do
 				CeroSecOS.NODE_OWN_FIELD.link } or {}, " "), "children data target")
 	local onFs = CeroSecOS.newDir("root", 755)
 	onFs.junk = "x"
-	eq("junk on the disk's own root", CeroSecOS.diskFromData({ v = 1, fs = onFs }), nil)
+	eq("junk on the disk's own root", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = onFs }), nil)
 	local onNode = CeroSecOS.newDir("root", 755)
 	onNode.children.f = CeroSecOS.newFile("root", 644, "")
 	onNode.children.f.junk = "x"
-	eq("junk on a node inside it", CeroSecOS.diskFromData({ v = 1, fs = onNode }), nil)
+	eq("junk on a node inside it", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = onNode }), nil)
 	local hidden = CeroSecOS.newDir("root", 755)
 	local asFile = CeroSecOS.newFile("root", 644, "")
 	asFile.children = {}
@@ -12783,28 +13328,28 @@ do
 	hidden.children.h = asFile
 	eq("a whole tree hung under a file node weighs nothing",
 		select(2, CeroSecOS.subtreeUsage(hidden)), 0)
-	eq("and is refused", CeroSecOS.diskFromData({ v = 1, fs = hidden }), nil)
+	eq("and is refused", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = hidden }), nil)
 	local asLink = CeroSecOS.newDir("root", 755)
 	local lk = CeroSecOS.newLink("root", "/x")
 	lk.children = { y = CeroSecOS.newFile("root", 644, "") }
 	asLink.children.l = lk
-	eq("under a link node too", CeroSecOS.diskFromData({ v = 1, fs = asLink }), nil)
+	eq("under a link node too", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = asLink }), nil)
 	-- And an owner nothing prints is a hiding place by another name -- as is a
 	-- timestamp nothing checks, in a field that only ever comes out as a date.
 	local longOwner = CeroSecOS.newDir("root", 755)
 	longOwner.owner = string.rep("a", CeroSecOS.MAX_NAME + 1)
 	eq("an owner longer than a name may be",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = longOwner }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = longOwner }, true)),
 		"floppy: invalid name")
 	local longGroup = CeroSecOS.newDir("root", 755)
 	longGroup.group = string.rep("a", CeroSecOS.MAX_NAME + 1)
-	eq("a group likewise", CeroSecOS.diskFromData({ v = 1, fs = longGroup }), nil)
+	eq("a group likewise", CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = longGroup }), nil)
 	for _, when in ipairs({ -1, CeroSecOS.MAX_STAMP + 1, 1e300 }) do
 		local stamped = CeroSecOS.newDir("root", 755)
 		stamped.children.f = CeroSecOS.newFile("root", 644, "")
 		stamped.children.f.mtime = when
 		eq("a timestamp that is not a moment (" .. tostring(when) .. ")",
-			select(2, CeroSecOS.validateDisk({ v = 1, fs = stamped }, true)),
+			select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = stamped }, true)),
 			"floppy/f: bad mtime")
 	end
 
@@ -12822,11 +13367,11 @@ do
 		at = down
 	end
 	eq("a chain deeper than a path can be is refused and not fallen down",
-		CeroSecOS.diskFromData({ v = 1, fs = chain }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = chain }), nil)
 	local loop = CeroSecOS.newDir("root", 755)
 	loop.children.self = loop
 	eq("and a tree that contains itself, which is infinitely deep",
-		CeroSecOS.diskFromData({ v = 1, fs = loop }), nil)
+		CeroSecOS.diskFromData({ v = CeroSecOS.FLOPPY_VERSION, fs = loop }), nil)
 	-- And the breadth is refused before the names are gathered: the ceiling that
 	-- says no is one comparison, and collecting and sorting four hundred thousand
 	-- names to reach it was nine seconds of the server's own thread.
@@ -12835,7 +13380,7 @@ do
 		crowd.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
 	end
 	eq("a directory with more in it than one may hold",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = crowd }, true)),
+		select(2, CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, fs = crowd }, true)),
 		"floppy: directory full")
 
 	-- The same lesson one level up: a WELL-FORMED tree -- every node legal, every
@@ -13714,7 +14259,7 @@ do
 	-- authority. /etc/callsign is root's and 644, so that is the whole rule.
 	lines, cont = at(admin, cont, "MYCALL W4ZZZ")
 	eq("an ordinary account may not program the box", lines[1],
-		"cu: " .. CeroSecOS.CALLSIGN_PATH .. ": permission denied")
+		"cu: " .. CeroSecOS.CALLSIGN_PATH .. ": Permission denied")
 	eq("and the callsign is untouched", CeroSecOS.callsignOf(state), mine)
 	lines, cont = at(root, cont, "MYCALL W4ZZZ")
 	eq("root may, and the box echoes it back", lines[1], "MYCALL W4ZZZ")
@@ -14062,7 +14607,9 @@ do
 	-- A machine as the version before this one left it: the four old executables
 	-- in /bin, exactly as they were shipped, and the number behind.
 	local state = fresh()
-	state.sysv = CeroSecOS.SYSTEM_VERSION - 1
+	-- Below SYSTEM_GATED: a machine at or past it has had its retirements
+	-- already and is given only BIN_SINCE's names (CeroSecOS.upgradeSystem).
+	state.sysv = CeroSecOS.SYSTEM_GATED - 1
 	local bin = state.fs.children.bin
 	local retired = {}
 	for name, desc in pairs(CeroSecOS.RETIRED_BIN) do
@@ -14107,18 +14654,18 @@ do
 	local ENV2 = { now = 0, nowMs = 1, jobs = {} }
 	local GONE = { "adduser", "deluser", "gpasswd", "readlink", "write", "call" }
 	for i = 1, #GONE do
-		badAt(state, admin, GONE[i] .. " x", GONE[i] .. ": command not found", ENV2)
+		badAt(state, admin, GONE[i] .. " x", GONE[i] .. ": not found", ENV2)
 	end
 	-- The two the bench left standing on purpose are still FILES -- and still not
 	-- commands, because the engine has nothing behind them: which is the honest
 	-- answer for a file in /bin with no command behind it and has been since
 	-- version 8.
-	badAt(state, admin, "hash x", "hash: command not found", ENV2)
+	badAt(state, admin, "hash x", "hash: not found", ENV2)
 	-- The chmod'd one is 700 and root's, so an ordinary account does not get as far
 	-- as finding out there is nothing behind it: a file it may not run is a file it
 	-- may not run, which is the answer `chmod 600 /bin/ls` has always given.
 	badAt(state, admin, "restart", "restart: permission denied", ENV2)
-	badAt(state, open(state, "root"), "restart", "restart: command not found", ENV2)
+	badAt(state, open(state, "root"), "restart", "restart: not found", ENV2)
 
 	-- The new names are there in their place.
 	local NEW = { "useradd", "userdel", "usermod", "mkpasswd" }
@@ -14173,8 +14720,9 @@ do
 	-- A delimiter is exactly one character, which is what every cut has taken.
 	badAt(state, admin, "cut -d ,, -f 1 rows",
 		"cut: usage: cut -c <list> | -d <delim> -f <list> [file]...")
-	badAt(state, admin, "cut -q 1 wide", "cut: -q: unknown option")
-	badAt(state, admin, "cut -c 1 nosuch", "cut: nosuch: no such file")
+	badAtLines(state, admin, "cut -q 1 wide", { "cut: illegal option -- q",
+		"usage: cut -c <list> | -d <delim> -f <list> [file]..." })
+	badAt(state, admin, "cut -c 1 nosuch", "cut: nosuch: No such file or directory")
 
 	-- And down a pipe, which is what cut is usually on the right of.
 	okAt(state, admin, "cat rows | cut -d , -f 1", { "one", "plain line", "alpha" })
@@ -14229,42 +14777,44 @@ do
 	badAt(state, admin, "tr a-z A-Z", "tr: usage: tr [-d] <set1> [<set2>]")
 	badAt(state, admin, "cat t | tr a-z", "tr: usage: tr [-d] <set1> [<set2>]")
 	badAt(state, admin, "cat t | tr -d a b", "tr: usage: tr [-d] <set1> [<set2>]")
-	badAt(state, admin, "cat t | tr -x a b", "tr: -x: unknown option")
+	badAtLines(state, admin, "cat t | tr -x a b", { "tr: illegal option -- x",
+		"usage: tr [-d] <set1> [<set2>]" })
 end
 
 -- 49c. tee: the screen AND the files, and the first turn is what truncates.
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	put(state, admin, "/home/admin/src", "one\ntwo\nthree")
+	put(state, admin, "/home/admin/src", "one\ntwo\nthree\n")
 	put(state, admin, "/home/admin/old", "was here")
 
 	okAt(state, admin, "cat src | tee copy", { "one", "two", "three" })
 	eq("and the file holds exactly what went past",
-		state.fs.children.home.children.admin.children.copy.data, "one\ntwo\nthree")
+		state.fs.children.home.children.admin.children.copy.data, "one\ntwo\nthree\n")
 	-- Two files at once, which is the whole point of a T-piece.
 	okAt(state, admin, "cat src | tee a b", { "one", "two", "three" })
-	eq("both of them", state.fs.children.home.children.admin.children.a.data, "one\ntwo\nthree")
-	eq("byte for byte", state.fs.children.home.children.admin.children.b.data, "one\ntwo\nthree")
+	eq("both of them", state.fs.children.home.children.admin.children.a.data, "one\ntwo\nthree\n")
+	eq("byte for byte", state.fs.children.home.children.admin.children.b.data, "one\ntwo\nthree\n")
 	-- Without -a the file is REPLACED, exactly as ">" replaces.
 	okAt(state, admin, "cat src | tee old", nil)
 	eq("what was there is gone",
-		state.fs.children.home.children.admin.children.old.data, "one\ntwo\nthree")
+		state.fs.children.home.children.admin.children.old.data, "one\ntwo\nthree\n")
 	-- With -a it is added to, exactly as ">>" adds.
 	okAt(state, admin, "cat src | tee -a old", nil)
 	eq("and the second copy is behind the first",
 		state.fs.children.home.children.admin.children.old.data,
-		"one\ntwo\nthree\none\ntwo\nthree")
+		"one\ntwo\nthree\none\ntwo\nthree\n")
 	-- It is a filter and it passes the lines ON, which is what makes a tee in the
 	-- middle of a pipeline worth writing.
-	okAt(state, admin, "cat src | tee kept | wc -l", { "     3" })
+	okAt(state, admin, "cat src | tee kept | wc -l", { "       3" })
 	eq("and still wrote the file", state.fs.children.home.children.admin.children.kept.data,
-		"one\ntwo\nthree")
+		"one\ntwo\nthree\n")
 
 	badAt(state, admin, "tee f", "tee: usage: tee [-a] <file>...")
 	badAt(state, admin, "cat src | tee", "tee: usage: tee [-a] <file>...")
-	badAt(state, admin, "cat src | tee -x f", "tee: -x: unknown option")
-	badAt(state, admin, "cat src | tee /etc/motd", "tee: /etc/motd: permission denied")
+	badAtLines(state, admin, "cat src | tee -x f", { "tee: illegal option -- x",
+		"usage: tee [-a] <file>..." })
+	badAt(state, admin, "cat src | tee /etc/motd", "tee: /etc/motd: Permission denied")
 end
 
 --
@@ -14287,15 +14837,15 @@ do
 	local WIDE = "alpha:" .. string.rep("x", 52) .. "MARKER" .. string.rep("y", 20)
 	check("the line under test is wider than the screen", #WIDE > CeroSecOS.COLS)
 	eq("and it is the width this block was written for", #WIDE, 84)
-	put(state, admin, "/home/admin/wide", WIDE)
+	put(state, admin, "/home/admin/wide", WIDE .. "\n")
 
 	-- DOWN A PIPE. One line in, one line out, whole, whatever is on the right.
-	okAt(state, admin, "cat wide | wc -l", { "     1" })
-	okAt(state, admin, "cat wide | wc -c", { "    84" })
+	okAt(state, admin, "cat wide | wc -l", { "       1" })
+	okAt(state, admin, "cat wide | wc -c", { "      85" })
 	okAt(state, admin, "cat wide | cut -d: -f1", { "alpha" })
 	okAt(state, admin, "cat wide | grep -c MARKER", { "1" })
-	okAt(state, admin, "cat wide | head -1 | wc -l", { "     1" })
-	okAt(state, admin, "cat wide | sort | wc -l", { "     1" })
+	okAt(state, admin, "cat wide | head -1 | wc -l", { "       1" })
+	okAt(state, admin, "cat wide | sort | wc -l", { "       1" })
 	-- And through two stages, because the fold was applied at every one of them.
 	okAt(state, admin, "cat wide | cat | cut -d: -f1", { "alpha" })
 
@@ -14304,26 +14854,26 @@ do
 	-- stayed green the whole time and says the write door is the right one.
 	okAt(state, admin, "cat wide > plain", {})
 	eq("a plain redirect holds the line whole",
-		contents(state, "/home/admin/plain"), WIDE)
+		contents(state, "/home/admin/plain"), WIDE .. "\n")
 	-- A redirect on a pipeline STAGE goes through a different door (the reader's
 	-- own write, CeroSecOSVM's runSimple) and was folded there.
 	okAt(state, admin, "cat wide | cat > staged", {})
-	eq("and so does one on a stage", contents(state, "/home/admin/staged"), WIDE)
+	eq("and so does one on a stage", contents(state, "/home/admin/staged"), WIDE .. "\n")
 	-- The T-piece writes the file and passes the line on; both halves are whole.
-	okAt(state, admin, "cat wide | tee kept | wc -c", { "    84" })
-	eq("and the tee's file is whole", contents(state, "/home/admin/kept"), WIDE)
+	okAt(state, admin, "cat wide | tee kept | wc -c", { "      85" })
+	eq("and the tee's file is whole", contents(state, "/home/admin/kept"), WIDE .. "\n")
 
 	-- INTO A WORD. A capture is substituted into the line being built, so a fold
 	-- in it is a second word nobody typed.
-	okAt(state, admin, "x=$(cat wide); echo -n \"$x\" | wc -c", { "    84" })
-	okAt(state, admin, "echo -n \"$(cat wide)\" | wc -c", { "    84" })
+	okAt(state, admin, "x=$(cat wide); echo -n \"$x\" | wc -c", { "      84" })
+	okAt(state, admin, "echo -n \"$(cat wide)\" | wc -c", { "      84" })
 
 	-- OUT OF A SCRIPT, which reaches the pipe through the job's own output.
 	put(state, admin, "/home/admin/show.sh", "cat /home/admin/wide")
-	okAt(state, admin, "sh show.sh | wc -l", { "     1" })
+	okAt(state, admin, "sh show.sh | wc -l", { "       1" })
 	okAt(state, admin, "sh show.sh > fromsh", {})
 	eq("and a script's redirect is whole too",
-		contents(state, "/home/admin/fromsh"), WIDE)
+		contents(state, "/home/admin/fromsh"), WIDE .. "\n")
 
 	-- ON THE GLASS, which is the one place it IS folded, and exactly as before:
 	-- sixty columns, then the rest, and the two put back together are the line.
@@ -14337,7 +14887,7 @@ do
 	local refused = runAt(state, admin, "cat " .. long, ENV)
 	eq("a refusal about a long name is folded", #refused.lines, 2)
 	eq("and says what it could not read",
-		refused.lines[1] .. refused.lines[2], "cat: " .. long .. ": no such file")
+		refused.lines[1] .. refused.lines[2], "cat: " .. long .. ": No such file or directory")
 end
 
 --
@@ -14374,7 +14924,7 @@ do
 	check("/etc/issue was put in", issue ~= nil and issue.type == "file")
 	eq("root's", issue.owner, "root")
 	eq("and 644", issue.mode, 644)
-	eq("naming this machine", issue.data, CeroSecOS.issueText("ksp-front-01"))
+	eq("naming this machine", issue.data, CeroSecOS.issueText("ksp-front-01") .. "\n")
 	eq("and a login prompt now has a banner over it",
 		#CeroSecOS.issueLines(state), 1)
 	for i = 1, #ADDED do
@@ -14442,7 +14992,8 @@ do
 
 	eq("the top-up has something to do", CeroSecOS.upgradeSystem(state), true)
 	eq("and the number moved to this build's", state.sysv, CeroSecOS.SYSTEM_VERSION)
-	eq("which is 21", CeroSecOS.SYSTEM_VERSION, 21)
+	-- 22 since 0.7.0's expr, uname and rmdir (tests/migrate_test.lua, 5c).
+	eq("which is 22", CeroSecOS.SYSTEM_VERSION, 22)
 	local at = state.fs
 	for i = 1, #CeroSecOS.LOCAL_BIN_DIRS do
 		at = at.children[CeroSecOS.LOCAL_BIN_DIRS[i]]
@@ -14597,7 +15148,7 @@ do
 	badAt(state, admin, "find tree -type x", USAGE)
 	badAt(state, admin, "find tree -name", USAGE)
 	badAt(state, admin, "find tree -depth 2", "find: -depth: unknown option")
-	badAt(state, admin, "find nosuch", "find: nosuch: no such file")
+	badAt(state, admin, "find nosuch", "find: nosuch: No such file or directory")
 
 	-- A directory it may not read is NAMED and not entered, and the walk goes on.
 	local shut = okAt(state, open(state, "root"), "find /home /root", nil)
@@ -14608,7 +15159,7 @@ do
 	check("root walks into /root", saidRoot)
 	local refused = expect(state, admin, "find /root", false, nil)
 	eq("and an ordinary account is refused, by name", refused[1], "/root")
-	eq("with the reason on the line after", refused[2], "find: /root: permission denied")
+	eq("with the reason on the line after", refused[2], "find: /root: Permission denied")
 
 	-- A link is a LEAF: find walks the tree it was given and does not follow one,
 	-- which is find's own default and what keeps a loop of links finite.
@@ -14622,9 +15173,9 @@ do
 	local admin = open(state, "admin")
 	local USAGE = "find: usage: find <path>... [expression]"
 	okAt(state, admin, "mkdir tree", {})
-	put(state, admin, "/home/admin/tree/a.log", "one")
-	put(state, admin, "/home/admin/tree/b.log", "two")
-	put(state, admin, "/home/admin/tree/c.txt", "three")
+	put(state, admin, "/home/admin/tree/a.log", "one\n")
+	put(state, admin, "/home/admin/tree/b.log", "two\n")
+	put(state, admin, "/home/admin/tree/c.txt", "three\n")
 
 	-- Once per name found, in walk order, and the command's output is find's.
 	okAt(state, admin, "find tree -name '*.log' -exec cat {} ';'", { "one", "two" })
@@ -14663,11 +15214,11 @@ do
 	-- A command nothing answers to: the lookup's own line, once per name, and
 	-- find has met an error.
 	local bad = expect(state, admin, "find tree -name c.txt -exec nosuch {} ';'",
-		false, { "nosuch: command not found" })
+		false, { "nosuch: not found" })
 	-- A word the SHELL is is not a program, so find cannot run one either -- the
 	-- same answer sudo gives, in the name that was looked up.
 	badAt(state, admin, "find tree -name c.txt -exec cd {} ';'",
-		"cd: command not found")
+		"cd: not found")
 	-- A command that wants a pair of HANDS has none: there is no terminal behind an
 	-- exec, and the order it hands back must not travel out through find. The line
 	-- is the one the engine already gives a command in that position -- a cron line
@@ -14703,8 +15254,8 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	okAt(state, admin, "mkdir tree", {})
-	put(state, admin, "/home/admin/tree/a.log", "one")
-	put(state, admin, "/home/admin/tree/b.log", "two")
+	put(state, admin, "/home/admin/tree/a.log", "one\n")
+	put(state, admin, "/home/admin/tree/b.log", "two\n")
 	local function steps(line)
 		local _, _, _, _, job = exec(state, admin, line, { jobs = {} })
 		return job.steps
@@ -14826,7 +15377,7 @@ do
 	local shut = expect(state, admin, "tar cvf etc.tar /etc", false, nil, nil)
 	local saidPasswd = false
 	for i = 1, #shut do
-		if shut[i] == "tar: /etc/passwd: permission denied" then saidPasswd = true end
+		if shut[i] == "tar: /etc/passwd: Permission denied" then saidPasswd = true end
 	end
 	check("a file it may not read is refused by name", saidPasswd)
 	check("and the rest of the tree went in", #shut > 3)
@@ -14834,22 +15385,23 @@ do
 	-- What it refuses. A key that is not one, two keys, no `f`, no archive, no
 	-- path to store, and a file that is not an archive.
 	local USAGE = "tar: usage: tar c|x|t[v]f <archive> [path]..."
-	badAt(state, admin, "tar zcf a.tar /etc/motd", "tar: z: unknown option", env)
+	badAt(state, admin, "tar zcf a.tar /etc/motd",
+		"tar: usage: tar c|x|t[v]f <archive> [path]...", env)
 	badAt(state, admin, "tar cxf a.tar /etc/motd", USAGE, env)
 	badAt(state, admin, "tar c a.tar /etc/motd", USAGE, env)
 	badAt(state, admin, "tar cf", USAGE, env)
 	badAt(state, admin, "tar cf a.tar", USAGE, env)
 	badAt(state, admin, "tar tf /etc/motd", "tar: /etc/motd: not a tar archive", env)
-	badAt(state, admin, "tar tf nosuch.tar", "tar: nosuch.tar: no such file", env)
-	badAt(state, admin, "tar tf /etc", "tar: /etc: is a directory", env)
+	badAt(state, admin, "tar tf nosuch.tar", "tar: nosuch.tar: No such file or directory", env)
+	badAt(state, admin, "tar tf /etc", "tar: /etc: Is a directory", env)
 	badAt(state, admin, "tar cf home.tar /home/admin/nosuch",
-		"tar: /home/admin/nosuch: no such file", env)
+		"tar: /home/admin/nosuch: No such file or directory", env)
 
 	-- An archive of a tree that does not fit is the disk's refusal and not tar's
 	-- own: an archive is a file, and a file is 4096 bytes.
 	put(state, admin, "/home/admin/big.txt", string.rep("x", CeroSecOS.MAX_FILE_BYTES))
 	badAt(state, admin, "tar cf big.tar /home/admin/big.txt",
-		"tar: big.tar: file too large", env)
+		"tar: big.tar: File too large", env)
 end
 
 -- What a tar COSTS: a member is a file read or a file written, which is a
@@ -15214,7 +15766,7 @@ do
 	-- the last line would be a pager you had to dismiss.
 	put(state, admin, "/home/admin/short", "one\ntwo")
 	okAt(state, admin, "more short", { "one", "two" })
-	badAt(state, admin, "more nosuch", "more: nosuch: no such file")
+	badAt(state, admin, "more nosuch", "more: nosuch: No such file or directory")
 	badAt(state, admin, "more", "more: usage: more [file]...")
 
 	-- Two files run together, which is what more does with several -- minus the
@@ -15252,7 +15804,7 @@ do
 	okAt(state, admin, "more big > out", {})
 	eq("everything went into the file",
 		#CeroSecOS.splitLines(state.fs.children.home.children.admin.children.out.data), 45)
-	okAt(state, admin, "echo hi | more | wc -l", { "     1" })
+	okAt(state, admin, "echo hi | more | wc -l", { "       1" })
 	okAt(state, admin, "x=$(more short); echo $x", { "one two" })
 end
 
@@ -15423,9 +15975,9 @@ do
 
 	-- Two catches is still two catches, whichever brackets they are written in:
 	-- the one-level rule is what keeps a short line from asking for unbounded work.
-	badAt(state, admin, "echo $(echo $(echo deep))", "sh: syntax error: bad substitution")
+	badAt(state, admin, "echo $(echo $(echo deep))", "Syntax error: Bad substitution")
 	badAt(state, admin, "echo $(( $(echo $(echo deep)) ))",
-		"sh: syntax error: bad substitution")
+		"Syntax error: Bad substitution")
 	-- A sum inside a catch inside a sum is ONE catch, so it is allowed: what the
 	-- one-level rule counts is command substitutions, and a sum is not one.
 	okAt(state, admin, "echo $(( $(echo $(( 1 + 1 ))) * 3 ))", { "6" })
@@ -15497,9 +16049,12 @@ do
 
 	-- The pipe and the capture, which already worked: the count is the script's
 	-- lines and the word is the script's output.
-	okAt(state, admin, "./two.sh | wc -l", { "     2" })
+	okAt(state, admin, "./two.sh | wc -l", { "       2" })
+	-- z keeps the internal newline (POSIX.2 2.6.3), so the quoted echo's own
+	-- text is two lines: the newline inside "$z" is a byte like any other and
+	-- ends the first one wherever it falls.
 	ok(state, admin, "z=$(sh two.sh)", {})
-	okAt(state, admin, "echo \"[$z]\"", { "[one two]" })
+	okAt(state, admin, "echo \"[$z]\"", { "[one", "two]" })
 
 	-- A NESTED script inherits it, because nothing closed the file: the shell that
 	-- opened it is still the one running.
@@ -15526,7 +16081,7 @@ do
 	-- A REFUSAL is not output and never was: it goes on the screen and not in the
 	-- file, exactly as `ls /nope > f` puts it there.
 	put(state, admin, "/home/admin/err.sh", "echo good\nls /nope\necho after\n")
-	okAt(state, admin, "sh err.sh > eout", { "ls: /nope: no such file" })
+	okAt(state, admin, "sh err.sh > eout", { "ls: /nope: No such file or directory" })
 	okAt(state, admin, "cat eout", { "good", "after" })
 
 	-- Part of a row, held with no newline behind it, still belongs to the file: the
@@ -15540,21 +16095,21 @@ do
 	okAt(state, admin, "sh wide.sh > wideout", {})
 	do
 		local node = CeroSecOS.getNode(state, admin, "/home/admin/wideout")
-		eq("the file holds the whole line, unwrapped", #(node.data or ""), 70)
+		eq("the file holds the whole line, unwrapped", #(node.data or ""), 71)
 	end
 
 	-- A target that cannot be opened is a script that does not run at all -- it
 	-- must not start and print on the glass instead.
-	badAt(state, admin, "sh two.sh > /etc/nope", "sh: /etc/nope: permission denied")
+	badAt(state, admin, "sh two.sh > /etc/nope", "cannot create /etc/nope: permission denied")
 	eq("and nothing was made there", CeroSecOS.getNode(state, admin, "/etc/nope"), nil)
-	badAt(state, admin, "sh two.sh > /home/admin", "sh: /home/admin: is a directory")
+	badAt(state, admin, "sh two.sh > /home/admin", "cannot create /home/admin: is a directory")
 
 	-- The dot is the fourth spelling of "run this file", and its redirect is the
 	-- file's too: it prints nothing itself, so catching what the WORD printed would
 	-- catch nothing and leave the file writing to the glass.
 	okAt(state, admin, ". two.sh > dotout", {})
 	okAt(state, admin, "cat dotout", { "one", "two" })
-	okAt(state, admin, ". ./two.sh | wc -l", { "     2" })
+	okAt(state, admin, ". ./two.sh | wc -l", { "       2" })
 end
 
 -- 50d. A redirected script that floods meets the FILE's ceiling, once, and stops.
@@ -15571,7 +16126,7 @@ do
 	local _, lines, _, _, job = exec(state, admin, "sh flood.sh > f")
 	eq("the flood ended", CeroSecOS.jobIsOver(job), true)
 	eq("with the file's own refusal, once", #lines, 1)
-	eq("and it names the file", lines[1], "sh: f: file too large")
+	eq("and it names the file", lines[1], "cannot create f: file too large")
 	local node = CeroSecOS.getNode(state, admin, "/home/admin/f")
 	check("and the file holds what fitted (" .. #(node.data or "") .. ")",
 		#(node.data or "") > 0 and #(node.data or "") <= CeroSecOS.MAX_FILE_BYTES)
@@ -15649,17 +16204,17 @@ do
 	-- And one at or above the match does run.
 	okAt(state, admin, "case abc in $(echo abc)) echo caught;; esac", { "caught" })
 
-	-- An unquoted ")" is what closes a pattern, so a QUOTED one is a bracket in the
-	-- pattern and a "[)]" set is a set holding one. Both fall out of asking whether
-	-- the last piece of the word was bare literal text.
+	-- An unquoted ")" is an operator (XCU 2.3 rule 6) and is what closes a
+	-- pattern, so a QUOTED one is a bracket in the pattern, and a set holding one
+	-- is written [\)] -- a bare [)] is the syntax error it is on sh.
 	okAt(state, admin, "case \"a)\" in \"a)\") echo quoted;; esac", { "quoted" })
-	okAt(state, admin, "case \")\" in [)]) echo inset;; esac", { "inset" })
+	okAt(state, admin, "case \")\" in [\\)]) echo inset;; esac", { "inset" })
+	badAt(state, admin, "case \")\" in [)]) echo inset;; esac",
+		"Syntax error: \")\" unexpected (expecting \";;\")")
 	-- And a quoted bracket does not CLOSE one either, so a pattern that ends in one
-	-- and has no bracket after it is a pattern list that was never closed. This is
-	-- the assertion that holds the "bare" test in takeClose: without it the quoted
-	-- bracket would be read as the closer and the line would quietly run.
+	-- and has no bracket after it is a pattern list that was never closed.
 	badAt(state, admin, "case \"a)\" in \"a)\" echo x;; esac",
-		"sh: syntax error: missing ')'")
+		"Syntax error: word unexpected (expecting \")\")")
 
 	-- The last clause may drop its ";;" before the esac, and only the last one --
 	-- with something ending the statement in front of it, because `esac` is only a
@@ -15667,7 +16222,7 @@ do
 	-- here exactly as it does on a real sh, and the case is then the one with no end.
 	okAt(state, admin, "case abc in abc) echo bare; esac", { "bare" })
 	badAt(state, admin, "case abc in abc) echo bare esac",
-		"sh: syntax error: missing 'esac'")
+		"Syntax error: end of file unexpected (expecting \"esac\")")
 
 	-- break and continue reach through a case to the loop round it, because a case
 	-- is not a loop -- which is what lets the idiom below be written at all.
@@ -15681,16 +16236,16 @@ do
 		{ "nested" })
 
 	-- The refusals, each naming what is missing.
-	badAt(state, admin, "case abc in abc echo x;; esac", "sh: syntax error: missing ')'")
-	badAt(state, admin, "case abc in abc) echo x;;", "sh: syntax error: missing 'esac'")
-	badAt(state, admin, "case in", "sh: syntax error: missing 'in'")
-	badAt(state, admin, "case abc abc) echo x;; esac", "sh: syntax error: missing 'in'")
+	badAt(state, admin, "case abc in abc echo x;; esac", "Syntax error: word unexpected (expecting \")\")")
+	badAt(state, admin, "case abc in abc) echo x;;", "Syntax error: end of file unexpected (expecting \"esac\")")
+	badAt(state, admin, "case in", "Syntax error: end of file unexpected (expecting \"in\")")
+	badAt(state, admin, "case abc abc) echo x;; esac", "Syntax error: word unexpected (expecting \"in\")")
 	-- ";;" is one operator now and is only a word of the grammar inside a case: it
 	-- used to be two separators, so `echo a;;` quietly ran as `echo a`.
-	badAt(state, admin, "echo a;;", "sh: syntax error: unexpected ';;'")
+	badAt(state, admin, "echo a;;", "Syntax error: \";;\" unexpected")
 	-- The words are reserved where a command starts and ordinary anywhere else,
 	-- exactly as `done` is.
-	badAt(state, admin, "esac", "sh: syntax error: unexpected 'esac'")
+	badAt(state, admin, "esac", "Syntax error: \"esac\" unexpected")
 	okAt(state, admin, "echo case esac", { "case esac" })
 	-- And the shell says what they are.
 	okAt(state, admin, "type case", { "case is a shell keyword" })
@@ -15753,12 +16308,12 @@ do
 	okAt(state, admin, "cat fout", { "one", "two" })
 	-- And it works as a pipeline stage and inside a catch, because a subshell is
 	-- handed the functions its parent held.
-	okAt(state, admin, "pair | wc -l", { "     2" })
+	okAt(state, admin, "pair | wc -l", { "       2" })
 	okAt(state, admin, "echo $(greet zoe)", { "hi zoe" })
 
 	-- A definition inside a SUBSHELL dies with it.
 	okAt(state, admin, "echo $( sub() { echo in; }; sub )", { "in" })
-	badAt(state, admin, "sub", "sub: command not found")
+	badAt(state, admin, "sub", "sub: not found")
 
 	-- A function is found before /bin, so one may shadow a command -- and `type`
 	-- says what WOULD run, which is the same question in the same order.
@@ -15782,11 +16337,11 @@ do
 	-- A script is a new sh and has none of the shell's.
 	ok(state, admin, "hello() { echo from the shell; }", {})
 	put(state, admin, "/home/admin/child.sh", "hello\n")
-	badAt(state, admin, "sh child.sh", "hello: command not found")
+	badAt(state, admin, "sh child.sh", "hello: not found")
 	-- And what a script defines does not come back out of it.
 	put(state, admin, "/home/admin/defs.sh", "mine() { echo from the file; }\nmine\n")
 	okAt(state, admin, "sh defs.sh", { "from the file" })
-	badAt(state, admin, "mine", "mine: command not found")
+	badAt(state, admin, "mine", "mine: not found")
 	-- The dot is the one that brings them in, being the shell reading the file into
 	-- itself -- which is the whole reason the dot exists.
 	okAt(state, admin, ". defs.sh", { "from the file" })
@@ -15842,16 +16397,48 @@ do
 		"; }", "sh: function too large")
 
 	-- The two refusals the parser has for a body.
-	badAt(state, admin, "bad() { echo unclosed", "sh: syntax error: missing '}'")
-	badAt(state, admin, "bad2() echo x; }", "sh: syntax error: missing '{'")
-	-- A reserved word is not a name, so `if()` is not a definition at all: it is a
-	-- word with no command behind it, which is what a real sh refuses too.
+	badAt(state, admin, "bad() { echo unclosed", "Syntax error: end of file unexpected (expecting \"}\")")
+	-- parser.c takes `echo x` for the body and stops on the `}` after it.
+	badAt(state, admin, "bad2() echo x; }", "Syntax error: \"}\" unexpected")
+	badAt(state, admin, "bad3() echo x", "Syntax error: word unexpected (expecting \"{\")")
+	-- A reserved word is not a name, so `if()` is not a definition at all: it is
+	-- an if whose condition opens a subshell with nothing in it, which is what a
+	-- real sh refuses too (parser.c's list() on TRP).
 	do
 		local res = runAt(state, admin, "if() { echo no; }", ENV)
 		eq("a reserved word is not a function name", res.ok, false)
-		eq("and nothing was defined", res.lines[1], "if(): command not found")
+		eq("and nothing was defined", res.lines[1], "Syntax error: \")\" unexpected")
 	end
 	okAt(state, admin, "type if", { "if is a shell keyword" })
+end
+
+-- 50h2. `(` and `)` are operators in sh and end a word (XCU 2.3, 2.9.5), so the
+-- blanks around them are free. Every spelling dash takes is taken here.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "s1(){ echo one; }", {})
+	okAt(state, admin, "s1", { "one" })
+	ok(state, admin, "s2 (){ echo two; }", {})
+	okAt(state, admin, "s2", { "two" })
+	ok(state, admin, "s3 ( ) { echo three; }", {})
+	okAt(state, admin, "s3", { "three" })
+	ok(state, admin, "s4( ){ echo four; }", {})
+	okAt(state, admin, "s4", { "four" })
+	ok(state, admin, "s5()\n{ echo five; }", {})
+	okAt(state, admin, "s5", { "five" })
+	-- `{` is a reserved word, not an operator: glued to the command it is not a
+	-- brace. parser.c takes `{echo six` for the body and meets the `}` where a
+	-- command starts, synexpect(-1). `t()x` has no rest to fail, and is refused.
+	badAt(state, admin, "s6(){echo six;}", "Syntax error: \"}\" unexpected")
+	badAt(state, admin, "s7()x", "Syntax error: word unexpected (expecting \"{\")")
+	-- And `(` still means nothing new anywhere else.
+	okAt(state, admin, "case x in x) echo y;; esac", { "y" })
+	okAt(state, admin, "echo $(echo a) $((1+2)) \"s(){\"", { "a 3 s(){" })
+	do
+		local res = runAt(state, admin, "s8(x) { echo no; }", ENV)
+		eq("a name with something in its parentheses is no definition", res.ok, false)
+	end
 end
 
 -- 50i. A function that calls itself is bounded by the frame stack (debts 2).
@@ -15972,7 +16559,16 @@ do
 	-- The refusals a pattern can have, each naming what is wrong with it.
 	badAt(state, admin, "grep '[abc' mbox", "grep: [abc: unmatched [")
 	badAt(state, admin, "grep 'a\\' mbox", "grep: a\\: trailing backslash")
-	badAt(state, admin, "grep '[z-a]' mbox", "grep: [z-a]: bad range")
+	badAt(state, admin, "grep '[z-a]' mbox", "grep: [z-a]: invalid character range")
+	-- Every error is 2 and nothing found is 1 (POSIX.2 grep, egrep.c's
+	-- oops() and nsuccess = 2): a bad pattern, a file it cannot open --
+	-- even beside a hit -- a bad flag and no pattern at all.
+	okAt(state, admin, "grep '[z-a]' mbox 2>/dev/null; echo $?", { "2" })
+	okAt(state, admin, "grep lights nosuch 2>/dev/null; echo $?", { "2" })
+	okAt(state, admin, "grep lights mbox nosuch >/dev/null 2>&1; echo $?", { "2" })
+	okAt(state, admin, "grep -z x mbox 2>/dev/null; echo $?", { "2" })
+	okAt(state, admin, "grep 2>/dev/null; echo $?", { "2" })
+	okAt(state, admin, "grep zzzz mbox; echo $?", { "1" })
 	-- A pattern with more pieces in it than the walk may be asked to carry: the
 	-- ceiling is the other half of what the walk costs (CeroSecOS.MAX_BRE_ITEMS).
 	local long = string.rep(".", CeroSecOS.MAX_BRE_ITEMS + 1)
@@ -16061,7 +16657,7 @@ do
 	eq("at 600", node.mode, CeroSecOS.MAIL_MODE)
 	addUser(state, "bob", "", "/home/bob")
 	local bob = open(state, "bob", "")
-	badAt(state, bob, "cat " .. box, "cat: " .. box .. ": permission denied")
+	badAt(state, bob, "cat " .. box, "cat: " .. box .. ": Permission denied")
 
 	-- A second message is APPENDED, so the box is the account's whole history.
 	CeroSecOS.mailAppend(state, "admin", "ksp-front-01", "echo two", { "two" }, FIXED)
@@ -16111,7 +16707,7 @@ do
 	local res = runAt(state, admin, "mail", ENV)
 	eq("the read failed", res.ok, false)
 	eq("and said where it could not put them", res.lines[1],
-		"mail: /home/admin/mbox: file too large")
+		"mail: /home/admin/mbox: File too large")
 	-- The messages are still SHOWN -- they have been read -- and still in the spool,
 	-- which is the half that matters: nothing is lost.
 	eq("the messages came out behind the refusal", res.lines[3],
@@ -16192,11 +16788,11 @@ do
 	badAt(state, admin, "wall",
 		"wall: usage: wall [file]")
 	badAt(state, admin, "wall notice extra", "wall: usage: wall [file]")
-	badAt(state, admin, "wall nosuch", "wall: nosuch: no such file")
-	badAt(state, admin, "wall /root", "wall: /root: is a directory")
+	badAt(state, admin, "wall nosuch", "wall: nosuch: No such file or directory")
+	badAt(state, admin, "wall /root", "wall: /root: Is a directory")
 	ok(state, admin, "chmod 600 notice", {})
 	badAt(state, bob, "wall /home/admin/notice",
-		"wall: /home/admin/notice: permission denied")
+		"wall: /home/admin/notice: Permission denied")
 
 	-- And the pipe's own ceiling, which is what `mail` meets too: what goes on four
 	-- screens at once has to be something a screen can hold.
@@ -16207,7 +16803,7 @@ do
 
 	-- It is a file in /bin like every other command, so root may take it away.
 	okAt(state, open(state, "root"), "rm /bin/wall", {})
-	badAt(state, admin, "wall notice", "wall: command not found")
+	badAt(state, admin, "wall notice", "wall: not found")
 end
 
 -- 50o. An order the machine carries out is a PROGRAM, and a program is not a
@@ -16361,7 +16957,7 @@ end
 -- 51a. Pathname expansion: the bug report itself (debts 2).
 --
 -- The shell had no globbing at all, so `cp -r /mnt/* /usr/local/bin` failed
--- with `cp: /mnt/*: no such file` even when /mnt held exactly what the
+-- with `cp: /mnt/*: No such file or directory` even when /mnt held exactly what the
 -- floppy's label said it did. Proven both ways: the star reaching three
 -- names when they are there, and the star staying a literal word -- the
 -- same error as before -- when /mnt is empty.
@@ -16383,7 +16979,7 @@ end
 do
 	local state = fresh()
 	local root = open(state, "root")
-	badAt(state, root, "cp -r /mnt/* /usr/local/bin", "cp: /mnt/*: no such file")
+	badAt(state, root, "cp -r /mnt/* /usr/local/bin", "cp: /mnt/*: No such file or directory")
 	local bin = CeroSecOS.getNode(state, root, "/usr/local/bin")
 	eq("nothing landed", CeroSecOS.countEntries(bin), 0)
 end
@@ -16467,7 +17063,7 @@ do
 
 	-- More than two operands and a non directory last is an error, not a
 	-- guess at which of them was meant as the destination.
-	badAt(state, admin, "cp a.txt b.txt c.txt", "cp: c.txt: not a directory")
+	badAt(state, admin, "cp a.txt b.txt c.txt", "cp: c.txt: Not a directory")
 end
 
 -- 51g. A pattern ending in "/" matches only directories, and the match
@@ -16501,7 +17097,7 @@ end
 --
 -- 52a. The bug report itself: backquotes read as literal characters, so
 -- `for f in `ls /mnt`; do cp -r /mnt/$f /usr/local; done` copied nothing and
--- printed `cp: /mnt/`ls: no such file`.
+-- printed `cp: /mnt/`ls: No such file or directory`.
 do
 	local state = fresh()
 	local root = open(state, "root")
@@ -16543,7 +17139,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	badAt(state, admin, "echo `echo \\`echo hi\\` `",
-		"sh: syntax error: bad substitution")
+		"Syntax error: Bad substitution")
 end
 
 -- 52e2. $( ) inside backquotes is refused too: the one level rule does not
@@ -16552,7 +17148,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	badAt(state, admin, "echo `echo $(echo hi)`",
-		"sh: syntax error: bad substitution")
+		"Syntax error: Bad substitution")
 end
 
 -- 52e3. Backquotes inside $( ): same refusal, the other way round.
@@ -16560,7 +17156,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	badAt(state, admin, "echo $(echo `echo hi`)",
-		"sh: syntax error: bad substitution")
+		"Syntax error: Bad substitution")
 end
 
 -- 52e4. The escape rule inside one span is not a nesting rule, just the
@@ -16591,7 +17187,7 @@ end
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	badAt(state, admin, "echo `echo a", "sh: syntax error: bad substitution")
+	badAt(state, admin, "echo `echo a", "Syntax error: Bad substitution")
 end
 
 -- 52h. Charged the same as $( ): the same loop, one with each spelling,
@@ -16605,6 +17201,275 @@ do
 		"for i in 1 2 3; do x=`echo $i`; done")
 	eq("a backquote loop costs what the $( ) loop costs",
 		backq.job.steps, dollar.job.steps)
+end
+
+--
+-- 53. What Volume 1's "What is not Unix here" pages declare, held to the engine.
+-- manual_test holds the pages to CeroSecOS.DEVIATIONS in both directions; this
+-- holds the declarations to what the machine really does, so a deviation that
+-- is later FIXED goes red here and takes its page and its entry with it.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	-- (A file's last line keeps its newline now: tests/newline_test.lua.)
+	ok(state, admin, "echo a > p", {})
+	-- (IFS is read now: tests/ifs_test.lua.)
+	-- One > per command, and no <.
+	bad(state, admin, "echo a > q > r", "Syntax error: redirection unexpected")
+	bad(state, admin, "cat < p", "Syntax error: redirection unexpected")
+	-- ${x:-y}, ${#x}, ${1:-y} and the rest of the Bourne and ksh88 forms
+	-- (tests/builtins_test.lua walks them all); a substitution inside the
+	-- word is still refused, one level deep like a catch in a catch.
+	ok(state, admin, "x=; echo ${x:-y}", { "y" })
+	ok(state, admin, "x=abc; echo ${#x}", { "3" })
+	ok(state, admin, "echo ${1:-y}", { "y" })
+	bad(state, admin, "echo ${x:-$(echo y)}", "Syntax error: Bad substitution")
+	-- The wording.
+	bad(state, admin, "nosuch", "nosuch: not found")
+	expect(state, admin, "ls -z", false, { "ls: illegal option -- z",
+		"usage: ls [-1laACF] [path]..." })
+	bad(state, admin, "cat nosuch", "cat: nosuch: No such file or directory")
+	-- id has names and a flag.
+	ok(state, admin, "id", { "uid=admin flag=user groups=admin,sudo,users" })
+	-- What is absent: nothing of the shell's own words any more -- set,
+	-- unset, exec and trap are real (tests/builtins_test.lua).
+	-- rmdir, expr, uname, rm -f, kill -9 and tail +N are here now; what they
+	-- answer is tests/commands_test.lua's. What is still absent is %f.
+	ok(state, admin, "printf '%5.2f|%d|%s\\n' 5 6", { "%5.2f|5|6" })
+end
+
+--
+-- 54. A call's own redirect inside a pipeline. POSIX.2 sh, Pipelines: the pipe
+-- is assigned to a command BEFORE the redirections that are part of it, so
+-- `g > f | wc -l` puts what g says in f and nothing down the pipe -- wc counts
+-- 0. A function, a script and the dot, in any stage, the last one included.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "g() { echo a; echo b; }", {})
+	ok(state, admin, "g > z.txt | wc -l", { "       0" })
+	ok(state, admin, "cat z.txt", { "a", "b" })
+	ok(state, admin, "g >> z.txt | wc -l", { "       0" })
+	ok(state, admin, "cat z.txt", { "a", "b", "a", "b" })
+	-- The last stage, whose pipe drains onto the screen: nothing reaches it.
+	ok(state, admin, "echo x | g > y.txt", {})
+	ok(state, admin, "cat y.txt", { "a", "b" })
+	-- `2>` on the call: the error in the file or nowhere, the output down the pipe.
+	ok(state, admin, "h() { echo out; cat nosuch; }", {})
+	ok(state, admin, "h 2>/dev/null | wc -l", { "       1" })
+	ok(state, admin, "h 2> e.txt | wc -l", { "       1" })
+	ok(state, admin, "cat e.txt", { "cat: nosuch: No such file or directory" })
+	-- Both into the file, in the order they were said; and `2>&1 > f` sends the
+	-- error where the output WAS -- the pipe -- read left to right.
+	ok(state, admin, "h > o.txt 2>&1 | wc -l", { "       0" })
+	ok(state, admin, "cat o.txt", { "out", "cat: nosuch: No such file or directory" })
+	ok(state, admin, "h 2>&1 > o2.txt | wc -l", { "       1" })
+	ok(state, admin, "cat o2.txt", { "out" })
+	-- `>&2`: the output goes where the errors go, the screen, and not down the pipe.
+	ok(state, admin, "g >&2 | wc -l", { "a", "b", "       0" })
+	-- A redirect that cannot be opened is a call that never runs.
+	ok(state, admin, "k() { echo ran > ran.txt; }", {})
+	ok(state, admin, "k > /etc/hosts | wc -l",
+		{ "cannot create /etc/hosts: permission denied", "       0" })
+	bad(state, admin, "cat ran.txt", "cat: ran.txt: No such file or directory")
+	-- A stage that ends inside the call still leaves the file whole.
+	ok(state, admin, "m() { echo a; exit 3; }", {})
+	ok(state, admin, "m > ex.txt | wc -l", { "       0" })
+	ok(state, admin, "cat ex.txt", { "a" })
+	-- A script and the dot, the same.
+	ok(state, admin, "echo 'echo s1; echo s2' > s.sh", {})
+	ok(state, admin, "sh s.sh > sf.txt | wc -l", { "       0" })
+	ok(state, admin, "cat sf.txt", { "s1", "s2" })
+	ok(state, admin, ". ./s.sh > df.txt | wc -l", { "       0" })
+	ok(state, admin, "cat df.txt", { "s1", "s2" })
+	-- And what the call writes is going to a FILE, not a screen: ls in one name a
+	-- line, in the last stage exactly as outside a pipeline.
+	ok(state, admin, "mkdir dd; touch dd/a; touch dd/b; touch dd/c", {})
+	ok(state, admin, "l() { ls dd; }", {})
+	ok(state, admin, "echo x | l > la.txt", {})
+	ok(state, admin, "cat la.txt", { "a", "b", "c" })
+	-- A stage still running has its file written at the end of every pass, like
+	-- the shell's own: what g said before it went to sleep is on the disk.
+	local res = runScript(state, admin, "g() { echo a; sleep 60; }\ng > slow.txt | cat\n",
+		nil, nil, { passes = 5 })
+	eq("the sleeping stage is still running", CeroSecOS.jobIsOver(res.job), false)
+	local slow = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/slow.txt")
+	eq("and what it wrote before sleeping is in its file", slow and slow.data, "a\n")
+end
+
+--
+-- 55. A stage whose reader is already gone still runs its first command, and one
+-- writing into a file of its own is not killed at all. SIGPIPE is what writing
+-- into a pipe nobody reads earns (write(2), EPIPE), and `echo a > f | true`
+-- never writes into the pipe: sh leaves a in f.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "echo a > p1.txt | true", {})
+	ok(state, admin, "cat p1.txt", { "a" })
+	ok(state, admin, "echo b >> p1.txt | true", {})
+	ok(state, admin, "cat p1.txt", { "a", "b" })
+	ok(state, admin, "g() { echo a; echo b; }", {})
+	ok(state, admin, "g > p2.txt | true", {})
+	ok(state, admin, "cat p2.txt", { "a", "b" })
+	ok(state, admin, "g >> p2.txt | true", {})
+	ok(state, admin, "cat p2.txt", { "a", "b", "a", "b" })
+	ok(state, admin, "echo 'echo s1; echo s2' > s.sh", {})
+	ok(state, admin, "sh s.sh > p3.txt | true", {})
+	ok(state, admin, "cat p3.txt", { "s1", "s2" })
+	-- A program from /bin, the same.
+	ok(state, admin, "cat s.sh > p4.txt | true", {})
+	ok(state, admin, "cat p4.txt", { "echo s1; echo s2" })
+	-- And a writer INTO the pipe still dies when its reader is gone: the
+	-- endless one ends.
+	ok(state, admin, "y() { while true; do echo y; done; }", {})
+	local _, lines, _, _, job = exec(state, admin, "y | head -n 1")
+	eq("`y | head -n 1` prints one line", table.concat(lines, "|"), "y")
+	eq("`y | head -n 1` is over", CeroSecOS.jobIsOver(job), true)
+end
+
+--
+-- 56. A call's own redirect inside a $( ). The substitution is the command's
+-- standard output before the command's own redirections are applied (POSIX.2
+-- sh, Command Substitution), so `x=$(g > f)` fills f and leaves x empty.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "g() { echo a; }", {})
+	ok(state, admin, "x=$(g > c1.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c1.txt", { "a" })
+	ok(state, admin, "x=$(g >> c1.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c1.txt", { "a", "a" })
+	ok(state, admin, "x=$(echo a > c2.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c2.txt", { "a" })
+	ok(state, admin, "echo \"[$(g > c3.txt)]\"", { "[]" })
+	ok(state, admin, "cat c3.txt", { "a" })
+	-- A script and the dot, the same.
+	ok(state, admin, "echo 'echo s1; echo s2' > s.sh", {})
+	ok(state, admin, "x=$(sh s.sh > c4.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c4.txt", { "s1", "s2" })
+	ok(state, admin, "x=$(. ./s.sh > c5.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c5.txt", { "s1", "s2" })
+	-- Text with no newline after it reaches the file when the call is over.
+	ok(state, admin, "p() { printf %s a; }", {})
+	ok(state, admin, "x=$(p > c6.txt)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c6.txt", { "a" })
+	-- `>&2`: the output goes where the errors go, the screen, and x is empty.
+	ok(state, admin, "x=$(g >&2)", { "a" })
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	-- The file on the call, and in it both descriptors.
+	ok(state, admin, "h() { echo out; cat nosuch; }", {})
+	-- Not ok: h's last command is the cat that failed, and a line that is
+	-- only an assignment answers with its substitution's status (XCU 2.9.1).
+	expect(state, admin, "x=$(h > c7.txt 2>&1)", false, {})
+	ok(state, admin, "echo \"[$x]\"", { "[]" })
+	ok(state, admin, "cat c7.txt", { "out", "cat: nosuch: No such file or directory" })
+	-- A capture opened INSIDE the redirected call still catches: it is the
+	-- newer standard output.
+	ok(state, admin, "k() { y=$(echo in); echo \"<$y>\"; }", {})
+	ok(state, admin, "k > c8.txt", {})
+	ok(state, admin, "cat c8.txt", { "<in>" })
+	ok(state, admin, "x=$(k)", {})
+	ok(state, admin, "echo \"[$x]\"", { "[<in>]" })
+end
+
+--
+-- Volume 1, "This machine may not be new": every line of its table, run as the
+-- reader the table names, on a machine the world content filled.
+--
+-- The page is about a FOUND machine, and a found machine is not a fresh one: the
+-- factory `admin` is taken off it (CeroSecContent.prefill) and nobody on it is in
+-- /etc/sudoers or wheel, so sudo is nobody's there and the reader who may see the
+-- closed files is root, logged in with the password a paper names. The page used
+-- to send everybody to `cat /etc/passwd` (root's, mode 600) and to `cat
+-- .sh_history`, which is the reader's own. The same four lines are pinned in the
+-- page by tests/manual_test.lua.
+--
+-- Defs and Content are loaded here, at the end, and nowhere else in this file:
+-- the rest of it is the engine on its own.
+--
+
+do
+	local function load(path)
+		local chunk, err = loadfile(path)
+		if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+		chunk()
+	end
+	load("42/media/lua/shared/CeroSec/CeroSecDefs.lua")
+	load("42/media/lua/shared/CeroSec/CeroSecContent.lua")
+	local word = {}
+	for i = #CeroSecContent.PREMISES_WORDS, 1, -1 do
+		local pair = CeroSecContent.PREMISES_WORDS[i]
+		word[pair[2]] = pair[1]
+	end
+	local start = CeroSecOS.timeFromParts(1993, 7, 9, 9, 0, 0)
+	local secret = "0123456789abcdef"
+
+	-- The page's rows, with <name> filled in.
+	local function rows(name)
+		return {
+			anybody = { "ls /home", "last" },
+			root = { "cat /var/log/messages", "cat /home/" .. name .. "/.sh_history",
+				"cat /etc/passwd" },
+		}
+	end
+
+	local tried = 0
+	for _, id in ipairs({ "radio", "police", "office" }) do
+		local state = CeroSecOS.newState("ksp-4-b")
+		local _, rootPassword, logins = CeroSecContent.prefill(state, {
+			secret = secret, b1 = 12, b2 = 34, x = 8130, y = 9254, z = 0,
+			premises = word[id], start = start, now = start })
+		check(id .. ": the machine has at least two accounts",
+			type(logins) == "table" and #logins >= 2)
+		local root = CeroSecOS.login(state, "root", rootPassword)
+		check(id .. ": root logs in with the password prefill made", root ~= nil)
+		local him = CeroSecOS.login(state, logins[1],
+			CeroSecContent.accountPassword(secret, 12, 34, 1, logins[1]))
+		check(id .. ": and so does the first account", him ~= nil)
+		local other = logins[2]
+		local r = rows(other)
+		check(id .. ": the other account has a history to read",
+			CeroSecOS.systemNode(state, "/home/" .. other .. "/"
+				.. CeroSecOS.HISTORY_NAME) ~= nil)
+
+		for _, line in ipairs(r.anybody) do
+			local done, lines = exec(state, him, line)
+			eq(id .. ": `" .. line .. "` as " .. logins[1], done, true)
+			check(id .. ": `" .. line .. "` prints something", #lines > 0)
+			done = exec(state, root, line)
+			eq(id .. ": `" .. line .. "` as root", done, true)
+		end
+		for _, line in ipairs(r.root) do
+			local done, lines = exec(state, root, line)
+			eq(id .. ": `" .. line .. "` as root", done, true)
+			check(id .. ": `" .. line .. "` prints something", #lines > 0)
+			-- And closed to him, which is why the page says root.
+			done = exec(state, him, line)
+			eq(id .. ": `" .. line .. "` as " .. logins[1], done, false)
+		end
+		-- ls /home names the other account, which is what the row is for.
+		local _, homes = exec(state, him, "ls /home")
+		check(id .. ": ls /home names " .. other,
+			string.find(" " .. table.concat(homes, " ") .. " ", " " .. other .. " ",
+				1, true) ~= nil)
+		-- His own, logged in as him.
+		local done, lines = exec(state, him, "cat .sh_history")
+		eq(id .. ": `cat .sh_history` as " .. logins[1], done, true)
+		check(id .. ": and it is his", #lines > 0)
+		tried = tried + 1
+	end
+	eq("the page's lines were run on three found machines", tried, 3)
 end
 
 print("os_test: " .. count .. " assertions passed")

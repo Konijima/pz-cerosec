@@ -727,6 +727,8 @@ local FILES = {
 	-- because shared/CeroSec/ is loaded ahead of shared/CeroSec/OS/.
 	"shared/CeroSec/CeroSecSelfTest.lua",
 	"shared/CeroSec/CeroSecSelfTestVectors.lua",
+	-- And its shell half, the case table and the runner the press starts.
+	"shared/CeroSec/CeroSecSelfTestShell.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
@@ -1324,14 +1326,61 @@ do
 	local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
 	local node = CeroSecOS.getNode(state, session, "/home/admin/notes.txt")
 	check("the file is on the disk", node ~= nil and node.type == "file")
-	eq("with what was typed in it", node.data, "hello")
-	check("and the machine says so", bench.painted("Saved 5 bytes"))
+	eq("with what was typed in it", node.data, "hello\n")
+	check("and the machine says so", bench.painted("Saved 6 bytes"))
 
 	-- Escape leaves the editor and the shell is back.
 	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
 	bench.frame()
 	eq("Escape leaves the editor", bench.window.mode, "shell")
 	check("the shell prompt is back", bench.painted("admin@"))
+end
+
+-- A file of exactly the ceiling with no final newline -- an old save's,
+-- which the v2->v3 walk had no room to close. The save adds a newline to
+-- every other file, and here that one byte said "file too large" to a
+-- save of the very bytes the file already held.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("echo x > big")
+	bench.frame()
+	local state = bench.object:osState()
+	local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+	local full = string.rep("a", CeroSecOS.MAX_FILE_BYTES - 1) .. "b"
+	CeroSecOS.getNode(state, session, "/home/admin/big").data = full
+
+	bench.enter("edit big")
+	bench.frame()
+	eq("the whole file is the buffer", bench.window:bufferText(), full)
+	bench.window:onOtherKey(Keyboard.KEY_TAB)
+	bench.frame()
+	eq("saved unchanged, it is the same bytes",
+		CeroSecOS.getNode(state, session, "/home/admin/big").data, full)
+	-- The machine's word, not the glass: past EDIT_TYPED_MAX the window's
+	-- own "Buffer full" stands on the message row over it.
+	eq("and the save says the last line is open", bench.object.console.edit.message,
+		"Saved 4096 bytes [Incomplete last line]")
+
+	-- Edited, same length: the same rule, not a refusal.
+	local edited = "c" .. string.sub(full, 2)
+	bench.window.entry:setText(edited)
+	bench.window:onOtherKey(Keyboard.KEY_TAB)
+	bench.frame()
+	eq("saved edited, it is the edited bytes",
+		CeroSecOS.getNode(state, session, "/home/admin/big").data, edited)
+	eq("never file too large", bench.object.console.edit.message,
+		"Saved 4096 bytes [Incomplete last line]")
+
+	-- One byte short of the ceiling: the newline fits, and goes on.
+	local short = string.sub(full, 2)
+	bench.window.entry:setText(short)
+	bench.window:onOtherKey(Keyboard.KEY_TAB)
+	bench.frame()
+	eq("a buffer the newline fits after is closed",
+		CeroSecOS.getNode(state, session, "/home/admin/big").data, short .. "\n")
+	eq("and says nothing of a last line", bench.object.console.edit.message,
+		"Saved 4096 bytes")
 end
 
 -- A file that is already there opens with its contents.
@@ -1359,7 +1408,7 @@ do
 	-- Tab on it refuses at the door rather than at the write.
 	bench.window:onOtherKey(Keyboard.KEY_TAB)
 	bench.frame()
-	check("saving is refused", bench.painted("Cannot save: permission denied"))
+	check("saving is refused", bench.painted("Cannot save: Permission denied"))
 end
 
 -- A directory is not a file, and the refusal stays in the shell.
@@ -1369,7 +1418,7 @@ do
 	bench.enter("edit /etc")
 	bench.frame()
 	eq("a directory does not open an editor", bench.window.mode, "shell")
-	check("and the shell says why", bench.painted("is a directory"))
+	check("and the shell says why", bench.painted("edit: /etc: Is a directory"))
 end
 
 --
@@ -1581,7 +1630,7 @@ do
 	-- the thing that would have read the line `ls` was on.
 	bench.enter("ls")
 	bench.frame()
-	check("the shell itself is gone", bench.painted("sh: command not found"))
+	check("the shell itself is gone", bench.painted("sh: not found"))
 	bench.enter("help")
 	bench.frame()
 	check("help says the system is damaged", bench.painted("the system is damaged"))
@@ -1643,7 +1692,7 @@ do
 	check("the machine validates", state ~= nil)
 	local node = CeroSecOS.systemNode(state, "/home/admin/work/notes.txt")
 	check("the file in /home survived the repair", node ~= nil)
-	eq("with its contents", node.data, "keep me")
+	eq("with its contents", node.data, "keep me\n")
 end
 
 -- A machine wiped and left: the next player to open the window meets the
@@ -1709,7 +1758,7 @@ do
 	eq("and this build's contents", state.sysv, CeroSecOS.SYSTEM_VERSION)
 	local node = CeroSecOS.systemNode(state, "/home/admin/work/notes.txt")
 	check("the file in /home is still there", node ~= nil)
-	eq("byte for byte", node.data, "keep me")
+	eq("byte for byte", node.data, "keep me\n")
 	check("and the accounts still log in", CeroSecOS.login(state, "admin", "") ~= nil)
 
 	-- And it boots to a login prompt rather than to the BIOS: an older save is not
@@ -2040,7 +2089,7 @@ do
 	bench.login("admin")
 	bench.enter("shutdown")
 	bench.frame()
-	check("admin is refused", bench.painted("shutdown: permission denied"))
+	check("admin is refused", bench.painted("shutdown: Permission denied"))
 	eq("and the machine is still on", bench.object.on, true)
 	check("and the window is still open", not bench.window.closing)
 end
@@ -2702,10 +2751,10 @@ do
 	bench.window.entry:setCursorPos(18)
 	bench.window:onOtherKey(Keyboard.KEY_TAB)
 	bench.frame()
-	check("the save went through", bench.painted("Saved 18 bytes"))
+	check("the save went through", bench.painted("Saved 19 bytes"))
 	local state = bench.object:osState()
 	eq("and the file on the disk is the new one",
-		CeroSecOS.systemNode(state, "/etc/motd").data, "welcome to the lab")
+		CeroSecOS.systemNode(state, "/etc/motd").data, "welcome to the lab\n")
 	eq("still root's", CeroSecOS.systemNode(state, "/etc/motd").owner, "root")
 	eq("and the console is still admin's", bench.object.console.user, "admin")
 end
@@ -2862,9 +2911,10 @@ do
 	eq("and hides the answer", bench.window.mask, true)
 	bench.enter("")
 	bench.frame()
-	check("the account was made", bench.painted("useradd: bob: created"))
-	check("and the open password is said out loud",
-		bench.painted("useradd: set a password with passwd bob"))
+	-- SVR4's useradd says nothing when it has made one: the line typed is
+	-- what the screen carries, and the machine is what is asked.
+	check("the account was made, and nothing was said",
+		not bench.painted("useradd: bob"))
 	check("the machine really has him",
 		CeroSecOS.getUser(bench.object:osState(), "bob") ~= nil)
 
@@ -2894,7 +2944,7 @@ do
 	eq("still logged in", bench.window.mode, "shell")
 	eq("the console says so too", bench.object.console.user, "admin")
 	eq("and the stack is gone rather than left empty", bench.object.console.stack, nil)
-	check("the screen kept what was on it", bench.painted("useradd: bob: created"))
+	check("the screen kept what was on it", bench.painted("sudo useradd bob"))
 
 	-- The second one is a logout.
 	bench.enter("exit")
@@ -2902,7 +2952,7 @@ do
 	eq("the login prompt is back", bench.window.prompt, "login: ")
 	eq("at a prompt, not a shell", bench.window.mode, "prompt")
 	eq("nobody is logged in", bench.object.console.user, nil)
-	check("and the screen was wiped", not bench.painted("useradd: bob: created"))
+	check("and the screen was wiped", not bench.painted("sudo useradd bob"))
 end
 
 --
@@ -2919,7 +2969,7 @@ do
 		CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
 	bench.enter("sudo useradd bob")
 	bench.frame()
-	check("bob is on the machine", bench.painted("useradd: bob: created"))
+	check("bob is on the machine", CeroSecOS.getUser(bench.object:osState(), "bob") ~= nil)
 
 	bench.enter("sudo su bob")
 	bench.frame()
@@ -4981,7 +5031,7 @@ do
 	bench.frame()
 	eq("the shell is still a shell", bench.window.mode, "shell")
 	check("nothing was asked for", not bench.painted("[sudo] password for admin: "))
-	check("and nothing was refused", not bench.painted("light1: permission denied"))
+	check("and nothing was refused", not bench.painted("light1: Permission denied"))
 	eq("the light is on", kit.light1.activated, true)
 	eq("and the world was told", kit.light1.syncs, 1)
 
@@ -4999,7 +5049,7 @@ do
 	eq("bob is at the glass", bench.object.console.user, "bob")
 	bench.enter("echo off > /dev/light1")
 	bench.frame()
-	check("bob is refused", bench.painted("light1: permission denied"))
+	check("bob is refused", bench.painted("light1: Permission denied"))
 	eq("and the switch did not move", kit.light1.activated, true)
 
 	_G.__world = nil
@@ -5944,7 +5994,7 @@ do
 	bench.enter("cat /dev/sensor0")
 	bench.frame()
 	check("and naming one is a path nothing answers to",
-		bench.painted("cat: /dev/sensor0: no such file"))
+		bench.painted("cat: /dev/sensor0: No such file or directory"))
 
 	-- The same room, one bare module in it.
 	world.drop(world.squares["10,10,0"], fakeSensor())
@@ -6492,7 +6542,7 @@ do
 	bench.enter("cat /var/spool/at/1")
 	bench.frame()
 	check("an ordinary account cannot read it",
-		bench.painted("/var/spool/at/1: permission denied"))
+		bench.painted("/var/spool/at/1: Permission denied"))
 
 	-- atq lists it, and it is still there: a listing runs nothing.
 	bench.enter("atq")
@@ -6657,7 +6707,7 @@ do
 
 	bench.enter("while true; do echo tick; sleep 1; done &")
 	bench.frame()
-	check("the loop is not an unknown command", not bench.painted("while: command not found"))
+	check("the loop is not an unknown command", not bench.painted("while: not found"))
 	eq("the prompt came straight back", bench.window.mode, "shell")
 	check("and the machine announced a job", bench.painted("[1] "))
 
@@ -6704,6 +6754,25 @@ do
 	bench.frame()
 	eq("nobody is logged in", bench.object.console.user, nil)
 	eq("and the variables are gone", bench.object.console.shvars, nil)
+end
+
+-- An EXIT trap set at the prompt runs when the line ends, and a line that
+-- ends by logging out runs it first: the scheduler lets the trap's own
+-- block run before it carries out the logout (CeroSecOSVM's handleSignal,
+-- the `all` exit whose order is "exit").
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("trap 'echo bye' EXIT; echo hi")
+	bench.frame()
+	check("a prompt line's trap runs as the line ends", bench.painted("bye"))
+
+	bench.enter("trap 'echo farewell > /home/admin/gone' EXIT; exit")
+	bench.frame()
+	eq("exit still logs out", bench.object.console.user, nil)
+	local state = bench.object:osState()
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/gone")
+	check("and the trap ran before it did", node ~= nil and node.data == "farewell\n")
 end
 
 -- Up and Down walk ~/.sh_history, which the machine keeps.
@@ -6914,7 +6983,7 @@ do
 	bench.login("admin")
 	bench.frame()
 	check("it names the file and the line",
-		bench.painted(".profile: line 2: syntax error: unexpected 'fi'"))
+		bench.painted(".profile: 2: Syntax error: \"fi\" unexpected"))
 	eq("and the account is at a prompt", bench.window.mode, "shell")
 end
 
@@ -7333,7 +7402,7 @@ do
 	-- Tab saved it, which is what Tab has always done in here.
 	local session = { user = "admin", cwd = "/home/admin" }
 	local node = CeroSecOS.getNode(bench.object:osState(), session, "/home/admin/notes.txt")
-	check("Tab wrote the file", node ~= nil and node.data == "ca")
+	check("Tab wrote the file", node ~= nil and node.data == "ca\n")
 end
 
 --
@@ -7374,8 +7443,8 @@ do
 	bench.window.entry:setCursorPos(18)
 	bench.tab()
 	bench.frame()
-	check("a crontab that parses is installed", bench.painted("Saved 18 bytes"))
-	eq("and is on the disk", bench.fileText("/var/spool/cron/admin"), "30 * * * * echo hi")
+	check("a crontab that parses is installed", bench.painted("Saved 19 bytes"))
+	eq("and is on the disk", bench.fileText("/var/spool/cron/admin"), "30 * * * * echo hi\n")
 
 	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
 	bench.enter("crontab -l")
@@ -7384,7 +7453,7 @@ do
 	-- And the file is still out of the account's reach: crontab is the way in.
 	bench.enter("cat /var/spool/cron/admin")
 	bench.frame()
-	check("the spool is nobody's to read", bench.painted("permission denied"))
+	check("the spool is nobody's to read", bench.painted("Permission denied"))
 
 	bench.enter("crontab -r")
 	bench.enter("crontab -l")
@@ -7679,7 +7748,7 @@ do
 	-- it, in the mail, because that is where a cron job's output goes.
 	local mail = bench.fileText("/var/mail/admin")
 	check("the mail carries sh's own refusal", mail ~= nil and
-		string.find(mail, "sh: line 1: syntax error: missing 'then'", 1, true) ~= nil)
+		string.find(mail, "\nSyntax error: end of file unexpected (expecting \"then\")", 1, true) ~= nil)
 	local log = bench.fileText("/var/log/cron")
 	check("the log says the orphan was not run",
 		string.find(log, "(ghost) ORPHAN (no passwd entry)", 1, true) ~= nil)
@@ -8626,7 +8695,7 @@ do
 	net.enter("admin")
 	net.enter("wrong")
 	net.tick(2)
-	check("the far machine refuses", net.heard("login incorrect"))
+	check("the far machine refuses", net.heard("Login incorrect"))
 	check("and asks again", net.glass("login:"))
 	eq("the pty is still open while it asks", CeroSecOS.ptyCount(net.gate.ptys), 1)
 	-- A remote login prompt with nothing typed at it is not the machine being in
@@ -8957,15 +9026,15 @@ do
 	eq("the glass is the survivor's", net.here.console.remote, nil)
 
 	-- 3. Inside a substitution, which is a subshell whose output is a pipe: there
-	-- is nowhere for a session to go. The refusal lands IN the substitution,
-	-- because this machine has one channel and a capture catches what a command
-	-- says whether it went right or wrong (CeroSecOSVM, errLine) -- the same
-	-- answer `$(ls /nope)` gives. What matters is the line it did not take.
+	-- is nowhere for a session to go. The refusal is an ERROR, and a $( ) catches
+	-- the standard output only (sh(1)), so it reaches the glass and the word is
+	-- empty -- the same answer `$(ls /nope)` gives (CeroSecOSVM, outLine). What
+	-- matters is the line it did not take.
 	net.forget()
 	net.enter("x=$(rlogin gate); echo [$x]")
 	net.tick(6)
-	check("a substitution gets the same answer",
-		net.heard("[rlogin: not a terminal]"))
+	check("a substitution gets the same answer, on the glass",
+		net.heard("rlogin: not a terminal") and net.heard("[]"))
 	eq("and takes no line", CeroSecOS.ptyCount(net.gate.ptys), 0)
 	eq("the glass is the survivor's", net.here.console.remote, nil)
 
@@ -9097,7 +9166,7 @@ do
 	-- machine's greeting is not in it (rshd prints none -- that is login's job),
 	-- and neither is anything else the session did. A motd down the pipe would
 	-- make this two.
-	check("the stage behind it counted the line it was fed", net.glass("     1"))
+	check("the stage behind it counted the line it was fed", net.glass("       1"))
 	check("and the line itself went down the pipe and not onto the glass",
 		not net.glass(net.host(net.gate)))
 	eq("nothing was taken over", net.here.console.remote, nil)
@@ -9184,7 +9253,7 @@ do
 	net.enter("rsh gate hostname > kept.txt")
 	net.tick(10)
 	eq("the file holds the far machine's answer",
-		net.text(net.here, "/home/admin/kept.txt"), net.host(net.gate))
+		net.text(net.here, "/home/admin/kept.txt"), net.host(net.gate) .. "\n")
 
 	-- rcp was in the same trap next door, for a plainer reason: a redirect on a
 	-- command that hands back an ORDER used to drop the order's data on the way
@@ -9195,7 +9264,7 @@ do
 	net.tick(12)
 	check("the copy said how it went", net.glass("copied 0"))
 	eq("and the far machine has the file",
-		net.text(net.gate, "/home/admin/copy.txt"), net.host(net.gate))
+		net.text(net.gate, "/home/admin/copy.txt"), net.host(net.gate) .. "\n")
 end
 
 -- A machine that will not have us: the refusal comes back into the job that is
@@ -9214,7 +9283,7 @@ do
 	check("rshd's own word for a machine that does not trust this one",
 		net.glass("rsh: gate: Permission denied"))
 	check("the refusal did not go down the pipe: the stage read nothing",
-		net.glass("     0"))
+		net.glass("       0"))
 	-- A pipeline's status is its LAST stage's, which is `wc` and which worked --
 	-- POSIX, and nothing to do with the rsh in front of it. The rsh's own status
 	-- is the line after it: 1, which is what rsh answers for a connection it
@@ -9337,13 +9406,13 @@ do
 	-- The wire takes as long as it takes, so the command is asleep.
 	net.tick(8)
 	eq("the file landed on the far machine", net.text(net.gate, "/home/admin/there.txt"),
-		"hello")
+		"hello\n")
 	check("and nothing was said about it", not net.glass("rcp:"))
 
 	-- And back again, under another name.
 	net.enter("rcp gate:/home/admin/there.txt back.txt")
 	net.tick(8)
-	eq("and comes back", net.text(net.here, "/home/admin/back.txt"), "hello")
+	eq("and comes back", net.text(net.here, "/home/admin/back.txt"), "hello\n")
 
 	-- The far machine's own ceilings, not this one's: a file too big for a file.
 	local big = string.rep("y", CeroSecOS.MAX_FILE_BYTES + 1)
@@ -9352,7 +9421,7 @@ do
 	net.enter("rcp notes.txt gate:/home/admin/big.txt")
 	net.tick(4)
 	check("the far machine refuses what will not fit a file",
-		net.glass("rcp: /home/admin/big.txt: file too large"))
+		net.glass("rcp: /home/admin/big.txt: File too large"))
 	eq("and nothing landed", net.text(net.gate, "/home/admin/big.txt"), nil)
 
 	-- A machine that does not trust this one refuses the copy outright.
@@ -9460,7 +9529,7 @@ do
 	check("and still takes a login", net.glass("admin@" .. net.host(net.gate)))
 	net.enter("echo deep > /home/admin/deep.txt")
 	net.tick(3)
-	eq("and its disk is really written", net.text(net.gate, "/home/admin/deep.txt"), "deep")
+	eq("and its disk is really written", net.text(net.gate, "/home/admin/deep.txt"), "deep\n")
 end
 
 -- Shutting the far machine down from inside the session closes it.
@@ -9527,7 +9596,7 @@ do
 	net.window:onOtherKey(Keyboard.KEY_TAB)
 	net.tick(2)
 	eq("the far machine's disk has it",
-		net.text(net.gate, "/home/admin/remote.txt"), "over there")
+		net.text(net.gate, "/home/admin/remote.txt"), "over there\n")
 	eq("and this machine's has nothing at that name",
 		net.text(net.here, "/home/admin/remote.txt"), nil)
 	net.window:onOtherKey(Keyboard.KEY_ESCAPE)
@@ -9830,7 +9899,7 @@ do
 	local ok, lines = CeroSecOS.runArgs(net.here:osState(),
 		{ user = "root", cwd = "/root" }, { "cat", "/etc/phone" }, nil, { now = 0 })
 	eq("and there is no file to read it out of", ok, false)
-	check("no such file", string.find(lines[1], "no such file", 1, true) ~= nil)
+	check("no such file", string.find(lines[1], "No such file or directory", 1, true) ~= nil)
 
 	-- AN OLDER SAVE. Every machine written before the line belonged to the premises
 	-- carries the building bytes and no exchange, and such a machine has NO
@@ -10815,7 +10884,7 @@ do
 	-- A ~. at one's own prompt is an ordinary line and gets an ordinary refusal.
 	net.enter("~.")
 	net.tick(3)
-	check("off a call it is just a word", net.glass("~.: command not found"))
+	check("off a call it is just a word", net.glass("~.: not found"))
 end
 
 -- ONE LINE PER MODEM: a third machine dialling a line that is in use, the machine
@@ -11156,8 +11225,8 @@ do
 		net.heard("cu: not a terminal"))
 	net.enter("x=$(cu " .. telOf(net.far) .. "); echo [$x]")
 	net.tick(3)
-	check("and so does one inside a substitution",
-		net.heard("[cu: not a terminal]"))
+	check("and so does one inside a substitution, on the glass and not in x",
+		net.heard("cu: not a terminal") and net.heard("[]"))
 end
 
 -- 2400 baud: a call is four lines a second and the machine at the far end is as
@@ -11522,7 +11591,7 @@ do
 	say(net, "echo 145.010 > /dev/radio0")
 	net.tick(3)
 	check("nothing may be written to an aerial",
-		net.glass("radio0: permission denied"))
+		net.glass("radio0: Permission denied"))
 	say(net, "ls -l /dev/radio0")
 	net.tick(3)
 	check("and the mode says so", net.glass("cr--r-----"))
@@ -11577,7 +11646,7 @@ do
 	say(net, "cat /dev/radio0")
 	net.tick(3)
 	check("and nothing was ever mounted at that name",
-		net.glass("cat: /dev/radio0: no such file"))
+		net.glass("cat: /dev/radio0: No such file or directory"))
 	_G.__world = nil
 
 	local other = newRadioNet()
@@ -12561,7 +12630,7 @@ do
 	check("a machine with an empty slot has no drive file", not bench.painted("fd0"))
 	bench.enter("newfs /dev/fd0")
 	bench.frame()
-	check("and newfs says so", bench.painted("newfs: /dev/fd0: no such file"))
+	check("and newfs says so", bench.painted("newfs: /dev/fd0: No such file or directory"))
 
 	-- A blank disk out of an office drawer.
 	local disk = inv:add("CeroSec.FloppyRed")
@@ -13188,7 +13257,7 @@ do
 	check("df says what is wrong with it", bench.painted("fd0"))
 	bench.enter("echo x > /mnt/c")
 	bench.frame()
-	check("and every write says so", bench.painted("disk full"))
+	check("and every write says so", bench.painted("file system full"))
 
 	-- But it does not come out.
 	bench.sounds = {}
@@ -13958,7 +14027,7 @@ do
 	bench.enter("echo open > /dev/door1")
 	bench.frame()
 	check("an ordinary account is refused by the mode",
-		bench.painted("door1: permission denied"))
+		bench.painted("door1: Permission denied"))
 	eq("and the door was never asked", kit.front.silentToggles, 0)
 
 	-- root walks past the mode, the way root walks past every mode on this
@@ -16166,6 +16235,224 @@ do
 end
 
 --
+-- 43e-ter. CeroSec.RequireWiring's own bug: a bare fixture, with
+-- CeroSec.HardwareRequired off, had NO way onto /dev at all -- not the free
+-- walk (RequireWiring turns that off everywhere, CeroSecModules.reachRefusal's
+-- own comment) and not a cable either, because linkRefusal's own "fixture"
+-- check read anyFitted, the real and unconditional question, rather than
+-- anyFittedOrNotRequired's fiction that a fixture the sandbox never asked to
+-- carry a module is fitted enough for a cable. Found by the mod author testing
+-- HardwareRequired=false AND RequireWiring=true together: a light switch's
+-- right-click carried no "Link to computer" entry at all.
+--
+do
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	local bare = world.hung(world.square(11, 10, 0, nil), fakeLight(false, true), nil)
+
+	_G.__world = world
+	_G.Perks = { Electricity = "Electricity" }
+
+	local bench = newBench()
+	local inv = newInventory()
+	bench.player.getInventory = function() return inv end
+	bench.player.getPerkLevel = function() return 5 end
+	bench.player.getUsername = function() return "carter" end
+	bench.player.getCurrentSquare = function() return world.squares["11,10,0"] end
+	bench.player.getX = function() return 11.5 end
+	bench.player.getY = function() return 10.5 end
+	local iso = fittable({ __class = "IsoObject" })
+	bench.object.getIsoObject = function() return iso end
+	local MACHINE = { 10, 10, 0 }
+
+	-- 1. THE REGRESSION GUARD: HardwareRequired on (the default), a bare
+	-- fixture is refused a cable exactly as before -- unchanged behaviour.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+	eq("HardwareRequired on: a bare fixture still refuses the cable",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), "fixture")
+
+	-- 2. HardwareRequired off: the "fixture" refusal is gone, wiring required
+	-- or not -- the sandbox never asked this fixture to carry a module, so it
+	-- is not missing one.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, RequireWiring = false,
+		PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+	check("HardwareRequired off, wiring not required: no longer refused as bare",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player) ~= "fixture")
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, RequireWiring = true,
+		PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+	check("HardwareRequired off, wiring required: no longer refused as bare",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player) ~= "fixture")
+
+	-- 3. THE BUG REPORT ITSELF, proven fixed end to end: under exactly the
+	-- combination the author hit, the bare fixture is not just un-refused --
+	-- it can actually be cabled, and the cable puts it on the machine's /dev.
+	inv:add("Base.Screwdriver")
+	local function reel(n)
+		while CeroSecModules.wireCount(inv) > n do
+			inv:Remove(inv:getFirstTypeRecurse(CeroSecModules.WIRE))
+		end
+		while CeroSecModules.wireCount(inv) < n do inv:add(CeroSecModules.WIRE) end
+	end
+	reel(30)
+	bench.login("admin")
+	local state = bench.object:osState()
+	eq("nothing lists the bare fixture before the cable",
+		#CeroSecDevices.find(MACHINE[1], MACHINE[2], MACHINE[3], state.links), 0)
+	CCeroSecSystem.instance:sendCommand(bench.player, "linkmodule",
+		{ x = 11, y = 10, z = 0, index = 0, mx = MACHINE[1], my = MACHINE[2],
+			mz = MACHINE[3] })
+	bench.frame()
+	eq("the cable actually went in", #CeroSecModules.linksOn(bare), 1)
+	CeroSecDevices.invalidate()
+	CeroSecDevices.refresh(bench.object, state)
+	local found = CeroSecDevices.find(MACHINE[1], MACHINE[2], MACHINE[3], state.links)
+	local listed = false
+	for i = 1, #found do
+		if found[i].kind == "light" then listed = true end
+	end
+	check("and the fixture is now on the machine's /dev", listed)
+
+	-- 4. MUTATION-PROOF, server side: put linkRefusal's check back to the raw,
+	-- unconditional anyFitted and confirm the exact case above (2, wiring
+	-- required) goes red for the reason this fix exists.
+	local realAnyFittedOrNotRequired = CeroSecModules.anyFittedOrNotRequired
+	CeroSecModules.anyFittedOrNotRequired = CeroSecModules.anyFitted
+	eq("MUTATION: reverting to the raw anyFitted refuses the bare fixture again",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), "fixture")
+	CeroSecModules.anyFittedOrNotRequired = realAnyFittedOrNotRequired
+	check("and restored, it is not refused as bare",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player) ~= "fixture")
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+end
+
+--
+-- 43e-bis. The nested-basement exception: free, not priced
+--
+-- CONFIRMED ON A REAL SAVE with CeroSecDebug.premises (SCeroSecDebug.lua:663-702):
+-- a basement whose lot was drawn on the map as its own BuildingDef rather than
+-- appended into the house's at runtime (docs/notes/tenancies.md, the OTHER
+-- basement case, not SpawnBasement's).
+--
+--   basement:     6957,5583 to 6968,5589   11x6
+--   house-relay:  6955,5575 to 6970,5592   15x17
+--
+-- the basement's box entirely inside the house's, on all four sides. Nobody
+-- ever ran a cable between two rooms of one house, so CeroSecModules.linkWire
+-- charges nothing for the pair (CeroSecModules.nestedBuilding).
+--
+-- THREE THINGS, and the middle one is the guard the strict containment is
+-- FOR: an ordinary building of the SAME shape, standing well clear of the
+-- house, at the sort of distance a real cable is priced at, must NOT read as
+-- nested -- two neighbouring row-houses share nothing but geometry that looks
+-- similar at a glance, and a loose test here would waive wire for half the
+-- county.
+do
+	local net = newNet()
+	local house = net.buildingAt(6955, 5575, 15, 17, 15)
+	local basement = net.buildingAt(6957, 5583, 11, 6, 6)
+	-- Next door, sharing the house's east wall -- the shape a false positive
+	-- would actually have to survive, not a building a county away.
+	local neighbour = net.buildingAt(6970, 5575, 15, 17, 15)
+	-- Three sides in, one side out: a shed whose x-range sits fully inside the
+	-- house's and whose north wall lines up with the house's own, but whose
+	-- south wall runs six tiles past it. ax1>=bx1, ay1>=by1 and ax2<=bx2 are
+	-- all true here -- only ay2<=by2 tells this apart from the real nested
+	-- case, which is exactly the clause a loose boxInside would drop.
+	local shed = net.buildingAt(6960, 5575, 5, 23, 4)
+
+	local squares = {}
+	local function put(x, y, z, building)
+		local sq = net.square(x, y, z, building)
+		squares[x .. "," .. y .. "," .. z] = sq
+		return sq
+	end
+	put(6960, 5585, 0, house)      -- the ground floor, over the basement
+	put(6960, 5585, -1, basement)  -- the basement itself, same x, y
+	put(6971, 5580, 0, neighbour)  -- a fixture just over the shared wall
+	put(6962, 5595, 0, shed)       -- past the house's south wall
+
+	local hadWorld = _G.__world
+	_G.__world = { getGridSquare = function(_, x, y, z)
+		return squares[x .. "," .. y .. "," .. z]
+	end }
+
+	-- (1) SAME BUILDING, the ordinary case, never reaches the geometry at
+	-- all (the identity check short-circuits it).
+	check("the same building is never nested with itself",
+		not CeroSecModules.nestedBuilding(house, house))
+
+	-- (2) THE FALSE-POSITIVE GUARD: two ordinary, unrelated buildings, at a
+	-- distance that prices a real cable, are not nested and are not free.
+	check("two ordinary neighbours are not nested",
+		not CeroSecModules.nestedBuilding(house, neighbour))
+	local normalPrice = CeroSecModules.linkWire(6960, 5585, 0, 6971, 5580, 0)
+	check("and a cable between them still has its ordinary price",
+		normalPrice > 0 and normalPrice <= CeroSecModules.LINK_RANGE)
+	-- The narrow guard boxInside's fourth clause is FOR: three sides contained,
+	-- one side (the south wall) poking six tiles past the house. A three-clause
+	-- boxInside would wrongly call this nested; this is the one fixture that
+	-- tells the two apart.
+	check("a shed that overflows the house's south wall is not nested",
+		not CeroSecModules.nestedBuilding(house, shed))
+	local shedPrice = CeroSecModules.linkWire(6960, 5585, 0, 6962, 5595, 0)
+	check("and a cable to it is still priced, not free",
+		shedPrice > 0 and shedPrice <= CeroSecModules.LINK_RANGE)
+
+	-- (3) THE NESTED PAIR, proved both directions -- the rule does not care
+	-- which of the two callers handed the small footprint.
+	check("the basement's box sits inside the house's",
+		CeroSecModules.nestedBuilding(basement, house))
+	check("and the same is true asked the other way round",
+		CeroSecModules.nestedBuilding(house, basement))
+	eq("a cable between the house and its own basement is free",
+		CeroSecModules.linkWire(6960, 5585, 0, 6960, 5585, -1), 0)
+	eq("and the same the other way, fixture in the basement",
+		CeroSecModules.linkWire(6960, 5585, -1, 6960, 5585, 0), 0)
+
+	_G.__world = hadWorld
+
+	-- linkOk's FLOOR MOVED, IT DID NOT DISAPPEAR: a stored cable of 0 (the
+	-- nested case, once saved) reads back as a real cable, and a negative
+	-- one -- which nothing this build ever writes -- still does not.
+	local object = fittable({ __class = "IsoObject" })
+	fit(object, "relay")
+	local data = object:getModData()[CeroSecModules.DATA_KEY]
+	data[CeroSecModules.VERSION_KEY] = CeroSecModules.VERSION
+	data[CeroSecModules.LINK_KEY] = {
+		{ x = 1, y = 1, z = 0, wire = 0 },
+		{ x = 2, y = 2, z = 0, wire = -1 },
+	}
+	local stored = CeroSecModules.linksOn(object)
+	eq("a stored free cable (wire 0) survives the read", #stored, 1)
+	eq("and it is the zero-wire entry, not the forged negative one",
+		stored[1].x .. "," .. stored[1].y, "1,1")
+
+	-- AND THE WRITE SIDE, linkOn: a free cable must go ON, not bounce off
+	-- the same floor as "far" would.
+	local free = fittable({ __class = "IsoObject" })
+	check("linkOn accepts a wire of 0",
+		CeroSecModules.linkOn(free, 5, 5, 0, 0))
+	eq("wireTotal reads the free cable back as zero",
+		CeroSecModules.wireTotal(free, 5, 5, 0), 0)
+	eq("unlinking it refunds cleanly: zero wire, no error",
+		CeroSecModules.unlinkOn(free, 5, 5, 0), 0)
+	local _, why = CeroSecModules.linkOn(free, 6, 6, 0, -1)
+	eq("but linkOn still refuses a negative wire, same word as before",
+		why, "far")
+end
+
+--
 -- 43f. What the walk does with a cable, and what `find` says about one
 --
 -- The cable is written on both ends and this is the end that is READ: the machine
@@ -16272,6 +16559,12 @@ do
 	check("with no wire in the line",
 		not bench.painted("light0: blinking, linked"))
 	blinkOut()
+	-- A FREE cable (a nested basement, or CeroSec.FreeWiring) is still a
+	-- cable: 0 reads "linked", never as the building walk's bare word.
+	eq("a free cable is linked", CeroSecOS.linkedText("blinking", 0),
+		"blinking, linked, no wire")
+	eq("no cable at all is just the word", CeroSecOS.linkedText("blinking", nil),
+		"blinking")
 
 	-- THE CHUNK GOES AWAY. The street is not loaded any more -- nobody has been down
 	-- there for a while -- so the lamppost is not a device this minute. The ENTRY
@@ -18198,7 +18491,7 @@ do
 			back.painted("sh /home/admin/x.sh &"))
 		seconds(back, 8)
 		eq("it wakes, finishes, and the file it was going to write is there",
-			back.fileText("/var/tmp/x"), "done")
+			back.fileText("/var/tmp/x"), "done\n")
 		eq("and the machine is running nothing afterwards", jobCount(back), 0)
 	end
 
@@ -18279,7 +18572,7 @@ do
 		eq("and it still holds the prompt",
 			CeroSec.consoleWaiting(back.object:consoleState()), "job")
 		seconds(back, 8)
-		eq("it finishes", back.fileText("/var/tmp/fg"), "back")
+		eq("it finishes", back.fileText("/var/tmp/fg"), "back\n")
 		eq("and the prompt comes back to the glass",
 			CeroSec.consoleWaiting(back.object.console), "shell")
 	end
@@ -19081,7 +19374,7 @@ do
 			back2.tick(1); n = n + 1
 		end
 		local rows = back2.object.console.lines
-		eq("and the owner is what prints it", rows[#rows - 1], "     1")
+		eq("and the owner is what prints it", rows[#rows - 1], "       1")
 		eq("with the status after it", rows[#rows], "status=0")
 
 		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
@@ -19385,7 +19678,7 @@ do
 		local back = newBench(saved)
 		eq("an entry in the old flat form still comes back", jobCount(back), 1)
 		seconds(back, 8)
-		eq("and does what it was going to do", back.fileText("/var/tmp/x"), "done")
+		eq("and does what it was going to do", back.fileText("/var/tmp/x"), "done\n")
 
 		-- And what no build ever wrote in it, a pipeline, is not taken from it.
 		local pbench = newBench()
@@ -20124,7 +20417,7 @@ do
 		eq("it is still asleep a week later, with its own seconds to go",
 			back.fileText("/var/tmp/late"), nil)
 		seconds(back, 20)
-		eq("and it wakes when they are up", back.fileText("/var/tmp/late"), "late")
+		eq("and it wakes when they are up", back.fileText("/var/tmp/late"), "late\n")
 	end
 
 	--
@@ -20304,8 +20597,8 @@ do
 			seconds(back, 3)
 			eq(name .. ": four after it, with five to go in all, still", back.fileText("/var/tmp/e"), nil)
 			seconds(back, 4)
-			eq(name .. ": and eight after, it is over", back.fileText("/var/tmp/e"), "end")
-			eq(name .. ": having said what the script says", back.fileText("/var/tmp/w"), "1\n2")
+			eq(name .. ": and eight after, it is over", back.fileText("/var/tmp/e"), "end\n")
+			eq(name .. ": having said what the script says", back.fileText("/var/tmp/w"), "1\n2\n")
 			eq(name .. ": nothing is left running", jobCount(back), 0)
 		end
 		-- Two stages asleep for different times. The pipeline as a whole wakes when the
@@ -20331,7 +20624,7 @@ do
 			eq(name .. ": three seconds after the reload the longer sleep still has one to go",
 				back.fileText("/var/tmp/e"), nil)
 			seconds(back, 3)
-			eq(name .. ": and six after, it is over", back.fileText("/var/tmp/e"), "end")
+			eq(name .. ": and six after, it is over", back.fileText("/var/tmp/e"), "end\n")
 			eq(name .. ": nothing is left running", jobCount(back), 0)
 		end
 		sleepers("two stages asleep", "sleep 2 | sleep 5\necho end > /var/tmp/e\n")
@@ -20390,13 +20683,14 @@ do
 			local rows = back.object.console.lines
 			eq(name .. ": and counts what was in the pipe", rows[#rows - 1], want)
 		end
-		-- The files are what bench.script makes of them: one more, empty, line at the end.
+		-- Each file is 700 lines, each ending in its own newline, and wc -l
+		-- counts newlines (POSIX wc): 1400, with no empty line after the last.
 		past("fourteen hundred lines", string.rep("abcd\n", 700),
 			"cat /home/admin/big /home/admin/big | wc -l",
-			function(pipe) return #pipe.lines > CeroSecOS.PIPE_LINES end, "  1402")
+			function(pipe) return #pipe.lines > CeroSecOS.PIPE_LINES end, "    1400")
 		past("forty lines of two hundred bytes", string.rep(string.rep("b", 199) .. "\n", 20),
 			"cat /home/admin/big /home/admin/big | wc -c",
-			function(pipe) return pipe.bytes > CeroSecOS.PIPE_BYTES end, "  8001")
+			function(pipe) return pipe.bytes > CeroSecOS.PIPE_BYTES end, "    8000")
 		CeroSec.STEP_BUDGET_PER_MACHINE = realBudget
 	end
 
@@ -21058,6 +21352,13 @@ end
 do
 	local bench = newBench()
 	bench.login("admin")
+	-- A square, so CeroSecDebug.premises has something to say: newBench's own
+	-- object stands nowhere (getSquare returns nil, "the chunk is away"), which
+	-- is right for every other bench in this file and wrong for only this one.
+	bench.object.getSquare = function()
+		return { getBuilding = function() return nil end,
+			getRoom = function() return nil end }
+	end
 	local said = {}
 	local realPrint = print
 	print = function(text) said[#said + 1] = tostring(text) end
@@ -21078,6 +21379,15 @@ do
 		if string.find(said[i], "os.fs", 1, true) then named = true end
 	end
 	check("the filesystem is in it", named)
+
+	-- The premises lines go out AHEAD of the state walk, so a report about
+	-- "wrong /dev" has them even when the state alone saturates the cap.
+	local whereAt = nil
+	for i = 1, #said do
+		if string.find(said[i], "building:", 1, true) then whereAt = i end
+	end
+	check("the building line is in it, and near the top", whereAt ~= nil
+		and whereAt <= 5)
 end
 
 --
@@ -21626,7 +21936,8 @@ do
 	local menuChunk, menuErr = loadfile(menuPath)
 	if not menuChunk then error("cannot load " .. menuPath .. ": " .. tostring(menuErr)) end
 	local realEvents = _G.Events
-	_G.Events = { OnFillWorldObjectContextMenu = { Add = function() end } }
+	_G.Events = { OnFillWorldObjectContextMenu = { Add = function() end },
+		OnGameStart = { Add = function() end } }
 	menuChunk()
 	_G.Events = realEvents
 
@@ -22525,6 +22836,54 @@ do
 		check("and logs the summary at info: " .. tostring(summary), summary ~= nil)
 	end
 
+	-- THE SHELL HALF is not in that answer: the press only starts it, and the
+	-- server's own Events.OnTick carries it. The note says so; the verdict is
+	-- printed when the last case is done, and a second press meanwhile starts
+	-- nothing.
+	check("the note says the shell half is running: " .. tostring(answers[1].args.note),
+		string.find(tostring(answers[1].args.note), "shell half running", 1, true) ~= nil)
+	do
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "selftest" })
+		check("a second press while it runs starts nothing: " ..
+			tostring(answers[1] and answers[1].args.note),
+			answers[1] ~= nil and string.find(tostring(answers[1].args.note),
+				"shell half already running", 1, true) ~= nil)
+		CeroSec.logRing = {}
+		local shellSaid = nil
+		_G.print = function(text)
+			if string.find(tostring(text), "shell selftest", 1, true) ~= nil then
+				shellSaid = tostring(text)
+			end
+		end
+		local ticks = 0
+		while shellSaid == nil and ticks < 50 do
+			ticks = ticks + 1
+			Events.OnTick.trigger()
+		end
+		_G.print = realPrint
+		eq("the ticks bring the shell verdict to the game log", shellSaid,
+			"CeroSec shell selftest: PASS " .. #CeroSecSelfTest.SHELL_CASES .. " FAIL 0")
+		check("the machine made on a tick of its own, the cases after it: " .. ticks,
+			ticks >= 2)
+		local info, warn = nil, 0
+		for i = 1, #CeroSec.logRing do
+			local line = CeroSec.logRing[i]
+			if line.level == CeroSec.LOG_WARN then warn = warn + 1 end
+			if line.level == CeroSec.LOG_INFO and
+					string.find(line.text, "shell selftest: PASS", 1, true) ~= nil then
+				info = line.text
+			end
+		end
+		eq("and the summary at info", info,
+			"shell selftest: PASS " .. #CeroSecSelfTest.SHELL_CASES .. " FAIL 0")
+		eq("with no warning", warn, 0)
+		answers = {}
+		Events.OnTick.trigger()
+		eq("a finished run is gone: the next tick says nothing more", #CeroSec.logRing, 2)
+	end
+
 	-- A PLANTED FAILING VECTOR: the line has to reach CeroSec.log at WARN, which is
 	-- the level the Log tab's own filter button reads, and the note has to send the
 	-- reader there.
@@ -22548,6 +22907,38 @@ do
 		check("and the failing line is in the log at warn: " .. tostring(warned),
 			warned ~= nil and string.find(warned, "A LIE", 1, true) ~= nil)
 		CeroSecSelfTest.VECTORS[2].want = kept
+
+		-- And the SHELL half's failures take the same road, later: that press
+		-- started a run, and whoami is broken while the ticks carry it, so one
+		-- case goes red and its line is in the log at warn, naming the case, the
+		-- line typed, what it wanted and what it got.
+		local realWhoami = CeroSecOS.commands.whoami
+		CeroSecOS.commands.whoami = function() return true, { "nobody" } end
+		CeroSec.logRing = {}
+		local shellSaid = nil
+		_G.print = function(text)
+			if string.find(tostring(text), "shell selftest", 1, true) ~= nil then
+				shellSaid = tostring(text)
+			end
+		end
+		local ticks = 0
+		while shellSaid == nil and ticks < 50 do
+			ticks = ticks + 1
+			Events.OnTick.trigger()
+		end
+		_G.print = realPrint
+		CeroSecOS.commands.whoami = realWhoami
+		eq("a broken whoami is one shell failure in the game log", shellSaid,
+			"CeroSec shell selftest: PASS " .. (#CeroSecSelfTest.SHELL_CASES - 1) .. " FAIL 1")
+		local shellWarn = {}
+		for i = 1, #CeroSec.logRing do
+			if CeroSec.logRing[i].level == CeroSec.LOG_WARN then
+				shellWarn[#shellWarn + 1] = CeroSec.logRing[i].text
+			end
+		end
+		eq("one line at warn", #shellWarn, 1)
+		eq("naming the case, the line, the want and the got", shellWarn[1],
+			"shell selftest: whoami: `whoami` want [root] got [nobody]")
 	end
 
 	-- THE DISK, into his hands, the way the drive hands one over: an item of one of
@@ -22758,7 +23149,7 @@ do
 	check("its name says which premises it is", state.hostname ~= "ksp-7t-jc"
 		and string.find(state.hostname, "^acct%-") ~= nil)
 	eq("and /etc/hostname agrees with it",
-		CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname)
+		CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname .. "\n")
 	check("the premises name is on the record",
 		CeroSecOS.premisesName(state) == "FrontOffice")
 	check("there is a week of log on it",
@@ -22941,7 +23332,7 @@ do
 		check("and open", CeroSecOS.checkPassword(demo, ""))
 		eq("and the dealer's card on it",
 			CeroSecOS.systemNode(onFloor, CeroSecOS.MOTD_PATH).data,
-			CeroSecContent.DEMO.motd)
+			CeroSecContent.DEMO.motd .. "\n")
 		local _, ord = CeroSecOS.readUsers(onFloor)
 		-- root and demo, and nobody else: not the shop's people, because it is stock --
 		-- and not the factory `admin` either, because this is a machine somebody set up
@@ -25185,6 +25576,271 @@ do
 	end
 
 	--
+	-- 4c. CeroSec.RequireWiring AND THE SHOP WIRED IN 1991
+	--
+	-- With the option on nothing reaches /dev without a cable, a pre-fitted
+	-- fixture included: the walk that screws the box on runs the cable to the
+	-- machine too (SCeroSecAuto, cablePreFitted), both ends of it. Off, it runs
+	-- none -- the building walk finds the fixture free. And a fixture the cable
+	-- cannot reach is passed over without stopping the walk.
+	--
+	do
+		local function sweep(sandbox)
+			_G.SandboxVars = { CeroSec = sandbox }
+			local bx, by, b1, b2 = cornerRolling(true)
+			check("some shop in the county rolled automated, for the cable", bx ~= nil)
+			local kit = newShop(bx, by)
+			_G.__world = kit.world
+			local county = newCounty(kit)
+			local machine = county.machine(bx + 2, by + 2, 0)
+			_G.__fireSquare("new", machine.square)
+			county.at(20, 55)
+			county.minute()
+			local record = pageOf(county.system, b1, b2)
+			check("the sweep walked the shop",
+				type(record) == "table" and record.wired == true)
+			return kit, machine, county, record
+		end
+		local function cabled(machine, object)
+			local onFixture = CeroSecModules.wireOf(object, machine.x, machine.y,
+				machine.z) ~= nil
+			local px, py, pz = CeroSecModules.placeOf(object)
+			local onMachine = CeroSecOS.linkAt(CeroSecOS.linkSquares(machine.os),
+				px, py, pz) ~= nil
+			return onFixture, onMachine
+		end
+		local function onDev(machine, object)
+			CeroSecDevices.invalidate()
+			local out = CeroSecDevices.find(machine.x, machine.y, machine.z,
+				CeroSecOS.linkSquares(machine.os))
+			for i = 1, #out do
+				if out[i].object == object then return true end
+			end
+			return false
+		end
+
+		-- ON: fitted, cabled at both ends, and on /dev through the cable.
+		local kit, machine, county, record = sweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		check("required: the switch got its relay",
+			CeroSecModules.installedOn(kit.light0).relay ~= nil)
+		local f, m = cabled(machine, kit.light0)
+		check("required: the fixture's end of the cable is on", f)
+		check("required: and the machine's end is in its book", m)
+		check("required: and the switch is on /dev", onDev(machine, kit.light0))
+		check("required: the alley door, off the room, is cabled too",
+			(cabled(machine, kit.backDoor)))
+
+		-- THE LATER WALK, through CeroSecAuto.wire, where the machine already
+		-- has a state and the cable goes on inline rather than after turnOn:
+		-- a switch that was not there the first time, and the walk made to
+		-- come round again.
+		check("required: the machine has a state by now", type(machine.os) == "table")
+		local late = kit.world.put(
+			kit.world.squares[(kit.bx + 6) .. "," .. (kit.by + 2) .. ",0"],
+			fakeLight(true, true))
+		record.wired, record.rooms = nil, nil
+		county.minute()
+		eq("required: the later walk finished", record.wired, true)
+		check("required: the late switch got its relay",
+			CeroSecModules.installedOn(late).relay ~= nil)
+		f, m = cabled(machine, late)
+		check("required: and its cable, fixture end", f)
+		check("required: and machine end", m)
+		check("required: and it is on /dev", onDev(machine, late))
+
+		-- OFF: fitted as always, no cable written, on /dev for free.
+		kit, machine = sweep({ HardwareRequired = true, PrefilledMachines = true })
+		check("not required: the switch got its relay",
+			CeroSecModules.installedOn(kit.light0).relay ~= nil)
+		f, m = cabled(machine, kit.light0)
+		eq("not required: no cable on the fixture", f, false)
+		eq("not required: nothing in the machine's book", m, false)
+		check("not required: on /dev by the building walk", onDev(machine, kit.light0))
+
+		-- OUT OF REACH, under FreeWiring, where the price is 0 whatever the
+		-- distance and linkOn alone would take it: a range of one tile reaches
+		-- light1 (one tile north of the machine) and not light0 (two).
+		kit, machine = sweep({ HardwareRequired = true, PrefilledMachines = true,
+			RequireWiring = true, FreeWiring = true, LinkRange = 1 })
+		f, m = cabled(machine, kit.light1)
+		check("far: the switch in reach is cabled", f and m)
+		eq("far: for no wire", CeroSecModules.wireOf(kit.light1, machine.x,
+			machine.y, machine.z), 0)
+		check("far: the switch out of reach still got its relay",
+			CeroSecModules.installedOn(kit.light0).relay ~= nil)
+		f, m = cabled(machine, kit.light0)
+		eq("far: and no cable", f, false)
+		eq("far: at either end", m, false)
+		eq("far: so it is not on /dev", onDev(machine, kit.light0), false)
+
+		--
+		-- 4d. THE CABLES OWED TO A MACHINE THAT DID NOT COME UP
+		--
+		-- The first walk runs before the machine has a state, so every cable
+		-- it owes is written into the record (`record.later`, saved) and run by
+		-- the next turnOn of that machine that succeeds -- the decision's own,
+		-- or a survivor's with a generator long after (CeroSecAuto.resolveLater).
+		--
+		local function darkSweep(sandbox)
+			_G.SandboxVars = { CeroSec = sandbox }
+			local bx, by, b1, b2 = cornerRolling(true)
+			local dark = newShop(bx, by)
+			dark.world.power = false
+			_G.__world = dark.world
+			local c = newCounty(dark)
+			local m = c.machine(bx + 2, by + 2, 0)
+			_G.__fireSquare("new", m.square)
+			c.at(20, 55)
+			c.minute()
+			return dark, m, c, pageOf(c.system, b1, b2)
+		end
+		local function owes(rec, object)
+			if type(rec.later) ~= "table" then return false end
+			local px, py, pz = CeroSecModules.placeOf(object)
+			for i = 1, #rec.later do
+				local at = rec.later[i]
+				if at.x == px and at.y == py and at.z == pz then return true end
+			end
+			return false
+		end
+		local realLinkOn = CeroSecModules.linkOn
+		local linkCalls, linkRefused = 0, 0
+		CeroSecModules.linkOn = function(...)
+			local ok, why = realLinkOn(...)
+			linkCalls = linkCalls + 1
+			if not ok then linkRefused = linkRefused + 1 end
+			return ok, why
+		end
+		-- And the range check, which a cable out of reach stops at before linkOn:
+		-- what counts a retry of one.
+		local realSpan = CeroSecModules.linkSpan
+		local spanCalls = 0
+		CeroSecModules.linkSpan = function(...)
+			spanCalls = spanCalls + 1
+			return realSpan(...)
+		end
+		local realLog = CeroSec.log
+		local runLines = 0
+		CeroSec.log = function(level, text)
+			if string.find(tostring(text or level), "cable(s) run to it", 1, true) then
+				runLines = runLines + 1
+			end
+			return realLog(level, text)
+		end
+
+		-- 1. Found dark: nothing cabled, and what is owed is WRITTEN DOWN.
+		kit, machine, county, record = darkSweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		eq("dark: the machine stays off", machine.on, false)
+		eq("dark: with no state", machine.os, nil)
+		eq("dark: the walk is finished all the same", record.wired, true)
+		check("dark: the switch got its relay",
+			CeroSecModules.installedOn(kit.light0).relay ~= nil)
+		eq("dark: and no cable", CeroSecModules.wireOf(kit.light0, machine.x,
+			machine.y, machine.z), nil)
+		check("dark: the switch's square is owed a cable", owes(record, kit.light0))
+		check("dark: and the alley door's", owes(record, kit.backDoor))
+		local seen, twice = {}, false
+		for i = 1, #(record.later or {}) do
+			local at = record.later[i]
+			local key = at.x .. "," .. at.y .. "," .. at.z
+			if seen[key] then twice = true end
+			seen[key] = true
+		end
+		eq("dark: a square with two fixtures is owed once", twice, false)
+
+		-- 2. A generator, and the survivor switches it on by hand.
+		kit.world.power = true
+		check("powered: the machine comes up", machine:turnOn())
+		f, m = cabled(machine, kit.light0)
+		check("powered: the switch's cable, fixture end", f)
+		check("powered: and machine end", m)
+		check("powered: and the switch is on /dev", onDev(machine, kit.light0))
+		check("powered: the door on the same square is cabled too",
+			(cabled(machine, kit.front)))
+		check("powered: and the alley door", (cabled(machine, kit.backDoor)))
+		eq("powered: nothing is owed any more", record.later, nil)
+		eq("powered: one line says the cables went on", runLines, 1)
+
+		-- 3. POWER FROM THE START: the decision's own turnOn runs them, once,
+		-- and settle does not run them a second time.
+		linkCalls, linkRefused, runLines = 0, 0, 0
+		kit, machine, county, record = sweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		check("at once: the switch is cabled", (cabled(machine, kit.light0)))
+		eq("at once: nothing is owed", record.later, nil)
+		check("at once: cables were run", linkCalls > 0)
+		eq("at once: none was tried twice", linkRefused, 0)
+		eq("at once: and one line says so", runLines, 1)
+
+		-- 4. OUT OF REACH, found dark: dropped once tried, never retried.
+		kit, machine, county, record = darkSweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true, FreeWiring = true,
+			LinkRange = 1 })
+		check("far, dark: the far switch is owed", owes(record, kit.light0))
+		kit.world.power = true
+		check("far, dark: the machine comes up", machine:turnOn())
+		check("far, dark: the switch in reach is cabled", (cabled(machine, kit.light1)))
+		eq("far, dark: the far one is not", (cabled(machine, kit.light0)), false)
+		eq("far, dark: and is not kept owed", record.later, nil)
+		machine:turnOff(true)
+		linkCalls, spanCalls = 0, 0
+		check("far, dark: it comes up again", machine:turnOn())
+		eq("far, dark: and no cable is tried again", linkCalls, 0)
+		eq("far, dark: not even measured", spanCalls, 0)
+
+		-- 5. A SAVE FROM BEFORE `later`: found dark under the old build, so the
+		-- record has no such field. It comes up and nothing is run retroactively.
+		kit, machine, county, record = darkSweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		record.later = nil
+		kit.world.power = true
+		linkCalls = 0
+		check("old save: the machine comes up", machine:turnOn())
+		eq("old save: no cable is tried", linkCalls, 0)
+		eq("old save: the switch stays uncabled", (cabled(machine, kit.light0)), false)
+		eq("old save: and nothing is written", record.later, nil)
+
+		-- 6. WHAT THE WORLD DID MEANWHILE. The switch's square has lost both its
+		-- fixtures (somebody took them down): its entry goes. The window's square
+		-- is in a chunk that is away at the power-on: its entry is KEPT, as
+		-- scanLinked keeps a cable it cannot see, and run at a later power-on.
+		kit, machine, county, record = darkSweep({ HardwareRequired = true,
+			PrefilledMachines = true, RequireWiring = true })
+		local gone = kit.world.squares[(kit.bx + 1) .. "," .. (kit.by + 1) .. ",0"]
+		for i = #gone.objects, 1, -1 do
+			if gone.objects[i] == kit.light0 or gone.objects[i] == kit.front then
+				table.remove(gone.objects, i)
+			end
+		end
+		local ax, ay, az = CeroSecModules.placeOf(kit.light1)
+		local realGet = kit.world.getGridSquare
+		kit.world.getGridSquare = function(self, x, y, z)
+			if x == ax and y == ay and z == az then return nil end
+			return realGet(self, x, y, z)
+		end
+		kit.world.power = true
+		check("away: the machine comes up", machine:turnOn())
+		kit.world.getGridSquare = realGet
+		check("away: the alley door is cabled", (cabled(machine, kit.backDoor)))
+		eq("away: the window's switch is not, yet", (cabled(machine, kit.light1)), false)
+		eq("away: the emptied square is no longer owed", owes(record, kit.light0), false)
+		check("away: the square that was away still is", owes(record, kit.light1))
+		eq("away: and nothing else", #(record.later or {}), 1)
+		machine:turnOff(true)
+		check("away: it comes up again with the chunk in", machine:turnOn())
+		check("away: and the switch that was away is cabled now",
+			(cabled(machine, kit.light1)))
+		eq("away: nothing is owed any more", record.later, nil)
+
+		CeroSecModules.linkOn = realLinkOn
+		CeroSecModules.linkSpan = realSpan
+		CeroSec.log = realLog
+		_G.__world = nil
+	end
+
+	--
 	-- 5. A SHOP THAT ROLLED THE OTHER WAY
 	--
 	do
@@ -25654,7 +26310,7 @@ do
 	bench.frame()
 	bench.enter("")
 	bench.frame()
-	check("bob exists to send to", bench.painted("useradd: bob: created"))
+	check("bob exists to send to", CeroSecOS.getUser(bench.object:osState(), "bob") ~= nil)
 	eq("and has no mailbox yet", bench.fileText("/var/mail/bob"), nil)
 
 	bench.enter("mail -s Note bob")
@@ -25717,7 +26373,7 @@ do
 	bench.frame()
 	eq("nothing of the script reached the glass", bench.painted("alpha"), false)
 	eq("and neither did its second line", bench.painted("beta"), false)
-	eq("the file has it", bench.fileText("/home/admin/out"), "alpha\nbeta")
+	eq("the file has it", bench.fileText("/home/admin/out"), "alpha\nbeta\n")
 
 	-- And with no redirect on the line the very same script paints, so the
 	-- assertion above is about the redirect and not about a script that never ran.
@@ -25733,9 +26389,9 @@ do
 	bench.enter("sh err.sh > eout")
 	bench.tick(30)
 	bench.frame()
-	eq("the refusal is on the screen", bench.painted("/nope: no such file"), true)
+	eq("the refusal is on the screen", bench.painted("/nope: No such file or directory"), true)
 	eq("and the file holds only what was printed",
-		bench.fileText("/home/admin/eout"), "good")
+		bench.fileText("/home/admin/eout"), "good\n")
 end
 
 --
@@ -26416,8 +27072,8 @@ do
 	check("the line fired", mail ~= nil)
 	check("and the program it named ran (" .. tostring(mail) .. ")",
 		mail ~= nil and string.find(mail, "curtains: open", 1, true) ~= nil)
-	check("with nothing said about a command not found",
-		mail == nil or string.find(mail, "command not found", 1, true) == nil)
+	check("with nothing said about a not found",
+		mail == nil or string.find(mail, "not found", 1, true) == nil)
 	local log = bench.fileText("/var/log/cron")
 	check("and the log names the line as it was written",
 		string.find(log, "(admin) CMD (curtains.sh)", 1, true) ~= nil)
@@ -27034,6 +27690,394 @@ do
 	reset()
 	window:onKeystroke("CeroSecKeyEnter")
 	eq("Enter is sent under its own name", sent[1], "CeroSecKeyEnter")
+end
+
+--
+-- 44. CeroSec.RequireWiring / CeroSec.FreeWiring
+--
+-- Two independent sandbox options (CeroSecModules.wiringRequired/wiringFree,
+-- both fail-open to false like safehouseGated): does a fixture need an actual
+-- cable before a machine sees it at all, in a building or off one
+-- (RequireWiring), and does a cable cost anything wherever one is needed
+-- (FreeWiring). Both default false, which is why every block above this one
+-- -- none of which ever sets either key -- is itself the both-off regression
+-- guard: the walk, linkWire and reachRefusal all read false from a group that
+-- never mentions the keys, exactly as before this plan.
+--
+
+do
+	-- 1. RequireWiring alone -- THE BUILDING CASE. A light switch, three
+	-- tiles from the machine, in the same room: exactly what free in-building
+	-- discovery has always found without a cable.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0} })
+	local switch = fit(world.put(world.squares["13,10,0"], fakeLight(true, true)),
+		"relay")
+	-- A door in the room's SOUTH wall, found only by scanFarEdges (it stands
+	-- on the pavement at 10,11, off the room's own square) and not by
+	-- scanSquare's own classification loop -- find()'s call to scanFarEdges
+	-- is skipped wholesale under RequireWiring, so this is the one fixture
+	-- that would slip through free if that skip were forgotten.
+	local southDoor = fit(world.wall(world.square(10, 11, 0, nil),
+		fakeDoor(false, true), "N"), "contact")
+	_G.__world = world
+	local state = {}
+
+	local function seesSwitch()
+		CeroSecDevices.invalidate()
+		local out = CeroSecDevices.find(10, 10, 0, state.links)
+		for i = 1, #out do
+			if out[i].object == switch then return true end
+		end
+		return false
+	end
+	local function seesDoor()
+		CeroSecDevices.invalidate()
+		local out = CeroSecDevices.find(10, 10, 0, state.links)
+		for i = 1, #out do
+			if out[i].object == southDoor then return true end
+		end
+		return false
+	end
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	check("RequireWiring off (default): the in-room switch is free, as always",
+		seesSwitch())
+	check("and so is the south wall's door, off scanFarEdges", seesDoor())
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false,
+		RequireWiring = true } }
+	check("RequireWiring on: the same switch is gone until cabled", not seesSwitch())
+	check("and so is the far-edge door", not seesDoor())
+
+	check("cabled on the fixture's own end",
+		CeroSecModules.linkOn(switch, 10, 10, 0, 3))
+	check("and filed on the machine's own end",
+		CeroSecOS.addLink(state, 13, 10, 0))
+	check("RequireWiring on, cabled: the switch is found again", seesSwitch())
+	CeroSecModules.unlinkOn(switch, 10, 10, 0)
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
+end
+
+do
+	-- 1 (continued). RequireWiring alone -- THE RADIUS CASE. A base has no
+	-- building, so CeroSecDevices.RADIUS is the free-discovery rule
+	-- scanOutdoorSquare's own skipFixtures must gate the same way.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.square(10, 10, 0, nil)
+	local stove = fit(world.put(world.square(12, 10, 0, nil), fakeStove(false)),
+		"appliance")
+	_G.__world = world
+	local state = {}
+
+	local function seesStove()
+		CeroSecDevices.invalidate()
+		local out = CeroSecDevices.find(10, 10, 0, state.links)
+		for i = 1, #out do
+			if out[i].object == stove then return true end
+		end
+		return false
+	end
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	check("RequireWiring off: a base's radius still finds it for free", seesStove())
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false,
+		RequireWiring = true } }
+	check("RequireWiring on: the base radius no longer finds it for free",
+		not seesStove())
+
+	check("cabled on the fixture's own end",
+		CeroSecModules.linkOn(stove, 10, 10, 0, 2))
+	check("and filed on the machine's own end",
+		CeroSecOS.addLink(state, 12, 10, 0))
+	check("RequireWiring on, cabled: it is found again", seesStove())
+	CeroSecModules.unlinkOn(stove, 10, 10, 0)
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
+end
+
+do
+	-- 3. FreeWiring alone -- discovery untouched, cost waived wherever a
+	-- cable is needed, and the 30-tile range untouched. THE CAUGHT BUG, and
+	-- the regression test for it: linkRefusal's "far" check and
+	-- CeroSecLinkMenu.machines()'s row filter both read linkSpan and not
+	-- linkWire for exactly this reason -- without this test, FreeWiring
+	-- waiving the range along with the cost would ship invisibly.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.square(10, 10, 0, nil)
+	local street = world.square(22, 10, 0, nil)
+	local lamp = fit(world.put(street, fakeLight(true, true)), "relay")
+	local farX = 10 + CeroSecModules.LINK_RANGE + 1
+	local farLamp = fit(world.put(world.square(farX, 10, 0, nil), fakeLight(true, true)),
+		"relay")
+	_G.__world = world
+	local player = {}
+
+	_G.SandboxVars = { CeroSec = {} }
+	local ordinaryPrice = CeroSecModules.linkWire(10, 10, 0, 22, 10, 0)
+	check("off: an outdoor cable has its ordinary price", ordinaryPrice > 0)
+	eq("off: within range, linkRefusal allows it",
+		CeroSecModules.linkRefusal(lamp, 10, 10, 0, player), nil)
+
+	_G.SandboxVars = { CeroSec = { FreeWiring = true } }
+	eq("on: the same cable costs nothing",
+		CeroSecModules.linkWire(10, 10, 0, 22, 10, 0), 0)
+	eq("but the raw geometry (linkSpan) is unchanged",
+		CeroSecModules.linkSpan(10, 10, 0, 22, 10, 0), ordinaryPrice)
+	eq("and linkRefusal still allows the in-range cable",
+		CeroSecModules.linkRefusal(lamp, 10, 10, 0, player), nil)
+
+	-- Past LINK_RANGE: linkWire itself still reads 0 (FreeWiring waives cost
+	-- unconditionally, distance or not), but linkRefusal must still say
+	-- "far" -- it is linkSpan, not linkWire, that the range check reads.
+	eq("linkWire past the range still reads 0 under FreeWiring",
+		CeroSecModules.linkWire(10, 10, 0, farX, 10, 0), 0)
+	check("but linkSpan still answers past LINK_RANGE",
+		CeroSecModules.linkSpan(10, 10, 0, farX, 10, 0) > CeroSecModules.LINK_RANGE)
+	eq("so linkRefusal still refuses it \"far\", FreeWiring or not",
+		CeroSecModules.linkRefusal(farLamp, 10, 10, 0, player), "far")
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+end
+
+do
+	-- 4. Both on -- an in-building fixture cabled under RequireWiring costs 0
+	-- under FreeWiring, composing the two options.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	local switch = fit(world.put(world.squares["11,10,0"], fakeLight(true, true)),
+		"relay")
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false,
+		RequireWiring = true, FreeWiring = true } }
+
+	eq("both on: the in-building cable to it costs nothing",
+		CeroSecModules.linkWire(10, 10, 0, 11, 10, 0), 0)
+	eq("linkRefusal allows the cable, and it would run for nothing",
+		CeroSecModules.linkRefusal(switch, 10, 10, 0, {}), nil)
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+end
+
+do
+	-- 5. Interaction with the nested-basement exemption -- free and never
+	-- "far"-refused regardless of either new option's own value: nestedFree
+	-- is checked before wiringFree in linkWire and before the range test in
+	-- linkRefusal, exactly as before this plan (see linkWire and the "far"
+	-- check's own guard).
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local net = newNet()
+	local house = net.buildingAt(6955, 5575, 15, 17, 15)
+	local basement = net.buildingAt(6957, 5583, 11, 6, 6)
+	local squares = {}
+	local function put(x, y, z, building)
+		local sq = net.square(x, y, z, building)
+		squares[x .. "," .. y .. "," .. z] = sq
+		return sq
+	end
+	put(6960, 5585, 0, house)
+	put(6960, 5585, -1, basement)
+	_G.__world = { getGridSquare = function(_, x, y, z)
+		return squares[x .. "," .. y .. "," .. z]
+	end }
+
+	for _, wiring in ipairs({ false, true }) do
+		for _, free in ipairs({ false, true }) do
+			_G.SandboxVars = { CeroSec = { RequireWiring = wiring, FreeWiring = free } }
+			eq("nested, RequireWiring=" .. tostring(wiring) .. " FreeWiring="
+					.. tostring(free) .. ": still free",
+				CeroSecModules.linkWire(6960, 5585, 0, 6960, 5585, -1), 0)
+		end
+	end
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+end
+
+do
+	-- 6. reachRefusal regression -- RequireWiring stops the free "reach"
+	-- refusal, in a building and off one; RequireWiring off still greys both
+	-- exactly as today. An appliance, not a door or a light switch: a door
+	-- would drag in the envelope gate and a light switch is never
+	-- "reach"-refused outdoors at all (outdoorReachRefusal's own doubt-not-
+	-- reach rule), so neither would prove this option's own gate alone.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	local innerStove = fit(world.put(world.squares["11,10,0"], fakeStove(false)),
+		"appliance")
+	world.square(30, 30, 0, nil)
+	local nearStove = fit(world.put(world.square(32, 30, 0, nil), fakeStove(false)),
+		"appliance")
+	_G.__world = world
+	local player = {}
+
+	_G.SandboxVars = { CeroSec = {} }
+	eq("off, building: a fixture the walk already lists is refused \"reach\"",
+		CeroSecModules.linkRefusal(innerStove, 10, 10, 0, player), "reach")
+	eq("off, radius: same for a base fixture well inside it",
+		CeroSecModules.linkRefusal(nearStove, 30, 30, 0, player), "reach")
+
+	_G.SandboxVars = { CeroSec = { RequireWiring = true } }
+	check("on, building: no free \"reach\" any more",
+		CeroSecModules.linkRefusal(innerStove, 10, 10, 0, player) ~= "reach")
+	check("on, radius: same off a base",
+		CeroSecModules.linkRefusal(nearStove, 30, 30, 0, player) ~= "reach")
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+end
+
+do
+	-- 7. Save-compat -- a fixture already numbered under RequireWiring=false,
+	-- sandbox flipped to true mid-bench, drops out of /dev with its devmap
+	-- slot intact (state.devmap is keyed by place, never evicted just for
+	-- dropping out of a walk -- the same precedent an un-cabled generator
+	-- already sets, docs/DEVICES.md), then cabling it resurfaces the same id.
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	local switch = fit(world.put(world.squares["11,10,0"], fakeLight(true, true)),
+		"relay")
+	_G.__world = world
+	local state = {}
+
+	local function numbered()
+		CeroSecDevices.invalidate()
+		return CeroSecDevices.number(state,
+			CeroSecDevices.find(10, 10, 0, state.links))
+	end
+	local function idOf(found)
+		for i = 1, #found do
+			if found[i].object == switch then return found[i].id end
+		end
+		return nil
+	end
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	local before = numbered()
+	local wantId = idOf(before)
+	eq("the switch gets a number before RequireWiring is ever on", wantId, "light0")
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false,
+		RequireWiring = true } }
+	local flipped = numbered()
+	eq("flipped on mid-save, it drops out of /dev", idOf(flipped), nil)
+	check("but its devmap slot is still there", state.devmap ~= nil
+		and next(state.devmap) ~= nil)
+
+	check("cabled, it comes back",
+		CeroSecModules.linkOn(switch, 10, 10, 0, 3))
+	check("and filed on the machine",
+		CeroSecOS.addLink(state, 11, 10, 0))
+	local relinked = numbered()
+	eq("wearing the same id it had before", idOf(relinked), wantId)
+	CeroSecModules.unlinkOn(switch, 10, 10, 0)
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
+end
+
+-- 45. CeroSec.LinkRange -- how far a cable reaches, turned into a sandbox
+-- option (CeroSecModules.linkRange, mirroring wiringRequired/wiringFree's
+-- own shape). Falls back to LINK_RANGE, not false: there is no "off" reading
+-- for a distance, so a missing group or key, or a save from before the
+-- option, answers the one number this mod always used (30).
+--
+-- The load-bearing case is compatibility: a cable already run and stored is
+-- checked against LINK_RANGE_MAX (the hard, engine-derived ceiling) and NOT
+-- against today's linkRange() when it is read back, so a server shrinking
+-- the setting later never turns yesterday's cable into a "corrupt" entry the
+-- next modData load drops. A NEW cable, in linkOn and linkRefusal, is held
+-- to linkRange() -- today's policy -- same as before this option existed.
+do
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	local world = FakeWorld.new()
+	world.square(10, 10, 0, nil)
+	local lamp20 = fit(world.put(world.square(30, 10, 0, nil), fakeLight(true, true)),
+		"relay")      -- 20 tiles from (10,10,0)
+	local lamp40 = fit(world.put(world.square(50, 10, 0, nil), fakeLight(true, true)),
+		"relay")      -- 40 tiles from (10,10,0)
+	_G.__world = world
+	local player = {}
+
+	-- 1. Regression -- no sandbox var set at all, both the way it can be
+	-- missing: SandboxVars itself nil, and a CeroSec group with no LinkRange
+	-- key (an older save with other CeroSec options already in it). Every
+	-- "far" refusal fires at exactly the distances it always did.
+	_G.SandboxVars = nil
+	eq("no SandboxVars at all: linkRange reads the compat default",
+		CeroSecModules.linkRange(), CeroSecModules.LINK_RANGE)
+
+	_G.SandboxVars = { CeroSec = {} }
+	eq("group present, key absent: same compat default",
+		CeroSecModules.linkRange(), CeroSecModules.LINK_RANGE)
+	check("regression: 40 tiles is still refused \"far\" at the old default",
+		CeroSecModules.linkRefusal(lamp40, 10, 10, 0, player) == "far")
+	eq("regression: 20 tiles is still allowed at the old default",
+		CeroSecModules.linkRefusal(lamp20, 10, 10, 0, player), nil)
+
+	-- 2. Raising it -- a cable that was "far" under the fixed 30 is allowed
+	-- once the sandbox option raises the ceiling past it.
+	_G.SandboxVars = { CeroSec = { LinkRange = 45 } }
+	eq("raised to 45: linkRange reads 45", CeroSecModules.linkRange(), 45)
+	eq("raised: the 40-tile cable is now allowed",
+		CeroSecModules.linkRefusal(lamp40, 10, 10, 0, player), nil)
+
+	-- 2b. Past the ceiling -- the slider stops at LINK_RANGE_MAX, a save or
+	-- another mod need not. Read as the ceiling, never past what a stored
+	-- cable is read back against (linkOk).
+	_G.SandboxVars = { CeroSec = { LinkRange = 999 } }
+	eq("999: linkRange reads the ceiling", CeroSecModules.linkRange(),
+		CeroSecModules.LINK_RANGE_MAX)
+	eq("and the ceiling is 48", CeroSecModules.LINK_RANGE_MAX, 48)
+	eq("999: a 49-tile cable is refused far by linkOn itself",
+		select(2, CeroSecModules.linkOn(lamp40, 93, 93, 0, 49)), "far")
+
+	-- 3. Lowering it -- a cable that was fine under the fixed 30 is refused
+	-- once the sandbox option drops the ceiling under it.
+	_G.SandboxVars = { CeroSec = { LinkRange = 10 } }
+	eq("lowered to 10: linkRange reads 10", CeroSecModules.linkRange(), 10)
+	eq("lowered: the 20-tile cable is now refused \"far\"",
+		CeroSecModules.linkRefusal(lamp20, 10, 10, 0, player), "far")
+
+	-- 4. THE COMPATIBILITY BUG THIS OPTION MUST NOT INTRODUCE: a cable
+	-- stored while the range read 30 (unset) must still read back once the
+	-- server shrinks LinkRange below the stored cable's own length. linkOn
+	-- takes the wire cost directly and does not re-measure the geometry, so
+	-- a fixture and an arbitrary "machine" position are enough here.
+	_G.SandboxVars = { CeroSec = {} }
+	check("store a 25-tile cable while the range reads 30 (unset)",
+		CeroSecModules.linkOn(lamp20, 91, 91, 0, 25))
+	eq("it is on the fixture's own list, wire and all",
+		CeroSecModules.wireOf(lamp20, 91, 91, 0), 25)
+
+	_G.SandboxVars = { CeroSec = { LinkRange = 10 } }
+	eq("range shrunk to 10, well under the stored cable's 25",
+		CeroSecModules.linkRange(), 10)
+	eq("the stored cable is STILL there, not dropped as corrupt",
+		CeroSecModules.wireOf(lamp20, 91, 91, 0), 25)
+	local ownLinks = CeroSecModules.ownLinksOn(lamp20)
+	check("ownLinksOn still lists it intact",
+		CeroSecModules.linkIndexOf(ownLinks, 91, 91, 0) ~= nil)
+
+	-- 5. A NEW link creation still respects the CURRENT (possibly shrunk)
+	-- range, even though the stored cable above is longer than it: a forged
+	-- or stale wire value beyond today's policy, but inside LINK_RANGE_MAX,
+	-- is refused "far" by linkOn itself.
+	local ok, why = CeroSecModules.linkOn(lamp40, 92, 92, 0, 25)
+	eq("a fresh 25-tile link is refused under LinkRange=10", ok, false)
+	eq("...and refused for being far, specifically", why, "far")
+
+	CeroSecModules.unlinkOn(lamp20, 91, 91, 0)
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
 end
 
 print("window_test: " .. count .. " checks passed")

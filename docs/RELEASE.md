@@ -84,7 +84,7 @@ the files and the state shape are all unaffected.
 | 5b | Close the changelog, then **write the short Steam note by hand**, see below | `python3 tools/changelog-steam.py` |
 | 5a | **Photograph the save shape this build writes**, and commit it, see below | `sh tools/capture-fixture.sh` |
 | 6 | The headless suite must exit 0 | `sh tests/run.sh; echo rc=$?` |
-| 6a | **In game, before step 3 takes the door away**: press **Self-test** in the debug window on a machine whose chunk is in. Both halves green, and the summary pasted into the release notes | see below |
+| 6a | **In game, before step 3 takes the door away**: press **Self-test** in the debug window on a machine whose chunk is in. All three halves green -- the shell half's verdict lands in the log a few seconds after the press -- and both summaries pasted into the release notes | see below |
 | 6b | **In game**: press **Give diagnostics disk**, put it in a machine, `mount /dev/fd0 /mnt` then `sh /mnt/selftest.sh`. `FAIL 0`, and the summary pasted into the release notes | see below |
 | 7 | Walk the in-game checklist, all of it | [PARCOURS-TEST.md](PARCOURS-TEST.md) |
 | 8 | Rebuild and look at the description | `python3 tools/bbcode-preview.py && google-chrome --headless=new --screenshot=tools/out/workshop-page.png --window-size=760,6600 "file://$PWD/workshop/preview-page.html"` |
@@ -142,6 +142,11 @@ line under the list, in the log at info, and in `console.txt` via `print`:
 
     CeroSec selftest: PASS 138 FAIL 0
 
+and, a few seconds later (the shell half runs over the ticks that follow the press,
+and the note on the window says so), in the log at info and in `console.txt`:
+
+    CeroSec shell selftest: PASS 356 FAIL 0
+
 Any failing line is in the log at **warn** -- the **Log** tab, `warn` filter -- and
 names the vector, what lua5.1 answers and what the game answered. A failure here is
 never cosmetic: it means the game computes something differently from every bench in
@@ -163,8 +168,8 @@ It also writes that into `RESULTS.TXT` on the floppy, so a run can be read back 
 the disk afterwards. The exit status is non-zero on any failure (`echo $?`).
 
 **Paste both summaries into the release notes**, with the build's own numbers. A
-release whose notes say `PASS 138 FAIL 0` and `PASS 26 FAIL 0` is a release somebody
-ran on Kahlua; a release with no numbers in it is one where nobody did, and that is
+release whose notes say `PASS 138 FAIL 0`, `shell selftest: PASS 356 FAIL 0` and
+`PASS 26 FAIL 0` is a release somebody ran on Kahlua; a release with no numbers in it is one where nobody did, and that is
 the whole point of writing them down rather than ticking a box. Two of the checklist
 steps in [PARCOURS-TEST.md](PARCOURS-TEST.md) section X are the same two gestures,
 with what to look at on the glass.
@@ -173,6 +178,47 @@ with what to look at on the glass.
 
 Said out loud, release by release, because the compatibility contract only allows
 a new sandbox option to change a world if the release notes say so plainly.
+
+### 0.7.0
+
+**A file's bytes change meaning, once.** `CeroSecOS.STATE_VERSION` moves
+2 → 3 and `CeroSecOS.FLOPPY_VERSION` 1 → 2: a stored file now ends its last
+line with `"\n"` where it used to end with nothing, which is a key whose
+meaning changed, and the contract's rule for that is a step that converts it
+and a number that makes an older build refuse the save instead of reading
+`"a\n"` as two lines (CONTRIBUTING, "No meaning changes" and "Newer than the
+code is refused"). `MIGRATIONS[3]` and `DISK_MIGRATIONS[2]` add the newline
+to every non-empty text file that lacks one, paid out of the disk's own room
+and never past it: a machine over its quota, a file already at 4096 bytes and
+a floppy with no byte left keep those files open, which reads the same. The
+`/bin` stand-ins are binaries and are left as they are. So every migrated text
+file shows one byte more in `ls -l` and `df`, and `wc -l` now counts its last
+line. `SYSTEM_VERSION` moves 21 → 22: old worlds gain `/bin/expr`,
+`/bin/uname` and `/bin/rmdir` and nothing else (`CeroSecOS.BIN_SINCE`), so a
+command or file a player deleted stays deleted. A diagnostics floppy handed
+out before this release keeps its old `selftest.sh`, which now fails the 3
+checks that read a `wc -l` count (`sort-u`, `wc`, `more`) on `wc`'s new
+eight-column padding, and prints `PASS 23 FAIL        3`: it counts its own
+failures with a bare `wc -l` too. The shipped script reads each count through
+`$(( ))`, so a new disk prints `PASS 26 FAIL 0` (content_test 7c pins the
+line); give a new disk. The fixture for
+the shape this meets is `tests/fixtures/state-v2.lua`, which the capture tool
+run on the build before the bump reproduces byte for byte, so it was kept.
+Otherwise nothing changes shape. `system.auto[...].later` is a new optional list, written only when an
+automated shop is first loaded with `CeroSec.RequireWiring` on; a world without
+it reads as before. The three new sandbox options default to the old behaviour:
+`CeroSec.RequireWiring` off, `CeroSec.FreeWiring` off, `CeroSec.LinkRange` 30,
+the reach a cable always had. A basement under a house is now a free cable
+row, a left click on a lit computer opens it, and the editor wraps a wide line.
+The shell is where a saved script can notice: `echo "a\nb"` now prints the two
+characters `\n` (use `printf`), `cp` onto an existing file overwrites it, a
+`[` or `sleep` error no longer ends the script, a refused redirect no longer
+runs its command, `$( )` no longer captures error text, and `$?` is 127 after
+"not found" and 126 after a refusal. `2>` now works where it used to
+be an argument. A script that compared an error's words sees 4.4BSD's now
+(`No such file or directory`, `foo: not found`, `illegal option -- z`),
+one that cut `wc`'s output by column sees eight columns a number, and a
+variable that was never exported no longer reaches a pipeline's stages.
 
 ### 0.6.1
 

@@ -202,13 +202,17 @@ end
 Events.OnFillWorldObjectContextMenu.Add(ComputerModContextMenu.doMenu)
 
 load("42/media/lua/client/CeroSec/CeroSecContextMenu.lua")
+-- The menu file has an OnGameStart handler of its own (the left click,
+-- CeroSecContextMenu.hookLeftClick), so the compat file's is counted from
+-- where the menu's leaves the event.
+local before = #Events.OnGameStart.handlers
 load("42/media/lua/client/CeroSec/CeroSecCompatComputerMod.lua")
 
 -- Arming is a handler on OnGameStart, taken off the fake event rather than
 -- called by name: a file that stopped registering it would fail here.
 eq("the compat file registers one OnGameStart handler",
-	#Events.OnGameStart.handlers, 1)
-local arm = Events.OnGameStart.handlers[1]
+	#Events.OnGameStart.handlers, before + 1)
+local arm = Events.OnGameStart.handlers[before + 1]
 
 local ON = CeroSec.SPRITES_ON.S
 local OFF = CeroSec.SPRITES_OFF.S

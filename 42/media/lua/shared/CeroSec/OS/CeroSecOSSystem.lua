@@ -163,9 +163,8 @@ function CeroSecOS.ensureWheel(state)
 		-- wheel is one of them. A line added here would make that file parse to one
 		-- group and so make the repair keep it for ever.
 		if #order > 0 and groups[CeroSecOS.WHEEL_GROUP] == nil then
-			local text = group.data or ""
-			if text ~= "" then text = text .. "\n" end
-			text = text .. CeroSecOS.groupLine({ name = CeroSecOS.WHEEL_GROUP, members = {} })
+			local text = CeroSecOS.appendLine(group.data,
+				CeroSecOS.groupLine({ name = CeroSecOS.WHEEL_GROUP, members = {} }))
 			if CeroSecOS.setData(state, root, CeroSecOS.GROUP_PATH, text) ~= nil then
 				changed = true
 			end
@@ -180,9 +179,7 @@ function CeroSecOS.ensureWheel(state)
 		-- carries the wheel line already. Adding a line to a rubbish file here
 		-- would make it parse to somebody and so make the repair keep it for ever.
 		if #order > 0 and entries["%" .. CeroSecOS.WHEEL_GROUP] == nil then
-			local text = sudoers.data or ""
-			if text ~= "" then text = text .. "\n" end
-			text = text .. "%" .. CeroSecOS.WHEEL_GROUP
+			local text = CeroSecOS.appendLine(sudoers.data, "%" .. CeroSecOS.WHEEL_GROUP)
 			if CeroSecOS.setData(state, root, CeroSecOS.SUDOERS_PATH, text) ~= nil then
 				changed = true
 			end
@@ -214,6 +211,33 @@ function CeroSecOS.upgradeSystem(state)
 	if type(state) ~= "table" then return false end
 	local sysv = state.sysv
 	if type(sysv) == "number" and sysv >= CeroSecOS.SYSTEM_VERSION then return false end
+
+	-- A machine that has had the whole top-up once (SYSTEM_GATED and on) gets
+	-- the names added since its number and nothing else: a gap anywhere else on
+	-- it is a deletion its owner made, and the contract is that it stays made.
+	-- The same ceilings as below, for the same reason.
+	if type(sysv) == "number" and sysv >= CeroSecOS.SYSTEM_GATED then
+		local bin = CeroSecOS.systemNode(state, CeroSecOS.BIN_PATH)
+		if type(bin) == "table" and bin.type == "dir" and type(bin.children) == "table" then
+			local nodes, bytes = CeroSecOS.usage(state)
+			local names = CeroSecOS.binNames()
+			for i = 1, #names do
+				local name = names[i]
+				local since = CeroSecOS.BIN_SINCE[name]
+				local info = CeroSecOS.commandDesc(name)
+				if type(since) == "number" and since > sysv and bin.children[name] == nil
+						and nodes + 1 <= CeroSecOS.MAX_NODES
+						and bytes + #info <= CeroSecOS.MAX_TOTAL_BYTES
+						and CeroSecOS.countEntries(bin) < CeroSecOS.MAX_DIR_ENTRIES then
+					bin.children[name] = CeroSecOS.newFile("root", 755, info)
+					nodes = nodes + 1
+					bytes = bytes + #info
+				end
+			end
+		end
+		state.sysv = CeroSecOS.SYSTEM_VERSION
+		return true
+	end
 
 	-- The ceilings are the disk's and are not suspended for this: a machine
 	-- filled to the node limit is topped up as far as it goes and no further,
@@ -270,7 +294,7 @@ function CeroSecOS.upgradeSystem(state)
 	local etc = CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH)
 	if type(etc) == "table" and etc.type == "dir" and type(etc.children) == "table" then
 		if etc.children.sudoers == nil then
-			local text = CeroSecOS.defaultSudoers()
+			local text = CeroSecOS.terminated(CeroSecOS.defaultSudoers())
 			if nodes + 1 <= CeroSecOS.MAX_NODES and bytes + #text <= CeroSecOS.MAX_TOTAL_BYTES
 					and CeroSecOS.countEntries(etc) < CeroSecOS.MAX_DIR_ENTRIES then
 				etc.children.sudoers = CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, text)
@@ -283,10 +307,12 @@ function CeroSecOS.upgradeSystem(state)
 		-- on it in a group of its owner's own name, which is what a missing file
 		-- means and not something to rewrite.
 		if etc.children.group == nil then
-			local text = CeroSecOS.defaultGroup()
+			local text = CeroSecOS.terminated(CeroSecOS.defaultGroup())
 			if nodes + 1 <= CeroSecOS.MAX_NODES and bytes + #text <= CeroSecOS.MAX_TOTAL_BYTES
 					and CeroSecOS.countEntries(etc) < CeroSecOS.MAX_DIR_ENTRIES then
 				etc.children.group = CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, text)
+				nodes = nodes + 1
+				bytes = bytes + #text
 			end
 		end
 
@@ -301,7 +327,7 @@ function CeroSecOS.upgradeSystem(state)
 		-- The name written in is the one the machine answers to now, not the default:
 		-- this runs on a machine that has been standing somewhere for a year.
 		if etc.children.issue == nil then
-			local text = CeroSecOS.issueText(CeroSecOS.hostname(state))
+			local text = CeroSecOS.terminated(CeroSecOS.issueText(CeroSecOS.hostname(state)))
 			if nodes + 1 <= CeroSecOS.MAX_NODES and bytes + #text <= CeroSecOS.MAX_TOTAL_BYTES
 					and CeroSecOS.countEntries(etc) < CeroSecOS.MAX_DIR_ENTRIES then
 				etc.children.issue = CeroSecOS.newFile("root", 644, text)
@@ -406,7 +432,7 @@ function CeroSecOS.setHostname(state, name, now)
 	if not CeroSecOS.isValidHostname(name) then return nil, "invalid name" end
 	local old = CeroSecOS.hostname(state)
 	local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
-		CeroSecOS.HOSTNAME_PATH, name, false, now)
+		CeroSecOS.HOSTNAME_PATH, CeroSecOS.terminated(name), false, now)
 	if done == nil then return nil, reason end
 	state.hostname = name
 	-- And the banner over the login prompt, which carries the name because nothing
@@ -417,9 +443,9 @@ function CeroSecOS.setHostname(state, name, now)
 	-- leaves the seeded line again.
 	local issue = CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH)
 	if type(issue) == "table" and issue.type == "file"
-			and (issue.data or "") == CeroSecOS.issueText(old) then
+			and CeroSecOS.sameText(issue.data, CeroSecOS.issueText(old)) then
 		CeroSecOS.writeFile(state, CeroSecOS.rootSession(), CeroSecOS.ISSUE_PATH,
-			CeroSecOS.issueText(name), false, now)
+			CeroSecOS.terminated(CeroSecOS.issueText(name)), false, now)
 	end
 	return true, nil
 end
@@ -580,16 +606,16 @@ function CeroSecOS.restoreSystem(state)
 	if etc.children.hostname == nil then
 		local name = CeroSecOS.DEFAULT_HOSTNAME
 		if CeroSecOS.isValidHostname(state.hostname) then name = state.hostname end
-		etc.children.hostname = CeroSecOS.newFile("root", 644, name)
+		etc.children.hostname = CeroSecOS.newFile("root", 644, CeroSecOS.terminated(name))
 	end
 	if etc.children.motd == nil then
-		etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.MOTD)
+		etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.terminated(CeroSecOS.MOTD))
 	end
 	-- /etc/issue on the same terms, and with the name the machine answers to now:
 	-- a repair is not a rename.
 	if etc.children.issue == nil then
 		etc.children.issue =
-			CeroSecOS.newFile("root", 644, CeroSecOS.issueText(CeroSecOS.hostname(state)))
+			CeroSecOS.newFile("root", 644, CeroSecOS.terminated(CeroSecOS.issueText(CeroSecOS.hostname(state))))
 	end
 	local passwd = etc.children.passwd
 	local keep = false
@@ -599,7 +625,7 @@ function CeroSecOS.restoreSystem(state)
 	end
 	if not keep then
 		etc.children.passwd =
-			CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.defaultPasswd())
+			CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.terminated(CeroSecOS.defaultPasswd()))
 	end
 
 	-- /etc/sudoers, on the same terms as the accounts: a file that still names
@@ -614,7 +640,7 @@ function CeroSecOS.restoreSystem(state)
 	end
 	if not keepSudoers then
 		etc.children.sudoers =
-			CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, CeroSecOS.defaultSudoers())
+			CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 	end
 
 	-- /etc/group, on the same terms again: a file that still holds one group is
@@ -629,7 +655,7 @@ function CeroSecOS.restoreSystem(state)
 	end
 	if not keepGroup then
 		etc.children.group =
-			CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, CeroSecOS.defaultGroup())
+			CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, CeroSecOS.terminated(CeroSecOS.defaultGroup()))
 	end
 
 	-- And the wheel pair, on the terms ensureWheel sets: each line added only

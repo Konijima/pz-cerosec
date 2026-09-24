@@ -176,7 +176,7 @@ A machine somebody was using is not that machine: its accounts are the
 people who worked there, admin is not among them, and each had a
 password. Look where people wrote them in 1993: a drawer, a pocket.
 
-Get either half wrong and it says only "login incorrect", never which
+Get either half wrong and it says only "Login incorrect", never which
 half.]],
 
 [[The screen belongs to the machine, not to you.
@@ -220,7 +220,7 @@ with cat and a greater-than sign instead.
 
 mkpasswd is ours. crypt was a library call in 1993 and nothing in /bin
 wrapped it. It was called hash on this machine until this release; if you
-type that, you will get command not found, and mkpasswd is where it went.]],
+type that, you will get not found, and mkpasswd is where it went.]],
 
 [[What is not Unix here, continued.
 
@@ -239,8 +239,143 @@ running, and whoever sits down next sees them. Kept on purpose: it is what
 lets you pick up what the last survivor left. Stopping one is Unix's own
 rule: yours, or root's.
 
-more reads a LINE where the real one reads a key, because this screen has
-one typing line and Enter sends it. read -n 1 is the same.]],
+more and read -n want Enter where real ones read a key: this screen has
+one typing line.]],
+
+[[What is not Unix here: errors.
+
+A real command writes what it has to say down two streams: its output,
+and its errors, which stderr is the name of. 2> picks the second one
+out, and this machine has 2>, 2>&1 and >&2, doing what you remember.
+The difference is inside the command. One here hands back what it said
+as one stream and not two, so a command that half fails -- cat on a
+good file and a missing one -- has its good lines mixed in with the
+complaint, and the shell cannot tell them apart. It takes the whole
+answer for errors: none of it goes into the file > named, and 2> takes
+all of it.
+
+  admin@ksp-04-11:~$ cat notes nosuch 2>/dev/null
+  admin@ksp-04-11:~$
+
+A real Unix would have printed notes there. When you want the good
+ones kept, name the files one command at a time.
+
+Numbers stop at 9007199254740991, where a 1993 long stopped at
+2147483647 and wrapped round. $(( )) and expr hold their numbers at
+the top; printf says Result too large, and test says overflow.]],
+
+[[What is not Unix here: errors, continued.
+
+A syntax error reads as sh's did, but a quote left open is refused
+here, and so is a line that ends in | or &&, or an if with no fi:
+sh waited for the rest at its second prompt, and this screen has one
+typing line. What it says is end of file unexpected.
+
+Some refusals keep this machine's own
+words: is a device, invalid characters and file too large -- the first
+two because no errno named them, the last only at a >, where sh's own
+table had no word for it and printed error 27. So does /dev: read-only.
+
+The shell signs its own complaints sh: at the prompt, and name: line
+N: in a script, where 4.4BSD's said nothing at the prompt and gave no
+line. A > it cannot open is cannot create, signed by nobody, even in
+a script, where sh put the script's name in front.
+
+A wrong password to sudo says sudo: authentication failure. No source
+for what a 1993 sudo printed has turned up to check it against.]],
+
+[[What is not Unix here: files and the shell.
+
+One > and one 2> to a command, and no < at all: a second > is a bad
+redirect, and < is refused. Hand a file to a command by naming it, or
+with cat file | command.
+
+Inside braces, the word after :- := :? :+ and the pattern after # ##
+% %% may not hold a $( ) of its own, nor another ${x:-y}: one
+substitution deep is the ceiling a catch inside a catch already has.
+A pattern is at most 32 pieces, a piece being a character, a ? or a
+[set]; a run of * is one.
+
+ls -l has no link count: the column a real ls put between the mode and
+the owner is not there, and the name has the room instead.
+
+kill -l prints its list on four lines: kill.c's two were
+too wide for the glass, and each is folded at a space.
+
+edit ends what it saves with a newline, as vi did, but it
+saves a file without its last newline when that one byte would not
+fit, past the 4096-byte ceiling or on a full disk or floppy. The save
+says [Incomplete last line].]],
+
+[[What is not Unix here: pipes, printf and date.
+
+A stage of a pipe stops as soon as the command reading it is over,
+once it has run one command, whether it wrote into the pipe or not. A
+real sh runs every stage to its end, and stops a writer only when it
+next writes into a pipe nobody reads. So { echo a > f; echo b > g; } |
+true makes f and never g, and sleep 5 | true is over at once.
+
+sh -c is not here: sh runs a file. Put the line into one and hand sh
+the file's name.
+
+printf has no %f: no floating point conversion is trusted here. It
+knows %s, %c, %d, %x, %o and %%, with a width, a precision and the
+flags - and 0. And its \NNN makes no control byte: printf '\1' prints
+nothing.
+
+date prints no time zone: nothing ever told this machine which one it
+sits in, so the zone a real date printed is left out, not guessed.
+
+At the prompt, each line is a shell of its own: set -- and a trap
+last for that line, exec ends the line, not the login, and exec >
+file with no command is refused.]],
+
+[[What is not Unix here: read, test, history, who you are.
+
+read -p, read -s and read -n are taught here, and they are bash's: a
+prompt, a hidden answer, N characters. In ksh88 -p read from a
+co-process and -s saved the line in the history. And a backslash ending
+a line read joins nothing.
+
+!!, !n and history -c are csh's and bash's; ksh88 had fc and r. Here !!
+and !n work only when they are the whole line.
+
+test signs every refusal test:, [ too, and its syntax error
+has nothing after it: 4.4BSD's used the name it ran as and
+added an old errno's text.
+
+/etc/passwd has four fields, the hash one of them, and is mode 600. A
+1993 one was mode 644 with seven fields, and the hash lived in
+master.passwd or shadow. And id prints uid=admin flag=user: there are no
+numbers behind a name.
+
+Any account with the admin flag gets the # prompt. A real sh gave # to
+uid 0 alone. And after output with no newline at its end, printf a,
+the prompt starts on the next row; a real terminal put it right after:
+a$ ]],
+
+[[What is not Unix here: what is missing.
+
+ls /bin is the whole list of what this machine can run, and a program a
+real Unix had and this one has not is simply not in it. A few are named
+here because a script reaches for them first.
+
+trap catches EXIT and nothing else: kill, Escape and the processor
+ceiling end a job outright, the way kill -9 did, so there is no INT or
+TERM to catch. A job stopped by an error runs no trap either.
+
+uname has no -m: no hardware name was ever put in this machine to print,
+and guessing one would be lying about what is inside the case.
+
+set has no -e, -x or -u.
+
+expr has no : for matching a pattern against a string. The tool grep uses
+for one has no \( \) to hand back what matched, only whether it did.
+
+kill -9 and kill -s KILL, TERM, HUP, INT or QUIT end a job, the five
+signals whose default action is to end one outright. kill -STOP and
+kill -CONT are refused with not honoured: a job here cannot be paused
+and resumed the way a real process can.]],
 
 [[What is not Unix here, and the end of the list.
 
@@ -251,7 +386,7 @@ it, and neither is on this disk. The one line that box prints when the line
 opens is ours as well: a real one printed whatever its maker chose.
 
 There was a call CALLSIGN command here until this release. If you type it
-you will get command not found. It was never Unix -- a packet box was a
+you will get not found. It was never Unix -- a packet box was a
 peripheral on a serial line, and the way to one is cu -l /dev/radio0, which
 Volume 2 chapter 8 teaches.
 
@@ -281,9 +416,9 @@ and nothing on the wire answers for mail. rsh <host> mail <user> is how a
 message crosses it.]],
 
 [[And two shapes are cut rather than changed. A line here is sixty columns,
-so uptime says "load" where 4.4BSD says "load averages:", and w prints the
-clock where a real one prints a weekday. Every other cut in the book is
-named beside the command it belongs to.
+so uptime says "load" where 4.4BSD says "load averages:", and w
+prints the clock where a real one prints a weekday. Every other cut in
+the book is named beside the command it belongs to.
 
 And one FILE FORMAT is ours: what tar makes. A real archive is 512-byte
 blocks with a header in front of every member, which on a four-kilobyte
@@ -309,20 +444,19 @@ were given, that is what has happened.
 
 Four places to look, and none of them is a guess.
 
-  who is on it        cat /etc/passwd
-  what it has done    cat /var/log/messages
-  who last sat here   last
-  what he typed       cat .sh_history
+  who is on it       ls /home                     anybody
+  who last sat here  last                         anybody
+  what it has done   cat /var/log/messages        root
+  what he typed      cat /home/<name>/.sh_history root
 
-/etc/passwd is one line per account. The first field is the name to type
-at login:; the second is not a password but what one turns into, and you
-cannot read one back out of it.
+Logged in as him, his own is cat .sh_history. root also reads
+/etc/passwd: the first field is the name to type at login:; the
+second is not a password but what one turns into.
 
 If nobody left you the password, ask whoever had the desk. Failing that,
 your site administrator can set you a new one (Volume 2, chapter 2), and
-the firmware can put a machine back to the way it left our factory
-without touching anybody's home directory -- the last resort, chapter
-10.]],
+the firmware can put the machine back as it left our factory, homes
+untouched -- the last resort, chapter 10.]],
 
 		} },
 
@@ -381,11 +515,11 @@ Try it.
 
   admin@ksp-04-11:~$ man ls
   ls - list a directory
-  usage: ls [-1laACF] [path]
+  usage: ls [-1laACF] [path]...
 
 That "usage:" line is worth learning to read. ls is the word you type.
-Square brackets mean optional. So ls on its own is legal, ls -l is legal,
-and ls -l /etc is legal. Chapter 12 of this volume is nothing but a page
+Square brackets mean optional, and dots mean as many as you like. So ls
+on its own is legal, ls -l is legal, and ls -l /etc /home is legal. Chapter 12 of this volume is nothing but a page
 of those lines, for the day you need one fast.]],
 
 [[Three keys that save your fingers.
@@ -427,10 +561,10 @@ Worth knowing while the window is open: your keystrokes go to the
 computer and nowhere else. Your hands are on its keyboard. You will not
 walk, open a bag or swing anything until Escape hands them back.]],
 
-[[When the machine says "command not found".
+[[When the machine says "not found".
 
   admin@ksp-04-11:~$ sl
-  sl: command not found
+  sl: not found
 
 That line is not an insult and it is not a fault. It means exactly one
 thing: no command by that name exists on this machine. The machine looked,
@@ -513,8 +647,9 @@ notes directory however far away you have wandered.]],
 
 Four commands, and then you have a working office.
 
-mkdir makes a directory. touch makes an empty file, or, on a file that
-already exists, just moves its date to now. cat prints a file's contents
+mkdir makes a directory, and rmdir takes an empty one away. touch makes
+an empty file, or, on a file that already exists, just moves its date to
+now. cat prints a file's contents
 on the screen. And a greater-than sign after a command sends what the
 command would have printed into a file instead.
 
@@ -556,7 +691,7 @@ directory without being told twice. cp wants -r for "and everything
 inside it", and rm wants -r for the same reason:
 
   admin@ksp-04-11:~$ rm notes
-  rm: notes: is a directory
+  rm: notes: Is a directory
   admin@ksp-04-11:~$ rm -r notes
 
 Read that second line twice before you press Enter. rm -r does not ask,
@@ -729,15 +864,15 @@ Try it. Open a file, type one word, press Escape, and read the question.
 Then press Escape again to come back. Knowing you can back out of that
 question is worth more than knowing either answer.]],
 
-[[Three ceilings the message line will tell you about.
+[[Two ceilings the message line will tell you about.
 
-A line stops at sixty characters, because the screen is sixty characters
-wide. Keep typing and the machine simply stops taking letters and says
-
-  Line too long: 60 characters
-
-Backspace until it is shorter, or press Enter and carry on below. Nothing
-was lost; the keystrokes were refused, not eaten.
+A line wraps past fifty-six characters: the screen is sixty wide and the
+line numbers down the left take four. Keep typing and the line folds onto
+the row below, the way a real terminal wraps a long line instead of losing
+what runs past its edge. Nothing is refused and nothing is lost; scroll
+down to see the rest of a line that outgrew the seventeen rows on the
+glass. The row's line number, at the left, is blank on the fold, so it is
+never mistaken for a new line.
 
 The file stops at 4096 bytes, the ceiling from chapter 3, and says
 
@@ -754,7 +889,7 @@ growth is refused.]],
 
 A file you may read but not change opens with [read-only] in the top bar
 instead of [modified]. You can move around it and read it all day. Tab
-answers "Cannot save: permission denied" and touches nothing. Escape
+answers "Cannot save: Permission denied" and touches nothing. Escape
 leaves at once with no question, because nothing unsaved is yours. A file
 you may not even read never opens: the shell refuses it before the editor
 starts.
@@ -885,25 +1020,25 @@ and that the middle digit belongs to it.]],
 You will see this line a great deal, and it does not mean you did anything
 wrong.
 
-  admin@ksp-04-11:~$ cd /root
-  cd: /root: permission denied
+  admin@ksp-04-11:~$ cat /etc/passwd
+  cat: /etc/passwd: Permission denied
 
-Read it in three pieces, which is how every refusal on this machine is
-built. cd is the command that refused. /root is exactly what it refused
-about. permission denied is why.
+Read it in three pieces. cat is the command that refused. /etc/passwd
+is what it refused about. permission denied is why. (cd says only cd:
+can't cd to /root, as sh did.)
 
 It means the account you are logged in as is not allowed to do that to
 that thing. That is all. The file is there, the command works, you are
 simply not the right person for it. Nothing broke and nothing needs
 repairing.
 
-Three ordinary reasons. It belongs to root, like /root. It belongs to
+Three ordinary reasons. It belongs to root, like this one. It belongs to
 another survivor, in his own home. Or it is yours and you took the
 permission away yourself, in which case chmod gives it back.
 
 Classic mistake. Assuming denied means broken and reaching for root to
 force it. Ask first whether you needed that file at all. Most of the time
-the answer is no, and Volume 2 is a shorter book than it looks.]],
+the answer is no, and Volume 2 is shorter than it looks.]],
 
 		} },
 
@@ -954,7 +1089,7 @@ press Enter. New password: is the new one. Retype new password: is the
 same one again, to catch a typo before it becomes the only key to your own
 account.
 
-Get the old one wrong and it says "passwd: authentication failure". Type
+Get the old one wrong and it says "passwd: Permission denied". Type
 the new one two different ways and it says "passwd: passwords do not
 match". Either way nothing changed and you simply start again.]],
 
@@ -1081,7 +1216,7 @@ match.]],
   $        the end of the line, written last
 
 A backslash takes the meaning off any, so a\.b is a full stop. Quote a
-pattern: the shell would eat the star otherwise.
+pattern: the shell would eat the star and the backslash otherwise.
 
   admin@ksp-04-11:~$ grep -c '^From ' mbox
   7
@@ -1336,7 +1471,7 @@ and leaves the file standing, which is usually what you want.]],
 
 [[Where the machine looks for a command.
 
-Now for the sentence that explains chapter 2's "command not found". Every
+Now for the sentence that explains chapter 2's "not found". Every
 command you type is a real file. ls is a file called /bin/ls, and you can
 read it.
 
@@ -1354,7 +1489,7 @@ called PATH, and on a fresh machine it has two entries. Try it.
 already on the list: a program copied in there is a command anybody can
 type.
 
-So "command not found" really means "I walked PATH and there was no such
+So "not found" really means "I walked PATH and there was no such
 file anywhere on it".
 
 Two commands report on the search. which prints where a name would be
@@ -1573,7 +1708,7 @@ reboot switches it off and straight back on: everybody watching sees the
 firmware count its memory out loud again and lands at a fresh login:.
 shutdown -r now is the longer way of saying the same thing.
 
-As admin you get "shutdown: permission denied", which is not a fault. The
+As admin you get "shutdown: Permission denied", which is not a fault. The
 switch on the case works for everybody, and is what you should use.
 
 shutdown throws the switch off, so the power coming back does not bring the
@@ -1692,8 +1827,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2792  62744    5%
-  nodes         512    107    405   21%
+  hda         65536   2871  62665    5%
+  nodes         512    110    402   22%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 
@@ -1830,8 +1965,8 @@ Getting about, and looking.
 
   pwd
   cd [dir]
-  ls [-1laACF] [path]
-  cat [file]...
+  ls [-1laACF] [path]...
+  cat [-n] [file]...
   df
 
 The floppy drive.
@@ -1844,17 +1979,18 @@ The floppy drive.
 Making, copying, destroying.
 
   mkdir <dir>
-  touch <file>
+  touch <file>...
   cp [-r] <src>... <dst>
   mv <src>... <dst>
-  rm [-r] <path>...
+  rm [-rf] <path>...
+  rmdir <dir>...
   echo [text...]
   edit <file>
 
 Reading a file without opening it.
 
   head [-n N|-N] [file]
-  tail [-n N|-N] [file]
+  tail [-n N|-N|+N] [file]
   wc [-clw] [file]...
   grep [-cinv] [-e pattern] [pattern] [file]...
   sort [-r] [-n] [-u] [file]...
@@ -1919,7 +2055,7 @@ Is the machine busy, and who is on it.
 The numbers, all in one place.
 
 Screen: 60 columns wide, 20 rows tall. The editor gets 17 of those rows to
-write in, and a line stops at 60 characters. The typing line takes 240
+write in, and a line wraps past 56 characters. The typing line takes 240
 characters.
 
 One file: 4096 bytes.
@@ -1946,27 +2082,27 @@ every time:
   <command>: <what failed>: <why>
 
 The command that refused, then exactly which file or word it refused
-about, then the reason in two or three words. Read it in that order and it
-will tell you what to do next. Below is every reason a user meets, with
-what it actually means.
+about, then the reason, in the words every Unix of 1993 used. Read it
+in that order and it will tell you what to do next. Below is every
+reason a user meets, with what it actually means.
 
-  no such file
+  No such file or directory
       nothing is at that name; check ls and your spelling
-  is a directory
+  Is a directory
       a file command was handed a directory; try -r
-  not a directory
+  Not a directory
       a directory was expected and a file was there
-  permission denied
+  Permission denied
       you may not read, write or step into it
-  file exists
+  File exists
       something is already at that name
-  directory not empty
-      mv was asked to write a directory over one that
-      has something in it
+  are identical (not copied).
+      cp was handed one file under two names
+  Directory not empty
+      mv onto a directory with something in it
 
-Classic mistake. Reading the first word and the last word and skipping the
-middle one. The middle piece is the only part that tells you which file the
-machine is actually complaining about.]],
+Classic mistake: skipping the middle piece. It is the only part that tells
+you which file the machine is actually complaining about.]],
 
 [[Names and paths.
 
@@ -1983,49 +2119,63 @@ machine is actually complaining about.]],
 
 Running out of room. Chapter 3 has the numbers.
 
-  file too large
+  File too large
       past 4096 bytes for that one file
-  disk full
+  No space left on device
       past 65536 bytes, or past 512 files, on the machine
   directory full
       the parent already holds 96 entries
 
   /dev: read-only
       nothing may be created under /dev; only the machine
-      puts things there]],
+      puts things there
+
+  cannot create <file>: <why>
+      a > the shell could not open; nothing ran. Why is
+      one of: permission denied, is a directory,
+      file system full, directory nonexistent]],
 
 [[Commands the machine could not run.
 
-  command not found
+  not found
       nothing on PATH answers that name; check spelling,
-      check capitals, and check help
+      check capitals, check help
 
-A command that is there but not yours to run says permission denied
-instead, never command not found. One tells you it is missing, the other
-that it is locked and exactly where.
+One there but not yours to run says permission denied instead.
 
   <cmd>: usage: <the shape of it>
       the right command with the wrong number of parts;
       the line it prints is the answer
-  <cmd>: <flag>: unknown option
-      a flag that command does not have
+  <cmd>: illegal option -- <flag>
+  usage: <the shape of it>
+      a flag it does not have, and the shape it wanted
+  find: <primary>: unknown option
   chmod: <mode>: invalid mode
       neither three digits nor a clause in letters
   man: <name>: no manual entry
       no command of that name
   sh: sleep: no clock
-      the machine has no clock to count from]],
+      the machine has no clock
+  cd: can't cd to <dir>
+  <file>: Can't open <file>
+  .: Can't open <file>
+      missing, or not yours: cd, sh and . say no more
+  grep: <pattern>: invalid character range
+  grep: <pattern>: unmatched [
+  grep: <pattern>: trailing backslash
+  grep: <pattern>: expression too long
+      a pattern grep cannot read; exit 2]],
 
 [[Typing that the shell could not make sense of. Nothing runs at all.
 
-  syntax error: bad redirect
-      two redirects on one command; a command sends its
-      output to one file, not to two
-  syntax error: missing redirect target
-      a greater-than sign with no file name after it
-  syntax error: unterminated quote
-      a double quote opened and never closed, or a line
-      that ends in a backslash
+  Syntax error: redirection unexpected
+      two > or two 2> on one command, or a <
+  Syntax error: Bad fd number
+      a >& that is not >&1 or >&2
+  Syntax error: end of file unexpected
+      a > with no file name, or a | with nothing after
+  Syntax error: Unterminated quoted string
+      a quote never closed, or a trailing backslash
 
 Pipes, from chapter 7.
 
@@ -2049,17 +2199,21 @@ The three new filters, from chapter 7.
 
 [[Logging in, and your account.
 
-  login incorrect
+  Login incorrect
       a wrong name or a wrong password, and it will never
       say which
-  passwd: authentication failure
-      the old password did not match
+  passwd: Permission denied
+      the old password did not match, or the account is
+      another's, which only root may change
+  passwd: /etc/passwd: unchanged
+      said after a refusal, once the file was reached
   passwd: passwords do not match
       the new one was typed two different ways
   passwd: password too long
   passwd: no such user
-  su: authentication failure
-      one wrong answer; there is no second try
+  Sorry
+      su's whole answer to a wrong password; there is no
+      second try
   su: too many levels
       a fifth su, past the four the machine allows
 
@@ -2068,9 +2222,9 @@ The three new filters, from chapter 7.
 
 [[The floppy drive, and the disk in it.
 
-  newfs: /dev/fd0: no such file
+  newfs: /dev/fd0: No such file or directory
       there is no disk in the slot
-  newfs: /dev/fd0: permission denied
+  newfs: /dev/fd0: Permission denied
       the drive is root's and the sudo group's; Volume 2
   newfs: /dev/fd0: Device busy
       unmount it first
@@ -2080,7 +2234,7 @@ The three new filters, from chapter 7.
       the disk is blank; newfs it
   mount: /mnt: Device busy
       something is already mounted there
-  mount: /mnt: not a directory
+  mount: /mnt: Not a directory
       a disk mounts on a directory and nothing else
   umount: /mnt: not mounted
       nothing is mounted there
@@ -2100,13 +2254,11 @@ prompt.
       not an error: what Tab prints when it worked
   Save modified buffer? (y/n)
       Escape with unsaved work; Escape again backs out
-  Line too long: 60 characters
-      the screen is 60 wide; Backspace or press Enter
   Buffer full: 4096 bytes
       the file's own ceiling
   Buffer full: 2000 typed characters
       the typing box's ceiling for one sitting
-  Cannot save: permission denied
+  Cannot save: Permission denied
       the file is [read-only] to you; nothing was written
   Cannot save: disk full
       no room left; nothing was written, so nothing is

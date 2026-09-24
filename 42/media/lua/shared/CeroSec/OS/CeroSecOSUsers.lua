@@ -368,7 +368,7 @@ function CeroSecOS.writePasswd(state, users, order, name, stored, now)
 	end
 	local done, reason =
 		CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.PASSWD_PATH,
-			table.concat(out, "\n"), now)
+			CeroSecOS.linesToText(out), now)
 	if done == nil then return nil, reason end
 	return true, nil
 end
@@ -413,9 +413,7 @@ function CeroSecOS.addUser(state, name, home, admin, extra, now)
 	if node == nil or node.type ~= "file" then return nil, "no such file" end
 	local user = CeroSecOS.newUser(name, "", home, admin,
 		CeroSecOS.newSalt(state, name .. tostring(extra)))
-	local text = node.data or ""
-	if text ~= "" then text = text .. "\n" end
-	return writePasswdText(state, text .. CeroSecOS.passwdLine(user), now)
+	return writePasswdText(state, CeroSecOS.appendLine(node.data, CeroSecOS.passwdLine(user)), now)
 end
 
 -- Every line that names this account, taken out; every other line kept exactly
@@ -430,7 +428,7 @@ function CeroSecOS.removeUser(state, name, now)
 		local user = CeroSecOS.parsePasswdLine(lines[i])
 		if user == nil or user.name ~= name then out[#out + 1] = lines[i] end
 	end
-	return writePasswdText(state, table.concat(out, "\n"), now)
+	return writePasswdText(state, CeroSecOS.linesToText(out), now)
 end
 
 -- The single place the fourth field is written after the line exists, and the
@@ -457,7 +455,7 @@ function CeroSecOS.setAdmin(state, name, admin, now)
 	end
 	local done, reason =
 		CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.PASSWD_PATH,
-			table.concat(out, "\n"), now)
+			CeroSecOS.linesToText(out), now)
 	if done == nil then return nil, reason end
 	return true, nil
 end
@@ -540,7 +538,7 @@ function CeroSecOS.migrateUsers(state)
 		CeroSecOS.ensureSystemDir(state, "etc")
 		local etc = CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH)
 		etc.children.passwd =
-			CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, table.concat(lines, "\n"))
+			CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.linesToText(lines))
 	end
 
 	-- A machine converted from a users table has never had a /bin either: it was
@@ -777,7 +775,7 @@ function CeroSecOS.removeSudoer(state, name, now)
 	-- Nothing to do is not a write: the file keeps its timestamp.
 	if not dropped then return true, nil end
 	local done, reason = CeroSecOS.setData(state, CeroSecOS.rootSession(),
-		CeroSecOS.SUDOERS_PATH, table.concat(out, "\n"), now)
+		CeroSecOS.SUDOERS_PATH, CeroSecOS.linesToText(out), now)
 	if done == nil then return nil, reason end
 	return true, nil
 end
@@ -991,9 +989,8 @@ function CeroSecOS.addGroup(state, name, now)
 	if CeroSecOS.groupExists(state, name) then return nil, "already exists" end
 	local node = CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH)
 	if node == nil or node.type ~= "file" then return nil, "no such file" end
-	local text = node.data or ""
-	if text ~= "" then text = text .. "\n" end
-	return writeGroupText(state, text .. CeroSecOS.groupLine({ name = name, members = {} }), now)
+	return writeGroupText(state,
+		CeroSecOS.appendLine(node.data, CeroSecOS.groupLine({ name = name, members = {} })), now)
 end
 
 -- Every line that names this group, taken out; every other line kept exactly as
@@ -1008,7 +1005,7 @@ function CeroSecOS.removeGroup(state, name, now)
 		local group = CeroSecOS.parseGroupLine(lines[i])
 		if group == nil or group.name ~= name then out[#out + 1] = lines[i] end
 	end
-	return writeGroupText(state, table.concat(out, "\n"), now)
+	return writeGroupText(state, CeroSecOS.linesToText(out), now)
 end
 
 -- Add or drop one member of one group. The line is rewritten where it lies and
@@ -1044,7 +1041,7 @@ function CeroSecOS.setGroupMember(state, name, group, member, now)
 		end
 	end
 	if not found then return nil, "no such group" end
-	return writeGroupText(state, table.concat(out, "\n"), now)
+	return writeGroupText(state, CeroSecOS.linesToText(out), now)
 end
 
 -- Every line naming this account as a member, rewritten without it; every other
@@ -1075,7 +1072,7 @@ function CeroSecOS.removeGroupMember(state, name, now)
 	end
 	-- Nothing to do is not a write: the file keeps its timestamp.
 	if not dropped then return true, nil end
-	return writeGroupText(state, table.concat(out, "\n"), now)
+	return writeGroupText(state, CeroSecOS.linesToText(out), now)
 end
 
 -- What a machine ships with. root's own group, empty; wheel, empty, which is

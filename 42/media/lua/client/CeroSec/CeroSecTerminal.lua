@@ -1046,9 +1046,11 @@ function CeroSecTerminal:updateEditor()
 		if refusal ~= nil and CeroSec.editBadness(text) >= CeroSec.editBadness(prev.text) then
 			-- Refused under the fingers: the character never lands, and the
 			-- cursor goes back where it was before it was typed. Only when it
-			-- made things no better, though -- a file the shell wrote can hold
-			-- a row wider than the screen, and an editor that undid the
-			-- backspaces on it would be an editor that could never fix it.
+			-- made things no better, though -- a file already past 4096 bytes,
+			-- or already carrying a control character, before this build ever
+			-- looked at it, and an editor that undid the backspaces on one
+			-- would be an editor that could never fix it. A row wider than the
+			-- screen is no longer one of these: it wraps, and is never refused.
 			self.entry:setText(prev.text)
 			self:setCursor(prev.pos)
 			self.editMessage = refusal
@@ -1141,7 +1143,7 @@ function CeroSecTerminal:editKey(key)
 		return
 	end
 	if action == "readonly" then
-		self.editMessage = "Cannot save: permission denied"
+		self.editMessage = "Cannot save: Permission denied"
 	end
 end
 
@@ -1611,15 +1613,25 @@ function CeroSecTerminal:drawEditor(left, top)
 	local colors = CeroSec.COLORS
 	local mine = self:editing()
 	local text = self:bufferText()
+	-- Same gutter/cols math as CeroSec.editScreen, from the same text, so the
+	-- wrap this reads the cursor against can never drift from what is drawn.
 	local lines = CeroSec.editLines(text)
+	local gutter = CeroSec.editGutterWidth(#lines)
+	local cols = CeroSec.COLS - gutter - 1
 
+	-- One offset for the rows, the cursor and the screen alike: a cursor past
+	-- the right edge adds the empty row it stands on (CeroSec.editPastEdge),
+	-- and editTop has to scroll against the rows that are drawn. No cursor,
+	-- no offset, and so no extra row.
+	local offset = nil
 	local row, col = 1, 0
 	if mine then
-		local offset = self.entry:getCursorPos() or 0
+		offset = self.entry:getCursorPos() or 0
 		if self.editAsk then offset = self.editPrev and self.editPrev.pos or 0 end
-		row, col = CeroSec.editCursor(text, offset)
+		row, col = CeroSec.editScreenCursor(text, offset, cols)
 	end
-	self.editTopRow = CeroSec.editTop(self.editTopRow, row, #lines, CeroSec.EDIT_ROWS)
+	local rows = CeroSec.editRows(text, cols, offset)
+	self.editTopRow = CeroSec.editTop(self.editTopRow, row, #rows, CeroSec.EDIT_ROWS)
 
 	local flag = nil
 	if self.edit.readonly then
@@ -1629,7 +1641,7 @@ function CeroSecTerminal:drawEditor(left, top)
 	end
 
 	local screen = CeroSec.editScreen(text, self.editTopRow, self.edit.path, flag,
-		self:editMessageLine())
+		self:editMessageLine(), offset)
 
 	self:drawBar(screen[1], left, top)
 	for i = 2, 1 + CeroSec.EDIT_ROWS do
@@ -1644,13 +1656,15 @@ function CeroSecTerminal:drawEditor(left, top)
 	-- character it covers repainted over it: in the screen's own colour while
 	-- the block is lit, in the text's while it is dark, so a cursor in the
 	-- middle of a line neither hides what it is on nor eats it for half a
-	-- second. Column 60 is the one place it lies -- a full line has nowhere to
-	-- put the cursor after its last character -- and it sits on that character
-	-- instead.
+	-- second. col is always on the screen: a cursor after the last character
+	-- of a full row is at column 0 of the row below it (editScreenCursor).
 	local cell = col
-	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
-	local span, under, width = CeroSec.cursorSpan("", lines[row] or "", cell, advance)
-	local x = left + span
+	local screenLine = rows[row] and rows[row].text or ""
+	local span, under, width = CeroSec.cursorSpan("", screenLine, cell, advance)
+	-- Shifted right past the gutter and its separating space, in cells, so the
+	-- block lands on the same buffer character the gutter-prefixed row shows
+	-- it under.
+	local x = left + (gutter + 1) * CELL_W + span
 	local y = top + (row - self.editTopRow + 1) * CELL_H
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen
