@@ -699,3 +699,33 @@ function CeroSecOS.stampTree(node, now)
 	local names = CeroSecOS.childNames(node)
 	for i = 1, #names do CeroSecOS.stampTree(node.children[names[i]], now) end
 end
+
+-- The six filesystem refusals, worded the way strerror(3) worded them in
+-- 4.4BSD's own errlist (errno.h's ENOENT, EACCES, EISDIR, ENOTDIR, EEXIST and
+-- ENOTEMPTY): capitalised, and the whole sentence, not this machine's short
+-- lower-case codes. Every caller still SIGNS a refusal with the short code
+-- below -- getNode, can and the rest go on returning "no such file" and the
+-- like, and every comparison against those codes (CeroSecOSShell's `reason ~=
+-- "no such file"`, the exit-status table) is unchanged -- and only the two
+-- places a code becomes a LINE on the glass, CeroSecOSShell's fail and
+-- CeroSecOSDev's refuse, pass it through the table below first. One table
+-- instead of a strerror() at every call site, so the wording cannot drift
+-- between a `cat`, a `cd` and a `cp` that hit the same errno.
+CeroSecOS.STRERROR = {
+	["no such file"]         = "No such file or directory",
+	["not a directory"]      = "Not a directory",
+	["is a directory"]       = "Is a directory",
+	["permission denied"]    = "Permission denied",
+	["file exists"]          = "File exists",
+	["directory not empty"]  = "Directory not empty",
+}
+
+-- A reason as it goes on the glass: strerror(3)'s wording for the six above,
+-- and every other reason exactly as the caller wrote it -- "no such device",
+-- "no such job" and the rest are this machine's own words, not an errno, and
+-- stay as they are (see the "refusal" entry of CeroSecOS.DEVIATIONS).
+function CeroSecOS.strerror(reason)
+	if type(reason) ~= "string" then return reason end
+	return CeroSecOS.STRERROR[reason] or reason
+end
+end

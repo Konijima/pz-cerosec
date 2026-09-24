@@ -1359,7 +1359,7 @@ do
 	-- Tab on it refuses at the door rather than at the write.
 	bench.window:onOtherKey(Keyboard.KEY_TAB)
 	bench.frame()
-	check("saving is refused", bench.painted("Cannot save: permission denied"))
+	check("saving is refused", bench.painted("Cannot save: Permission denied"))
 end
 
 -- A directory is not a file, and the refusal stays in the shell.
@@ -1581,7 +1581,7 @@ do
 	-- the thing that would have read the line `ls` was on.
 	bench.enter("ls")
 	bench.frame()
-	check("the shell itself is gone", bench.painted("sh: command not found"))
+	check("the shell itself is gone", bench.painted("sh: not found"))
 	bench.enter("help")
 	bench.frame()
 	check("help says the system is damaged", bench.painted("the system is damaged"))
@@ -2040,7 +2040,7 @@ do
 	bench.login("admin")
 	bench.enter("shutdown")
 	bench.frame()
-	check("admin is refused", bench.painted("shutdown: permission denied"))
+	check("admin is refused", bench.painted("shutdown: Permission denied"))
 	eq("and the machine is still on", bench.object.on, true)
 	check("and the window is still open", not bench.window.closing)
 end
@@ -4981,7 +4981,7 @@ do
 	bench.frame()
 	eq("the shell is still a shell", bench.window.mode, "shell")
 	check("nothing was asked for", not bench.painted("[sudo] password for admin: "))
-	check("and nothing was refused", not bench.painted("light1: permission denied"))
+	check("and nothing was refused", not bench.painted("light1: Permission denied"))
 	eq("the light is on", kit.light1.activated, true)
 	eq("and the world was told", kit.light1.syncs, 1)
 
@@ -4999,7 +4999,7 @@ do
 	eq("bob is at the glass", bench.object.console.user, "bob")
 	bench.enter("echo off > /dev/light1")
 	bench.frame()
-	check("bob is refused", bench.painted("light1: permission denied"))
+	check("bob is refused", bench.painted("light1: Permission denied"))
 	eq("and the switch did not move", kit.light1.activated, true)
 
 	_G.__world = nil
@@ -5944,7 +5944,7 @@ do
 	bench.enter("cat /dev/sensor0")
 	bench.frame()
 	check("and naming one is a path nothing answers to",
-		bench.painted("cat: /dev/sensor0: no such file"))
+		bench.painted("cat: /dev/sensor0: No such file or directory"))
 
 	-- The same room, one bare module in it.
 	world.drop(world.squares["10,10,0"], fakeSensor())
@@ -6492,7 +6492,7 @@ do
 	bench.enter("cat /var/spool/at/1")
 	bench.frame()
 	check("an ordinary account cannot read it",
-		bench.painted("/var/spool/at/1: permission denied"))
+		bench.painted("/var/spool/at/1: Permission denied"))
 
 	-- atq lists it, and it is still there: a listing runs nothing.
 	bench.enter("atq")
@@ -6657,7 +6657,7 @@ do
 
 	bench.enter("while true; do echo tick; sleep 1; done &")
 	bench.frame()
-	check("the loop is not an unknown command", not bench.painted("while: command not found"))
+	check("the loop is not an unknown command", not bench.painted("while: not found"))
 	eq("the prompt came straight back", bench.window.mode, "shell")
 	check("and the machine announced a job", bench.painted("[1] "))
 
@@ -10815,7 +10815,7 @@ do
 	-- A ~. at one's own prompt is an ordinary line and gets an ordinary refusal.
 	net.enter("~.")
 	net.tick(3)
-	check("off a call it is just a word", net.glass("~.: command not found"))
+	check("off a call it is just a word", net.glass("~.: not found"))
 end
 
 -- ONE LINE PER MODEM: a third machine dialling a line that is in use, the machine
@@ -11522,7 +11522,7 @@ do
 	say(net, "echo 145.010 > /dev/radio0")
 	net.tick(3)
 	check("nothing may be written to an aerial",
-		net.glass("radio0: permission denied"))
+		net.glass("radio0: Permission denied"))
 	say(net, "ls -l /dev/radio0")
 	net.tick(3)
 	check("and the mode says so", net.glass("cr--r-----"))
@@ -11577,7 +11577,7 @@ do
 	say(net, "cat /dev/radio0")
 	net.tick(3)
 	check("and nothing was ever mounted at that name",
-		net.glass("cat: /dev/radio0: no such file"))
+		net.glass("cat: /dev/radio0: No such file or directory"))
 	_G.__world = nil
 
 	local other = newRadioNet()
@@ -12561,7 +12561,7 @@ do
 	check("a machine with an empty slot has no drive file", not bench.painted("fd0"))
 	bench.enter("newfs /dev/fd0")
 	bench.frame()
-	check("and newfs says so", bench.painted("newfs: /dev/fd0: no such file"))
+	check("and newfs says so", bench.painted("newfs: /dev/fd0: No such file or directory"))
 
 	-- A blank disk out of an office drawer.
 	local disk = inv:add("CeroSec.FloppyRed")
@@ -13958,7 +13958,7 @@ do
 	bench.enter("echo open > /dev/door1")
 	bench.frame()
 	check("an ordinary account is refused by the mode",
-		bench.painted("door1: permission denied"))
+		bench.painted("door1: Permission denied"))
 	eq("and the door was never asked", kit.front.silentToggles, 0)
 
 	-- root walks past the mode, the way root walks past every mode on this
@@ -26239,7 +26239,7 @@ do
 	bench.enter("sh err.sh > eout")
 	bench.tick(30)
 	bench.frame()
-	eq("the refusal is on the screen", bench.painted("/nope: no such file"), true)
+	eq("the refusal is on the screen", bench.painted("/nope: No such file or directory"), true)
 	eq("and the file holds only what was printed",
 		bench.fileText("/home/admin/eout"), "good")
 end
@@ -26922,8 +26922,8 @@ do
 	check("the line fired", mail ~= nil)
 	check("and the program it named ran (" .. tostring(mail) .. ")",
 		mail ~= nil and string.find(mail, "curtains: open", 1, true) ~= nil)
-	check("with nothing said about a command not found",
-		mail == nil or string.find(mail, "command not found", 1, true) == nil)
+	check("with nothing said about a not found",
+		mail == nil or string.find(mail, "not found", 1, true) == nil)
 	local log = bench.fileText("/var/log/cron")
 	check("and the log names the line as it was written",
 		string.find(log, "(admin) CMD (curtains.sh)", 1, true) ~= nil)

@@ -2745,7 +2745,7 @@ do
 	local found, reason, walked =
 		CeroSecOS.lookupPath(state, system:sessionOf(console), "ls", forged)
 	eq("the walk finds nothing past the ceiling", found, nil)
-	eq("and says so", reason, "command not found")
+	eq("and says so", reason, "not found")
 	eq("having looked in exactly the ceiling's worth of directories", walked,
 		CeroSecOS.MAX_PATH_DIRS)
 
@@ -2764,7 +2764,7 @@ do
 	note("forged long PATH", result)
 
 	check("every iteration said the same thing",
-		string.find(console.lines[#console.lines] or "", "command not found", 1, true) ~= nil)
+		string.find(console.lines[#console.lines] or "", "not found", 1, true) ~= nil)
 	check("the console never kept more than its hundred lines",
 		#console.lines <= CeroSec.CONSOLE_MAX)
 	check("the machine still boots", CeroSecOS.validate(state) == true)

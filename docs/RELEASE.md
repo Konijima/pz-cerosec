@@ -187,7 +187,7 @@ The shell is where a saved script can notice: `echo "a\nb"` now prints the two
 characters `\n` (use `printf`), `cp` onto an existing file overwrites it, a
 `[` or `sleep` error no longer ends the script, a refused redirect no longer
 runs its command, `$( )` no longer captures error text, and `$?` is 127 after
-"command not found" and 126 after a refusal. `2>` now works where it used to
+"not found" and 126 after a refusal. `2>` now works where it used to
 be an argument.
 
 ### 0.6.1

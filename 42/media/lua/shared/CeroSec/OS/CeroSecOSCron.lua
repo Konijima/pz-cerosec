@@ -890,12 +890,12 @@ local function mailRead(state, session, env)
 	end
 	if node.type ~= "file" then return false, { "mail: " .. path .. ": " .. CeroSecOS.notAFile(node) } end
 	if not CeroSecOS.can(state, session, node, "r") then
-		return false, { "mail: " .. path .. ": permission denied" }
+		return false, { "mail: " .. path .. ": Permission denied" }
 	end
 	local text = node.data or ""
 	if text == "" then return true, { "No mail for " .. tostring(user) } end
 	if not CeroSecOS.can(state, session, node, "w") then
-		return false, { "mail: " .. path .. ": permission denied" }
+		return false, { "mail: " .. path .. ": Permission denied" }
 	end
 	local lines = CeroSecOS.splitLines(text)
 	local now = CeroSecOS.clockOf(env)
@@ -948,7 +948,7 @@ local function mailFile(state, session)
 		return false, { "mail: " .. box .. ": " .. CeroSecOS.notAFile(node) }
 	end
 	if not CeroSecOS.can(state, session, node, "r") then
-		return false, { "mail: " .. box .. ": permission denied" }
+		return false, { "mail: " .. box .. ": Permission denied" }
 	end
 	local text = node.data or ""
 	if text == "" then return true, { "No mail for " .. tostring(user) } end

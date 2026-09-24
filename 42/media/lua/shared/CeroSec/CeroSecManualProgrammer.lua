@@ -146,7 +146,7 @@ Forget the chmod and the machine tells you plainly, in the file's own name
 rather than sh's, because it was the file you typed:
 
   admin@ksp-04-11:~$ ./noexec.sh
-  ./noexec.sh: permission denied
+  ./noexec.sh: Permission denied
 
 Note the difference from the last page. sh wants r. ./ wants x as well.]],
 
@@ -157,14 +157,14 @@ the machine walks the directories named in PATH, left to right, looking
 for a file by that name with x on it, and runs the first it finds. Fresh
 out of the crate PATH holds two directories -- /bin, the machine's own
 commands, and /usr/local/bin, empty and yours -- which is why a word you
-made up is "command not found".
+made up is "not found".
 
 Make a directory of your own, add it to PATH, and your scripts become
 commands with no dot-slash and no sh in front of them:
 
   admin@ksp-04-11:~$ mkdir bin
   admin@ksp-04-11:~$ lights on
-  lights: command not found
+  lights: not found
   admin@ksp-04-11:~$ PATH=$PATH:$HOME/bin
   admin@ksp-04-11:~$ lights on
   lights on
@@ -323,7 +323,7 @@ one. This is the trap the whole page exists for:
 
   admin@ksp-04-11:~$ echo a;b
   a
-  b: command not found
+  b: not found
   admin@ksp-04-11:~$ echo "a;b"
   a;b
 
@@ -376,7 +376,7 @@ what you would have typed at it except read, which chapter 3 covers.
 
 Classic mistake. Writing a line with a space around an equals sign. x = 5
 is not an assignment: it is the command x with two words after it, and the
-machine answers "x: command not found", which reads like nonsense until
+machine answers "x: not found", which reads like nonsense until
 you know this. An assignment is NAME=value with no blanks anywhere near
 the equals sign. It is the single most common line in a broken script.]],
 
@@ -1345,7 +1345,7 @@ errors to a file of their own; 2>&1 sends them where the output goes:
   admin@ksp-04-11:~$ cat nosuch 2>/dev/null
   admin@ksp-04-11:~$ cat nosuch > log 2>&1
   admin@ksp-04-11:~$ cat log
-  cat: nosuch: no such file
+  cat: nosuch: No such file or directory
 
 Order counts, left to right: 2>&1 > log sends the errors where the output
 WAS, the glass, and only the output into log. >&2 is the other way round,
@@ -1397,7 +1397,7 @@ Two things still come to the glass. A REFUSAL, because a refusal is not
 output and never goes where output was going:
 
   admin@ksp-04-11:~$ sh nightly.sh > log
-  ls: /nope: no such file
+  ls: /nope: No such file or directory
 
 That line is on the screen; log holds only what was printed. And the end of
 it if the file fills, a file being 4096 bytes:
@@ -2462,9 +2462,9 @@ not a script's to say.
 
 And the ones about finding a program at all:
 
-  <name>: command not found
+  <name>: not found
       nothing on PATH answers; $? is 127
-  ./thing: permission denied
+  ./thing: Permission denied
       it has no x on it for you; $? is 126
   too many PATH entries
       PATH may name eight directories
@@ -2480,7 +2480,7 @@ carries:
   printf <format> [arg...]    true    false]],
 
 [[The reasons off the disk, each after the command's name and the path:
-cat: notes: no such file.
+cat: notes: No such file or directory.
 
   no such file          is a directory
   not a directory       permission denied

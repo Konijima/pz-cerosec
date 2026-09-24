@@ -232,7 +232,7 @@ bash; `$!` is the id of the last job an `&` started, empty until one has, and a 
 login starts with none; there is no IFS); `read` with several names (a word each, the
 rest of the line to the last; `-r` keeps backslashes, `-n N` keeps N characters, and
 from a pipe leaves the rest of the line, newline included, to the next read as bash
-does); a command not found sets `$?` to 127
+does); a not found sets `$?` to 127
 and one found but not executable to 126; `test`/`[` and `sleep` are programs, so
 their errors print, set `$?` (2 and 1) and the script goes on; single and double quotes and backslash (inside double quotes a backslash
 is special only before `$`, `` ` ``, `"`, `\` and a newline, and is kept before
@@ -262,7 +262,7 @@ follows. A `$(( ))` inside a `$(( ))` is not read (write the brackets plainly
 instead); `read` and `shift`, which are the shell's own words; and `echo [-n]`,
 `printf` and `sleep`, which the engine runs itself but which are still found
 through `/bin` first, as `ls` is -- so on a machine whose `/bin` has been emptied
-`echo` is `command not found`, and what still answers is the shell's own words
+`echo` is `not found`, and what still answers is the shell's own words
 (`. break cd continue export exit fg history jobs read shift type wait`) and
 `help`, which says the system is damaged.
 
@@ -714,7 +714,7 @@ permission, a script in `~/bin`, all of it, with `tty` and `keys` false, because
 nobody is standing behind one; an out-of-band order (`edit`) is refused there with
 the line the engine gives a command in that position, since a marker must never
 travel out through find. A word the *shell* is gets sudo's answer,
-`cd: command not found`: find execs a program.
+`cd: not found`: find execs a program.
 
 An exec is a **command's** worth of work, and find runs `FIND_EXEC_TURN` of them
 before handing the machine back, so the turn is charged the one command every

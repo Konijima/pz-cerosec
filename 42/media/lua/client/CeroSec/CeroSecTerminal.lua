@@ -1143,7 +1143,7 @@ function CeroSecTerminal:editKey(key)
 		return
 	end
 	if action == "readonly" then
-		self.editMessage = "Cannot save: permission denied"
+		self.editMessage = "Cannot save: Permission denied"
 	end
 end
 

@@ -220,7 +220,7 @@ with cat and a greater-than sign instead.
 
 mkpasswd is ours. crypt was a library call in 1993 and nothing in /bin
 wrapped it. It was called hash on this machine until this release; if you
-type that, you will get command not found, and mkpasswd is where it went.]],
+type that, you will get not found, and mkpasswd is where it went.]],
 
 [[What is not Unix here, continued.
 
@@ -262,23 +262,14 @@ ones kept, name the files one command at a time.]],
 
 [[What is not Unix here: errors, continued.
 
-A refusal here is lower case and cut short: no such file, where 4.4BSD
-said No such file or directory. The ones in capitals are 4.4BSD's own
-words: the floppy's Device busy, mail's, the network's, and Operation
-not permitted. The editor's bottom line is the editor's own.
-
-A name nothing on PATH answers is <name>: command not found, which is
-bash's wording; sh said only not found.
-
-A flag a command does not know is unknown option, where getopt said
-illegal option -- z and printed the usage line after it.
-
 The syntax errors are this shell's own sentences: sh said `fi'
-unexpected where this one says unexpected 'fi', and a quote left open
+unexpected where this one says missing 'fi', and a quote left open
 is refused here where sh waited for the rest on the next line.
 
-A wrong password to su, passwd or sudo is authentication failure, which
-is later Linux wording: 4.4BSD and System V said Sorry.]],
+A wrong password to su or passwd is Sorry, as 4.4BSD and System V
+said it. sudo's own wrong-password line here is still
+authentication failure: no source for what a 1993 sudo really
+printed has turned up to check that against.]],
 
 [[What is not Unix here: files and the shell.
 
@@ -352,7 +343,7 @@ it, and neither is on this disk. The one line that box prints when the line
 opens is ours as well: a real one printed whatever its maker chose.
 
 There was a call CALLSIGN command here until this release. If you type it
-you will get command not found. It was never Unix -- a packet box was a
+you will get not found. It was never Unix -- a packet box was a
 peripheral on a serial line, and the way to one is cu -l /dev/radio0, which
 Volume 2 chapter 8 teaches.
 
@@ -528,10 +519,10 @@ Worth knowing while the window is open: your keystrokes go to the
 computer and nowhere else. Your hands are on its keyboard. You will not
 walk, open a bag or swing anything until Escape hands them back.]],
 
-[[When the machine says "command not found".
+[[When the machine says "not found".
 
   admin@ksp-04-11:~$ sl
-  sl: command not found
+  sl: not found
 
 That line is not an insult and it is not a fault. It means exactly one
 thing: no command by that name exists on this machine. The machine looked,
@@ -657,7 +648,7 @@ directory without being told twice. cp wants -r for "and everything
 inside it", and rm wants -r for the same reason:
 
   admin@ksp-04-11:~$ rm notes
-  rm: notes: is a directory
+  rm: notes: Is a directory
   admin@ksp-04-11:~$ rm -r notes
 
 Read that second line twice before you press Enter. rm -r does not ask,
@@ -855,7 +846,7 @@ growth is refused.]],
 
 A file you may read but not change opens with [read-only] in the top bar
 instead of [modified]. You can move around it and read it all day. Tab
-answers "Cannot save: permission denied" and touches nothing. Escape
+answers "Cannot save: Permission denied" and touches nothing. Escape
 leaves at once with no question, because nothing unsaved is yours. A file
 you may not even read never opens: the shell refuses it before the editor
 starts.
@@ -987,7 +978,7 @@ You will see this line a great deal, and it does not mean you did anything
 wrong.
 
   admin@ksp-04-11:~$ cd /root
-  cd: /root: permission denied
+  cd: /root: Permission denied
 
 Read it in three pieces, which is how every refusal on this machine is
 built. cd is the command that refused. /root is exactly what it refused
@@ -1437,7 +1428,7 @@ and leaves the file standing, which is usually what you want.]],
 
 [[Where the machine looks for a command.
 
-Now for the sentence that explains chapter 2's "command not found". Every
+Now for the sentence that explains chapter 2's "not found". Every
 command you type is a real file. ls is a file called /bin/ls, and you can
 read it.
 
@@ -1455,7 +1446,7 @@ called PATH, and on a fresh machine it has two entries. Try it.
 already on the list: a program copied in there is a command anybody can
 type.
 
-So "command not found" really means "I walked PATH and there was no such
+So "not found" really means "I walked PATH and there was no such
 file anywhere on it".
 
 Two commands report on the search. which prints where a name would be
@@ -1674,7 +1665,7 @@ reboot switches it off and straight back on: everybody watching sees the
 firmware count its memory out loud again and lands at a fresh login:.
 shutdown -r now is the longer way of saying the same thing.
 
-As admin you get "shutdown: permission denied", which is not a fault. The
+As admin you get "shutdown: Permission denied", which is not a fault. The
 switch on the case works for everybody, and is what you should use.
 
 shutdown throws the switch off, so the power coming back does not bring the
@@ -2097,19 +2088,20 @@ Running out of room. Chapter 3 has the numbers.
 
 [[Commands the machine could not run.
 
-  command not found
+  not found
       nothing on PATH answers that name; check spelling,
       check capitals, and check help
 
-A command that is there but not yours to run says permission denied
-instead, never command not found. One tells you it is missing, the other
+A command that is there but not yours to run says Permission denied
+instead, never not found. One tells you it is missing, the other
 that it is locked and exactly where.
 
   <cmd>: usage: <the shape of it>
       the right command with the wrong number of parts;
       the line it prints is the answer
-  <cmd>: <flag>: unknown option
-      a flag that command does not have
+  <cmd>: illegal option -- <flag>
+  usage: <the shape of it>
+      a flag that command does not have, and the shape it wanted
   chmod: <mode>: invalid mode
       neither three digits nor a clause in letters
   man: <name>: no manual entry
@@ -2164,7 +2156,7 @@ The three new filters, from chapter 7.
       the new one was typed two different ways
   passwd: password too long
   passwd: no such user
-  passwd: permission denied
+  passwd: Permission denied
       another account's, which only root may change
   su: authentication failure
       one wrong answer; there is no second try
@@ -2176,9 +2168,9 @@ The three new filters, from chapter 7.
 
 [[The floppy drive, and the disk in it.
 
-  newfs: /dev/fd0: no such file
+  newfs: /dev/fd0: No such file or directory
       there is no disk in the slot
-  newfs: /dev/fd0: permission denied
+  newfs: /dev/fd0: Permission denied
       the drive is root's and the sudo group's; Volume 2
   newfs: /dev/fd0: Device busy
       unmount it first
@@ -2188,7 +2180,7 @@ The three new filters, from chapter 7.
       the disk is blank; newfs it
   mount: /mnt: Device busy
       something is already mounted there
-  mount: /mnt: not a directory
+  mount: /mnt: Not a directory
       a disk mounts on a directory and nothing else
   umount: /mnt: not mounted
       nothing is mounted there
@@ -2212,7 +2204,7 @@ prompt.
       the file's own ceiling
   Buffer full: 2000 typed characters
       the typing box's ceiling for one sitting
-  Cannot save: permission denied
+  Cannot save: Permission denied
       the file is [read-only] to you; nothing was written
   Cannot save: disk full
       no room left; nothing was written, so nothing is

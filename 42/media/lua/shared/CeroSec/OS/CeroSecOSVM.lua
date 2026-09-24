@@ -1771,7 +1771,12 @@ builtins.read = function(job, args, state, env)
 			end
 			i = i + 2
 		elseif string.sub(a, 1, 1) == "-" and #a > 1 then
-			return nil, "read: " .. a .. ": unknown option"
+			-- getopt(3), 4.3BSD: "illegal option -- x" (see the "getopt" entry
+			-- in CeroSecOS.DEVIATIONS). read has no usage line of its own to
+			-- follow it with -- it is a shell word, not a file in /bin -- so
+			-- this is the one line a real getopt(3) caller with no usage()
+			-- would print.
+			return nil, "read: illegal option -- " .. string.sub(a, 2, 2)
 		else
 			names[#names + 1] = a
 			i = i + 1
@@ -4349,14 +4354,14 @@ end
 function CeroSecOS.readScript(state, session, who, path, needX)
 	local label = scriptLabel(who, path)
 	local node, reason = CeroSecOS.getNode(state, session, path)
-	if node == nil then return nil, label .. ": " .. reason end
-	if node.type == "dir" then return nil, label .. ": is a directory" end
+	if node == nil then return nil, label .. ": " .. CeroSecOS.strerror(reason) end
+	if node.type == "dir" then return nil, label .. ": Is a directory" end
 	if node.type ~= "file" then return nil, label .. ": " .. CeroSecOS.notAFile(node) end
 	if needX and not CeroSecOS.can(state, session, node, "x") then
-		return nil, label .. ": permission denied"
+		return nil, label .. ": Permission denied"
 	end
 	if not CeroSecOS.can(state, session, node, "r") then
-		return nil, label .. ": permission denied"
+		return nil, label .. ": Permission denied"
 	end
 	return node.data or ""
 end

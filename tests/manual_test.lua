@@ -324,7 +324,7 @@ end
 --   * the four below are guards against a caller that is not the console and
 --     are never printed; each names where it is caught.
 local INTERNAL_RETURNS = {
-	-- CeroSecOSVM's runner turns this into "<name>: command not found" and
+	-- CeroSecOSVM's runner turns this into "<name>: not found" and
 	-- $? 127 before anything is shown (the `reason == "not a function"` test).
 	["not a function"] = true,
 	-- CeroSecOS.promptJob's type guards: the console always hands it a state
@@ -393,7 +393,7 @@ end
 -- literal in the source for a scan to lift. Hand-kept, and exactly as
 -- CeroSecOSShell.lua and SCeroSecSystem.lua produce them.
 local LITERAL_MESSAGES = {
-	"command not found",
+	"not found",
 	"is not in the sudoers file.",
 	"login incorrect",
 	"passwd: authentication failure",
@@ -932,7 +932,7 @@ do
 	local DELIBERATE = {
 		-- chapter 8 has the reader make this one himself, in ~/bin
 		hello = true,
-		-- chapter 2 types this on purpose, to show "command not found"
+		-- chapter 2 types this on purpose, to show "not found"
 		sl = true,
 	}
 
@@ -1200,7 +1200,7 @@ do
 
 		-- And every name the engine RETIRED whose replacement is not a name of its
 		-- own is on the page too. A player who used `readlink` last week will type
-		-- it and get "command not found" with no hint at all, and this page is
+		-- it and get "not found" with no hint at all, and this page is
 		-- where he finds out where it went. adduser, deluser and gpasswd are not
 		-- on it because their replacements are commands Volume 2 teaches by name.
 		local TAUGHT = { adduser = true, deluser = true, gpasswd = true }
@@ -1470,7 +1470,7 @@ do
 		"light0: no power", "lock0: no such device", "win0: smashed",
 		"win0: barricaded", "lock1: no padlock", "door0: locked",
 		"door0: barricaded", "door0: blocked", "light0: invalid value",
-		"light0: permission denied", "win0: cannot toggle",
+		"light0: Permission denied", "win0: cannot toggle",
 		"door0: operation not supported",
 		"dev: <word>: unknown kind", "dev: <id>: no such device",
 		CeroSecOS.DEV_PATH .. ": read-only",

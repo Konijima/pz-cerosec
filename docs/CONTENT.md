@@ -1140,7 +1140,7 @@ with a home and one posting on the board, the pointer moving by one and not to t
 top, and the pager stopping once for every page but the last — asserted on the
 **prompt**, because a screen that was not paged prints exactly the same text. And
 every line any of the five ever printed is held to carrying none of the four
-refusals a script can carry for ever without failing: `command not found` first of
+refusals a script can carry for ever without failing: `not found` first of
 all, a script being a list of commands and a word that is not one of them being no
 syntax error at all.
 
@@ -1195,7 +1195,7 @@ touching any of the six, and the same list is over `CeroSecContent.SCRIPTS["auto
   program a daemon runs every second is a refusal on the glass every second.
 - **A pipeline's refusal lands in the capture, not in the pipe.** `f=$(cat /dev/gen0 |
   cut -d' ' -f3)` on a machine with no generator comes back as the whole of
-  `cat: /dev/gen0: no such file`, and `[ $f -ge 10 ]` on that is
+  `cat: /dev/gen0: No such file or directory`, and `[ $f -ge 10 ]` on that is
   `test: argument expected`. So `genwatch.sh` sifts the field through a `case` with
   `*[!0-9]*` in it before any arithmetic touches it, and its threshold test is written
   `-lt` rather than `-ge` so that a threshold which is not a number fails **safe**.

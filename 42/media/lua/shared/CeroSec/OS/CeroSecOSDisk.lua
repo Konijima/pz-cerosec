@@ -679,6 +679,7 @@ end
 local commands = CeroSecOS.commands
 
 local function fail(cmd, arg, reason)
+	reason = CeroSecOS.strerror(reason)
 	if arg == nil then return false, { cmd .. ": " .. reason } end
 	return false, { cmd .. ": " .. arg .. ": " .. reason }
 end

@@ -1264,6 +1264,7 @@ end
 local commands = CeroSecOS.commands
 
 local function fail(cmd, arg, reason)
+	reason = CeroSecOS.strerror(reason)
 	if arg == nil then return false, { cmd .. ": " .. reason } end
 	return false, { cmd .. ": " .. arg .. ": " .. reason }
 end
@@ -2316,7 +2317,7 @@ commands.rcp = function(state, session, args, env)
 		-- the wire that file was on.
 		local about = spec.remote
 		if reason == CeroSecOS.NET_REASON.denied then about = host end
-		return false, { "rcp: " .. tostring(about) .. ": " .. tostring(reason) }
+		return false, { "rcp: " .. tostring(about) .. ": " .. tostring(CeroSecOS.strerror(reason)) }
 	end
 
 	-- The bytes have landed; what is left is the time the wire would have taken.
