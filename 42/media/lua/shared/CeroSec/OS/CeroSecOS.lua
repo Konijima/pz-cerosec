@@ -36,7 +36,9 @@ CeroSecOS = CeroSecOS or {}
 --    the same lines either way, docs/notes/ has no note for this because
 --    nothing about the SHAPE changed) but a file that would glue its last
 --    line to whatever `>>` next puts after it. CeroSecOS.MIGRATIONS[3] closes
---    every one of them the same way a `>>` from here on would find them.
+--    them, out of the disk's own room and never past it, and leaves the /bin
+--    stand-ins alone (CeroSecOS.terminateFiles says which and why); the
+--    floppy's own number moved with it (FLOPPY_VERSION 2).
 CeroSecOS.STATE_VERSION = 3
 
 -- What the machine's own system files are expected to hold, as opposed to what

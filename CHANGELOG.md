@@ -12,13 +12,25 @@ date.
 
 A computer that opens with a left click, an editor that no longer stops at the
 edge of the screen, three new cabling options for servers, and a shell that behaves
-much more like the real one. Nothing here needs a new save: no state or system
-version moves, and every new option is off, or set to the reach a cable always had,
-until a server owner changes it. What a world you already have can notice is in the
-shell: a script you saved that used `echo "a\nb"` now prints the two characters
+much more like the real one. Nothing here needs a new save, and every new option
+is off, or set to the reach a cable always had, until a server owner changes it.
+One thing in a world you already have does change, once, on load: every text
+file on a computer or a floppy gains the newline a real file ends with, so
+`ls -l` shows each of them one byte bigger. The rest of what a world you already
+have can notice is in the shell: a script you saved that used `echo "a\nb"` now prints the two characters
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
+- A file now ends its last line with a newline, like on a real Unix:
+  `echo a > f` makes a file of two bytes and `wc -c` says 2, `printf a > f`
+  makes one, and `wc -l` counts newlines. A file without one prints without
+  one, so `printf a | cat; echo b` shows `ab` on one line, and `>>` adds
+  straight after the last byte. Your existing files, on the computer and on
+  floppies, get their missing newline added once, when the world loads or the
+  disk goes in, so each text file in `ls -l` grows by one byte; a full disk is
+  never pushed past what it holds, and saved scripts run as before. An older
+  version of the mod will refuse to open a computer or a floppy this one has
+  touched, rather than show its files wrong.
 - A shell function can be defined without a space before the brace, as in
   `t(){ echo a; }`, like on any sh.
 - A computer that's already on now opens with a left click, same as the

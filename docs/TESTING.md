@@ -14,6 +14,9 @@ The suites, in the order they run:
 
 - `defs_test.lua` — the shared definitions (sprites, facings, state).
 - `os_test.lua` — the OS core: filesystem, permissions, users, shell, passwords.
+- `newline_test.lua` — a file's last line carries its newline: what `echo` and
+  `printf` store, `wc`, and every consumer (cat, head, tail, tee, grep, sort, cp,
+  a redirect, the editor's round trip, a mailbox) held to a real Unix's answer.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `compat_computermod_test.lua`: living beside the Workshop mod *Computer Mod*:
   who owns a desktop, and which of the two fillers gets the right-click. Against

@@ -176,8 +176,22 @@ a new sandbox option to change a world if the release notes say so plainly.
 
 ### 0.7.0
 
-**Nothing in an existing world changes shape.** No state or system version
-moves. `system.auto[...].later` is a new optional list, written only when an
+**A file's bytes change meaning, once.** `CeroSecOS.STATE_VERSION` moves
+2 → 3 and `CeroSecOS.FLOPPY_VERSION` 1 → 2: a stored file now ends its last
+line with `"\n"` where it used to end with nothing, which is a key whose
+meaning changed, and the contract's rule for that is a step that converts it
+and a number that makes an older build refuse the save instead of reading
+`"a\n"` as two lines (CONTRIBUTING, "No meaning changes" and "Newer than the
+code is refused"). `MIGRATIONS[3]` and `DISK_MIGRATIONS[2]` add the newline
+to every non-empty text file that lacks one, paid out of the disk's own room
+and never past it: a machine over its quota, a file already at 4096 bytes and
+a floppy with no byte left keep those files open, which reads the same. The
+`/bin` stand-ins are binaries and are left as they are. So every migrated text
+file shows one byte more in `ls -l` and `df`, and `wc -l` now counts its last
+line. `SYSTEM_VERSION` does not move: nothing new is seeded. The fixture for
+the shape this meets is `tests/fixtures/state-v2.lua`, which the capture tool
+run on the build before the bump reproduces byte for byte, so it was kept.
+Otherwise nothing changes shape. `system.auto[...].later` is a new optional list, written only when an
 automated shop is first loaded with `CeroSec.RequireWiring` on; a world without
 it reads as before. The three new sandbox options default to the old behaviour:
 `CeroSec.RequireWiring` off, `CeroSec.FreeWiring` off, `CeroSec.LinkRange` 30,

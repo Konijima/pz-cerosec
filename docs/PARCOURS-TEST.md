@@ -4661,16 +4661,35 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      pages *What is not Unix here* jusqu'à « That is the whole list. » Il y en a
      maintenant dix, dont *errors, continued*, *files and the shell*, *read,
      history, and who you are* et *what is missing*. [ ]
-461. **Trois affirmations, vérifiées à l'écran.** `echo a > p` puis `wc -c p` :
-     `1`, pas `2` (pas de saut de ligne après la dernière ligne). `IFS=:`,
-     `x=a:b`, puis `for i in $x; do echo $i; done` : une seule ligne `a:b`
-     (IFS n'est pas lu). `set` : `set: command not found`. Si l'une de ces
-     réponses a changé, la page ment : le noter au rapport. [ ]
+461. **Deux affirmations, vérifiées à l'écran.** `IFS=:`, `x=a:b`, puis
+     `for i in $x; do echo $i; done` : une seule ligne `a:b` (IFS n'est pas
+     lu). `set` : `set: command not found`. Si l'une de ces réponses a changé,
+     la page ment : le noter au rapport. (L'ancienne troisième, « `wc -c` d'un
+     `echo a` donne `1` », n'est plus vraie : voir 463.) [ ]
 462. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
      `grep: [z-a]: bad range`, et la ligne figure au volume 1, annexe,
      *Commands the machine could not run*. Connecté en admin,
      `passwd root` : `passwd: permission denied`, dans *Logging in, and your
      account*. [ ]
+
+## Les fichiers finissent leur dernière ligne
+
+463. **Le saut de ligne est dans le fichier.** `echo a > p` puis `wc -c p` :
+     `2`, et `wc -l p` : `1`. `printf a > q` puis `wc -c q` : `1`, et
+     `wc -l q` : `0` (wc compte les sauts de ligne). `cat q; echo b` affiche
+     `ab` sur une seule ligne, et `printf a | cat; echo b` aussi. `cat q p`
+     affiche `aa`. `echo -n x > r; echo y >> r; cat r` : `xy`. Ouvrir `p`
+     dans l'éditeur : une seule ligne `a`, pas de ligne vide en dessous ;
+     sauvegarder sans rien changer : « Saved 2 bytes », et `wc -c p` dit
+     toujours `2`. [ ]
+464. **Une ancienne partie, reprise.** Charger une sauvegarde faite avec la
+     version précédente du mod, où un fichier `notes` avait été écrit avec
+     `echo`. `ls -l notes` : un octet de plus qu'avant, et `wc -l notes` compte
+     maintenant sa dernière ligne. `echo suite >> notes; cat notes` : `suite`
+     sur sa propre ligne, pas collée à la précédente. Un script sauvegardé
+     tourne comme avant. Une disquette écrite avec l'ancienne version entre
+     dans le lecteur et ses fichiers ont gagné leur saut de ligne ; une
+     disquette pleine entre aussi, et `df` ne la montre pas au-delà de 4096. [ ]
 
 ## Rapport
 

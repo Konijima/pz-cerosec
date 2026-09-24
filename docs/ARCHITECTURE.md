@@ -597,7 +597,7 @@ small. (96 and not 64 since rung 6b: the shipped `/bin` was 64 files at a ceilin
 its own 64 — how many commands ship is no reason to mount more of the world.)
 
 The state also carries `sysv`, the *contents* it was built with (`CeroSecOS.SYSTEM_VERSION`
-is 18 today) as opposed to `v`, the schema (`CeroSecOS.STATE_VERSION`, 2 today — see
+is 18 today) as opposed to `v`, the schema (`CeroSecOS.STATE_VERSION`, 3 today — see
 [Migration](#migration) below). A change that adds a command adds a file to
 `/bin`, so on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up —
 the standard executables that are missing, and `/etc/sudoers` when there is nothing at
@@ -892,10 +892,20 @@ core cannot run on is the BIOS (`restoreOS`), which keeps `/home`. Handing back 
 machine there was the function throwing away the very thing it exists to save, and it
 was invisible because the only states that ever reached it were junk.
 
-`STATE_VERSION` is **2**, and step 2 is the accounts file and the quota flags — two
+`STATE_VERSION` is **3**. Step 2 is the accounts file and the quota flags — two
 repairs that ran on *every read of the state* because no number could say they had
 already been done. `nq` was swept off every node of every machine for the rest of the
-save's life.
+save's life. Step 3 is what a file's bytes mean: until it, a file was its lines joined
+by `"\n"` with nothing after the last one, and since it `"\n"` terminates a line as on
+a real Unix (`echo a > f` is two bytes). The step, and its floppy twin
+`DISK_MIGRATIONS[2]` behind `FLOPPY_VERSION` 2, are one walk
+(`CeroSecOS.terminateFiles`): every non-empty text file without a final newline gains
+one, in `childNames` order, paid out of the disk's own room and never past it — the
+slot refuses a floppy over `FLOPPY_BYTES`, so a full one keeps its files open. Empty
+files, files already ending in `"\n"`, files at `MAX_FILE_BYTES` and the `/bin`
+stand-ins (binaries, and the very bytes `upgradeSystem` compares to retire a name) are
+left alone. `CeroSecOS.splitLines` reads an open last line and a closed one the same,
+so nothing a step leaves open reads wrong.
 
 A step is handed a table and nothing else. Most machines in a save have no chunk
 loaded, so a step that asked the world could not run for them; the top-ups that
