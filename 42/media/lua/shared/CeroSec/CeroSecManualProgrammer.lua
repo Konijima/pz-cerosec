@@ -2496,6 +2496,8 @@ their line too.
   set: Illegal option -e
       and -x and -u, which are not here; +e too
   set: Illegal option -o <name>
+  Illegal option -x
+      sh -x file: bare, sh has no name yet
   trap: <name>: bad trap
       anything but EXIT or 0
   exec: redirect with no command

@@ -5630,13 +5630,26 @@ end
 -- lines deep and a prompt one line wide can be asked to keep track of.
 CeroSecOS.MAX_JOBS = 4
 
+-- sh's own options come first, read by options.c's options(1): "-" and
+-- "--" end them, and a letter this sh has not got -- all of them; -c is the
+-- "sh" deviation -- is setoption()'s error("Illegal option -%c"), bare,
+-- because error() puts commandname in front and procargs sets commandname
+-- only AFTER the options are read (4.4BSD-Lite2 bin/sh/options.c, error.c).
 commands.sh = function(state, session, args, env)
-	if #args < 2 then
+	local at = 2
+	local first = args[2]
+	if first == "-" or first == "--" then
+		at = 3
+	elseif first ~= nil and (string.sub(first, 1, 1) == "-" or string.sub(first, 1, 1) == "+")
+			and #first > 1 then
+		return false, { "Illegal option -" .. string.sub(first, 2, 2) }
+	end
+	if #args < at then
 		return false, { "sh: usage: " .. (CeroSecOS.commandUsage("sh") or "sh <file> [args]") }
 	end
 	local rest = {}
-	for i = 3, #args do rest[#rest + 1] = args[i] end
-	return CeroSecOS.startScript(state, session, "sh", args[2], rest,
+	for i = at + 1, #args do rest[#rest + 1] = args[i] end
+	return CeroSecOS.startScript(state, session, "sh", args[at], rest,
 		table.concat(args, " "), env, false)
 end
 

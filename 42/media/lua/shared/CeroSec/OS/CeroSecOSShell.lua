@@ -297,9 +297,14 @@ end
 -- "getopt" entry above). ch is whatever the caller has at hand for the bad
 -- flag -- a whole word like "-z" or a bare letter out of a "-rf" a loop is
 -- walking one character at a time -- and the leading dashes are stripped
--- either way, because getopt's own message never carries one.
+-- either way, because getopt's own message never carries one. ONE dash is
+-- stripped from a whole word and no more: getopt reads "--x" as the option
+-- letter "-", and a bare "-" handed in is that letter already -- stripping
+-- every dash once printed "illegal option -- " with nothing after it.
 local function badOption(cmd, ch)
-	local letter = string.sub(string.gsub(tostring(ch), "^%-+", ""), 1, 1)
+	ch = tostring(ch)
+	if #ch >= 2 and string.sub(ch, 1, 1) == "-" then ch = string.sub(ch, 2) end
+	local letter = string.sub(ch, 1, 1)
 	return false, { cmd .. ": illegal option -- " .. letter,
 		"usage: " .. (CeroSecOS.commandUsage(cmd) or cmd) }
 end
@@ -374,9 +379,13 @@ end
 -- case of its own.
 local function flagsOf(args, letters)
 	local flags, rest = {}, {}
+	local ended = false
 	for i = 2, #args do
 		local a = args[i]
-		if #rest == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+		-- "--" ends them, getopt(3)'s rule, and is not an operand itself.
+		if #rest == 0 and not ended and a == "--" then
+			ended = true
+		elseif #rest == 0 and not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
 				local flag = string.sub(a, c, c)
 				if string.find(letters, flag, 1, true) == nil then return nil, a end
@@ -1425,15 +1434,21 @@ end
 -- would be answering with a chip nobody ever put in this box.
 local UNAME_FLAGS = { a = true, s = true, n = true, r = true, v = true }
 commands.uname = function(state, session, args, env)
-	local want, any = {}, false
+	local want, any, ended = {}, false, false
 	for i = 2, #args do
 		local a = args[i]
-		if string.sub(a, 1, 1) ~= "-" or a == "-" then return usage("uname") end
-		for c = 2, #a do
-			local flag = string.sub(a, c, c)
-			if UNAME_FLAGS[flag] == nil then return badOption("uname", flag) end
-			want[flag] = true
-			any = true
+		-- "--" ends the options (getopt), and uname has no operand after it.
+		if a == "--" and not ended then
+			ended = true
+		elseif ended or string.sub(a, 1, 1) ~= "-" or a == "-" then
+			return usage("uname")
+		else
+			for c = 2, #a do
+				local flag = string.sub(a, c, c)
+				if UNAME_FLAGS[flag] == nil then return badOption("uname", flag) end
+				want[flag] = true
+				any = true
+			end
 		end
 	end
 	if not any then want.s = true end
@@ -1746,13 +1761,16 @@ commands.ls = function(state, session, args, env, stdin, sh)
 	-- except those two. The later of the two wins, which is how a real ls reads
 	-- a line that carries both.
 	local o = { long = false, classify = false, dots = false, hiddenToo = false }
-	local paths = {}
+	local paths, ended = {}, false
 	-- nil until the line says: a line that says neither is answered by whether
 	-- there is a screen there.
 	local columns = nil
 	for i = 2, #args do
 		local a = args[i]
-		if string.sub(a, 1, 1) == "-" and a ~= "-" then
+		if a == "--" and not ended then
+			-- getopt(3): "--" ends the options and is no name itself.
+			ended = true
+		elseif not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
 				local flag = string.sub(a, c, c)
 				if flag == "l" then
@@ -1899,11 +1917,21 @@ local function touchOne(state, session, path, now)
 	return true, {}
 end
 
+-- touch has no option here: 4.4BSD's -a, -c, -f, -m, -r and -t all set a
+-- time or a mode this touch does not take apart, so every letter is one
+-- getopt(3) does not know -- "illegal option -- z" and the usage line --
+-- and "--" ends them, so `touch -- -z` makes a file called -z.
 commands.touch = function(state, session, args, env)
-	if #args < 2 then return usage("touch") end
+	local first = 2
+	if args[2] == "--" then
+		first = 3
+	elseif args[2] ~= nil and string.sub(args[2], 1, 1) == "-" and args[2] ~= "-" then
+		return badOption("touch", args[2])
+	end
+	if #args < first then return usage("touch") end
 	local now = CeroSecOS.clockOf(env)
 	local out, ok = {}, true
-	for i = 2, #args do
+	for i = first, #args do
 		local done, lines = touchOne(state, session, args[i], now)
 		if not done then
 			ok = false
@@ -2382,10 +2410,13 @@ end
 -- this rm never did, having no -i. A missing OPERAND is asked before any of
 -- it (`if (argc < 1) usage();`), so `rm -f` alone still gets the usage line.
 commands.rm = function(state, session, args, env)
-	local recursive, force, paths = false, false, {}
+	local recursive, force, paths, ended = false, false, {}, false
 	for i = 2, #args do
 		local a = args[i]
-		if string.sub(a, 1, 1) == "-" and a ~= "-" then
+		-- "--" ends the options (getopt(3)): `rm -- -f` removes a file -f.
+		if a == "--" and not ended then
+			ended = true
+		elseif not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
 				local flag = string.sub(a, c, c)
 				if flag == "r" then
@@ -2422,13 +2453,16 @@ end
 -- removeNode is called, rather than let a directory with something in it be
 -- answered with rm's "is a directory" instead.
 commands.rmdir = function(state, session, args, env)
-	local dirs = {}
+	local dirs, ended = {}, false
 	for i = 2, #args do
 		local a = args[i]
-		if string.sub(a, 1, 1) == "-" and a ~= "-" then
-			return badOption("rmdir", string.sub(a, 2, 2))
+		if a == "--" and not ended then
+			ended = true
+		elseif not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			return badOption("rmdir", a)
+		else
+			dirs[#dirs + 1] = a
 		end
-		dirs[#dirs + 1] = a
 	end
 	if #dirs == 0 then return usage("rmdir") end
 	local out, ok = {}, true
@@ -2603,12 +2637,15 @@ end
 -- entries, and cp only knows what to do with more than one of them because
 -- DST is a directory.
 commands.cp = function(state, session, args, env)
-	local recursive, paths = false, {}
+	local recursive, paths, ended = false, {}, false
 	for i = 2, #args do
 		local a = args[i]
 		-- Only before the first path: "cp -r a -b" has no second flag in it,
 		-- and a name that begins with "-" is refused by isValidName anyway.
-		if #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+		-- "--" ends them too (getopt(3)).
+		if #paths == 0 and not ended and a == "--" then
+			ended = true
+		elseif #paths == 0 and not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
 				if string.sub(a, c, c) ~= "r" then return badOption("cp", string.sub(a, c, c)) end
 			end
@@ -2654,10 +2691,12 @@ end
 -- one every Unix gives. What is checked is what a link IS: a path this machine
 -- could address at all, and printable like everything else it stores.
 commands.ln = function(state, session, args, env)
-	local symbolic, paths = false, {}
+	local symbolic, paths, ended = false, {}, false
 	for i = 2, #args do
 		local a = args[i]
-		if #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+		if #paths == 0 and not ended and a == "--" then
+			ended = true
+		elseif #paths == 0 and not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
 				if string.sub(a, c, c) ~= "s" then return badOption("ln", string.sub(a, c, c)) end
 			end
@@ -3199,9 +3238,13 @@ end
 local function grepOptions(args)
 	local flags, pats, rest = {}, {}, {}
 	local i = 2
+	local ended = false
 	while i <= #args do
 		local a = args[i]
-		if #rest == 0 and string.sub(a, 1, 2) == "-e" then
+		if #rest == 0 and not ended and a == "--" then
+			ended = true
+			i = i + 1
+		elseif #rest == 0 and not ended and string.sub(a, 1, 2) == "-e" then
 			local text
 			if #a > 2 then
 				text = string.sub(a, 3)
@@ -3212,7 +3255,7 @@ local function grepOptions(args)
 			end
 			if text == nil then return nil, nil, "-e" end
 			pats[#pats + 1] = text
-		elseif #rest == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+		elseif #rest == 0 and not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
 				local flag = string.sub(a, c, c)
 				if string.find("cinv", flag, 1, true) == nil then return nil, nil, a end
@@ -3951,10 +3994,16 @@ commands.cut = function(state, session, args, env, stdin)
 	local mode, list, delim = nil, nil, "\t"
 	local paths = {}
 	local i = 2
+	local ended = false
 	while i <= #args do
 		local a = args[i]
 		local head = string.sub(a, 1, 2)
-		if head == "-c" or head == "-f" then
+		if ended then head = "" end
+		if #paths == 0 and not ended and a == "--" then
+			-- getopt(3): the end of the options, and not a file.
+			ended = true
+			i = i + 1
+		elseif head == "-c" or head == "-f" then
 			if #paths > 0 then return usage("cut") end
 			mode = string.sub(a, 2, 2)
 			list, i = cutArg(args, i, a)
@@ -3965,7 +4014,7 @@ commands.cut = function(state, session, args, env, stdin)
 			d, i = cutArg(args, i, a)
 			if d == nil or #d ~= 1 then return usage("cut") end
 			delim = d
-		elseif #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+		elseif #paths == 0 and not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			return badOption("cut", a)
 		else
 			paths[#paths + 1] = a
@@ -5815,9 +5864,18 @@ end
 local PASSWD_UNCHANGED = "passwd: /etc/passwd: unchanged"
 
 commands.passwd = function(state, session, args, env)
-	if #args > 2 then return usage("passwd") end
+	-- getopt(3) first, as passwd.c's main does: this passwd has none of
+	-- 4.4BSD's -l or -k, so any letter is "illegal option -- x" and the
+	-- usage line; "--" ends them.
+	local at = 2
+	if args[2] == "--" then
+		at = 3
+	elseif args[2] ~= nil and string.sub(args[2], 1, 1) == "-" and args[2] ~= "-" then
+		return badOption("passwd", args[2])
+	end
+	if #args > at then return usage("passwd") end
 	local me = CeroSecOS.userOf(session)
-	local name = args[2]
+	local name = args[at]
 	if name == nil or name == "" then name = me end
 	if CeroSecOS.getUser(state, name) == nil then return false, { "passwd: no such user" } end
 	if name ~= me and me ~= "root" then return false, { "passwd: Permission denied" } end
@@ -6406,14 +6464,18 @@ commands.useradd = function(state, session, args, env)
 
 	local groups, name = nil, nil
 	local i = 2
+	local ended = false
 	while i <= #args do
 		local a = args[i]
-		if name == nil and a == "-G" then
+		if name == nil and not ended and a == "--" then
+			ended = true
+			i = i + 1
+		elseif name == nil and not ended and a == "-G" then
 			local list, okFlag, lines = groupList("useradd", args[i + 1])
 			if list == nil then return okFlag, lines end
 			groups = list
 			i = i + 2
-		elseif name == nil and string.sub(a, 1, 1) == "-" and a ~= "-" then
+		elseif name == nil and not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			return badOption("useradd", a)
 		elseif name == nil then
 			name = a
@@ -6487,10 +6549,12 @@ end
 commands.userdel = function(state, session, args, env)
 	if CeroSecOS.userOf(session) ~= "root" then return fail("userdel", nil, "permission denied") end
 
-	local removeHome, name = false, nil
+	local removeHome, name, ended = false, nil, false
 	for i = 2, #args do
 		local a = args[i]
-		if name == nil and string.sub(a, 1, 1) == "-" and a ~= "-" then
+		if name == nil and not ended and a == "--" then
+			ended = true
+		elseif name == nil and not ended and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
 				if string.sub(a, c, c) ~= "r" then return badOption("userdel", string.sub(a, c, c)) end
 			end

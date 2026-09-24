@@ -198,6 +198,39 @@ do
 end
 
 --
+-- 5b. "--" and the letters nobody has. getopt(3) ends the options at "--"
+-- and prints the letter it did not know -- "--x" is the letter "-", never
+-- an empty one. touch and passwd have no option here and say so in
+-- getopt's words; sh says setoption()'s, bare, since procargs names the
+-- shell only after its options are read (4.4BSD options.c, error.c). kill
+-- -l takes a NUMBER (kill.c: `if (!isdigit(**argv)) usage();`).
+--
+do
+	local state = CeroSecOS.newState("ksp-front-01")
+	local admin = CeroSecOS.login(state, "admin", "")
+	says(state, admin, "wc --x", { "wc: illegal option -- -",
+		"usage: " .. CeroSecOS.commandUsage("wc") }, 1)
+	says(state, admin, "rm --", { "rm: usage: " .. CeroSecOS.commandUsage("rm") }, 1)
+	says(state, admin, "rm -- -f", { "rm: -f: No such file or directory" }, 1)
+	says(state, admin, "echo a > f; wc -l -- f; sort -- f; cp -- f g; cat -- g; ls -- g",
+		{ "       1 f", "a", "a", "g" }, 0)
+	says(state, admin, "uname --", { "CeroSec OS" }, 0)
+	says(state, admin, "uname -- -a", { "uname: usage: " .. CeroSecOS.commandUsage("uname") }, 1)
+	says(state, admin, "rmdir -- nosuch", { "rmdir: nosuch: No such file or directory" }, 1)
+	says(state, admin, "grep -- -x f", {}, 1)
+	says(state, admin, "echo abc > h; cut -c 2 -- h", { "b" }, 0)
+	says(state, admin, "touch -z", { "touch: illegal option -- z",
+		"usage: " .. CeroSecOS.commandUsage("touch") }, 1)
+	says(state, admin, "passwd -z", { "passwd: illegal option -- z",
+		"usage: " .. CeroSecOS.commandUsage("passwd") }, 1)
+	says(state, admin, "sh -z", { "Illegal option -z" }, 1)
+	says(state, admin, "sh +x f", { "Illegal option -x" }, 1)
+	says(state, admin, "kill -l TERM", { "kill: usage: " .. CeroSecOS.commandUsage("kill") }, 1)
+	says(state, admin, "kill -l 15; kill -l 143", { "term", "term" }, 0)
+	says(state, admin, "kill -l 15x", { "kill: illegal signal number: 15x" }, 1)
+end
+
+--
 -- 6. What was fixed is no longer declared, and what is left still is.
 --
 do
