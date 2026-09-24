@@ -4651,34 +4651,51 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      Dans un `$( )` : `x=$(g > c)`, puis `echo "[$x]"` affiche `[]` et
      `cat c` affiche `a` puis `b`. [ ]
 
-459b. **Une fonction sans espace avant l'accolade.** Taper `t(){ echo a; }`
+459a. **Une fonction sans espace avant l'accolade.** Taper `t(){ echo a; }`
      puis `t` : affiche `a`. Idem avec `t (){ echo a; }` et
      `t ( ) { echo a; }`. `t(){echo a;}` répond
      `Syntax error: word unexpected (expecting "{")`. [ ]
 
-459c. **Un corps vide est refusé.** Taper `if true; then fi` : le shell
+459b. **Un corps vide est refusé.** Taper `if true; then fi` : le shell
      répond `Syntax error: "fi" unexpected`. `if true; then true; fi` :
      aucune erreur. Sur une machine trouvée, avec un compte ordinaire :
      `ls /home` et `last` répondent, `cat /var/log/messages` est refusé. En
      root : `cat /var/log/messages` et `cat /home/<nom>/.sh_history`
      répondent, comme le dit la page « This machine may not be new. ». [ ]
 
-459d. **L'autotest du shell.** Appuyer sur **Self-test** dans la fenêtre de
+459c. **set, unset, exec, trap.** `set -- a b c; echo $# $2` : `3 b`.
+     `Qz=1; set | grep Qz` : `Qz=1`. `Q=1; unset Q; echo ${Q-parti}` :
+     `parti`. `f(){ echo hi; }; unset -f f; f` : `f: not found`.
+     `exec echo a; echo b` : seulement `a`. `exec > f` :
+     `sh: exec: redirect with no command`. `trap 'echo bye' EXIT; echo hi` :
+     `hi` puis `bye`. `trap 'echo x' INT` : `sh: trap: INT: bad trap`.
+     Un script `s.sh` qui contient `trap 'echo fin' EXIT`, `echo un`,
+     `exit 3`, `echo jamais` ; `sh s.sh; echo $?` : `un`, `fin`, `3`. [ ]
+459d. **Les accolades de sh et de ksh.** `x=; echo ${x:-d} ${x+oui}` :
+     `d oui`. `unset y; echo ${y:?}` : `sh: y: parameter null or not set`.
+     `v=/usr/lib/a.tar.gz; echo ${v##*/} ${v%%.*} ${#v}` :
+     `a.tar.gz /usr/lib/a 17`. `v='a*b'; echo ${v#"a*"} ${v#a*}` :
+     `b *b`. `set -- un; echo ${1:-d} ${2:-d}` : `un d`. [ ]
+459e. **Seul ce qui est exporté passe dans un tuyau.** `Q=1; env | cat` :
+     aucune ligne `Q=1`. `export Q; env | cat` : la ligne `Q=1`
+     apparaît. [ ]
+459f. **L'autotest du shell.** Appuyer sur **Self-test** dans la fenêtre de
      débogage. La note sous la liste se termine par « shell half running, its
      verdict goes to the log ». Appuyer une deuxième fois tout de suite : la
      note dit « shell half already running ». Attendre quelques secondes :
      l'onglet **Log** (niveau info) et `console.txt` montrent
-     `CeroSec shell selftest: PASS 221 FAIL 0`, suivi d'une ligne de durée.
+     `CeroSec shell selftest: PASS 235 FAIL 0`, suivi d'une ligne de durée.
      Aucune ligne `warn`. [ ]
 
 ## Le manuel dit tout ce qui n'est pas Unix
 
 460. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les
      pages *What is not Unix here* jusqu'à « That is the whole list. » Il y en a
-     maintenant dix, dont *errors, continued*, *files and the shell*, *pipes,
+     maintenant neuf, dont *errors, continued*, *files and the shell*, *pipes,
      printf and date*, *read, history, and who you are* et *what is missing*. [ ]
-461. **Une affirmation, vérifiée à l'écran.** `set` : `set: not
-     found`. Si cette réponse a changé, la page ment : le noter au rapport.
+461. **Une affirmation, vérifiée à l'écran.** `set -e` : `sh: set:
+     Illegal option -e` (set n'a ni -e, ni -x, ni -u). Si cette réponse a
+     changé, la page ment : le noter au rapport.
      (Les anciennes, « `wc -c` d'un `echo a` donne `1` » et « IFS n'est pas
      lu », ne sont plus vraies : voir 461a et 464.) [ ]
 461a. **IFS, la coupure des mots.** `IFS=:`, `x=a:b:c`, `for i in $x; do

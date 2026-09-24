@@ -21,7 +21,7 @@ have can notice is in the shell: a script you saved that used `echo "a\nb"` now 
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
-- The debug window's Self-test also runs 221 shell lines on a scratch
+- The debug window's Self-test also runs 235 shell lines on a scratch
   machine, spread over a few seconds, and writes
   `CeroSec shell selftest: PASS n FAIL m` to the log and console.txt.
 - The shell now refuses an `if`, `while`, `until`, `for` or function whose
@@ -46,6 +46,12 @@ and a command whose redirect is refused no longer runs.
   touched, rather than show its files wrong.
 - A shell function can be defined without a space before the brace, as in
   `t(){ echo a; }`, like on any sh.
+- The shell has `set` (`set -- a b` for new `$1 $2`, `set` alone to list the
+  variables), `unset` and `unset -f`, `exec`, and `trap '...' EXIT` to clean
+  up when a script ends. `${x:-default}`, `${x:=...}`, `${x:?...}`,
+  `${x:+...}`, `${#x}` and the `${x#...}`, `${x%...}` trims work, `${1:-...}`
+  and `${10}` too. A variable you did not `export` no longer leaks into the
+  commands of a pipeline (`Q=1; env | cat`).
 - A computer that's already on now opens with a left click, same as the
   menu's Use computer.
 - The editor no longer refuses a line wider than the screen. It wraps onto the
@@ -131,7 +137,7 @@ and a command whose redirect is refused no longer runs.
   printed, `$?` is 2 (or 1 for sleep), and the script carries on. Their
   errors go where errors go: `2>/dev/null` hides them, and they no longer
   land in a `> file`, a `$( )` or down a pipe.
-- `$?` after "command not found" is now 127, and 126 for a file you may not
+- `$?` after a command that is not found is now 127, and 126 for a file you may not
   run, so a script can tell "failed" from "wasn't there".
 - `$*` and `$!` work, and a bare `$@` splits its words like `$*`. `x=$@` and
   `x="$@"` with two arguments or more no longer break the script: `x` gets
@@ -147,8 +153,10 @@ and a command whose redirect is refused no longer runs.
   the `#` prompt, the little left of the old error wording (the shell's
   `sh:` signature, reasons no errno named), a pipe stopping its left side as soon as
   the right side is done (`sleep 5 | true` ends at once), and the commands and
-  flags that are not here (`set`, `trap`, `expr :`, `uname -m`, `printf %f`,
-  `sh -c`, the link count in `ls -l`, a time zone in `date`). The
+  flags that are not here (`set -e/-x/-u`, a `trap` on anything but `EXIT`,
+  `exec > file` with no command, `expr :`, `uname -m`, `printf %f`, `sh -c`,
+  the link count in `ls -l`, a time zone in `date`), and each line typed at
+  the prompt being a shell of its own for `set --`, `trap` and `exec`. The
   error appendix also gained grep's pattern errors, `passwd: Permission
   denied`, `export: not a name` and `wait: too many jobs`.
 - New commands `rmdir`, `expr` (sums and comparisons, exit status 0, 1 or 2)

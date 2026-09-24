@@ -17146,9 +17146,13 @@ do
 	-- One > per command, and no <.
 	bad(state, admin, "echo a > q > r", "Syntax error: redirection unexpected")
 	bad(state, admin, "cat < p", "Syntax error: redirection unexpected")
-	-- ${name} and nothing else inside braces.
-	bad(state, admin, "x=; echo ${x:-y}", "Syntax error: Bad substitution")
-	bad(state, admin, "x=abc; echo ${#x}", "Syntax error: Bad substitution")
+	-- ${x:-y}, ${#x}, ${1:-y} and the rest of the Bourne and ksh88 forms
+	-- (tests/builtins_test.lua walks them all); a substitution inside the
+	-- word is still refused, one level deep like a catch in a catch.
+	ok(state, admin, "x=; echo ${x:-y}", { "y" })
+	ok(state, admin, "x=abc; echo ${#x}", { "3" })
+	ok(state, admin, "echo ${1:-y}", { "y" })
+	bad(state, admin, "echo ${x:-$(echo y)}", "Syntax error: Bad substitution")
 	-- The wording.
 	bad(state, admin, "nosuch", "nosuch: not found")
 	expect(state, admin, "ls -z", false, { "ls: illegal option -- z",
@@ -17156,10 +17160,8 @@ do
 	bad(state, admin, "cat nosuch", "cat: nosuch: No such file or directory")
 	-- id has names and a flag.
 	ok(state, admin, "id", { "uid=admin flag=user groups=admin,sudo,users" })
-	-- What is absent, and the flags that are.
-	for _, name in ipairs({ "set", "unset", "exec", "trap" }) do
-		bad(state, admin, name .. " x", name .. ": not found")
-	end
+	-- What is absent: nothing of the shell's own words any more -- set,
+	-- unset, exec and trap are real (tests/builtins_test.lua).
 	-- rmdir, expr, uname, rm -f, kill -9 and tail +N are here now; what they
 	-- answer is tests/commands_test.lua's. What is still absent is %f.
 	ok(state, admin, "printf '%5.2f|%d|%s\\n' 5 6", { "%5.2f|5|6" })

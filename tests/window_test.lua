@@ -6709,6 +6709,25 @@ do
 	eq("and the variables are gone", bench.object.console.shvars, nil)
 end
 
+-- An EXIT trap set at the prompt runs when the line ends, and a line that
+-- ends by logging out runs it first: the scheduler lets the trap's own
+-- block run before it carries out the logout (CeroSecOSVM's handleSignal,
+-- the `all` exit whose order is "exit").
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("trap 'echo bye' EXIT; echo hi")
+	bench.frame()
+	check("a prompt line's trap runs as the line ends", bench.painted("bye"))
+
+	bench.enter("trap 'echo farewell > /home/admin/gone' EXIT; exit")
+	bench.frame()
+	eq("exit still logs out", bench.object.console.user, nil)
+	local state = bench.object:osState()
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/gone")
+	check("and the trap ran before it did", node ~= nil and node.data == "farewell\n")
+end
+
 -- Up and Down walk ~/.sh_history, which the machine keeps.
 do
 	local bench = newBench()

@@ -286,9 +286,11 @@ One > and one 2> to a command, and no < at all: a second > is a bad
 redirect, and < is refused. Hand a file to a command by naming it, or
 with cat file | command.
 
-${x:-y}, ${#x} and the rest of sh's and ksh's forms inside braces are
-not here: ${x} is the whole of it, and anything else is a bad
-substitution.
+Inside braces, the word after :- := :? :+ and the pattern after # ##
+% %% may not hold a $( ) of its own, nor another ${x:-y}: one
+substitution deep is the ceiling a catch inside a catch already has.
+A pattern is at most 32 pieces, a piece being a character, a ? or a
+[set]; a run of * is one.
 
 ls -l has no link count: the column a real ls put between the mode and
 the owner is not there, and the name has the room instead.]],
@@ -310,7 +312,11 @@ flags - and 0. And its \NNN makes no control byte: printf '\1' prints
 nothing.
 
 date prints no time zone: nothing ever told this machine which one it
-sits in, so the zone a real date printed is left out, not guessed.]],
+sits in, so the zone a real date printed is left out, not guessed.
+
+At the prompt, each line is a shell of its own: set -- and a trap
+last for that line, exec ends the line, not the login, and exec >
+file with no command is refused.]],
 
 [[What is not Unix here: read, history, and who you are.
 
@@ -336,11 +342,14 @@ ls /bin is the whole list of what this machine can run, and a program a
 real Unix had and this one has not is simply not in it. A few are named
 here because a script reaches for them first.
 
-set, unset, exec and trap are not in this shell: a variable is set with
-NAME=value and emptied with NAME=, and nothing else touches it.
+trap catches EXIT and nothing else: kill, Escape and the processor
+ceiling end a job outright, the way kill -9 did, so there is no INT or
+TERM to catch. A job stopped by an error runs no trap either.
 
 uname has no -m: no hardware name was ever put in this machine to print,
 and guessing one would be lying about what is inside the case.
+
+set has no -e, -x or -u.
 
 expr has no : for matching a pattern against a string. The tool grep uses
 for one has no \( \) to hand back what matched, only whether it did.

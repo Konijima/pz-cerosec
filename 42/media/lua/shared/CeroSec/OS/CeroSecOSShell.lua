@@ -1055,10 +1055,18 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "redirect", world = true,
 		phrase = "One > and one 2> to a command, and no <",
 		why = "a command has one output, one error and no input redirect" },
-	-- ${name} is the only brace form; System V sh's :- := :? :+ and ksh88's
-	-- # are refused as a bad substitution.
-	{ name = "braces", world = true, phrase = "${x:-y}, ${#x} and the rest",
-		why = "${name} is the only form inside braces" },
+	-- System V sh's :- := :? :+ and ksh88's ${#x} and #/##/%/%% read
+	-- inside braces (readDollar's "{" arm, CeroSecOSScript.lua); what is
+	-- refused is a SECOND substitution inside the word or the pattern --
+	-- a $( ), a backquote or another ${x:-y} -- one level deep, the same
+	-- ceiling a catch inside a catch already meets (readCommandSub).
+	{ name = "braces", world = true,
+		phrase = "the ceiling a catch inside a catch already has",
+		why = "the word after :- := :? :+ # ## % %% may hold no second substitution" },
+	-- CeroSecOS.MAX_TRIM_ITEMS: a trim walks the value once per piece of
+	-- its pattern (CeroSecOSVM's trimRun), and ksh88 had no such ceiling.
+	{ name = "braces", world = true, phrase = "A pattern is at most 32 pieces",
+		why = "a trim costs a walk of the value per piece, like grep's pattern" },
 	-- read's flags are bash's (2.0 for -n): in ksh88 -p read from the
 	-- co-process and -s saved the line to the history file.
 	{ name = "read", shell = true, phrase = "read -p, read -s and read -n",
@@ -1096,14 +1104,26 @@ CeroSecOS.DEVIATIONS = {
 	-- says so; these are named because a script reaches for them first.
 	-- `absent` marks a name that is neither a command, a word of the shell
 	-- nor a retired one.
-	{ name = "set", absent = true, phrase = "set, unset, exec and trap are not in this shell",
-		why = "variables are NAME=value and nothing more" },
-	{ name = "unset", absent = true, phrase = "set, unset, exec and trap are not in this shell",
-		why = "a variable is emptied with NAME=" },
-	{ name = "exec", absent = true, phrase = "set, unset, exec and trap are not in this shell",
-		why = "a job cannot replace its shell" },
-	{ name = "trap", absent = true, phrase = "set, unset, exec and trap are not in this shell",
-		why = "there are no signals to catch" },
+	-- builtins.set (CeroSecOSVM.lua) refuses -e, -x and -u: nothing here
+	-- traces a script, stops it on a failed command, or flags an unset
+	-- variable, and claiming one of those turned on would be a lie.
+	{ name = "set", shell = true, phrase = "set has no -e, -x or -u",
+		why = "nothing here traces a script, stops on failure or flags an unset variable" },
+	-- Every way a job is ended goes through CeroSecOS.killJob, on the spot:
+	-- SIGKILL, which no trap catches (builtins.trap, CeroSecOSVM.lua). And
+	-- jobError ends the job without the trap, where sh ran it on its way out.
+	{ name = "trap", shell = true, phrase = "trap catches EXIT and nothing else",
+		why = "kill, Escape and the cpu ceiling end a job outright" },
+	-- A typed line is a job of its own (CeroSecOS.promptJob): the console
+	-- keeps its variables, exports and functions and nothing else, so $1..,
+	-- a trap, and what exec replaces are the line's.
+	{ name = "set", shell = true, phrase = "each line is a shell of its own",
+		why = "a typed line is a job; the console keeps variables, not $1.. or traps" },
+	{ name = "exec", shell = true, phrase = "exec ends the line, not the login",
+		why = "the shell exec would replace is the line's job" },
+	-- runSimple refuses it: a redirect here is opened for one command.
+	{ name = "exec", shell = true, phrase = "file with no command is refused",
+		why = "a redirect belongs to one command and ends with it" },
 	-- expr has arithmetic and comparison now, but no : -- the manual's own
 	-- words say why (a matcher that only answers whether, never where).
 	{ name = "expr", phrase = "expr has no :",
@@ -1256,7 +1276,8 @@ CeroSecOS.BUILTIN_FILES = {
 -- files. Reserved words first, then the builtins that change the shell.
 CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done case esac"
 CeroSecOS.HELP_BUILTINS =
-	"cd . export exit fg jobs wait read shift break continue history type"
+	"cd . export exit fg jobs wait read shift break continue history type" ..
+	" set unset exec trap"
 
 -- The same words as a set, derived from the line `help` prints rather than
 -- listed a second time beside it: a word `help` says is the shell's own is one

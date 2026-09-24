@@ -641,6 +641,198 @@ local function setVar(job, name, value)
 	return nil
 end
 
+-- One parameter of a ${...} word, as text. readBraceWord
+-- (CeroSecOSScript.lua) already refused every part that could recurse or
+-- wait on a capture -- no $( ), no `` ``, no second ${x:-y} -- so what is
+-- left is exactly the plain parameters expandStep resolves everywhere else,
+-- and none of them can yield. That is what lets the word be read straight
+-- through instead of through expandStep's own step machine.
+local function wordPartText(job, p)
+	if p.t == "lit" then return p.s end
+	if p.t == "var" then return getVar(job, p.name) end
+	if p.t == "arg" then
+		if p.n == 0 then return job.name end
+		return job.args[p.n] or ""
+	end
+	if p.t == "count" then return tostring(#job.args) end
+	if p.t == "status" then return tostring(job.status) end
+	if p.t == "job" then return tostring(job.id) end
+	if p.t == "star" or p.t == "all" then return table.concat(job.args, " ") end
+	if p.t == "bang" then
+		if job.lastBg ~= nil then return tostring(job.lastBg) end
+		return ""
+	end
+	return ""
+end
+
+-- The word after :- := :? :+, flattened to one string.
+local function resolveWordText(job, parts)
+	local buf = ""
+	for i = 1, #parts do
+		buf = buf .. wordPartText(job, parts[i])
+		if #buf > CeroSecOS.MAX_VAR_BYTES then return nil, "word too large" end
+	end
+	return buf
+end
+
+-- How many pieces the pattern of ${x#p} ${x##p} ${x%p} ${x%%p} may have: a
+-- piece is one character, one "?", one "[...]" set or one run of "*". The
+-- same ceiling grep's own pattern meets (CeroSecOS.MAX_BRE_ITEMS, 32) and for
+-- the same reason: the walk below costs a piece for every byte of the value,
+-- and a value is at most MAX_VAR_BYTES, so this is what makes one trim a
+-- bounded amount of work -- about thirty thousand piece-visits, at worst.
+CeroSecOS.MAX_TRIM_ITEMS = 32
+
+-- The pattern of a trim, as pieces. Quoting decides what globs, exactly as
+-- POSIX.2 3.6.2 has it: a bare * ? [ is a pattern character, a quoted or
+-- backslashed one is itself, and the value of a bare $p is a pattern while
+-- the value of "$p" is text. readBraceWord marks every literal piece `bare`
+-- or not, and a parameter carries `q`.
+--
+-- A set is kept as its own text, "[a-z]", and handed to CeroSecOS.globMatch
+-- one character at a time -- the matcher `case` and pathname expansion use,
+-- so the set grammar (ranges, a leading ! or ^, a "[" with no "]" standing
+-- for itself) is written once, there.
+local function trimPieces(job, parts)
+	local items = {}
+	local function add(text, glob)
+		local i, n = 1, #text
+		while i <= n do
+			local c = string.sub(text, i, i)
+			if glob and c == "*" then
+				if items[#items] == nil or items[#items].k ~= "star" then
+					items[#items + 1] = { k = "star" }
+				end
+				i = i + 1
+			elseif glob and c == "?" then
+				items[#items + 1] = { k = "any" }
+				i = i + 1
+			elseif glob and c == "[" and string.find(text, "]", i + 2, true) ~= nil then
+				local close = string.find(text, "]", i + 2, true)
+				items[#items + 1] = { k = "set", s = string.sub(text, i, close) }
+				i = close + 1
+			else
+				items[#items + 1] = { k = "ch", c = c }
+				i = i + 1
+			end
+			if #items > CeroSecOS.MAX_TRIM_ITEMS then return false end
+		end
+		return true
+	end
+	for i = 1, #parts do
+		local p = parts[i]
+		local glob
+		if p.t == "lit" then glob = p.bare == true else glob = not p.q end
+		if not add(wordPartText(job, p), glob) then return nil end
+	end
+	return items
+end
+
+-- The longest (or the shortest) run of value, from one end, that the pieces
+-- match whole: its length, or nil when none does. fromEnd walks the value
+-- backwards and the pieces backwards with it, which is a pattern read the
+-- other way round -- a star, a "?", a set and a character are each the same
+-- piece in either direction.
+--
+-- One pass over the value, carrying the set of places in the pattern the
+-- walk can be standing at -- the same shape as grep's breMatch -- so the cost
+-- is the value's length times the pieces', and never the square of the
+-- value's that trying every cut against globMatch would be (measured: 1.1 s
+-- for ${x##*[b]} over a kilobyte of "a", against a pass meant to cost four
+-- milliseconds). Answers the visits too, for the charge.
+local function trimRun(value, items, longest, fromEnd)
+	local m, n = #items, #value
+	local pieces = items
+	if fromEnd then
+		pieces = {}
+		for i = 1, m do pieces[i] = items[m - i + 1] end
+	end
+	-- What a set answered for a character, kept: globMatch walks the set
+	-- once per character the value holds and not once per visit.
+	local held = {}
+	for i = 1, m do
+		if pieces[i].k == "set" then held[i] = {} end
+	end
+	local visits = 0
+	-- Two sets of places, swapped each character rather than made anew:
+	-- the walk allocates nothing per byte.
+	local cur, nxt = {}, {}
+	for p = 1, m + 1 do
+		cur[p] = false
+		nxt[p] = false
+	end
+	-- A star may match nothing, so standing before one is standing after it.
+	local function closeOver(set)
+		for p = 1, m do
+			if set[p] and pieces[p].k == "star" then set[p + 1] = true end
+		end
+		visits = visits + m
+	end
+	cur[1] = true
+	closeOver(cur)
+	local best = nil
+	if cur[m + 1] then
+		best = 0
+		if not longest then return best, visits end
+	end
+	for k = 1, n do
+		local at = k
+		if fromEnd then at = n - k + 1 end
+		local c = string.sub(value, at, at)
+		local alive = false
+		for p = 1, m + 1 do nxt[p] = false end
+		for p = 1, m do
+			if cur[p] then
+				visits = visits + 1
+				local it = pieces[p]
+				local step = false
+				if it.k == "star" then
+					nxt[p] = true
+					alive = true
+				elseif it.k == "any" or (it.k == "ch" and it.c == c) then
+					step = true
+				elseif it.k == "set" then
+					local memo = held[p]
+					if memo[c] == nil then memo[c] = CeroSecOS.globMatch(c, it.s) end
+					step = memo[c]
+				end
+				if step then
+					nxt[p + 1] = true
+					alive = true
+				end
+			end
+		end
+		if not alive then break end
+		closeOver(nxt)
+		cur, nxt = nxt, cur
+		if cur[m + 1] then
+			best = k
+			if not longest then break end
+		end
+	end
+	return best, visits
+end
+
+-- ${name#p} ${name##p} ${name%p} ${name%%p}: the shortest or the longest
+-- prefix (#) or suffix (%) the pattern matches, cut away; the value as it
+-- stands when none does. ksh88's four and POSIX.2 3.6.2's. The walk is
+-- charged as DEBT, at grep's own rate (CeroSecOS.BRE_STEPS_PER), for the
+-- reason grep's is: `while true; do y=${x%%*a*}; done` over a kilobyte must
+-- slow down, not cost the pass what forty commands would.
+local function trimValue(job, value, items, kind)
+	local fromEnd = kind == "trimSuf" or kind == "trimSufLong"
+	local longest = kind == "trimPreLong" or kind == "trimSufLong"
+	local len, visits = trimRun(value, items, longest, fromEnd)
+	local cost = math.floor(visits / CeroSecOS.BRE_STEPS_PER)
+	if cost > 0 then
+		job.debt = (job.debt or 0) + cost
+		job.steps = job.steps + cost
+	end
+	if len == nil then return value end
+	if fromEnd then return string.sub(value, 1, #value - len) end
+	return string.sub(value, len + 1)
+end
+
 -- Mark a name as being in the environment. nil, or the reason it may not be.
 -- The set is made on demand, because a job that never exports anything is a job
 -- whose environment is what it was handed.
@@ -934,6 +1126,13 @@ local function popFrame(job)
 	local f = frames[#frames]
 	if f == nil then return end
 	frames[#frames] = nil
+	-- An EXIT trap's action that ran to its end: $? is again what the shell
+	-- was leaving with (POSIX.2 3.14, "the value of $? after the trap action
+	-- completes shall be the value it had before trap was invoked"). An
+	-- `exit n` inside the action unwinds through here too, and handleSignal
+	-- sets n after, which is the one way a trap changes the status.
+	if f.trapStatus ~= nil then job.status = f.trapStatus end
+	if f.hadTraps then job.traps = f.oldTraps end
 	if f.k == "capture" then
 		flushPartial(job)
 		local buf = job.caps[#job.caps]
@@ -1194,8 +1393,12 @@ end
 local function pushCapture(job, prog)
 	local frame = { k = "capture", prog = prog, i = 1,
 		oldVars = job.vars, oldNvars = job.nvars, oldExported = job.exported,
-		oldCwd = job.session.cwd, oldFuncs = job.funcs }
+		oldCwd = job.session.cwd, oldFuncs = job.funcs,
+		hadTraps = true, oldTraps = job.traps }
 	if not pushFrame(job, frame) then return false end
+	-- A subshell starts with no trap of its own (POSIX.2 3.12: traps "are
+	-- set to the default values"), and the one it sets is its own.
+	job.traps = nil
 	job.vars = CeroSecOS.copyVars(job.vars)
 	job.exported = CeroSecOS.copyExported(job.exported)
 	job.funcs = CeroSecOS.copyFuncs(job.funcs)
@@ -1356,6 +1559,84 @@ local function expandStep(job, state, ex, env)
 			elseif part.t == "bang" then
 				-- Empty until an `&` has started something, as in any sh.
 				if job.lastBg ~= nil then text = tostring(job.lastBg) else text = "" end
+			elseif part.t == "vare" then
+				-- System V sh's ${name:-word} family and ksh88's ${#name},
+				-- ${name#pat} and the rest -- POSIX.2 2.6.2's parameter
+				-- expansion, read by readDollar's "{" arm (CeroSecOSScript.lua)
+				-- into the operator and, for every kind but "len", the WORD
+				-- that follows it. "unset" there means POSIX's own test: the
+				-- name has never been given a value; a colon widens it to
+				-- "unset or set to the empty string" -- ${x:-w} where x=""
+				-- answers w, ${x-w} answers "".
+				-- ${1:-w} and the rest name a POSITIONAL parameter by `pos`
+				-- (readDollar); $0 is always set, $n is unset past $#.
+				local val, isNil
+				if part.pos ~= nil then
+					if part.pos == 0 then
+						val, isNil = job.name, false
+					else
+						val = job.args[part.pos]
+						isNil = val == nil
+						if val == nil then val = "" end
+					end
+				else
+					val = getVar(job, part.name)
+					isNil = job.vars[part.name] == nil
+				end
+				local label = part.name or tostring(part.pos)
+				if part.kind == "len" then
+					text = tostring(#val)
+				else
+					local unset = isNil or (part.colon and val == "")
+					if part.kind == "default" or part.kind == "assign" then
+						if unset then
+							local w, werr = resolveWordText(job, part.word)
+							if w == nil then return nil, werr end
+							if part.kind == "assign" then
+								-- A positional parameter is not a variable and
+								-- := cannot set one: ash's setvar refuses the
+								-- name in these words (4.4BSD var.c).
+								if part.pos ~= nil then
+									return nil, label .. ": bad variable name"
+								end
+								local reason = setVar(job, part.name, w)
+								if reason ~= nil then return nil, reason end
+							end
+							text = w
+						else
+							text = val
+						end
+					elseif part.kind == "error" then
+						if unset then
+							local w, werr = resolveWordText(job, part.word)
+							if w == nil then return nil, werr end
+							-- 4.4BSD expand.c's own wording for an omitted word --
+							-- error("%.*s: parameter %snot set", ..., varflags &
+							-- VSNUL ? "null or " : "") -- "null or" is what the
+							-- colon adds, because only ":?" widens "unset" to
+							-- "unset or empty".
+							if w == "" then
+								if part.colon then w = "parameter null or not set"
+								else w = "parameter not set" end
+							end
+							return nil, label .. ": " .. w
+						end
+						text = val
+					elseif part.kind == "alt" then
+						if unset then
+							text = ""
+						else
+							local w, werr = resolveWordText(job, part.word)
+							if w == nil then return nil, werr end
+							text = w
+						end
+					else
+						-- The trims: ${name#p} ${name##p} ${name%p} ${name%%p}.
+						local items = trimPieces(job, part.word)
+						if items == nil then return nil, label .. ": pattern too long" end
+						text = trimValue(job, val, items, part.kind)
+					end
+				end
 			elseif part.t == "arith" then
 				-- The expansions in POSIX.2's order: command substitution first, the
 				-- sum afterwards. A sum with no $( ) in it has no `parts` and is read
@@ -1842,6 +2123,145 @@ builtins.shift = function(job, args)
 	local kept = {}
 	for i = n + 1, #job.args do kept[#kept + 1] = job.args[i] end
 	job.args = kept
+	return 0
+end
+
+-- set: with no operand, every variable this shell holds, one a line as
+-- NAME=value and sorted -- POSIX.2's own words for it, "in a format that can
+-- be reused as input", the same re-inputtable shape export's bare form
+-- already prints, but every name and not only the exported ones.
+--
+-- `set -- word...` and, since none of this shell's own words starts with
+-- "-", the shorter `set word...` (POSIX.2 12.2's "If no options are given...
+-- and the first operand begins with a character other than -") replace the
+-- positional parameters: $1.. and $#. $0 is untouched -- POSIX.2 is explicit
+-- that set never sets it -- which is why job.name does not move.
+--
+-- A NEW table and never a mutation of the old one: `job.args` may be the
+-- table a caller up the stack is still holding (shift makes the same
+-- choice, just above), and `f(){ set -- z; }; set -- a b; f; echo $1` has to
+-- come back "a" -- the function's own `set --` must not reach through to
+-- the shell that called it.
+--
+-- 4.4BSD sh had -e, -x and -u; this one refuses every flag (the "set"
+-- deviation), because nothing here traces a script, stops it on a failed
+-- command, or treats an unset variable as one -- and a refusal that
+-- pretended to turn one of those on would be worse than saying so. The
+-- words are the ones 4.4BSD-Lite2 bin/sh/options.c refused a letter it did
+-- not know with, error("Illegal option -%c"), signed with the builtin's
+-- name because evalcommand sets commandname to argv[0] before running it.
+builtins.set = function(job, args)
+	if #args == 1 then
+		local names = CeroSecOS.envNames(job.vars, nil)
+		for i = 1, #names do
+			writeText(job, names[i] .. "=" .. job.vars[names[i]] .. "\n")
+		end
+		return 0
+	end
+	local start = 2
+	if args[2] == "--" then
+		start = 3
+	elseif string.sub(args[2], 1, 1) == "-" then
+		return nil, "set: Illegal option -" .. string.sub(args[2], 2, 2)
+	end
+	local kept = {}
+	for i = start, #args do kept[#kept + 1] = args[i] end
+	job.args = kept
+	return 0
+end
+
+-- unset NAME...: drops each variable, sh(1) of the seventh edition; unset -f
+-- NAME... drops a function instead, and -v NAME... says "a variable" in as
+-- many words as the default already means, both POSIX.2's. A name that was
+-- never set is not an error, the way NAME= on an unset variable never was.
+--
+-- job.nvars is the ceiling setVar counts variables against as they are
+-- MADE (CeroSecOS.MAX_VARS, above); a variable unset has to give its seat
+-- back the same way, or `for i in ...; do x=$i; unset x; done` run enough
+-- times reads "too many variables" for a shell holding none. job.exported
+-- loses the name too -- a variable gone cannot still be in the environment.
+builtins.unset = function(job, args)
+	local i, doFuncs = 2, false
+	if args[2] == "-f" then
+		doFuncs = true
+		i = 3
+	elseif args[2] == "-v" then
+		i = 3
+	end
+	for k = i, #args do
+		local name = args[k]
+		-- ash's wording for a name that cannot be one (4.4BSD var.c).
+		if not CeroSecOS.isVarName(name) then
+			return nil, "unset: " .. name .. ": bad variable name"
+		end
+		if doFuncs then
+			if type(job.funcs) == "table" then job.funcs[name] = nil end
+		else
+			if job.vars[name] ~= nil then
+				job.vars[name] = nil
+				job.nvars = job.nvars - 1
+			end
+			if type(job.exported) == "table" then job.exported[name] = nil end
+		end
+	end
+	return 0
+end
+
+-- trap: this machine's shell has ONE condition worth catching, POSIX.2
+-- 3.14's EXIT -- spelled 0 in the Bourne shell and in 4.4BSD's trap.c, which
+-- took a number and never a name -- run once when the shell it was set in
+-- ends on its own or with `exit` (CeroSecOS.fireExitTrap, below). Every
+-- other way a job ends here is kill's: the `kill` command, Escape, a console
+-- that went away and the processor ceiling all go through CeroSecOS.killJob,
+-- which ends the job on the spot -- SIGKILL, which no sh could catch either.
+-- A trap on INT or TERM would be a promise nothing here can keep, and making
+-- one keepable would be a job its owner cannot stop. So those, and every
+-- other name, are refused in trap.c's own words: "bad trap".
+--
+-- The operands are 4.4BSD's: `trap action cond...` sets, `trap - cond...`
+-- and `trap 0` (a number first means there is no action) reset, and `trap
+-- action` alone names nothing and does nothing. `trap` with no operand lists
+-- in POSIX.2's form, "trap -- action EXIT", the action quoted so the line
+-- can be typed back in.
+local function trapQuote(s)
+	local out, from = "'", 1
+	while true do
+		local at = string.find(s, "'", from, true)
+		if at == nil then break end
+		out = out .. string.sub(s, from, at - 1) .. "'\\''"
+		from = at + 1
+	end
+	return out .. string.sub(s, from) .. "'"
+end
+
+builtins.trap = function(job, args)
+	if #args == 1 then
+		if type(job.traps) == "table" and job.traps.EXIT ~= nil then
+			writeText(job, "trap -- " .. trapQuote(job.traps.EXIT) .. " EXIT\n")
+		end
+		return 0
+	end
+	local first, action = 2, nil
+	if string.find(args[2], "^[0-9]+$") == nil then
+		action = args[2]
+		first = 3
+	end
+	if action == "-" then action = nil end
+	-- Every condition is checked before any is set, so a refused line
+	-- changes nothing.
+	for i = first, #args do
+		if args[i] ~= "EXIT" and args[i] ~= "0" then
+			return nil, "trap: " .. args[i] .. ": bad trap"
+		end
+	end
+	for _ = first, #args do
+		if action == nil then
+			if type(job.traps) == "table" then job.traps.EXIT = nil end
+		else
+			job.traps = job.traps or {}
+			job.traps.EXIT = action
+		end
+	end
 	return 0
 end
 
@@ -2943,6 +3363,37 @@ local function runSimple(state, job, f, env)
 
 	local name = args[1]
 
+	-- exec: POSIX.2's own words, "the command specified... shall replace the
+	-- current shell". There is no process here to fork and then replace, so
+	-- REPLACE is done by dropping the word "exec" -- name below becomes the
+	-- exec'd command's, and every refusal past this point names IT and not
+	-- exec -- and pushing a MARKER frame rather than setting a flag on this
+	-- one: exec may run a FUNCTION or a stage of a pipe, and those come back
+	-- through this very frame more than once before there is a final status.
+	-- The marker sits under whatever the command itself pushes and is what is
+	-- left on top once that is over; the step loop below turns it straight
+	-- into the same `exit $?` that ends the innermost script, function or
+	-- capture around it -- exactly what a real exec, replacing the process
+	-- that ran it, leaves behind. `exec` with no operand is the one sh took
+	-- no fork for either: it does nothing and the line after it still runs.
+	if name == "exec" then
+		if #args == 1 then
+			-- `exec > file` would move this shell's output for good; a
+			-- redirect here belongs to one command and ends with it, so the
+			-- form is refused rather than quietly doing nothing.
+			if redirect ~= nil or errTarget ~= nil then
+				jobError(job, "exec: redirect with no command")
+				return 1
+			end
+			job.status = 0
+			return 1
+		end
+		table.remove(args, 1)
+		table.remove(masks, 1)
+		name = args[1]
+		if not pushFrame(job, { k = "execmark" }) then return 1 end
+	end
+
 	-- What ">" and "2>" name is OPENED here, before anything is looked up or run,
 	-- which is the order every sh has: the shell forks, opens the redirections,
 	-- and only then execs. So a target that cannot be opened is a command that
@@ -3385,6 +3836,14 @@ local function newStage(job, node, out, into, last)
 		-- is handed a copy of the variables: `greet | cat` calls the greet the shell
 		-- holds, and a definition inside a stage dies with the stage.
 		funcs = CeroSecOS.copyFuncs(job.funcs),
+		-- And of the exported SET, the same copy pushCapture hands a $( ):
+		-- job.exported == nil reads as "everything is exported" (the honest
+		-- reading a machine saved before export existed has to get), and
+		-- copyExported(nil) is nil, so that reading survives into the stage
+		-- too. Without this a fresh login's stage started with exported left
+		-- at nil read as "everything", and `Q=1; env | cat` put Q where a
+		-- real sh's execve for cat never would have.
+		exported = CeroSecOS.copyExported(job.exported),
 	})
 	stage.pipe = out
 	stage.stdinBuf = into
@@ -3828,6 +4287,39 @@ local function pushNode(job, node)
 	return false
 end
 
+-- The EXIT trap of the shell that is ending, pushed to run before it goes.
+-- owner is the frame that shell is -- a $( ), or a script's own frame, the
+-- two that set hadTraps -- or nil for the job itself. true when an action
+-- was pushed (or refused) and the ending has to wait for it.
+--
+-- Once per shell, and the mark is on the shell and not on the trap: an
+-- action that sets `trap ... EXIT` again is not run a second time, which is
+-- what every sh does and what keeps an action from re-arming itself for
+-- ever. The owner's own program is marked finished, because the shell is
+-- leaving: an `exit` in the middle of a script must not come back to the
+-- line after it once the action is done.
+local function fireExitTrap(job, owner)
+	local traps = job.traps
+	if type(traps) ~= "table" or traps.EXIT == nil then return false end
+	if owner ~= nil then
+		if owner.trapped then return false end
+		owner.trapped = true
+		owner.i = #owner.prog + 1
+	else
+		if job.trapped then return false end
+		job.trapped = true
+	end
+	-- Read when it fires, as sh reads it: what trap was handed is a string.
+	-- Parsed by the same reader as every other line; never evaluated as Lua.
+	local prog, reason = CeroSecOS.parseScript(traps.EXIT)
+	if prog == nil then
+		jobError(job, reason)
+		return true
+	end
+	pushFrame(job, { k = "block", prog = prog, i = 1, trapStatus = job.status })
+	return true
+end
+
 -- One turn of the machine. Returns how many steps it cost -- 0 for the frame
 -- work between commands, 1 for a command or a loop iteration.
 stepOnce = function(state, job, env)
@@ -3841,12 +4333,15 @@ stepOnce = function(state, job, env)
 	local frames = job.frames
 	local f = frames[#frames]
 	if f == nil then
+		if fireExitTrap(job, nil) then return 0 end
 		finish(job, "done")
 		return 0
 	end
 
 	if f.k == "block" or f.k == "capture" then
 		if f.i > #f.prog then
+			-- A script or a $( ) that ran off its end: its EXIT trap first.
+			if f.hadTraps and fireExitTrap(job, f) then return 0 end
 			popFrame(job)
 			return 0
 		end
@@ -4104,6 +4599,16 @@ stepOnce = function(state, job, env)
 		return pipeStep(state, job, f, env)
 	end
 
+	-- exec's marker, popped once whatever it ran is over: the same job.sig an
+	-- `exit $?` sets, so handleSignal's existing rule -- the innermost script,
+	-- capture or job the exit belongs to -- is what decides how far this
+	-- reaches, exactly as it would for a real exec replacing a real process.
+	if f.k == "execmark" then
+		popFrame(job)
+		job.sig = { k = "exit", n = job.status, noTrap = true }
+		return 0
+	end
+
 	jobError(job, "syntax error")
 	return 0
 end
@@ -4162,11 +4667,27 @@ handleSignal = function(job)
 			end
 		end
 		if at ~= nil then
-			while #job.frames >= at do popFrame(job) end
+			while #job.frames > at do popFrame(job) end
 			job.status = sig.n
+			-- The shell being left runs its EXIT trap first -- unless it was
+			-- exec that ended it: the process that set the trap is gone.
+			if not sig.noTrap and job.frames[at].hadTraps
+					and fireExitTrap(job, job.frames[at]) then
+				return
+			end
+			popFrame(job)
 			return
 		end
 		job.status = sig.n
+		-- The job's own shell, the same way. Of the orders that end a job
+		-- (`all`), only the logout is the shell ending: the rest hand the
+		-- glass to something else or switch the machine off.
+		if not sig.noTrap and (not sig.all or job.control == "exit")
+				and type(job.traps) == "table" and job.traps.EXIT ~= nil
+				and not job.trapped then
+			while #job.frames > 0 do popFrame(job) end
+			if fireExitTrap(job, nil) then return end
+		end
 		finish(job, "done")
 		return
 	end
@@ -4697,6 +5218,9 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace, target, erd)
 		frame.oldFuncs = job.funcs
 		frame.oldFprog = job.fprog
 		frame.hadFuncs = true
+		-- And the traps: a new sh has set none, and what it sets dies with it.
+		frame.hadTraps = true
+		frame.oldTraps = job.traps
 	end
 	if not pushFrame(job, frame) then
 		job.depth = job.depth - 1
@@ -4709,6 +5233,7 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace, target, erd)
 		job.args = kept
 		job.funcs = nil
 		job.fprog = nil
+		job.traps = nil
 		local child = CeroSecOS.exportedVars(job.vars, job.exported)
 		local n = 0
 		for _, _ in pairs(child) do n = n + 1 end

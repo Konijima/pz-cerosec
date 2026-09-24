@@ -436,6 +436,13 @@ local LITERAL_MESSAGES = {
 	-- rung 5b: the pipeline's own two, neither of which goes through fail()
 	"too many stages",
 	"input too large",
+	-- The braces and exec (CeroSecOSVM's expandStep and runSimple): built
+	-- round a name, or handed to jobError, where the scan cannot lift them.
+	"<name>: parameter null or not set",
+	"<name>: parameter not set",
+	"<name>: pattern too long",
+	"<n>: bad variable name",
+	"exec: redirect with no command",
 }
 for i = 1, #LITERAL_MESSAGES do
 	check("error appendix carries \"" .. LITERAL_MESSAGES[i] .. "\"",

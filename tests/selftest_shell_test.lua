@@ -52,9 +52,9 @@ eq("the shell selftest fails nothing", result.fail, 0)
 eq("and passes every case it holds", result.pass, #CASES)
 -- Pinned, so a case taken out is a red here and a line in the change, not a quiet
 -- shrinking of what the button proves.
-eq("the case count", #CASES, 221)
+eq("the case count", #CASES, 235)
 eq("the summary line", CeroSecSelfTest.shellSummary(result),
-	"shell selftest: PASS 221 FAIL 0")
+	"shell selftest: PASS 235 FAIL 0")
 
 -- 2. Every answer that is not 1993's names the deviation that excuses it, and the
 -- deviation exists: a `dev` that names nothing is an excuse nobody declared.

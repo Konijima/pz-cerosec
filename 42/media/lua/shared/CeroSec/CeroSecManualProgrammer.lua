@@ -2339,10 +2339,11 @@ character. A pound sign starts a comment.]],
 
 [[The shell's own words.
 
-Thirteen words the shell runs itself, with no file in /bin needed:
+Seventeen words the shell runs itself, with no file in /bin needed:
 
-  . break cd continue export exit fg
-  history jobs read shift type wait
+  . break cd continue exec exit export fg
+  history jobs read set shift trap type
+  unset wait
 
 Everything else you type is a FILE, found by walking PATH: echo, printf
 and test are files in /bin, which is why ls /bin is the honest list of
@@ -2363,10 +2364,49 @@ what this machine can do.]],
       read the file in THIS shell, so what it sets is
       still set afterwards. It wants r on the file and
       not x, because nothing runs it
+  set, unset
+      set alone lists every variable the same way; set --
+      word... replaces $1.. and $#. unset NAME... drops a
+      variable, unset -f NAME... a function
 
 sh <file> is the other half of the last one: that runs the file as a
 program, which is handed a copy of the environment and can change nothing
 of yours. Chapter 1 has the pair side by side and chapter 3 has export.]],
+
+[[exec and trap: how a script ends.
+
+  exec command [word...]
+      run the command in place of the script: the
+      script ends there, with the command's status,
+      and its trap does not run
+  trap 'command' EXIT
+      run the command when this shell ends, off its
+      last line or by exit. $? in it is the status the
+      shell is leaving with, and exit n in it changes
+      that. 0 is another name for EXIT
+  trap - EXIT
+      take it back; trap alone shows it, the way you
+      would type it
+
+A script's trap is the script's, and a $( ) starts with none. EXIT is
+the only one there is: kill ends a job outright.]],
+
+[[Inside the braces.
+
+  ${name:-word}  word, if name is unset or empty
+  ${name:=word}  the same, and name is set to it
+  ${name:?word}  stop the script, saying word
+  ${name:+word}  word, if name is set and not empty
+  ${name-word}   and the rest without the colon:
+                 then only an unset name counts
+  ${#name}       how many characters name holds
+  ${name#pat}    name with the shortest start that
+                 matches pat cut off; ## the longest
+  ${name%pat}    the same off the end; %% the longest
+  ${1:-word}     all of them work on $1 too; ${10}
+
+pat is * ? and [ ] as case has them; quote a character to take its
+meaning away. The word may hold $name, not a $( ) or a second ${ }.]],
 
 [[What the shell says before anything runs. A script that meets one never
 becomes a job. In a script the name and line come first -- broken.sh: 3:
@@ -2382,7 +2422,8 @@ becomes a job. In a script the name and line come first -- broken.sh: 3:
       for wants a name after it
   Syntax error: Unterminated quoted string
   Syntax error: Bad substitution
-      a $( ) in a $( ), an unclosed ${ or $((
+      a $( ) in a $( ) or a ${ }, an unclosed ${
+      or $((, or braces round no parameter
   Syntax error: redirection unexpected
       two > or two 2> on one command, or a <
   Syntax error: Bad fd number
@@ -2438,6 +2479,26 @@ line is named and the script ends there.
   edit: not a terminal
       also su:, passwd:, sudo:, rlogin:; a cron
       line, an & and a pipe stage have no hands]],
+
+[[What the shell's own words and the braces say. These stop the script on
+their line too.
+
+  unset: <name>: bad variable name
+  <n>: bad variable name
+      ${1:=word}: a number is not a variable
+  set: Illegal option -e
+      and -x and -u, which are not here
+  trap: <name>: bad trap
+      anything but EXIT or 0
+  exec: redirect with no command
+  <name>: parameter null or not set
+      ${name:?} on a name unset or empty
+  <name>: parameter not set
+      ${name?}, which minds unset only
+  <name>: <word>
+      ${name:?word} says your word instead
+  <name>: pattern too long
+      a pattern past 32 pieces]],
 
 [[What the machine says about jobs. No script signs these: they are
 not a script's to say.

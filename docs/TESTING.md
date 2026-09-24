@@ -28,6 +28,9 @@ The suites, in the order they run:
   fields, `test -s/-h/-L`, several `touch` names, the `wc`/`uniq -c`/`which`
   formats), each against the source its comment cites. It lists every red
   before it exits, so one broken command shows all it breaks.
+- `builtins_test.lua` — the shell's `set`, `unset`, `exec` and `trap`, the
+  `${...}` expansions, and what a pipeline stage inherits, on a console with the
+  exported set a login gives.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `compat_computermod_test.lua`: living beside the Workshop mod *Computer Mod*:
   who owns a desktop, and which of the two fillers gets the right-click. Against
@@ -496,7 +499,7 @@ any kind, and therefore the world, the save file, the wire and the sync.
   every read, while `v`, `on` and `facing` ride into the save file weighed by
   nothing — drop `facing` and a computer picked up and put down faces the wrong
   way, with a green suite behind it.
-- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 221 cases, each a
+- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 235 cases, each a
   line typed at a prompt on a scratch machine — `CeroSecOS.newState`, the
   constructor a first power-on uses, made once and deep-copied for every case —
   with what the screen must show, what `$?` must be and, where the point is a

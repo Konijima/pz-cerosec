@@ -152,6 +152,34 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "export", line = "export Z=1; env | grep '^Z='", out = { "Z=1" } },
 	{ name = "plain variable is not exported", line = "Q=1; env > f; grep -c '^Q=' f",
 		out = { "0" }, status = 1 },
+	-- ...nor down a pipe: a stage is handed the exported set and no more.
+	{ name = "plain variable is not in a pipe", line = "Q=1; env | grep -c '^Q='",
+		out = { "0" }, status = 1 },
+
+	--
+	-- 1c'. set, unset, exec, trap and the ${...} forms (4.4BSD sh, POSIX.2 2.6.2)
+	--
+	{ name = "set --", line = "set -- a b; echo $# $2", out = { "2 b" } },
+	{ name = "${10}", line = "set -- 1 2 3 4 5 6 7 8 9 ten; echo ${10}", out = { "ten" } },
+	{ name = "unset", line = "x=1; unset x; echo \"[$x]\"", out = { "[]" } },
+	{ name = "unset -f", line = "f() { echo a; }; unset -f f; f 2>/dev/null; echo $?",
+		out = { "127" } },
+	{ name = "exec replaces the script", files = { { "/root/s.sh", "exec echo hi\necho no\n" } },
+		line = "sh s.sh", out = { "hi" } },
+	{ name = "trap EXIT", files = { { "/root/s.sh", "trap 'echo bye' EXIT\necho hi\n" } },
+		line = "sh s.sh", out = { "hi", "bye" } },
+	{ name = "trap 0 keeps the status", files = { { "/root/s.sh", "trap 'echo bye' 0\nfalse\n" } },
+		line = "sh s.sh; echo $?", out = { "bye", "1" } },
+	{ name = "${x:-default}", line = "x=; echo ${x:-d} \"[${x-d}]\"", out = { "d []" } },
+	{ name = "${x:=value}", line = "echo ${x:=v}; echo $x", out = { "v", "v" } },
+	{ name = "${x:+alt}", line = "x=1; echo ${x:+set}\"[${y:+set}]\"", out = { "set[]" } },
+	-- expand.c's error("%s: %s"); the "sh: " in front is this shell's
+	-- signature on its run-time complaints.
+	{ name = "${x:?word}", line = "echo ${y:?nope}", out = { "sh: y: nope" }, status = 2,
+		dev = "sh" },
+	{ name = "${#x}", line = "x=abc; echo ${#x}", out = { "3" } },
+	{ name = "trims", line = "f=a.b.c; echo ${f%.*} ${f%%.*} ${f#*.} ${f##*.}",
+		out = { "a.b a b.c c" } },
 
 	--
 	-- 1d. read
