@@ -1691,8 +1691,12 @@ commands.cat = function(state, session, args, env, stdin)
 			if input ~= nil and not carry.drained then
 				for j = 1, #input.lines do put(input.lines[j]) end
 				-- Not at the end of the pipe yet: the rest of the line waits
-				-- for the turn that is.
-				if not input.eof then return not carry.bad, out end
+				-- for the turn that is. An open line not yet glued to anything
+				-- is left open, and the VM glues what comes next onto it.
+				if not input.eof then
+					if glue and #out > 0 then out.open = true end
+					return not carry.bad, out
+				end
 				carry.drained = true
 				lastOpen = input.open == true
 				glue = lastOpen

@@ -305,6 +305,10 @@ do
 	ok(state, admin, "cat g f", { "aa" })
 	ok(state, admin, "cat f g", { "a", "a" })
 	ok(state, admin, "cat g g g; echo", { "aaa" })
+	-- And the bytes of one command run into the next one's the same way.
+	ok(state, admin, "printf a; cat f", { "aa" })
+	ok(state, admin, "printf a; cat f f", { "aa", "a" })
+	ok(state, admin, "echo 2 | cat g - f", { "a2", "a" })
 	ok(state, admin, "head -n 1 g; echo b", { "ab" })
 	ok(state, admin, "tail -n 1 g; echo b", { "ab" })
 	ok(state, admin, "cat g | head -n 1; echo b", { "ab" })

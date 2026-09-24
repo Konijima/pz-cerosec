@@ -519,17 +519,29 @@ end
 -- exactly the way `printf a | cat; echo b` glues onto one line on a real sh.
 local function writeLines(job, lines)
 	if type(lines) ~= "table" then return end
-	if #lines > 0 then flushPartial(job) end
 	local n = #lines
-	if lines.open == true and n > 0 then
-		for i = 1, n - 1 do outLine(job, lines[i]) end
+	if n == 0 then return end
+	-- The job's own last line may still be open -- `printf a; cat f` -- and
+	-- then this command's first line is the REST of it, because a real one
+	-- writes bytes onto the same standard output and nothing between: "aa".
+	local first = 1
+	if job.partial ~= nil and job.partial ~= "" then
+		if n == 1 and lines.open == true then
+			writeText(job, lines[1])
+			return
+		end
+		writeText(job, lines[1] .. "\n")
+		first = 2
+	end
+	if lines.open == true then
+		for i = first, n - 1 do outLine(job, lines[i]) end
 		-- The last line goes through writeText's own partial, which folds it
 		-- at the pipe/file/screen width the same way any other unterminated
 		-- text does, and leaves it open for whatever writes next.
 		writeText(job, lines[n])
 		return
 	end
-	for i = 1, n do outLine(job, lines[i]) end
+	for i = first, n do outLine(job, lines[i]) end
 end
 
 -- The same, for the lines of a command that FAILED: they go where an error
