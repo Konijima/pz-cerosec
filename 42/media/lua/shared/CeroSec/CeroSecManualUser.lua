@@ -2096,7 +2096,7 @@ reason a user meets, with what it actually means.
       you may not read, write or step into it
   File exists
       something is already at that name
-  are identical
+  are identical (not copied).
       cp was handed one file under two names
   Directory not empty
       mv onto a directory with something in it
@@ -2139,7 +2139,7 @@ Running out of room. Chapter 3 has the numbers.
 
   not found
       nothing on PATH answers that name; check spelling,
-      check capitals, and check help
+      check capitals, check help
 
 One there but not yours to run says permission denied instead.
 
@@ -2155,16 +2155,16 @@ One there but not yours to run says permission denied instead.
   man: <name>: no manual entry
       no command of that name
   sh: sleep: no clock
-      the machine has no clock to count from
+      the machine has no clock
   cd: can't cd to <dir>
   <file>: Can't open <file>
   .: Can't open <file>
       missing, or not yours: cd, sh and . say no more
-  grep: <pattern>: bad range
+  grep: <pattern>: invalid character range
   grep: <pattern>: unmatched [
   grep: <pattern>: trailing backslash
   grep: <pattern>: expression too long
-      a pattern grep cannot read]],
+      a pattern grep cannot read; exit 2]],
 
 [[Typing that the shell could not make sense of. Nothing runs at all.
 

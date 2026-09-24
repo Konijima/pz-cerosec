@@ -4541,7 +4541,8 @@ do
 	says("expr holds there too", "9007199254740991|1286742750677284")
 	says("test refuses inf", "test: inf: expected integer|t2")
 	says("and says overflow past the word", "9999: overflow|t2")
-	says("sleep takes neither", "sleep: invalid interval|sleep: invalid interval|w1")
+	-- sleep.c's atoi() reads neither as a number: a sleep of nought, and 0.
+	says("sleep takes neither", "overflow|t2|w0")
 	says("cut refuses a list past its line", "cut: 1-99999999: invalid list")
 	says("tail refuses 1e999, holds the nines", "tail: usage")
 	says("and the lines still come", "y|z")

@@ -312,7 +312,7 @@ function CeroSecSelfTest.probe(say)
 	say("function source kept",
 		type(fnSrc) == "table" and type(fnSrc[1]) == "table" and tostring(fnSrc[1].src)
 			or "NO NODE")
-	local noBrace, noBraceWhy = CeroSecOS.parseScript("bad() echo x; }")
+	local noBrace, noBraceWhy = CeroSecOS.parseScript("bad() echo x")
 	say("function missing brace", noBrace == nil and tostring(noBraceWhy) or "PARSED")
 
 	--

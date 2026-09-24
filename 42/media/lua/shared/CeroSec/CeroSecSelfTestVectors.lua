@@ -175,7 +175,7 @@ CeroSecSelfTest.VECTORS = {
 	{ name = "bre empty", want = "true" },
 	{ name = "bre blank line", want = "true" },
 	{ name = "bre unmatched", want = "refused: unmatched [" },
-	{ name = "bre bad range", want = "refused: bad range" },
+	{ name = "bre bad range", want = "refused: invalid character range" },
 	{ name = "bre trailing backslash", want = "refused: trailing backslash" },
 	{ name = "bre too long", want = "refused: expression too long" },
 	{ name = "tar container bytes", want = "158" },

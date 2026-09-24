@@ -798,7 +798,8 @@ do
 	ok(state, admin, "mkdir /home/admin/d1", {})
 	bad(state, admin, "mkdir /home/admin/d1", "mkdir: /home/admin/d1: File exists")
 	ok(state, admin, "touch /home/admin/f1", {})
-	bad(state, admin, "cp /home/admin/f1 /home/admin/f1", "cp: /home/admin/f1: are identical")
+	bad(state, admin, "cp /home/admin/f1 f1",
+		"cp: f1 and /home/admin/f1 are identical (not copied).")
 	bad(state, admin, "mv /home/admin/d1 /home/admin/d1/inner",
 		"mv: /home/admin/d1/inner: invalid destination")
 	bad(state, admin, "rm /home/admin/d1", "rm: /home/admin/d1: Is a directory")
@@ -847,8 +848,9 @@ do
 
 	-- One file under two names, whichever way it is spelt.
 	ok(state, admin, "ln -s p.txt link.txt", {})
-	bad(state, admin, "cp link.txt p.txt", "cp: link.txt: are identical")
-	bad(state, admin, "cp p.txt box/../p.txt", "cp: p.txt: are identical")
+	bad(state, admin, "cp link.txt p.txt", "cp: p.txt and link.txt are identical (not copied).")
+	bad(state, admin, "cp p.txt box/../p.txt",
+		"cp: box/../p.txt and p.txt are identical (not copied).")
 	ok(state, admin, "cat p.txt", { "new" })
 
 	-- A directory is never written over a file.
@@ -6949,10 +6951,16 @@ do
 	run = runScript(state, admin, "sleep 1\necho s=$?")
 	eq("a builtin whose file is gone is 127", run.out[2], "s=127")
 	ok(state, rootS, "mv /bin/sleep.gone /bin/sleep", {})
-	-- sleep too: a program that cannot sleep says so and exits 1.
-	run = runScript(state, admin, "sleep abc\necho after=$?")
-	eq("sleep abc says so", run.out[1], "sleep: invalid interval")
+	-- sleep too: sleep.c's usage() for a wrong count of operands, exit 1.
+	run = runScript(state, admin, "sleep\necho after=$?")
+	eq("sleep with no operand says so", run.out[1], "usage: sleep seconds")
 	eq("and the script goes on, status 1", run.out[2], "after=1")
+	-- And atoi(): a word that is not a number is a sleep of nought, silent.
+	run = runScript(state, admin, "sleep abc\necho after=$?")
+	eq("sleep abc is atoi's 0", run.out[1], "after=0")
+	run = runScript(state, admin, "sleep -5\necho after=$?")
+	eq("sleep -5 is getopt's", run.out[1], "sleep: illegal option -- 5")
+	eq("and then usage", run.out[2], "usage: sleep seconds")
 end
 
 --
@@ -7059,12 +7067,12 @@ do
 	-- sleep's and test's complaints are on the standard ERROR, where sleep.c's
 	-- usage() and test.c's err() write them: not in the file, not in the word,
 	-- not down the pipe, and gone under 2>/dev/null.
-	expect(state, admin, "sleep abc > s.txt", false, { "sleep: invalid interval" })
+	expect(state, admin, "sleep > s.txt", false, { "usage: sleep seconds" })
 	eq("sleep's complaint is not in the file", data("/home/admin/s.txt"), "")
-	ok(state, admin, 'x=$(sleep abc); echo "[$x]"', { "sleep: invalid interval", "[]" })
-	ok(state, admin, "sleep abc 2>/dev/null; echo $?", { "1" })
-	expect(state, admin, "sleep abc 2>se.txt", false, {})
-	eq("and it is in the file 2> named", data("/home/admin/se.txt"), "sleep: invalid interval\n")
+	ok(state, admin, 'x=$(sleep); echo "[$x]"', { "usage: sleep seconds", "[]" })
+	ok(state, admin, "sleep 2>/dev/null; echo $?", { "1" })
+	expect(state, admin, "sleep 1 2 2>se.txt", false, {})
+	eq("and it is in the file 2> named", data("/home/admin/se.txt"), "usage: sleep seconds\n")
 	ok(state, admin, "[ 1 -eq x ] 2>/dev/null; echo $?", { "2" })
 	ok(state, admin, "[ 1 -eq x ] | wc -l", { "test: x: expected integer", "       0" })
 	ok(state, admin, "test 1 -eq x > t.txt; echo $?", { "test: x: expected integer", "2" })
@@ -16390,7 +16398,9 @@ do
 
 	-- The two refusals the parser has for a body.
 	badAt(state, admin, "bad() { echo unclosed", "Syntax error: end of file unexpected (expecting \"}\")")
-	badAt(state, admin, "bad2() echo x; }", "Syntax error: word unexpected (expecting \"{\")")
+	-- parser.c takes `echo x` for the body and stops on the `}` after it.
+	badAt(state, admin, "bad2() echo x; }", "Syntax error: \"}\" unexpected")
+	badAt(state, admin, "bad3() echo x", "Syntax error: word unexpected (expecting \"{\")")
 	-- A reserved word is not a name, so `if()` is not a definition at all: it is
 	-- an if whose condition opens a subshell with nothing in it, which is what a
 	-- real sh refuses too (parser.c's list() on TRP).
@@ -16418,8 +16428,9 @@ do
 	ok(state, admin, "s5()\n{ echo five; }", {})
 	okAt(state, admin, "s5", { "five" })
 	-- `{` is a reserved word, not an operator: glued to the command it is not a
-	-- brace, and dash refuses `t(){echo a;}` too. So does bash `t()x`.
-	badAt(state, admin, "s6(){echo six;}", "Syntax error: word unexpected (expecting \"{\")")
+	-- brace. parser.c takes `{echo six` for the body and meets the `}` where a
+	-- command starts, synexpect(-1). `t()x` has no rest to fail, and is refused.
+	badAt(state, admin, "s6(){echo six;}", "Syntax error: \"}\" unexpected")
 	badAt(state, admin, "s7()x", "Syntax error: word unexpected (expecting \"{\")")
 	-- And `(` still means nothing new anywhere else.
 	okAt(state, admin, "case x in x) echo y;; esac", { "y" })
@@ -16548,7 +16559,16 @@ do
 	-- The refusals a pattern can have, each naming what is wrong with it.
 	badAt(state, admin, "grep '[abc' mbox", "grep: [abc: unmatched [")
 	badAt(state, admin, "grep 'a\\' mbox", "grep: a\\: trailing backslash")
-	badAt(state, admin, "grep '[z-a]' mbox", "grep: [z-a]: bad range")
+	badAt(state, admin, "grep '[z-a]' mbox", "grep: [z-a]: invalid character range")
+	-- Every error is 2 and nothing found is 1 (POSIX.2 grep, egrep.c's
+	-- oops() and nsuccess = 2): a bad pattern, a file it cannot open --
+	-- even beside a hit -- a bad flag and no pattern at all.
+	okAt(state, admin, "grep '[z-a]' mbox 2>/dev/null; echo $?", { "2" })
+	okAt(state, admin, "grep lights nosuch 2>/dev/null; echo $?", { "2" })
+	okAt(state, admin, "grep lights mbox nosuch >/dev/null 2>&1; echo $?", { "2" })
+	okAt(state, admin, "grep -z x mbox 2>/dev/null; echo $?", { "2" })
+	okAt(state, admin, "grep 2>/dev/null; echo $?", { "2" })
+	okAt(state, admin, "grep zzzz mbox; echo $?", { "1" })
 	-- A pattern with more pieces in it than the walk may be asked to carry: the
 	-- ceiling is the other half of what the walk costs (CeroSecOS.MAX_BRE_ITEMS).
 	local long = string.rep(".", CeroSecOS.MAX_BRE_ITEMS + 1)

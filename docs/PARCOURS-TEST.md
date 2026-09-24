@@ -4605,7 +4605,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `a b c` : `[a][b c]`. Avec `read -n 2 x`, répondre `oui` : `ou`. [ ]
 449. **cp écrase.** `echo neuf > p`, `echo vieux > q`, `chmod 600 q`,
      `cp p q` : `cat q` dit `neuf` et `ls -l q` montre toujours `-rw-------`.
-     `cp p p` dit `cp: p: are identical`. [ ]
+     `cp p p` dit `cp: p and p are identical (not copied).`. [ ]
 450. **ls prend plusieurs noms.** `ls /etc/passwd` affiche `/etc/passwd`.
      Faire `mkdir a` et `mkdir b`, puis `ls a b` : `a:` puis `b:`, séparés
      d'une ligne vide. [ ]
@@ -4613,7 +4613,8 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      `cat -n p` affiche `     1` puis une tabulation et `neuf`. [ ]
 452. **[ et sleep ne tuent plus le script.** Script `[ 1 -eq 1` puis
      `echo suite $?` : `test: missing ]` puis `suite 2`. Même chose avec
-     `sleep abc` : `sleep: invalid interval` puis `suite 1`. [ ]
+     `sleep` tout seul : `usage: sleep seconds` puis `suite 1`. `sleep abc`
+     ne dit rien et n'attend pas : `suite 0`. [ ]
 453. **127 et 126.** `nosuchcmd; echo $?` affiche `127`. Un fichier sans x
      lancé par `./fichier` puis `echo $?` affiche `126`. `false; echo $?`
      affiche toujours `1`. [ ]
@@ -4623,9 +4624,9 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      serait un motif qui les trouve). `sleep 5 &` puis `echo $!` affiche le
      numéro du travail que `jobs` montre. [ ]
 455. **Les plaintes de sleep et de [ vont sur la sortie d'erreur.**
-     `sleep abc 2>/dev/null; echo $?` n'affiche que `1`. `sleep abc > f`
-     affiche `sleep: invalid interval` à l'écran et `cat f` n'affiche rien.
-     `x=$(sleep abc); echo "[$x]"` affiche la plainte puis `[]`.
+     `sleep 2>/dev/null; echo $?` n'affiche que `1`. `sleep > f`
+     affiche `usage: sleep seconds` à l'écran et `cat f` n'affiche rien.
+     `x=$(sleep); echo "[$x]"` affiche la plainte puis `[]`.
      `[ 1 -eq x ] | wc -l` affiche la plainte puis `0`. [ ]
 456. **x=$@ ne casse plus le script.** Script `x=$@` puis `echo "[$x]"`,
      lancé avec `a b` : `[a b]`. Avec `y="$@"` à la place : pareil. Sans
@@ -4656,7 +4657,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
 459a. **Une fonction sans espace avant l'accolade.** Taper `t(){ echo a; }`
      puis `t` : affiche `a`. Idem avec `t (){ echo a; }` et
      `t ( ) { echo a; }`. `t(){echo a;}` répond
-     `Syntax error: word unexpected (expecting "{")`. [ ]
+     `Syntax error: "}" unexpected`, comme le sh de 4.4BSD. [ ]
 
 459b. **Un corps vide est refusé.** Taper `if true; then fi` : le shell
      répond `Syntax error: "fi" unexpected`. `if true; then true; fi` :
@@ -4686,7 +4687,7 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      verdict goes to the log ». Appuyer une deuxième fois tout de suite : la
      note dit « shell half already running ». Attendre quelques secondes :
      l'onglet **Log** (niveau info) et `console.txt` montrent
-     `CeroSec shell selftest: PASS 352 FAIL 0`, suivi d'une ligne de durée.
+     `CeroSec shell selftest: PASS 356 FAIL 0`, suivi d'une ligne de durée.
      Aucune ligne `warn`. [ ]
 
 459g. **Les nombres, IFS et set.** `printf %x 1e999` répond tout de suite
@@ -4742,7 +4743,8 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      b`, `for i in $x; do echo $i; done` redonne deux lignes, `a` puis `b`,
      exactement comme avant IFS. [ ]
 462. **Les messages ajoutés à l'annexe.** `grep '[z-a]' p` :
-     `grep: [z-a]: bad range`, et la ligne figure au volume 1, annexe,
+     `grep: [z-a]: invalid character range`, puis `echo $?` affiche `2`
+     (`1` ne veut dire que « rien trouvé »), et la ligne figure au volume 1, annexe,
      *Commands the machine could not run*. Connecté en admin,
      `passwd root` : `passwd: Permission denied`, dans *Logging in, and your
      account*. [ ]

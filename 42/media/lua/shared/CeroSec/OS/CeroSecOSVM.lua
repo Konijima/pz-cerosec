@@ -2925,29 +2925,33 @@ builtins.read = function(job, args, state, env)
 	return 0
 end
 
--- sleep is a program on a real machine (/bin/sleep, 4.4BSD sleep.c), so what
--- it cannot do it says and answers with a status -- 1, sleep.c's usage exit --
--- and the script that ran it goes on to its next line, as it would anywhere.
--- It says so on the standard ERROR, where sleep.c's usage() prints:
--- `sleep abc > f` leaves f empty, `x=$(sleep abc)` leaves x empty, and
--- `2>/dev/null` hushes it.
+-- sleep is a program on a real machine (/bin/sleep, 4.4BSD-Lite2 sleep.c), and
+-- this one reads its operand the way that main() does: getopt(argc, argv, "")
+-- knows no flag, exactly one operand or usage() -- "usage: sleep seconds" and
+-- exit 1 -- and then `if ((secs = atoi(*argv)) > 0) (void)sleep(secs);
+-- exit(0);`. atoi(3) is strtol's leading number and never an error, so `sleep
+-- abc`, `sleep 0.5` and `sleep inf` are a sleep of nought, silent, status 0,
+-- and only a wrong count of operands complains. That goes on the standard
+-- ERROR, where usage() prints: `sleep > f` leaves f empty, `x=$(sleep)`
+-- leaves x empty, `2>/dev/null` hushes it, and the script goes on.
 builtins.sleep = function(job, args, state, env)
-	-- Whole seconds and a fraction, read digit by digit: tonumber took
-	-- "inf" and "nan", and a wake-up time of infinity is a job that never
-	-- wakes and a number no save can hold. The seconds are sleep.c's own
-	-- atoi(), which cannot say more than an int's 2147483647.
-	local text = args[2] or ""
-	local whole, frac = string.match(text, "^(%d*)%.?(%d*)$")
-	if whole == nil or (whole == "" and frac == "") then
-		errLines(job, { "sleep: invalid interval" })
+	local first = 2
+	if args[2] == "--" then first = 3 end
+	local text = args[first]
+	if first == 2 and text ~= nil and #text > 1 and string.sub(text, 1, 1) == "-" then
+		-- getopt(3)'s own complaint, then sleep.c's usage().
+		errLines(job, { "sleep: illegal option -- " .. string.sub(text, 2, 2),
+			"usage: sleep seconds" })
 		return 1
 	end
-	local n = CeroSecOS.strtol(whole)
-	if n > 2147483647 then n = 2147483647 end
-	if frac ~= "" then
-		frac = string.sub(frac, 1, 3)
-		n = n + CeroSecOS.strtol(frac) / ({ 10, 100, 1000 })[#frac]
+	if text == nil or args[first + 1] ~= nil then
+		errLines(job, { "usage: sleep seconds" })
+		return 1
 	end
+	-- atoi(), which cannot say more than an int's 2147483647.
+	local n = CeroSecOS.strtol(text)
+	if n > 2147483647 then n = 2147483647 end
+	if n <= 0 then return 0 end
 	local now = CeroSecOS.nowMsOf(env)
 	-- A machine with no clock cannot sleep; it says so rather than sleeping
 	-- forever or not at all.

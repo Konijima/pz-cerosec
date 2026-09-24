@@ -2517,7 +2517,7 @@ line is named and the script ends there.
   read: not a name
   read: <n>: bad number
   read: Illegal option -x
-  sleep: invalid interval
+  usage: sleep seconds
   sleep: no clock
       test's exit 2, sleep's 1; the script goes on
   edit: not a terminal

@@ -193,6 +193,9 @@ CeroSecSelfTest.SHELL_CASES = {
 		line = "f() ( x=2 ); x=1; f; echo $x", out = { "1" } },
 	{ name = "} where a command starts", line = "{echo a;}",
 		out = { "Syntax error: \"}\" unexpected" }, status = 2 },
+	-- parser.c takes `{echo a` for the body; the `}` after it is the error.
+	{ name = "a function glued to its brace", line = "t(){echo a;}",
+		out = { "Syntax error: \"}\" unexpected" }, status = 2 },
 
 	--
 	-- 1c. Scripts: arguments, $#, $*, $@, shift, exit, `.`
@@ -350,7 +353,7 @@ CeroSecSelfTest.SHELL_CASES = {
 		line = "sh s.sh 2>/dev/null", out = { "2" } },
 	{ name = "test error goes to stderr", line = "x=$([ a -lt 1 ] 2>/dev/null); echo \"[$x]\"",
 		out = { "[]" } },
-	{ name = "sleep error is not fatal", files = { { "/root/s.sh", "sleep x\necho $?" } },
+	{ name = "sleep error is not fatal", files = { { "/root/s.sh", "sleep 1 2\necho $?" } },
 		line = "sh s.sh 2>/dev/null", out = { "1" } },
 	{ name = "sleep", line = "sleep 1; echo slept", out = { "slept" } },
 	{ name = "$! before any &", line = "echo \"[$!]\"", out = { "[]" } },
@@ -472,6 +475,10 @@ CeroSecSelfTest.SHELL_CASES = {
 		out = { "ab" } },
 	{ name = "grep with no match is 1", files = { { "/root/f", "a" } },
 		line = "grep zz f; echo $?", out = { "1" } },
+	-- An error is 2 (POSIX.2 grep, egrep.c's oops()); only the status is
+	-- pinned, the words have no 1993 grep of their own to cite.
+	{ name = "grep error is 2", files = { { "/root/f", "a" } },
+		line = "grep '[z-a]' f 2>/dev/null; echo $?", out = { "2" } },
 	{ name = "grep of a pipe", line = "printf 'a\\nb\\n' | grep b", out = { "b" } },
 	{ name = "grep several files names them", files = { { "/root/a", "x" }, { "/root/b", "x" } },
 		line = "grep x a b", out = { "a:x", "b:x" } },
@@ -511,6 +518,9 @@ CeroSecSelfTest.SHELL_CASES = {
 		want = { { path = "/root/d", text = "new", mode = 600 } } },
 	{ name = "cp into a directory", files = { { "/root/a", "x" } }, setup = { "mkdir d" },
 		line = "cp a d", want = { { path = "/root/d/a", text = "x" } } },
+	-- cp.c: `warnx("%s and %s are identical (not copied).")`, exit 1.
+	{ name = "cp of a file onto itself", files = { { "/root/p", "x" } },
+		line = "cp p p; echo $?", out = { "cp: p and p are identical (not copied).", "1" } },
 	{ name = "cp -r", setup = { "mkdir d; echo x > d/a" }, line = "cp -r d e",
 		want = { { path = "/root/e/a", text = "x\n" } } },
 	{ name = "cp of nothing", line = "cp nosuch b 2>/dev/null; echo $?", out = { "1" },
@@ -659,13 +669,15 @@ CeroSecSelfTest.SHELL_CASES = {
 	{ name = "test missing ] in a script goes on",
 		files = { { "/root/s.sh", "[ 1 -eq 1\necho suite $?\n" } }, line = "sh s.sh",
 		out = { "test: missing ]", "suite 2" }, dev = "test" },
-	{ name = "sleep error is 1", line = "sleep abc 2>/dev/null; echo $?", out = { "1" } },
-	-- Not its words: "sleep: invalid interval" cites no 1993 sleep, which said
-	-- "usage: sleep seconds", so the lines below ask only which stream it is on.
-	{ name = "sleep error is not its output", line = "sleep abc > f 2>/dev/null; cat f",
+	-- 4.4BSD-Lite2 sleep.c: usage() for a wrong count of operands, exit 1;
+	-- atoi() for the operand, so a word that is no number sleeps nought.
+	{ name = "sleep error is 1", line = "sleep; echo $?",
+		out = { "usage: sleep seconds", "1" } },
+	{ name = "sleep abc is atoi's nought", line = "sleep abc; echo $?", out = { "0" } },
+	{ name = "sleep error is not its output", line = "sleep > f 2>/dev/null; cat f",
 		want = { { path = "/root/f", text = "" } } },
 	{ name = "sleep error is not caught by $( )",
-		line = "x=$(sleep abc 2>/dev/null); echo \"[$x]\"", out = { "[]" } },
+		line = "x=$(sleep 2>/dev/null); echo \"[$x]\"", out = { "[]" } },
 	{ name = "test error does not go down the pipe", line = "[ 1 -eq x ] | wc -l",
 		out = { "test: x: expected integer", "       0" }, dev = "test" },
 	-- 454: $* and $@ in a script.

@@ -1181,8 +1181,11 @@ end
 -- `t(){`, `t() {`, `t (){`, `t ( ) {` and a `{` on the next line are all the same
 -- definition on dash, and here.
 --
--- `{` is a reserved word, not an operator: it needs a blank after it, and
--- `t(){echo a;}` is a syntax error on dash ("}" unexpected) and here. The body is
+-- `{` is a reserved word, not an operator: it needs a blank after it. In
+-- `t(){echo a;}` the word is `{echo`, and 4.4BSD-Lite2 parser.c takes `{echo a`
+-- for the body, stops at the `;`, and finds a `}` where a command starts:
+-- synexpect(-1), `Syntax error: "}" unexpected`, with nothing expected. The
+-- same line here. The body is
 -- any compound command, as POSIX.2 XCU 2.9.5 and 4.4BSD sh's parser.c
 -- (`n->nfunc.body = command()`) have it: a brace group most of the time, and
 -- `f() ( list )`, `f() if ...; fi` or a loop. A simple command is not one:
@@ -1221,6 +1224,15 @@ local function parseFunc(P, depth, name, tokens, braced)
 		end
 		local open = wordAt(P)
 		if open == nil or open.plain ~= "{" then
+			-- A word where the `{` was wanted is a body on parser.c, and its
+			-- error is the first one in the rest of the line (`t(){echo a;}`
+			-- is `"}" unexpected`); a rest that reads is refused as before.
+			if open ~= nil then
+				local from, ended = P.i, P.terminated
+				local _, reason, where = parseProgram(P, {}, depth + 1)
+				P.i, P.terminated = from, ended
+				if reason ~= nil then return nil, reason, where end
+			end
 			return nil, unexpected(peek(P), "{"), peek(P).line
 		end
 		P.i = P.i + 1

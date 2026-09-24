@@ -21,7 +21,7 @@ have can notice is in the shell: a script you saved that used `echo "a\nb"` now 
 `\n` (use `printf`), a `cp` onto a file that is already there now writes over it,
 and a command whose redirect is refused no longer runs.
 
-- The debug window's Self-test also runs 352 shell lines on a scratch
+- The debug window's Self-test also runs 356 shell lines on a scratch
   machine, spread over a few seconds, and writes
   `CeroSec shell selftest: PASS n FAIL m` to the log and console.txt.
 - `test` and `[` refuse a bad number the way 4.4BSD did:
@@ -92,7 +92,8 @@ and a command whose redirect is refused no longer runs.
 - After output with no newline at its end, the prompt still starts on the
   next row; the manual's "What is not Unix here" now says so.
 - A shell function can be defined without a space before the brace, as in
-  `t(){ echo a; }`, like on any sh.
+  `t(){ echo a; }`, like on any sh. Glued to the brace, `t(){echo a;}`
+  answers `"}" unexpected`, as 4.4BSD's sh did.
 - The shell has `set` (`set -- a b` for new `$1 $2`, `set` alone to list the
   variables), `unset` and `unset -f`, `exec`, and `trap '...' EXIT` to clean
   up when a script ends. `${x:-default}`, `${x:=...}`, `${x:?...}`,
@@ -175,15 +176,18 @@ and a command whose redirect is refused no longer runs.
   instead of only one, and reading from a pipe it leaves the rest of the line
   for the next `read`, as bash does.
 - `cp` onto a file that's already there now writes over it, like a real cp,
-  and the file keeps its owner and mode. `cp f f` says "are identical".
+  and the file keeps its owner and mode. `cp f f` says "f and f are
+  identical (not copied).", 4.4BSD cp's own words.
 - `ls` takes several names at once, and `ls /etc/passwd` now prints
   `/etc/passwd` as typed.
 - `cat -` reads the pipe among files (`echo top | cat - notes`), `cat -n`
   numbers the lines, and `--` ends the options.
-- A `[` missing its `]`, or `sleep abc`, no longer stops a script: the error is
-  printed, `$?` is 2 (or 1 for sleep), and the script carries on. Their
-  errors go where errors go: `2>/dev/null` hides them, and they no longer
-  land in a `> file`, a `$( )` or down a pipe.
+- A `[` missing its `]`, or a `sleep` with no number, no longer stops a
+  script: the error is printed, `$?` is 2 (or 1 for sleep), and the script
+  carries on. `sleep abc` reads its word as 4.4BSD's did, as nought: it
+  sleeps no time and says nothing. Their errors go where errors go:
+  `2>/dev/null` hides them, and they no longer land in a `> file`, a `$( )`
+  or down a pipe.
 - `$?` after a command that is not found is now 127, and 126 for a file you may not
   run, so a script can tell "failed" from "wasn't there".
 - `$*` and `$!` work, and a bare `$@` splits its words like `$*`. `x=$@` and
@@ -206,6 +210,10 @@ and a command whose redirect is refused no longer runs.
   the prompt being a shell of its own for `set --`, `trap` and `exec`. The
   error appendix also gained grep's pattern errors, `passwd: Permission
   denied`, `export: not a name` and `wait: too many jobs`.
+- `grep` ends with `$?` 2 on an error -- a pattern it cannot read, a file it
+  cannot open, a bad flag -- and keeps 1 for "nothing found", so a script
+  can tell the two apart. A backwards range such as `[z-a]` now says
+  "invalid character range", the words of 4.4BSD's regular expressions.
 - New commands `rmdir`, `expr` (sums and comparisons, exit status 0, 1 or 2)
   and `uname`, and the flags scripts reach for first: `rm -f` (a file that is
   not there is no error), `kill -9 %1`, `kill -s KILL`, `kill -l`, `tail +N`,

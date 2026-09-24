@@ -236,6 +236,10 @@ do
 	-- XCU 2.9.5: `function_body : compound_command`. parser.c and dash take
 	-- a simple command too; POSIX does not, and neither does this machine.
 	bad(state, admin, "n() echo x", "Syntax error: word unexpected (expecting \"{\")")
+	-- `{echo` is a word: parser.c takes `{echo a` for the body and meets the
+	-- `}` where a command starts, synexpect(-1) with nothing expected.
+	bad(state, admin, "t(){echo a;}", "Syntax error: \"}\" unexpected")
+	bad(state, admin, "t(){echo }", "Syntax error: word unexpected (expecting \"{\")")
 end
 
 --

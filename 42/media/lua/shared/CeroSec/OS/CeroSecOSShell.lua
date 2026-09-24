@@ -2612,15 +2612,19 @@ local function cpOne(state, session, src, dst, dstIsDir, recursive, env)
 	-- write is setData's, which asks for w on the FILE and holds the size, the
 	-- printable rule and the disk to theirs. Asked of the paths the walk really
 	-- takes, so a link or a ".." cannot hide that the two names are one file:
-	-- cp.c refuses that ("%s and %s are identical (not copied)."), and so does
-	-- this, in the one shape every refusal here has -- "cp: name: are
-	-- identical", the declared "refusal" deviation (CeroSecOS.DEVIATIONS).
+	-- 4.4BSD-Lite2 cp.c refuses that in its own words, the target first and
+	-- the source after, and exits 1: `warnx("%s and %s are identical (not
+	-- copied).", to.p_path, curr->fts_path)`. to.p_path is the joined name
+	-- when the target is a directory, which is `target` here too.
 	-- A device is left to the create below and its "read-only", as it always
 	-- was: a copy onto one would be a write that went round devWrite.
 	local tnode, _, _, tphys = CeroSecOS.getNode(state, session, target)
 	if tnode ~= nil and not CeroSecOS.isDev(tnode) then
 		local sphys = select(4, CeroSecOS.getNode(state, session, src)) or srcAbs
-		if tphys ~= nil and tphys == sphys then return "cp: " .. src .. ": are identical" end
+		if tphys ~= nil and tphys == sphys then
+			return "cp: " .. target .. " and " .. src
+				.. " are identical (not copied)."
+		end
 		if tnode.type == "file" then
 			-- cp.c again: a directory onto a file is `errno = ENOTDIR;
 			-- err(1, "%s", to.p_path)` in 4.4BSD-Lite2's copy(), so the
@@ -3057,7 +3061,9 @@ function CeroSecOS.breCompile(pattern)
 						and j + 2 <= n then
 					local last = string.sub(pattern, j + 2, j + 2)
 					local a, b = string.byte(ch), string.byte(last)
-					if b < a then return nil, "bad range" end
+					-- A range backwards is POSIX.2's REG_ERANGE, and 4.4BSD-Lite2's
+					-- libc regerror.c words it "invalid character range".
+					if b < a then return nil, "invalid character range" end
 					for k = a, b do set[k] = true end
 					j = j + 3
 				else
@@ -3281,15 +3287,25 @@ local function grepOptions(args)
 	return flags, pats, rest
 end
 
+-- Every error is status 2 and "nothing found" is 1: POSIX.2's grep says ">1
+-- An error occurred", and 4.4BSD-Lite2's egrep.c exits 2 from oops() (its
+-- usage and a pattern it cannot compile) and from a file it cannot open
+-- (`nsuccess = 2`). egrep.c let a later hit wipe that 2 out, so its status
+-- hung on the order of the files; this keeps POSIX's plain rule instead.
+local function grepError(sh, ok, lines)
+	if type(sh) == "table" then sh.status = 2 end
+	return ok, lines
+end
+
 commands.grep = function(state, session, args, env, stdin, sh)
 	local flags, pats, bad = grepOptions(args)
-	if flags == nil then return badOption("grep", bad) end
+	if flags == nil then return grepError(sh, badOption("grep", bad)) end
 	local ignore, numbered = flags.i == true, flags.n == true
 	local counting, invert = flags.c == true, flags.v == true
 	local rest = bad
 	-- With no -e, the first operand is the pattern, which is grep's oldest shape.
 	if #pats == 0 then
-		if #rest < 1 then return usage("grep") end
+		if #rest < 1 then return grepError(sh, usage("grep")) end
 		pats[1] = rest[1]
 		local kept = {}
 		for i = 2, #rest do kept[#kept + 1] = rest[i] end
@@ -3307,7 +3323,7 @@ commands.grep = function(state, session, args, env, stdin, sh)
 		local text = pats[i]
 		if ignore then text = string.lower(text) end
 		local re, reason = CeroSecOS.breCompile(text)
-		if re == nil then return fail("grep", pats[i], reason) end
+		if re == nil then return grepError(sh, fail("grep", pats[i], reason)) end
 		res[i] = re
 	end
 	-- What the walk costs, gathered here and handed back to the shell so the budget
@@ -3362,7 +3378,7 @@ commands.grep = function(state, session, args, env, stdin, sh)
 		end
 		return true, out
 	end
-	if #files == 0 then return usage("grep") end
+	if #files == 0 then return grepError(sh, usage("grep")) end
 	-- The file's name goes in front of a hit only when there is more than one
 	-- file to tell apart, which is what grep has always done.
 	local many = #files > 1
@@ -3403,13 +3419,15 @@ commands.grep = function(state, session, args, env, stdin, sh)
 	-- grep answers "did you find anything". Nothing found is a refusal even
 	-- when every file was read without trouble -- and a -c that counted nothing
 	-- is nothing found, however many zeroes it printed.
-	-- Only when every file was read: a missing one puts its refusal in the same
-	-- list, and a list with both in it is the errors' (the "stderr" deviation).
+	-- A file it could not read comes first: that is an error and 2 whatever was
+	-- found, and its refusal is in the same list as the hits, which makes the
+	-- whole list the errors' (the "stderr" deviation).
+	if not okAll then return grepError(sh, false, out) end
 	if not found then
-		if okAll and type(sh) == "table" then sh.outOnFail = true end
+		if type(sh) == "table" then sh.outOnFail = true end
 		return false, out
 	end
-	return okAll, out
+	return true, out
 end
 
 -- -n N, or the older -N: `head -1` and `tail -5` are how the two of them were
