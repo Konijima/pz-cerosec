@@ -595,13 +595,30 @@ local function resolveWordText(job, parts)
 	return buf
 end
 
+-- What trying every candidate cut of value against pattern costs, charged as
+-- DEBT before the loop runs and never after: up to #value+1 calls to
+-- globMatch, priced the way grep's own BRE_STEPS_PER already prices a byte of
+-- pattern against a byte of subject. Charged as the worst case and not what
+-- the loop actually walked, because a `while` loop calling ${x%%*a*} on a
+-- MAX_VAR_BYTES value every time round must slow down on the FIRST turn, the
+-- same as the last -- the one thing tests/hostile_test.lua's invariant holds
+-- every call to.
+local function chargeTrim(job, value, pattern)
+	local cost = math.floor(((#value + 1) * #pattern) / CeroSecOS.BRE_STEPS_PER)
+	if cost > 0 then
+		job.debt = (job.debt or 0) + cost
+		job.steps = job.steps + cost
+	end
+end
+
 -- ${name#pattern} / ${name##pattern}: the shortest, or the longest, prefix
 -- of value that CeroSecOS.globMatch holds against pattern, cut away. ksh88's
 -- and POSIX.2's own reading of it -- "the smallest/largest such pattern" --
 -- worked out by trying candidate prefixes in the matching order rather than
 -- by walking the pattern by hand, which is the same shell glob globMatch
 -- already gives `case` and nothing written twice.
-local function trimPrefix(value, pattern, longest)
+local function trimPrefix(job, value, pattern, longest)
+	chargeTrim(job, value, pattern)
 	if longest then
 		for len = #value, 0, -1 do
 			if CeroSecOS.globMatch(string.sub(value, 1, len), pattern) then
@@ -619,7 +636,8 @@ local function trimPrefix(value, pattern, longest)
 end
 
 -- ${name%pattern} / ${name%%pattern}: the same, off the end.
-local function trimSuffix(value, pattern, longest)
+local function trimSuffix(job, value, pattern, longest)
+	chargeTrim(job, value, pattern)
 	local n = #value
 	if longest then
 		for len = n, 0, -1 do
@@ -1297,8 +1315,16 @@ local function expandStep(job, state, ex, env)
 						if unset then
 							local w, werr = resolveWordText(job, part.word)
 							if w == nil then return nil, werr end
-							-- POSIX.2 2.6.2's own wording for an omitted word.
-							if w == "" then w = "parameter null or not set" end
+							-- 4.4BSD sh.c's own wording for an omitted word --
+							-- error("%s: parameter %snot set", name, subtype ==
+							-- VSNORMAL ? "" : "null or ") -- "null or" is what
+							-- the colon adds, because only ":?" widens "unset"
+							-- to "unset or empty"; "?" with no colon never
+							-- means null, so its own default just says so.
+							if w == "" then
+								if part.colon then w = "parameter null or not set"
+								else w = "parameter not set" end
+							end
 							return nil, part.name .. ": " .. w
 						end
 						text = val
@@ -1318,13 +1344,13 @@ local function expandStep(job, state, ex, env)
 						local pat, perr = resolveWordText(job, part.word)
 						if pat == nil then return nil, perr end
 						if part.kind == "trimPre" then
-							text = trimPrefix(val, pat, false)
+							text = trimPrefix(job, val, pat, false)
 						elseif part.kind == "trimPreLong" then
-							text = trimPrefix(val, pat, true)
+							text = trimPrefix(job, val, pat, true)
 						elseif part.kind == "trimSuf" then
-							text = trimSuffix(val, pat, false)
+							text = trimSuffix(job, val, pat, false)
 						else
-							text = trimSuffix(val, pat, true)
+							text = trimSuffix(job, val, pat, true)
 						end
 					end
 				end
@@ -1730,6 +1756,41 @@ builtins.unset = function(job, args)
 			if type(job.exported) == "table" then job.exported[name] = nil end
 		end
 	end
+	return 0
+end
+
+-- trap: this machine's shell has ONE thing worth catching. Not a signal at
+-- all, in the ordinary sense -- kill ends a job outright and there is nothing
+-- else here that ever delivers one (CeroSecOS.DEVIATIONS, "kill") -- but
+-- POSIX.2 2.11's own pseudo-signal EXIT (spelled "0" in the Bourne shell and
+-- 4.4BSD's trap.c, which took a number and never a name), fired once when
+-- this shell is about to end on its own.
+--
+-- `trap 'cmd' EXIT` (or `trap 'cmd' 0`) registers it; `trap - EXIT` cancels
+-- it; `trap` alone lists it, in the re-inputtable form POSIX.2 asks of every
+-- listing that has one. Any other operand is refused rather than accepted
+-- and silently never fired -- there is no HUP, INT or TERM to catch, so
+-- claiming one worked would be a lie the shell could never make good on.
+builtins.trap = function(job, args)
+	if #args == 1 then
+		if type(job.traps) == "table" and job.traps.EXIT ~= nil then
+			writeText(job, "trap -- " .. job.traps.EXIT .. " EXIT\n")
+		end
+		return 0
+	end
+	if #args ~= 3 then
+		return nil, "trap: usage: trap [action] EXIT"
+	end
+	local action, sig = args[2], args[3]
+	if sig ~= "EXIT" and sig ~= "0" then
+		return nil, "trap: " .. sig .. ": no such signal"
+	end
+	if action == "-" then
+		if type(job.traps) == "table" then job.traps.EXIT = nil end
+		return 0
+	end
+	job.traps = job.traps or {}
+	job.traps.EXIT = action
 	return 0
 end
 
@@ -2755,6 +2816,30 @@ local function runSimple(state, job, f, env)
 	end
 
 	local name = args[1]
+
+	-- exec: POSIX.2's own words, "the command specified... shall replace the
+	-- current shell". There is no process here to fork and then replace, so
+	-- REPLACE is done by dropping the word "exec" -- name below becomes the
+	-- exec'd command's, and every refusal past this point names IT and not
+	-- exec -- and pushing a MARKER frame rather than setting a flag on this
+	-- one: exec may run a FUNCTION or a stage of a pipe, and those come back
+	-- through this very frame more than once before there is a final status.
+	-- The marker sits under whatever the command itself pushes and is what is
+	-- left on top once that is over; the step loop below turns it straight
+	-- into the same `exit $?` that ends the innermost script, function or
+	-- capture around it -- exactly what a real exec, replacing the process
+	-- that ran it, leaves behind. `exec` with no operand is the one sh took
+	-- no fork for either: it does nothing and the line after it still runs.
+	if name == "exec" then
+		if #args == 1 then
+			job.status = 0
+			return 1
+		end
+		table.remove(args, 1)
+		table.remove(masks, 1)
+		name = args[1]
+		if not pushFrame(job, { k = "execmark" }) then return 1 end
+	end
 
 	-- What ">" and "2>" name is OPENED here, before anything is looked up or run,
 	-- which is the order every sh has: the shell forks, opens the redirections,
@@ -3908,6 +3993,16 @@ stepOnce = function(state, job, env)
 	end
 	if f.k == "pipe" then
 		return pipeStep(state, job, f, env)
+	end
+
+	-- exec's marker, popped once whatever it ran is over: the same job.sig an
+	-- `exit $?` sets, so handleSignal's existing rule -- the innermost script,
+	-- capture or job the exit belongs to -- is what decides how far this
+	-- reaches, exactly as it would for a real exec replacing a real process.
+	if f.k == "execmark" then
+		popFrame(job)
+		job.sig = { k = "exit", n = job.status }
+		return 0
 	end
 
 	jobError(job, "syntax error")

@@ -1230,7 +1230,7 @@ CeroSecOS.BUILTIN_FILES = {
 CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done case esac"
 CeroSecOS.HELP_BUILTINS =
 	"cd . export exit fg jobs wait read shift break continue history type" ..
-	" set unset"
+	" set unset exec trap"
 
 -- The same words as a set, derived from the line `help` prints rather than
 -- listed a second time beside it: a word `help` says is the shell's own is one
