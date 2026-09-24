@@ -635,6 +635,19 @@ own:
   self-test that quietly ran half of itself would be a pass that proved less than the
   one before it.
 
+  And then the **shell half** (`CeroSecSelfTestShell.lua`): 193 typed lines, each
+  run on a scratch machine the runner makes with `CeroSecOS.newState` and copies
+  once per case, with a fixed clock and no world under it, and weighed against
+  what the screen should show, what `$?` should be and what a file should hold.
+  It is too long for one tick, so the press only starts it — the note says
+  `shell half running, its verdict goes to the log` — and the server's
+  `Events.OnTick` carries it, about 3 ms a tick. When the last case is done every
+  failing case goes to the log at **warn** (name, the line typed, what it wanted,
+  what it got), the summary `shell selftest: PASS n FAIL m` at **info** with a
+  second line saying how long it took, and `CeroSec shell selftest: PASS n FAIL m`
+  through `print`. It does not come back to the window: by then the player may have
+  closed it. A second press while it runs starts nothing and says so.
+
   Why it exists at all: [TESTING.md](TESTING.md), "Three layers". It is a release
   gate, steps 6a and 6b of [RELEASE.md](RELEASE.md).
 - **Give diagnostics disk** puts `CeroSec DIAGNOSTICS 1.0` in the survivor's inventory:

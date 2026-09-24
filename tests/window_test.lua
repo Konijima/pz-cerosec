@@ -727,6 +727,8 @@ local FILES = {
 	-- because shared/CeroSec/ is loaded ahead of shared/CeroSec/OS/.
 	"shared/CeroSec/CeroSecSelfTest.lua",
 	"shared/CeroSec/CeroSecSelfTestVectors.lua",
+	-- And its shell half, the case table and the runner the press starts.
+	"shared/CeroSec/CeroSecSelfTestShell.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
@@ -22766,6 +22768,54 @@ do
 		check("and logs the summary at info: " .. tostring(summary), summary ~= nil)
 	end
 
+	-- THE SHELL HALF is not in that answer: the press only starts it, and the
+	-- server's own Events.OnTick carries it. The note says so; the verdict is
+	-- printed when the last case is done, and a second press meanwhile starts
+	-- nothing.
+	check("the note says the shell half is running: " .. tostring(answers[1].args.note),
+		string.find(tostring(answers[1].args.note), "shell half running", 1, true) ~= nil)
+	do
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "selftest" })
+		check("a second press while it runs starts nothing: " ..
+			tostring(answers[1] and answers[1].args.note),
+			answers[1] ~= nil and string.find(tostring(answers[1].args.note),
+				"shell half already running", 1, true) ~= nil)
+		CeroSec.logRing = {}
+		local shellSaid = nil
+		_G.print = function(text)
+			if string.find(tostring(text), "shell selftest", 1, true) ~= nil then
+				shellSaid = tostring(text)
+			end
+		end
+		local ticks = 0
+		while shellSaid == nil and ticks < 50 do
+			ticks = ticks + 1
+			Events.OnTick.trigger()
+		end
+		_G.print = realPrint
+		eq("the ticks bring the shell verdict to the game log", shellSaid,
+			"CeroSec shell selftest: PASS " .. #CeroSecSelfTest.SHELL_CASES .. " FAIL 0")
+		check("the machine made on a tick of its own, the cases after it: " .. ticks,
+			ticks >= 2)
+		local info, warn = nil, 0
+		for i = 1, #CeroSec.logRing do
+			local line = CeroSec.logRing[i]
+			if line.level == CeroSec.LOG_WARN then warn = warn + 1 end
+			if line.level == CeroSec.LOG_INFO and
+					string.find(line.text, "shell selftest: PASS", 1, true) ~= nil then
+				info = line.text
+			end
+		end
+		eq("and the summary at info", info,
+			"shell selftest: PASS " .. #CeroSecSelfTest.SHELL_CASES .. " FAIL 0")
+		eq("with no warning", warn, 0)
+		answers = {}
+		Events.OnTick.trigger()
+		eq("a finished run is gone: the next tick says nothing more", #CeroSec.logRing, 2)
+	end
+
 	-- A PLANTED FAILING VECTOR: the line has to reach CeroSec.log at WARN, which is
 	-- the level the Log tab's own filter button reads, and the note has to send the
 	-- reader there.
@@ -22789,6 +22839,38 @@ do
 		check("and the failing line is in the log at warn: " .. tostring(warned),
 			warned ~= nil and string.find(warned, "A LIE", 1, true) ~= nil)
 		CeroSecSelfTest.VECTORS[2].want = kept
+
+		-- And the SHELL half's failures take the same road, later: that press
+		-- started a run, and whoami is broken while the ticks carry it, so one
+		-- case goes red and its line is in the log at warn, naming the case, the
+		-- line typed, what it wanted and what it got.
+		local realWhoami = CeroSecOS.commands.whoami
+		CeroSecOS.commands.whoami = function() return true, { "nobody" } end
+		CeroSec.logRing = {}
+		local shellSaid = nil
+		_G.print = function(text)
+			if string.find(tostring(text), "shell selftest", 1, true) ~= nil then
+				shellSaid = tostring(text)
+			end
+		end
+		local ticks = 0
+		while shellSaid == nil and ticks < 50 do
+			ticks = ticks + 1
+			Events.OnTick.trigger()
+		end
+		_G.print = realPrint
+		CeroSecOS.commands.whoami = realWhoami
+		eq("a broken whoami is one shell failure in the game log", shellSaid,
+			"CeroSec shell selftest: PASS " .. (#CeroSecSelfTest.SHELL_CASES - 1) .. " FAIL 1")
+		local shellWarn = {}
+		for i = 1, #CeroSec.logRing do
+			if CeroSec.logRing[i].level == CeroSec.LOG_WARN then
+				shellWarn[#shellWarn + 1] = CeroSec.logRing[i].text
+			end
+		end
+		eq("one line at warn", #shellWarn, 1)
+		eq("naming the case, the line, the want and the got", shellWarn[1],
+			"shell selftest: whoami: `whoami` want [root] got [nobody]")
 	end
 
 	-- THE DISK, into his hands, the way the drive hands one over: an item of one of

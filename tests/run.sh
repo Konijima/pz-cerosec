@@ -20,6 +20,8 @@ lua5.1 tests/leftclick_test.lua
 lua5.1 tests/hostile_test.lua
 lua5.1 tests/manual_ui_test.lua
 lua5.1 tests/debug_ui_test.lua
+# The self-test's shell half: the case table the game runs, run here on lua5.1.
+lua5.1 tests/selftest_shell_test.lua
 # Not piped: a pipe would hide its exit status from set -e.
 log=$(mktemp)
 if sh tests/selfcalls-check.sh > "$log" 2>&1; then

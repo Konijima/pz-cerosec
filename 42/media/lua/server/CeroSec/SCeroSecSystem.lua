@@ -12,6 +12,7 @@ require "CeroSec/CeroSecDefs"
 -- never at load time, which is what lets the two be loaded in either order.
 require "CeroSec/CeroSecSelfTest"
 require "CeroSec/CeroSecSelfTestVectors"
+require "CeroSec/CeroSecSelfTestShell"
 require "CeroSec/CeroSecNotes"
 require "CeroSec/CeroSecModules"
 require "CeroSec/SCeroSecDebug"
@@ -2653,6 +2654,65 @@ end
 -- not an `error`, because the window greys nothing on it and a reader must be
 -- able to tell "PASS 128 FAIL 0" from a refusal. Like a refusal, it carries no
 -- tab, so no list is emptied by it.
+-- The self-test's third half, the SHELL (CeroSecSelfTestShell.lua): about two
+-- hundred typed lines on a scratch machine, which is a quarter of a second on
+-- lua5.1 and more on Kahlua -- too long for one tick of a game somebody is
+-- playing. So the press starts a run and Events.OnTick carries it, a few
+-- milliseconds a tick, on getTimestampMs: the server's own way of getting under
+-- a minute (vanilla's forageServer.lua:455-460, registered at :502, the same
+-- proof SCeroSecSensors cites). The scratch machine is made on a tick of its own,
+-- because newState and the root login hash passwords and cannot be cut in two.
+--
+-- One run at a time: a second press while one is going says so and starts
+-- nothing. The verdict goes where the other halves' goes -- every failing case
+-- to the log at warn, the summary at info and to the game log through print --
+-- but later, when the last case is done, and so NOT onto the window: the note
+-- on the glass is sent while the player is at it, and a note from a tick is a
+-- note to a player who may have closed the window or left the server since.
+local shellRun = nil
+local SHELL_TICK_MS = 3
+
+local function shellFinish(run)
+	shellRun = nil
+	for i = 1, #run.lines do CeroSec.log(CeroSec.LOG_WARN, run.lines[i]) end
+	local summary = CeroSecSelfTest.shellSummary(run)
+	CeroSec.log(CeroSec.LOG_INFO, summary)
+	-- How long it took and over how many ticks, which is the number that says
+	-- whether SHELL_TICK_MS is keeping the game smooth.
+	CeroSec.log(CeroSec.LOG_INFO, "shell selftest: " .. tostring(getTimestampMs() -
+		run.startedMs) .. " ms over " .. tostring(run.ticks) .. " ticks, " ..
+		tostring(run.busyMs) .. " ms of it running cases")
+	print("CeroSec " .. summary)
+end
+
+local function shellTick()
+	local run = shellRun
+	if run == nil then return end
+	local started = getTimestampMs()
+	run.ticks = run.ticks + 1
+	-- A Lua error out of a case is caught by the runner and is that case's
+	-- failure; this pcall is for the runner itself. Without it an error here
+	-- would be raised again on every tick for the rest of the session.
+	local ok, err = pcall(function()
+		if run.pristine == nil then
+			CeroSecSelfTest.shellStep(run, 1)
+			return
+		end
+		while not CeroSecSelfTest.shellStep(run, 1) do
+			if getTimestampMs() - started >= SHELL_TICK_MS then return end
+		end
+	end)
+	run.busyMs = run.busyMs + (getTimestampMs() - started)
+	if not ok then
+		run.fail = run.fail + 1
+		run.lines[#run.lines + 1] = "shell selftest: the runner raised " .. tostring(err)
+		run.done = true
+	end
+	if run.done then shellFinish(run) end
+end
+
+Events.OnTick.Add(shellTick)
+
 local function noteAct(system, playerObj, token, x, y, z, text)
 	system:reply(playerObj, "debug",
 		{ token = token, note = text, x = x, y = y, z = z })
@@ -2890,8 +2950,18 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 		-- print and not the ring, because the ring is two hundred lines long and a
 		-- release note has to be pasted from somewhere.
 		print("CeroSec " .. summary)
+		-- And the shell half, over the ticks that follow (shellTick above).
+		local shell = "; shell half running, its verdict goes to the log"
+		if shellRun ~= nil then
+			shell = "; shell half already running"
+		else
+			shellRun = CeroSecSelfTest.shellStart()
+			shellRun.startedMs = getTimestampMs()
+			shellRun.ticks = 0
+			shellRun.busyMs = 0
+		end
 		noteAct(self, playerObj, token, x, y, z, summary ..
-			(result.fail > 0 and " -- the lines are on the Log tab" or ""))
+			(result.fail > 0 and " -- the lines are on the Log tab" or "") .. shell)
 	elseif args.act == "rootnote" then
 		-- THE PAPER THE DRAWER WOULD HOLD, and it is derived here exactly as the
 		-- drawer derives it: the save's own secret and the premises' two bytes

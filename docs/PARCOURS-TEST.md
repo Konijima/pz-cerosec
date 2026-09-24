@@ -4662,6 +4662,14 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      root : `cat /var/log/messages` et `cat /home/<nom>/.sh_history`
      répondent, comme le dit la page « This machine may not be new. ». [ ]
 
+459d. **L'autotest du shell.** Appuyer sur **Self-test** dans la fenêtre de
+     débogage. La note sous la liste se termine par « shell half running, its
+     verdict goes to the log ». Appuyer une deuxième fois tout de suite : la
+     note dit « shell half already running ». Attendre quelques secondes :
+     l'onglet **Log** (niveau info) et `console.txt` montrent
+     `CeroSec shell selftest: PASS 193 FAIL 0`, suivi d'une ligne de durée.
+     Aucune ligne `warn`. [ ]
+
 ## Le manuel dit tout ce qui n'est pas Unix
 
 460. **Les pages « What is not Unix here ».** Volume 1, chapitre 1 : lire les

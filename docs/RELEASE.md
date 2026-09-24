@@ -84,7 +84,7 @@ the files and the state shape are all unaffected.
 | 5b | Close the changelog, then **write the short Steam note by hand**, see below | `python3 tools/changelog-steam.py` |
 | 5a | **Photograph the save shape this build writes**, and commit it, see below | `sh tools/capture-fixture.sh` |
 | 6 | The headless suite must exit 0 | `sh tests/run.sh; echo rc=$?` |
-| 6a | **In game, before step 3 takes the door away**: press **Self-test** in the debug window on a machine whose chunk is in. Both halves green, and the summary pasted into the release notes | see below |
+| 6a | **In game, before step 3 takes the door away**: press **Self-test** in the debug window on a machine whose chunk is in. All three halves green -- the shell half's verdict lands in the log a few seconds after the press -- and both summaries pasted into the release notes | see below |
 | 6b | **In game**: press **Give diagnostics disk**, put it in a machine, `mount /dev/fd0 /mnt` then `sh /mnt/selftest.sh`. `FAIL 0`, and the summary pasted into the release notes | see below |
 | 7 | Walk the in-game checklist, all of it | [PARCOURS-TEST.md](PARCOURS-TEST.md) |
 | 8 | Rebuild and look at the description | `python3 tools/bbcode-preview.py && google-chrome --headless=new --screenshot=tools/out/workshop-page.png --window-size=760,6600 "file://$PWD/workshop/preview-page.html"` |
@@ -142,6 +142,11 @@ line under the list, in the log at info, and in `console.txt` via `print`:
 
     CeroSec selftest: PASS 138 FAIL 0
 
+and, a few seconds later (the shell half runs over the ticks that follow the press,
+and the note on the window says so), in the log at info and in `console.txt`:
+
+    CeroSec shell selftest: PASS 193 FAIL 0
+
 Any failing line is in the log at **warn** -- the **Log** tab, `warn` filter -- and
 names the vector, what lua5.1 answers and what the game answered. A failure here is
 never cosmetic: it means the game computes something differently from every bench in
@@ -163,8 +168,8 @@ It also writes that into `RESULTS.TXT` on the floppy, so a run can be read back 
 the disk afterwards. The exit status is non-zero on any failure (`echo $?`).
 
 **Paste both summaries into the release notes**, with the build's own numbers. A
-release whose notes say `PASS 138 FAIL 0` and `PASS 26 FAIL 0` is a release somebody
-ran on Kahlua; a release with no numbers in it is one where nobody did, and that is
+release whose notes say `PASS 138 FAIL 0`, `shell selftest: PASS 193 FAIL 0` and
+`PASS 26 FAIL 0` is a release somebody ran on Kahlua; a release with no numbers in it is one where nobody did, and that is
 the whole point of writing them down rather than ticking a box. Two of the checklist
 steps in [PARCOURS-TEST.md](PARCOURS-TEST.md) section X are the same two gestures,
 with what to look at on the glass.
