@@ -212,6 +212,33 @@ function CeroSecOS.upgradeSystem(state)
 	local sysv = state.sysv
 	if type(sysv) == "number" and sysv >= CeroSecOS.SYSTEM_VERSION then return false end
 
+	-- A machine that has had the whole top-up once (SYSTEM_GATED and on) gets
+	-- the names added since its number and nothing else: a gap anywhere else on
+	-- it is a deletion its owner made, and the contract is that it stays made.
+	-- The same ceilings as below, for the same reason.
+	if type(sysv) == "number" and sysv >= CeroSecOS.SYSTEM_GATED then
+		local bin = CeroSecOS.systemNode(state, CeroSecOS.BIN_PATH)
+		if type(bin) == "table" and bin.type == "dir" and type(bin.children) == "table" then
+			local nodes, bytes = CeroSecOS.usage(state)
+			local names = CeroSecOS.binNames()
+			for i = 1, #names do
+				local name = names[i]
+				local since = CeroSecOS.BIN_SINCE[name]
+				local info = CeroSecOS.commandDesc(name)
+				if type(since) == "number" and since > sysv and bin.children[name] == nil
+						and nodes + 1 <= CeroSecOS.MAX_NODES
+						and bytes + #info <= CeroSecOS.MAX_TOTAL_BYTES
+						and CeroSecOS.countEntries(bin) < CeroSecOS.MAX_DIR_ENTRIES then
+					bin.children[name] = CeroSecOS.newFile("root", 755, info)
+					nodes = nodes + 1
+					bytes = bytes + #info
+				end
+			end
+		end
+		state.sysv = CeroSecOS.SYSTEM_VERSION
+		return true
+	end
+
 	-- The ceilings are the disk's and are not suspended for this: a machine
 	-- filled to the node limit is topped up as far as it goes and no further,
 	-- because the alternative is a state validate then refuses -- a working
@@ -284,6 +311,8 @@ function CeroSecOS.upgradeSystem(state)
 			if nodes + 1 <= CeroSecOS.MAX_NODES and bytes + #text <= CeroSecOS.MAX_TOTAL_BYTES
 					and CeroSecOS.countEntries(etc) < CeroSecOS.MAX_DIR_ENTRIES then
 				etc.children.group = CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, text)
+				nodes = nodes + 1
+				bytes = bytes + #text
 			end
 		end
 

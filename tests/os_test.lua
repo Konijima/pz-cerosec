@@ -14558,7 +14558,9 @@ do
 	-- A machine as the version before this one left it: the four old executables
 	-- in /bin, exactly as they were shipped, and the number behind.
 	local state = fresh()
-	state.sysv = CeroSecOS.SYSTEM_VERSION - 1
+	-- Below SYSTEM_GATED: a machine at or past it has had its retirements
+	-- already and is given only BIN_SINCE's names (CeroSecOS.upgradeSystem).
+	state.sysv = CeroSecOS.SYSTEM_GATED - 1
 	local bin = state.fs.children.bin
 	local retired = {}
 	for name, desc in pairs(CeroSecOS.RETIRED_BIN) do
@@ -14941,7 +14943,8 @@ do
 
 	eq("the top-up has something to do", CeroSecOS.upgradeSystem(state), true)
 	eq("and the number moved to this build's", state.sysv, CeroSecOS.SYSTEM_VERSION)
-	eq("which is 21", CeroSecOS.SYSTEM_VERSION, 21)
+	-- 22 since 0.7.0's expr, uname and rmdir (tests/migrate_test.lua, 5c).
+	eq("which is 22", CeroSecOS.SYSTEM_VERSION, 22)
 	local at = state.fs
 	for i = 1, #CeroSecOS.LOCAL_BIN_DIRS do
 		at = at.children[CeroSecOS.LOCAL_BIN_DIRS[i]]

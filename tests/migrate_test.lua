@@ -648,6 +648,72 @@ do
 end
 
 --
+-- 5c. SYSTEM_VERSION: an old world has every command a new machine has
+--
+-- The guard for the day a release adds a command and forgets the bump. 0.7.0
+-- did exactly that: expr, uname and rmdir went into COMMAND_INFO, the number
+-- stayed at 21, upgradeSystem returned early on every save already at 21, and
+-- all three were `not found` in every world that existed. Asked of the
+-- photographs, because they are what an update really meets.
+--
+do
+	local fresh = CeroSecOS.newState("fresh")
+	local shipped = {}
+	for name, node in pairs(CeroSecOS.systemNode(fresh, "/bin").children) do
+		if node.type == "file" then shipped[#shipped + 1] = name end
+	end
+	table.sort(shipped)
+	check("a fresh machine ships commands (" .. #shipped .. ")", #shipped > 20)
+
+	for i = 1, #fixtures do
+		local entry = fixtures[i]
+		local at = "v" .. entry.n .. " (sysv " .. tostring(entry.fixture.sysv) .. "): "
+		local before = reload(entry).state
+		local had = CeroSecOS.systemNode(before, "/bin").children
+		local state = reload(entry).state
+		CeroSecOS.migrate(state, "ksp-front-01")
+		local bin = CeroSecOS.systemNode(state, "/bin").children
+		for k = 1, #shipped do
+			local name = shipped[k]
+			local node = bin[name]
+			check(at .. "/bin/" .. name .. " is there after the upgrade",
+				node ~= nil and node.type == "file")
+			-- A save that had the whole top-up is given only what BIN_SINCE
+			-- names, so a new command with no line there is one it never gets.
+			if had[name] == nil and entry.fixture.sysv >= CeroSecOS.SYSTEM_GATED then
+				local since = CeroSecOS.BIN_SINCE[name]
+				check(at .. name .. " is new since the photo, so BIN_SINCE dates it",
+					type(since) == "number" and since > entry.fixture.sysv
+					and since <= CeroSecOS.SYSTEM_VERSION)
+			end
+		end
+	end
+
+	-- And what a gated top-up must NOT do: put back what the owner deleted. A
+	-- save at 21 had the whole top-up once; its missing /bin/wall, /etc/issue
+	-- and wheel line are his deletions, and the contract is that they stay.
+	local newest
+	for i = 1, #fixtures do
+		if fixtures[i].fixture.sysv >= CeroSecOS.SYSTEM_GATED then newest = fixtures[i] end
+	end
+	check("there is a photograph a gated top-up walks", newest ~= nil)
+	local state = reload(newest).state
+	local etc = CeroSecOS.systemNode(state, "/etc")
+	CeroSecOS.systemNode(state, "/bin").children.wall = nil
+	etc.children.issue = nil
+	local sudoers = etc.children.sudoers.data
+	local cut = string.gsub(sudoers, "%%wheel[^\n]*\n?", "")
+	check("the photo had a wheel line to take out", cut ~= sudoers)
+	etc.children.sudoers.data = cut
+	CeroSecOS.migrate(state, "ksp-front-01")
+	eq("a deleted /bin/wall stays deleted", CeroSecOS.systemNode(state, "/bin/wall"), nil)
+	eq("a deleted /etc/issue stays deleted", CeroSecOS.systemNode(state, "/etc/issue"), nil)
+	check("a wheel line taken out stays out", string.find(
+		CeroSecOS.systemNode(state, "/etc/sudoers").data, "%wheel", 1, true) == nil)
+	check("while expr still arrives", CeroSecOS.systemNode(state, "/bin/expr") ~= nil)
+end
+
+--
 -- 6. The key names the fixture is written against
 --
 -- The fixture holds the two modData namespaces as LITERALS, because the files that

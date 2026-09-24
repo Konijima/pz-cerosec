@@ -134,7 +134,21 @@ CeroSecOS.STATE_VERSION = 3
 --    last of them so a program installed there is a command you can type (see
 --    CeroSecOS.ensureLocalBin and CeroSecOS.DEFAULT_PATH). A name of somebody's
 --    own anywhere on the chain stops the walk there. Nothing deleted.
-CeroSecOS.SYSTEM_VERSION = 21
+-- 22: /bin/expr, /bin/uname and /bin/rmdir, the three commands 0.7.0 added.
+--    The first bump that seeds ONLY what it added (CeroSecOS.BIN_SINCE): every
+--    top-up before it re-filled every gap it found, so a `rm /bin/wall` done at
+--    20 came back at 21. Nothing deleted.
+CeroSecOS.SYSTEM_VERSION = 22
+
+-- The executables a SYSTEM_VERSION added, by the number that added them, for
+-- every bump from 22 on. A machine already at SYSTEM_GATED or later has had
+-- the whole top-up once, so what is missing from it now is what its owner
+-- deleted -- and upgradeSystem puts back only a name listed here above the
+-- machine's own number. A command added to COMMAND_INFO without a line here
+-- and a bump is a command no world saved before it ever gets
+-- (tests/migrate_test.lua walks the fixtures and goes red on it).
+CeroSecOS.BIN_SINCE = { expr = 22, rmdir = 22, uname = 22 }
+CeroSecOS.SYSTEM_GATED = 21
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
