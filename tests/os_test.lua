@@ -656,9 +656,9 @@ do
 	ok(state, admin, "cd ~", {})
 
 	-- A tilde that is not the shortcut is a name, and a name may not hold one.
-	bad(state, admin, "cd ~root", "cd: ~root: No such file or directory")
-	bad(state, admin, "cd ~/nope", "cd: /home/admin/nope: No such file or directory")
-	bad(state, admin, "cd a~b", "cd: a~b: No such file or directory")
+	bad(state, admin, "cd ~root", "cd: can't cd to ~root")
+	bad(state, admin, "cd ~/nope", "cd: can't cd to /home/admin/nope")
+	bad(state, admin, "cd a~b", "cd: can't cd to a~b")
 	ok(state, admin, "echo a~b", { "a~b" })         -- not a path, not touched
 
 	ok(state, admin, "touch notes.txt", {})
@@ -735,9 +735,9 @@ do
 	ok(state, admin, "cat - /home/admin/p", { "body" })
 	expect(state, admin, "cat -z /home/admin/p", false, { "cat: illegal option -- z",
 		"usage: cat [-n] [file]..." })
-	bad(state, admin, "cd /root", "cd: /root: Permission denied")
-	bad(state, admin, "cd /nope", "cd: /nope: No such file or directory")
-	bad(state, admin, "cd /etc/motd", "cd: /etc/motd: Not a directory")
+	bad(state, admin, "cd /root", "cd: can't cd to /root")
+	bad(state, admin, "cd /nope", "cd: can't cd to /nope")
+	bad(state, admin, "cd /etc/motd", "cd: can't cd to /etc/motd")
 	bad(state, admin, "cd a b", "cd: usage: cd [dir]")
 	bad(state, admin, "cat /root/secret.txt", "cat: /root/secret.txt: Permission denied")
 	bad(state, admin, "ls /root/x", "ls: /root/x: Permission denied")
@@ -943,7 +943,7 @@ do
 	ok(state, admin, "mkdir /home/admin/box", {})
 	ok(state, admin, "touch /home/admin/box/thing", {})
 	ok(state, admin, "chmod 600 /home/admin/box", {})
-	bad(state, admin, "cd /home/admin/box", "cd: /home/admin/box: Permission denied")
+	bad(state, admin, "cd /home/admin/box", "cd: can't cd to /home/admin/box")
 	bad(state, admin, "cat /home/admin/box/thing", "cat: /home/admin/box/thing: Permission denied")
 	ok(state, rootSession, "cat /home/admin/box/thing", {})
 
@@ -2058,12 +2058,14 @@ do
 	check("the old password is refused", CeroSecOS.login(state, "admin", "") == nil)
 	check("the new password is taken", CeroSecOS.login(state, "admin", "hunter2") ~= nil)
 
-	-- Wrong old password: one line, and nothing changed.
+	-- Wrong old password: pw_error's two lines, and nothing changed.
 	cont = asks(run(state, session, "passwd"), "Old password: ", true)
 	local refused = answer(state, session, cont, "wrong")
 	eq("a wrong old password fails", refused.ok, false)
 	eq("and ends the chain", refused.control, nil)
-	says(refused, "passwd: Permission denied")
+	eq("pw_error says two lines", #refused.lines, 2)
+	eq("the reason first", refused.lines[1], "passwd: Permission denied")
+	eq("then that the file is unchanged", refused.lines[2], "passwd: /etc/passwd: unchanged")
 	eq("the password is untouched", holds(state, "admin", "hunter2"), true)
 
 	-- Mismatch: the retype has to be the same string.
@@ -2111,10 +2113,15 @@ do
 	-- A password the machine will not store.
 	cont = asks(run(state, session, "passwd admin"), "New password: ", true)
 	cont = asks(answer(state, session, cont, string.rep("x", 33)), "Retype new password: ", true)
-	says(answer(state, session, cont, string.rep("x", 33)), "passwd: password too long")
+	local long = answer(state, session, cont, string.rep("x", 33))
+	eq("a store refused is pw_error too", long.lines[1], "passwd: password too long")
+	eq("with its unchanged line", long.lines[2], "passwd: /etc/passwd: unchanged")
+	eq("and only those", #long.lines, 2)
 	cont = asks(run(state, session, "passwd admin"), "New password: ", true)
 	cont = asks(answer(state, session, cont, "a\1b"), "Retype new password: ", true)
-	says(answer(state, session, cont, "a\1b"), "passwd: invalid characters")
+	local ctl = answer(state, session, cont, "a\1b")
+	eq("a control byte is refused", ctl.lines[1], "passwd: invalid characters")
+	eq("the same way", ctl.lines[2], "passwd: /etc/passwd: unchanged")
 	eq("admin's password survived both", holds(state, "admin", "letmein"), true)
 
 	-- The state a chain leaves behind is still storable.
@@ -7177,9 +7184,9 @@ do
 	okAt(state, admin, "chmod 700 /home/admin/go.sh", {})
 	okAt(state, rootSession, "chown root /home/admin/go.sh", {})
 	badAt(state, admin, "./go.sh", "./go.sh: permission denied")
-	badAt(state, admin, "sh /home/admin/go.sh", "sh: /home/admin/go.sh: Permission denied")
+	badAt(state, admin, "sh /home/admin/go.sh", "/home/admin/go.sh: Can't open /home/admin/go.sh")
 
-	badAt(state, admin, "sh /nope.sh", "sh: /nope.sh: No such file or directory")
+	badAt(state, admin, "sh /nope.sh", "/nope.sh: Can't open /nope.sh")
 	badAt(state, admin, "sh /home", "sh: /home: Is a directory")
 	badAt(state, admin, "/home/admin", "/home/admin: permission denied")
 	badAt(state, admin, "sh", "sh: usage: sh <file> [args]")
@@ -7458,7 +7465,7 @@ do
 	-- 9. The dot's own refusals. A file that is not there, a directory, a file it
 	-- may not read, no operand at all -- and it wants r and NOT x, because
 	-- nothing executes it.
-	says(". /home/admin/nope", { ".: /home/admin/nope: No such file or directory" })
+	says(". /home/admin/nope", { ".: Can't open /home/admin/nope" })
 	says(". /etc", { ".: /etc: Is a directory" })
 	says(".", { ".: usage: . <file>" })
 	says(". a b", { ".: usage: . <file>" })
@@ -7467,7 +7474,7 @@ do
 	says(". ./noexec.sh", { "read anyway" })
 	badAt(state, admin, "./noexec.sh", "./noexec.sh: permission denied")
 	noX.mode = 000
-	says(". ./noexec.sh", { ".: ./noexec.sh: Permission denied" })
+	says(". ./noexec.sh", { ".: Can't open ./noexec.sh" })
 	noX.mode = 644
 	-- A file the shell cannot parse is named and nothing of it runs.
 	script(state, "/home/admin/broken.sh", "echo one\nwhile true; do echo x")
@@ -7479,7 +7486,7 @@ do
 	-- nothing.
 	says("mkdir /home/admin/bin", {})
 	script(state, "/home/admin/bin/onpath.sh", "w=frompath")
-	says(". onpath.sh", { ".: onpath.sh: No such file or directory" }, "not on PATH yet")
+	says(". onpath.sh", { ".: Can't open onpath.sh" }, "not on PATH yet")
 	says("PATH=$PATH:$HOME/bin", {})
 	says(". onpath.sh", {})
 	says('echo "[$w]"', { "[frompath]" })
@@ -11387,7 +11394,7 @@ do
 	-- Making one is allowed: a link to a file that is not there yet is a link
 	-- somebody meant to make, and it says so the moment it is used.
 	badAt(state, admin, "cat dangle", "cat: dangle: No such file or directory")
-	badAt(state, admin, "cd dangle", "cd: dangle: No such file or directory")
+	badAt(state, admin, "cd dangle", "cd: can't cd to dangle")
 	eq("and the arrow still says where it was aimed",
 		pointsAt(state, admin, "dangle"), "nowhere")
 	local shown = okAt(state, admin, "ls -l dangle")

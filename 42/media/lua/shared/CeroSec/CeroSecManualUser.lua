@@ -293,7 +293,11 @@ A pattern is at most 32 pieces, a piece being a character, a ? or a
 [set]; a run of * is one.
 
 ls -l has no link count: the column a real ls put between the mode and
-the owner is not there, and the name has the room instead.]],
+the owner is not there, and the name has the room instead.
+
+edit ends what it saves with a newline, as vi did, but it
+saves a file of 4096 bytes without its last newline: that one byte
+would carry it past the ceiling. The save says [Incomplete last line].]],
 
 [[What is not Unix here: pipes, printf and date.
 
@@ -334,7 +338,9 @@ master.passwd or shadow. And id prints uid=admin flag=user: there are no
 numbers behind a name.
 
 Any account with the admin flag gets the # prompt. A real sh gave # to
-uid 0 alone.]],
+uid 0 alone. And after output with no newline at its end, printf a,
+the prompt starts on the next row; a real terminal put it right after:
+a$ ]],
 
 [[What is not Unix here: what is missing.
 
@@ -1002,25 +1008,25 @@ and that the middle digit belongs to it.]],
 You will see this line a great deal, and it does not mean you did anything
 wrong.
 
-  admin@ksp-04-11:~$ cd /root
-  cd: /root: Permission denied
+  admin@ksp-04-11:~$ cat /etc/passwd
+  cat: /etc/passwd: Permission denied
 
-Read it in three pieces, which is how every refusal on this machine is
-built. cd is the command that refused. /root is exactly what it refused
-about. permission denied is why.
+Read it in three pieces. cat is the command that refused. /etc/passwd
+is what it refused about. permission denied is why. (cd says only cd:
+can't cd to /root, as sh did.)
 
 It means the account you are logged in as is not allowed to do that to
 that thing. That is all. The file is there, the command works, you are
 simply not the right person for it. Nothing broke and nothing needs
 repairing.
 
-Three ordinary reasons. It belongs to root, like /root. It belongs to
+Three ordinary reasons. It belongs to root, like this one. It belongs to
 another survivor, in his own home. Or it is yours and you took the
 permission away yourself, in which case chmod gives it back.
 
 Classic mistake. Assuming denied means broken and reaching for root to
 force it. Ask first whether you needed that file at all. Most of the time
-the answer is no, and Volume 2 is a shorter book than it looks.]],
+the answer is no, and Volume 2 is shorter than it looks.]],
 
 		} },
 
@@ -2138,6 +2144,10 @@ One there but not yours to run says permission denied instead.
       no command of that name
   sh: sleep: no clock
       the machine has no clock to count from
+  cd: can't cd to <dir>
+  <file>: Can't open <file>
+  .: Can't open <file>
+      missing, or not yours: cd, sh and . say no more
   grep: <pattern>: bad range
   grep: <pattern>: unmatched [
   grep: <pattern>: trailing backslash
@@ -2183,6 +2193,8 @@ The three new filters, from chapter 7.
   passwd: Permission denied
       the old password did not match, or the account is
       another's, which only root may change
+  passwd: /etc/passwd: unchanged
+      said after a refusal, once the file was reached
   passwd: passwords do not match
       the new one was typed two different ways
   passwd: password too long

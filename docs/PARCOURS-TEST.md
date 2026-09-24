@@ -954,7 +954,7 @@ capture d'écran prise en jeu qui les a fait écrire (`while: not found`).
      avec `y=dedans`, puis `y=dehors`, `./pose.sh`, `echo [$y]` → `[dehors]`.
      Ensuite `. ./pose.sh` puis `echo [$y]` → `[dedans]` : le point lit le
      fichier DANS ce shell-ci. Vérifier aussi `. pose.sh` (sans `./`) →
-     `.: pose.sh: No such file or directory` tant que le dossier n'est pas dans `PATH`, et
+     `.: Can't open pose.sh` tant que le dossier n'est pas dans `PATH`, et
      `chmod 600 pose.sh` → `. ./pose.sh` marche encore (le point veut `r`, pas
      `x`) alors que `./pose.sh` répond `./pose.sh: permission denied`. [ ]
 143. Taper `while true; do echo y; done` sans `&` → les `y` arrivent en filet,
@@ -4766,6 +4766,26 @@ allumée qui fait tourner un démon (`sh autoclose.sh start 2 &`).
      colonnes par nombre). `printf 'a\na\nb\n' | uniq -c` → `   2 a`, `   1 b`.
      `which nosuch` → `no nosuch in /bin /usr/local/bin` (le PATH, séparé par des
      blancs), et `echo $?` → `0`, comme le script csh de 4.3BSD. `sudo useradd bob` puis `sudo userdel bob` → aucune ligne. [ ]
+
+## Les restes de la fusion 0.7.0
+
+470. **Un fichier plein sans dernière ligne fermée.** `i=0; while [ $i -lt
+     256 ]; do printf 0123456789abcdef >> big; i=$(expr $i + 1); done`, puis
+     `wc -c big` → 4096 (pas de saut de ligne final). `edit big`, Tab sans
+     rien changer → `Saved 4096 bytes [Incomplete last line]` sur la ligne
+     du bas (au-delà de 2000 caractères, la fenêtre peut afficher à la place
+     `Buffer full: 2000 typed characters`), et `wc -c big` → toujours 4096. [ ]
+471. **Les refus de sh.** `cd nosuch` → `cd: can't cd to nosuch` ; `cd /root`
+     en admin → `cd: can't cd to /root`. `sh nosuch.sh` →
+     `nosuch.sh: Can't open nosuch.sh`. `. nosuch` → `.: Can't open nosuch`. [ ]
+472. **passwd, deux lignes.** `passwd`, un mauvais ancien mot de passe →
+     `passwd: Permission denied` puis `passwd: /etc/passwd: unchanged`. [ ]
+473. **Le journal de la banque.** Sur la machine `vault`, en root,
+     `cat /var/log/messages` → une ligne `su: BAD SU <le titulaire> to root`,
+     sans accolades. [ ]
+474. **L'invite après un texte sans fin de ligne.** `printf a` → `a`, puis
+     l'invite sur la ligne suivante (écart déclaré à la page « What is not
+     Unix here: read, history, and who you are »). [ ]
 
 ## Rapport
 

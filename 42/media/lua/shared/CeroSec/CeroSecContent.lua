@@ -4898,7 +4898,7 @@ CeroSecContent.LOG_EVENTS = {
 }
 CeroSecContent.LOG_EVENT_COUNT = 3
 
-local function placeLog(state, session, profile, secret, mkey, startTime, now)
+local function placeLog(state, session, profile, secret, mkey, startTime, now, names)
 	if type(profile.logs) ~= "table" or #profile.logs == 0 then return end
 	if type(startTime) ~= "number" then return end
 	-- The premises' own week, and then the county's. Built into a list of its own
@@ -4906,7 +4906,9 @@ local function placeLog(state, session, profile, secret, mkey, startTime, now)
 	-- appended to profile.logs would be a change whose second machine had six extra
 	-- lines on it.
 	local messages, own = {}, #profile.logs
-	for i = 1, own do messages[i] = profile.logs[i] end
+	-- The premises' own lines may name their people ({owner}, the way su's
+	-- "BAD SU owner to root" does); the county's week names nobody.
+	for i = 1, own do messages[i] = CeroSecContent.fillNames(profile.logs[i], names) end
 	for i = 1, CeroSecContent.LOG_EVENT_COUNT do
 		local pick = CeroSecContent.pick(CeroSecContent.LOG_EVENTS, secret,
 			CeroSecContent.key(mkey, "logev", i))
@@ -5706,7 +5708,7 @@ function CeroSecContent.prefill(state, opts)
 		CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, CeroSecOS.terminated(profile.issue), now)
 	end
 
-	placeLog(state, session, profile, secret, mkey, opts.start, now)
+	placeLog(state, session, profile, secret, mkey, opts.start, now, names)
 	placeMail(state, session, profile, secret, opts.b1, opts.b2, logins, owner,
 		names, opts.start, now)
 
@@ -6945,7 +6947,12 @@ CeroSecContent.PROFILES.bank = {
 	logs = {
 		"login: failed login on console",
 		"login: failed login on console",
-		"su: authentication failure",
+		-- 4.4BSD-Lite2 usr.bin/su/su.c: a wrong password is
+		-- syslog(LOG_AUTH|LOG_WARNING, "BAD SU %s to %s%s", username,
+		-- user, ontty()). ontty() is " on " and ttyname(2) of stderr,
+		-- left off here as on the dispatch desk's "su: dispatch to
+		-- root": sixty columns are not enough for both.
+		"su: BAD SU {owner} to root",
 		"login: root logged in on console",
 		"kernel: fd0 write protected",
 		"shutdown: halt by root",

@@ -78,8 +78,8 @@ machine's console and stays there until the machine goes dark.
     title bar.
 19. `cd`, then `mkdir notes`, `cd notes`, `echo "hello" > a.txt`, `cat a.txt`.
 20. `echo "second" >> a.txt`, `cat a.txt`: two lines.
-21. **Permission denied.** As `admin`: `cd /root` answers `cd: /root: Permission
-    denied`. As `root` it works.
+21. **Permission denied.** As `admin`: `cd /root` answers `cd: can't cd to
+    /root`. As `root` it works.
 22. **A command that does not exist.** `frobnicate` answers `frobnicate: command not
     found`.
 23. **History.** Up walks back through the last lines, Down walks forward, Down past

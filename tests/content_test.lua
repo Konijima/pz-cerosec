@@ -858,6 +858,18 @@ do
 						.. tostring(day) .. ")", tonumber(day) < 9)
 					check(id .. " log line " .. l .. " is inside the week",
 						tonumber(day) >= 9 - CeroSecContent.LOG_DAYS)
+					check(id .. " log line " .. l .. " names nobody in braces",
+						string.find(lines[l], "{", 1, true) == nil)
+				end
+				-- su's wrong password is its own syslog line (4.4BSD-Lite2
+				-- usr.bin/su/su.c, "BAD SU %s to %s%s"), and the man who typed
+				-- it is the one whose desk this is.
+				for k = 1, #profile.logs do
+					if string.find(profile.logs[k], "BAD SU", 1, true) ~= nil then
+						check(id .. " the BAD SU line names the owner, whole",
+							ownerName ~= nil and string.find(log.data,
+								" su: BAD SU " .. ownerName .. " to root\n", 1, true) ~= nil)
+					end
 				end
 			end
 

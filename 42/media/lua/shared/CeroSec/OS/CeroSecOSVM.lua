@@ -5299,13 +5299,29 @@ end
 -- text, or nil plus the line to print.
 -- A file that is RUN (needX) is refused in sh's own E_EXEC words --
 -- "./x: not found", "./x: permission denied" (CeroSecOS.execError); one
--- handed to sh or to `.` is refused with strerror(3)'s.
+-- handed to sh or to `.` that cannot be opened is sh's "Can't open", and
+-- one that opens but is no file is refused with strerror(3)'s.
 function CeroSecOS.readScript(state, session, who, path, needX)
 	local label = scriptLabel(who, path)
 	local says = CeroSecOS.strerror
 	if needX then says = CeroSecOS.execError end
 	local node, reason = CeroSecOS.getNode(state, session, path)
-	if node == nil then return nil, label .. ": " .. says(reason) end
+	-- A file sh or `.` READS and open(2) refuses -- not there, or not
+	-- readable -- is 4.4BSD-Lite2 bin/sh/input.c setinputfile's
+	-- error("Can't open %s", fname), signed (error.c) with commandname:
+	-- the builtin's own word for `.` (eval.c evalcommand sets it to
+	-- argv[0]), and for `sh file` the file itself, which options.c
+	-- procargs makes commandname before it calls setinputfile.
+	local cantOpen = nil
+	if not needX then
+		local sign = who
+		if who == "sh" then sign = path end
+		cantOpen = sign .. ": Can't open " .. path
+	end
+	if node == nil then
+		if cantOpen ~= nil then return nil, cantOpen end
+		return nil, label .. ": " .. says(reason)
+	end
 	-- A directory RUN is execve(2)'s EACCES (4.4BSD's manual: "The new
 	-- process file is not an ordinary file"), so sh says permission denied.
 	if node.type == "dir" and needX then return nil, label .. ": " .. says("permission denied") end
@@ -5315,6 +5331,7 @@ function CeroSecOS.readScript(state, session, who, path, needX)
 		return nil, label .. ": " .. says("permission denied")
 	end
 	if not CeroSecOS.can(state, session, node, "r") then
+		if cantOpen ~= nil then return nil, cantOpen end
 		return nil, label .. ": " .. says("permission denied")
 	end
 	return node.data or ""

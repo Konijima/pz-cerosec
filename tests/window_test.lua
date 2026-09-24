@@ -1336,6 +1336,53 @@ do
 	check("the shell prompt is back", bench.painted("admin@"))
 end
 
+-- A file of exactly the ceiling with no final newline -- an old save's,
+-- which the v2->v3 walk had no room to close. The save adds a newline to
+-- every other file, and here that one byte said "file too large" to a
+-- save of the very bytes the file already held.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("echo x > big")
+	bench.frame()
+	local state = bench.object:osState()
+	local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+	local full = string.rep("a", CeroSecOS.MAX_FILE_BYTES - 1) .. "b"
+	CeroSecOS.getNode(state, session, "/home/admin/big").data = full
+
+	bench.enter("edit big")
+	bench.frame()
+	eq("the whole file is the buffer", bench.window:bufferText(), full)
+	bench.window:onOtherKey(Keyboard.KEY_TAB)
+	bench.frame()
+	eq("saved unchanged, it is the same bytes",
+		CeroSecOS.getNode(state, session, "/home/admin/big").data, full)
+	-- The machine's word, not the glass: past EDIT_TYPED_MAX the window's
+	-- own "Buffer full" stands on the message row over it.
+	eq("and the save says the last line is open", bench.object.console.edit.message,
+		"Saved 4096 bytes [Incomplete last line]")
+
+	-- Edited, same length: the same rule, not a refusal.
+	local edited = "c" .. string.sub(full, 2)
+	bench.window.entry:setText(edited)
+	bench.window:onOtherKey(Keyboard.KEY_TAB)
+	bench.frame()
+	eq("saved edited, it is the edited bytes",
+		CeroSecOS.getNode(state, session, "/home/admin/big").data, edited)
+	eq("never file too large", bench.object.console.edit.message,
+		"Saved 4096 bytes [Incomplete last line]")
+
+	-- One byte short of the ceiling: the newline fits, and goes on.
+	local short = string.sub(full, 2)
+	bench.window.entry:setText(short)
+	bench.window:onOtherKey(Keyboard.KEY_TAB)
+	bench.frame()
+	eq("a buffer the newline fits after is closed",
+		CeroSecOS.getNode(state, session, "/home/admin/big").data, short .. "\n")
+	eq("and says nothing of a last line", bench.object.console.edit.message,
+		"Saved 4096 bytes")
+end
+
 -- A file that is already there opens with its contents.
 do
 	local bench = newBench()

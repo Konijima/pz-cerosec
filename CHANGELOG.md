@@ -44,6 +44,16 @@ and a command whose redirect is refused no longer runs.
   never pushed past what it holds, and saved scripts run as before. An older
   version of the mod will refuse to open a computer or a floppy this one has
   touched, rather than show its files wrong.
+- Saving a file of exactly 4096 bytes whose last line has no newline (a file
+  from an older save could be one) no longer fails with "file too large": the
+  editor saves it as it is and says `[Incomplete last line]`.
+- A few refusals now read as 4.4BSD's did: `cd nosuch` says `cd: can't cd to
+  nosuch`, `sh nosuch.sh` says `nosuch.sh: Can't open nosuch.sh`, `. nosuch`
+  says `.: Can't open nosuch`, a wrong old password to `passwd` is followed by
+  `passwd: /etc/passwd: unchanged`, and a failed `su` in a found machine's
+  log reads `su: BAD SU <name> to root`.
+- After output with no newline at its end, the prompt still starts on the
+  next row; the manual's "What is not Unix here" now says so.
 - A shell function can be defined without a space before the brace, as in
   `t(){ echo a; }`, like on any sh.
 - The shell has `set` (`set -- a b` for new `$1 $2`, `set` alone to list the

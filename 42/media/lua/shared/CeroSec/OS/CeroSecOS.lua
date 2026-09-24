@@ -608,6 +608,27 @@ function CeroSecOS.bufferBytes(buffer)
 	return buffer .. "\n"
 end
 
+-- What the editor's save writes: bufferBytes, except where the final "\n"
+-- ALONE is what would carry the file past MAX_FILE_BYTES. Then the last
+-- line goes back open, and the second answer is true so the save can say
+-- so. Such a file is real: an old save's file of exactly the ceiling with
+-- no newline, which the v2->v3 walk (terminateFiles) had no room to close
+-- -- and opening it and saving it unchanged said "file too large". A save
+-- of what the file already holds must never be refused.
+--
+-- No 1993 editor wrote a file without its newline (nvi 1.43, 4.4BSD-Lite2
+-- contrib, ex/ex_write.c puts one after every line), so this is a
+-- declared deviation ("edit", CeroSecOS.DEVIATIONS). What it SAYS is
+-- borrowed from vi 3.7, 4.3BSD ucb/ex/ex_io.c getfile(), which printed
+-- " [Incomplete last line]" for a file read without one.
+function CeroSecOS.saveBytes(buffer)
+	local bytes = CeroSecOS.bufferBytes(buffer)
+	if #bytes > CeroSecOS.MAX_FILE_BYTES and #bytes - 1 <= CeroSecOS.MAX_FILE_BYTES then
+		return buffer, true
+	end
+	return bytes, false
+end
+
 -- A list of lines, joined the way a real file holds them: every line ends in
 -- "\n", including the last one, UNLESS the list is marked `open` (cat's own
 -- and the /bin printf door's, when what they read had no final newline

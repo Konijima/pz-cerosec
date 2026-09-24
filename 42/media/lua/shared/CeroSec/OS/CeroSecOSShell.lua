@@ -10,7 +10,7 @@
 -- the payload of the two orders that carry one ("prompt" and "edit") and nil
 -- for the rest.
 -- Errors read like a 1993 Unix, one line each:
---   cd: /root: Permission denied
+--   cd: can't cd to /root
 --   cat: notes.txt: No such file or directory
 -- Commands never touch the tree themselves; they call the four mutators in
 -- CeroSecOSFS.lua, which own the permissions and the limits.
@@ -1099,6 +1099,16 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "prompt", world = true,
 		phrase = "Any account with the admin flag gets the # prompt",
 		why = "the flag, not uid 0, earns the #" },
+	-- The screen is rows, never a cursor: a job's last line with no "\n"
+	-- behind it (outLine's partial) still lands as a row of its own on
+	-- console.lines, the typed line is pushed as prompt .. line on a row of
+	-- its own (SCeroSecSystem, the three consolePush calls of the Enter
+	-- path), and the window draws the prompt on the row after the last one
+	-- (CeroSecTerminal:inputRow). A tty put it at the cursor: `printf a`
+	-- then the prompt read "a$ ".
+	{ name = "prompt", world = true,
+		phrase = "the prompt starts on the next row",
+		why = "the glass is a list of rows and the prompt takes its own" },
 
 	-- What is not HERE. ls /bin is the whole list of programs, and the page
 	-- says so; these are named because a script reaches for them first.
@@ -1151,6 +1161,11 @@ CeroSecOS.DEVIATIONS = {
 	-- the machine sets TZ.
 	{ name = "date", phrase = "date prints no time zone",
 		why = "no zone was ever set on this machine" },
+	-- CeroSecOS.saveBytes: a buffer of exactly MAX_FILE_BYTES is saved with
+	-- no final newline, where nvi (4.4BSD-Lite2 contrib, ex/ex_write.c)
+	-- always wrote one; the message is vi 3.7's (4.3BSD ucb/ex/ex_io.c).
+	{ name = "edit", phrase = "saves a file of 4096 bytes without its last newline",
+		why = "the newline would carry the file past the ceiling" },
 }
 
 --
@@ -1627,10 +1642,15 @@ commands.cd = function(state, session, args, env)
 		target = "/"
 		if user ~= nil and type(user.home) == "string" then target = user.home end
 	end
-	local node, reason, abs = CeroSecOS.getNode(state, session, target)
-	if node == nil then return fail("cd", target, reason) end
-	if node.type ~= "dir" then return fail("cd", target, "not a directory") end
-	if not CeroSecOS.can(state, session, node, "x") then return fail("cd", target, "permission denied") end
+	-- One refusal for every way in which the directory is not there to go
+	-- into: 4.4BSD-Lite2 bin/sh/cd.c cdcmd tries each CDPATH candidate that
+	-- stat(2)s as a directory, and when none of them docd()s -- missing, a
+	-- file, no x -- falls through to error("can't cd to %s", dest), which
+	-- error.c signs with the builtin's name.
+	local node, _, abs = CeroSecOS.getNode(state, session, target)
+	if node == nil or node.type ~= "dir" or not CeroSecOS.can(state, session, node, "x") then
+		return false, { "cd: can't cd to " .. target }
+	end
 	session.cwd = abs
 	return true, {}
 end
@@ -5742,6 +5762,9 @@ end
 -- lives in the machine's console and the console is written to the save file,
 -- so anything in clear there would be the one place on the machine that still
 -- handed a password over.
+-- pw_error's last word on every failure after the lock (see "old", below).
+local PASSWD_UNCHANGED = "passwd: /etc/passwd: unchanged"
+
 commands.passwd = function(state, session, args, env)
 	if #args > 2 then return usage("passwd") end
 	local me = CeroSecOS.userOf(session)
@@ -5773,9 +5796,13 @@ continuations.passwd = function(state, session, cont, line, env)
 		-- calls pw_error(NULL, 1, 1), which warns under the PROGRAM's name
 		-- (passwd, since no account name was given) with strerror(3)'s
 		-- capitalised wording for EACCES -- "passwd: Permission denied", not
-		-- su.c's bare "Sorry".
+		-- su.c's bare "Sorry". pw_error (usr.sbin/vipw/pw_util.c) then says
+		-- warnx("%s: unchanged", _PATH_MASTERPASSWD) before it exits: the
+		-- second line. The file it names is the one this machine keeps the
+		-- hash in, /etc/passwd (the "shadow" deviation), because naming a
+		-- master.passwd `ls /etc` cannot find would be the worse lie.
 		if not CeroSecOS.checkPassword(user, line) then
-			return false, { "passwd: Permission denied" }
+			return false, { "passwd: Permission denied", PASSWD_UNCHANGED }
 		end
 		return ask("New password: ", true, { cmd = "passwd", step = "new", user = name })
 	end
@@ -5798,7 +5825,10 @@ continuations.passwd = function(state, session, cont, line, env)
 		end
 		local done, reason =
 			CeroSecOS.setPassword(state, name, line, session.stamp, CeroSecOS.clockOf(env))
-		if done == nil then return false, { "passwd: " .. CeroSecOS.strerror(reason) } end
+		-- A write that failed is pw_error again, with its own reason first.
+		if done == nil then
+			return false, { "passwd: " .. CeroSecOS.strerror(reason), PASSWD_UNCHANGED }
+		end
 		return true, { "passwd: password updated" }
 	end
 

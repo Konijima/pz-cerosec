@@ -2477,8 +2477,9 @@ Commands.editsave = function(self, playerObj, x, y, z, token, args)
 	-- The buffer is lines and the file is bytes: every line goes back followed
 	-- by its "\n", the last one included (POSIX ex(1), "Write"; the edit
 	-- command took that one off when it opened the file). An empty buffer is an
-	-- empty file, which has no line to end.
-	local bytes = CeroSecOS.bufferBytes(text)
+	-- empty file, which has no line to end. The one exception is a buffer of
+	-- exactly the file ceiling, which goes back open (CeroSecOS.saveBytes).
+	local bytes, incomplete = CeroSecOS.saveBytes(text)
 	-- The editor's save is a write like any other, clock included: a file saved
 	-- out of the editor is stamped the minute it was saved.
 	local done, reason = CeroSecOS.writeFile(state, session, console.edit.path, bytes, false,
@@ -2487,6 +2488,9 @@ Commands.editsave = function(self, playerObj, x, y, z, token, args)
 		console.edit.message = "Cannot save: " .. tostring(reason)
 	else
 		console.edit.message = "Saved " .. #bytes .. " bytes"
+		if incomplete then
+			console.edit.message = console.edit.message .. " [Incomplete last line]"
+		end
 		console.edit.saves = (console.edit.saves or 0) + 1
 		-- A new file has just come into being writable; say so.
 		console.edit.readonly = false
