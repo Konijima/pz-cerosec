@@ -1018,13 +1018,13 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "syntax", world = true,
 		phrase = "a quote left open is refused",
 		why = "one typing line: no PS2 continuation, so the line is refused" },
-	-- Reasons no errno ever named, kept in this machine's own words: a
-	-- device, a name with characters the disk will not keep, a file past
-	-- the size a file may be. (4.4BSD's sh had no word for EFBIG at all:
-	-- errmsg() printed "error 27".)
+	-- Reasons kept in this machine's own words: a device and a name with
+	-- characters the disk will not keep, which no errno named, and a file
+	-- that grows past its size at a ">", where sh's errormsg[] had no row
+	-- for EFBIG and printed "error 27" (a command says File too large).
 	{ name = "errno", world = true,
 		phrase = "is a device, invalid characters and file too large",
-		why = "refusals no errno named keep this machine's own words" },
+		why = "no errno, or no word in sh's table, so the machine's own" },
 	-- 4.4BSD sh's error() signs with commandname: nothing at the prompt,
 	-- the script's name inside a script, and no line number. This one signs
 	-- its own run-time errors "sh:" at the prompt and "name: line N:" in a
@@ -4186,7 +4186,10 @@ end
 commands.find = function(state, session, args, env, stdin, sh)
 	local plan, unknown = findParse(args)
 	if plan == nil then
-		if unknown ~= nil then return badOption("find", unknown) end
+		-- find is not getopt(3): its primaries are words, and 4.4BSD-Lite2
+		-- usr.bin/find/option.c refuses one it does not know with
+		-- errx(1, "%s: unknown option", *argv) -- the word, and no usage.
+		if unknown ~= nil then return fail("find", unknown, "unknown option") end
 		return usage("find")
 	end
 	local name, kind, actions = plan.name, plan.kind, plan.actions
@@ -4753,7 +4756,10 @@ commands.tar = function(state, session, args, env, stdin, sh)
 		elseif c == "f" then
 			wantFile = true
 		else
-			return badOption("tar", c)
+			-- Nor is tar: 4.4BSD-Lite2's is pax in tar mode, and
+			-- bin/pax/options.c walks the key letters by hand and answers
+			-- a letter it does not know with tar_usage() alone.
+			return usage("tar")
 		end
 	end
 	if kind == nil or not wantFile then return usage("tar") end

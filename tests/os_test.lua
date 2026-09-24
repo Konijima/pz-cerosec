@@ -15037,8 +15037,7 @@ do
 	badAt(state, admin, "find", USAGE)
 	badAt(state, admin, "find tree -type x", USAGE)
 	badAt(state, admin, "find tree -name", USAGE)
-	badAtLines(state, admin, "find tree -depth 2", { "find: illegal option -- d",
-		"usage: find <path>... [expression]" })
+	badAt(state, admin, "find tree -depth 2", "find: -depth: unknown option")
 	badAt(state, admin, "find nosuch", "find: nosuch: No such file or directory")
 
 	-- A directory it may not read is NAMED and not entered, and the walk goes on.
@@ -15276,8 +15275,8 @@ do
 	-- What it refuses. A key that is not one, two keys, no `f`, no archive, no
 	-- path to store, and a file that is not an archive.
 	local USAGE = "tar: usage: tar c|x|t[v]f <archive> [path]..."
-	badAtLines(state, admin, "tar zcf a.tar /etc/motd", { "tar: illegal option -- z",
-		"usage: tar c|x|t[v]f <archive> [path]..." }, env)
+	badAt(state, admin, "tar zcf a.tar /etc/motd",
+		"tar: usage: tar c|x|t[v]f <archive> [path]...", env)
 	badAt(state, admin, "tar cxf a.tar /etc/motd", USAGE, env)
 	badAt(state, admin, "tar c a.tar /etc/motd", USAGE, env)
 	badAt(state, admin, "tar cf", USAGE, env)

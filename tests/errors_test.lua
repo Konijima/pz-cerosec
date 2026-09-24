@@ -108,7 +108,7 @@ do
 	local state = CeroSecOS.newState("ksp-front-01")
 	local admin = CeroSecOS.login(state, "admin", "")
 	says(state, admin, "cat nosuch", { "cat: nosuch: No such file or directory" }, 1)
-	says(state, admin, "cd /root", { "cd: /root: Permission denied" }, 1)
+	says(state, admin, "ls /root", { "ls: /root: Permission denied" }, 1)
 	says(state, admin, "cat /etc", { "cat: /etc: Is a directory" }, 1)
 end
 

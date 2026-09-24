@@ -267,9 +267,10 @@ here, and so is a line that ends in | or &&, or an if with no fi:
 sh waited for the rest at its second prompt, and this screen has one
 typing line. What it says is end of file unexpected.
 
-Three refusals had no errno to name them and keep this machine's own
-words: is a device, invalid characters and file too large (sh itself
-said error 27 for that one). So does /dev: read-only.
+Some refusals keep this machine's own
+words: is a device, invalid characters and file too large -- the first
+two because no errno named them, the last only at a >, where sh's own
+table had no word for it and printed error 27. So does /dev: read-only.
 
 The shell signs its own complaints sh: at the prompt, and name: line
 N: in a script, where 4.4BSD's said nothing at the prompt and gave no
@@ -2113,6 +2114,7 @@ One there but not yours to run says permission denied instead.
   <cmd>: illegal option -- <flag>
   usage: <the shape of it>
       a flag it does not have, and the shape it wanted
+  find: <primary>: unknown option
   chmod: <mode>: invalid mode
       neither three digits nor a clause in letters
   man: <name>: no manual entry
