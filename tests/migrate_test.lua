@@ -246,10 +246,10 @@ for i = 1, #fixtures do
 	-- The files, byte for byte.
 	local notes = CeroSecOS.systemNode(state, "/home/sam/notes.txt")
 	check(at .. "sam's file is there", notes ~= nil)
-	eq(at .. "with what he wrote in it", notes.data, "the generator needs fuel")
+	eq(at .. "with what he wrote in it", notes.data, "the generator needs fuel\n")
 	local todo = CeroSecOS.systemNode(state, "/home/admin/todo.txt")
 	check(at .. "and admin's", todo ~= nil)
-	eq(at .. "with his", todo.data, "check the back door")
+	eq(at .. "with his", todo.data, "check the back door\n")
 
 	-- And the script RUNS, which is the half no field can prove: a file whose owner,
 	-- mode or bytes a migration touched is a file the shell will not read.
@@ -439,7 +439,7 @@ for i = 1, #fixtures do
 	eq(at .. "and the gate still takes it", CeroSecOS.validate(state), true)
 	eq(at .. "sam still logs in", CeroSecOS.login(state, "sam", "letmein") ~= nil, true)
 	eq(at .. "his file is still his file",
-		CeroSecOS.systemNode(state, "/home/sam/notes.txt").data, "the generator needs fuel")
+		CeroSecOS.systemNode(state, "/home/sam/notes.txt").data, "the generator needs fuel\n")
 	eq(at .. "and the disk is still labelled", CeroSecOS.floppyOf(state).label, "PAYROLL 93")
 
 	--
@@ -514,12 +514,12 @@ do
 		-- And the flag is off every node.
 		eq("the quota flag is off the history", hist.nq, nil)
 		eq("and off every other node", state.fs.children.etc.children.motd.nq, nil)
-		eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi")
+		eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi\n")
 
 		-- And what was on the machine is still on it: a step that converts the
 		-- accounts has no business touching anything else.
 		eq("sam's file survived the conversion",
-			CeroSecOS.systemNode(state, "/home/sam/notes.txt").data, "the generator needs fuel")
+			CeroSecOS.systemNode(state, "/home/sam/notes.txt").data, "the generator needs fuel\n")
 		eq("and the disk is still in the drive", CeroSecOS.floppyOf(state).label, "PAYROLL 93")
 
 		-- Twice is once, here too, and byte for byte: the accounts conversion is the one

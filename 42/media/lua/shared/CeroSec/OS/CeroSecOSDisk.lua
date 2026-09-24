@@ -143,14 +143,29 @@ CeroSecOS.FS_TYPE = "ufs"
 --
 -- It has a chain of its own beside it, the same shape the machine's has and for the
 -- same reason: CeroSecOS.DISK_MIGRATIONS[n] takes a disk at n - 1 and leaves it at
--- n (CeroSecOS.migrateDisk). Empty today, because nothing on a disk has changed
--- shape yet -- the LABEL has no version of its own and never will, because it is
--- one of the three keys a disk owns and travels in the disk's own record.
-CeroSecOS.FLOPPY_VERSION = 1
+-- n (CeroSecOS.migrateDisk). The LABEL has no version of its own and never
+-- will, because it is one of the three keys a disk owns and travels in the
+-- disk's own record.
+--
+-- 2: a file's last line carries its "\n", the step the machine's own state
+-- took at STATE_VERSION 3 and for the same reason. A floppy carries files
+-- between machines, so one written before it would otherwise put an open last
+-- line onto every drive it visits.
+CeroSecOS.FLOPPY_VERSION = 2
 
 -- The steps, and the oldest shape they can start from.
 CeroSecOS.DISK_MIGRATIONS = {}
 CeroSecOS.OLDEST_FLOPPY_VERSION = 1
+
+-- Paid out of the floppy's own 4096 bytes and never past them: the slot
+-- refuses a disk over FLOPPY_BYTES (CeroSecOS.validateDisk), so a full disk
+-- keeps its files as they were rather than becoming a disk no drive takes.
+-- An unformatted disk has no tree and nothing to close.
+CeroSecOS.DISK_MIGRATIONS[2] = function(disk)
+	if type(disk.fs) ~= "table" then return end
+	local _, bytes = CeroSecOS.subtreeUsage(disk.fs)
+	CeroSecOS.terminateFiles(disk.fs, CeroSecOS.FLOPPY_BYTES - (bytes or 0))
+end
 
 -- How long a volume label may be, and the ONE place that number lives: the
 -- inventory's label box derives its own ceiling from this, so a label a survivor

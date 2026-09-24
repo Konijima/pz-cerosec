@@ -119,10 +119,10 @@ end
 -- CeroSecOS.historyAppend.
 local function historyText(lines, ceiling)
 	while #lines > CeroSecOS.HISTORY_MAX do table.remove(lines, 1) end
-	local text = table.concat(lines, "\n")
+	local text = CeroSecOS.linesToText(lines)
 	while #text > ceiling and #lines > 1 do
 		table.remove(lines, 1)
-		text = table.concat(lines, "\n")
+		text = CeroSecOS.linesToText(lines)
 	end
 	-- One line of its own, longer than the whole file may be: cut rather than
 	-- refused, because the alternative is a history that silently stops.
@@ -1018,12 +1018,8 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "su", phrase = "4.4BSD and System V said Sorry",
 		why = "authentication failure is later Linux wording" },
 
-	-- The FILES and the SHELL. A file's text is stored as its lines joined
-	-- by "\n" with nothing after the last one (CeroSecOS.splitLines is the
-	-- reader), so `echo a > p` is one byte, and `>>` starts a line of its own.
-	{ name = "newline", world = true,
-		phrase = "A file keeps no newline after its last line",
-		why = "the text is its lines joined; nothing follows the last" },
+	-- The FILES and the SHELL. (A file's last line used to have no "\n"
+	-- after it; it has one since STATE_VERSION 3 and that deviation is gone.)
 	-- Field splitting is blanks, tabs and newlines (CeroSecOSVM's readFields
 	-- and the word expander); IFS is an ordinary name.
 	{ name = "IFS", world = true, phrase = "IFS is not read",
@@ -5603,7 +5599,7 @@ commands.edit = function(state, session, args, env)
 		end
 		return true, {}, "edit", {
 			path = abs,
-			text = node.data or "",
+			text = CeroSecOS.bufferOf(node.data),
 			readonly = not CeroSecOS.can(state, session, node, "w"),
 			-- Who the buffer was opened by, so that the save four minutes later
 			-- is the write this command was allowed. Under sudo that is root

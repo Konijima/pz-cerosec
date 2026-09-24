@@ -178,7 +178,7 @@ function CeroSecOS.ensureCallsign(state)
 	if etc == nil then return false end
 	if etc.children.callsign ~= nil then return false end
 	etc.children.callsign =
-		CeroSecOS.newFile("root", CeroSecOS.CALLSIGN_MODE, call)
+		CeroSecOS.newFile("root", CeroSecOS.CALLSIGN_MODE, CeroSecOS.terminated(call))
 	return true
 end
 
@@ -573,7 +573,7 @@ local function myCall(state, session, cont, word)
 	-- which is what programming a box's memory is -- and only root may, /etc
 	-- being root's directory.
 	local done, why = CeroSecOS.writeFile(state, session,
-		CeroSecOS.CALLSIGN_PATH, call, false, nil)
+		CeroSecOS.CALLSIGN_PATH, CeroSecOS.terminated(call), false, nil)
 	if done == nil then
 		return atCmd({ "cu: " .. CeroSecOS.CALLSIGN_PATH .. ": " ..
 			tostring(why) }, cont.to)

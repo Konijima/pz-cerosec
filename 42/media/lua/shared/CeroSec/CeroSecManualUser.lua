@@ -282,10 +282,6 @@ is later Linux wording: 4.4BSD and System V said Sorry.]],
 
 [[What is not Unix here: files and the shell.
 
-A file keeps no newline after its last line. echo a > p makes a file of
-one byte where a real one makes two, so wc -c counts one short; and
-echo -n x > f then echo y >> f is two lines here, not xy.
-
 IFS is not read: a line is cut into words at blanks, tabs and newlines,
 whatever IFS holds.
 
@@ -1793,7 +1789,7 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2792  62744    5%
+  hda         65536   2800  62736    5%
   nodes         512    107    405   21%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%

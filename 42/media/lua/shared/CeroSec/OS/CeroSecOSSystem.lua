@@ -57,7 +57,7 @@ function CeroSecOS.fillBin(bin)
 	end
 	local names = CeroSecOS.binNames()
 	for i = 1, #names do
-		bin.children[names[i]] = CeroSecOS.newFile("root", 755, CeroSecOS.terminated(CeroSecOS.commandDesc(names[i])))
+		bin.children[names[i]] = CeroSecOS.newFile("root", 755, CeroSecOS.commandDesc(names[i]))
 	end
 	return bin
 end
@@ -163,9 +163,8 @@ function CeroSecOS.ensureWheel(state)
 		-- wheel is one of them. A line added here would make that file parse to one
 		-- group and so make the repair keep it for ever.
 		if #order > 0 and groups[CeroSecOS.WHEEL_GROUP] == nil then
-			local text = group.data or ""
-			if text ~= "" then text = text .. "\n" end
-			text = text .. CeroSecOS.groupLine({ name = CeroSecOS.WHEEL_GROUP, members = {} })
+			local text = CeroSecOS.appendLine(group.data,
+				CeroSecOS.groupLine({ name = CeroSecOS.WHEEL_GROUP, members = {} }))
 			if CeroSecOS.setData(state, root, CeroSecOS.GROUP_PATH, text) ~= nil then
 				changed = true
 			end
@@ -180,9 +179,7 @@ function CeroSecOS.ensureWheel(state)
 		-- carries the wheel line already. Adding a line to a rubbish file here
 		-- would make it parse to somebody and so make the repair keep it for ever.
 		if #order > 0 and entries["%" .. CeroSecOS.WHEEL_GROUP] == nil then
-			local text = sudoers.data or ""
-			if text ~= "" then text = text .. "\n" end
-			text = text .. "%" .. CeroSecOS.WHEEL_GROUP
+			local text = CeroSecOS.appendLine(sudoers.data, "%" .. CeroSecOS.WHEEL_GROUP)
 			if CeroSecOS.setData(state, root, CeroSecOS.SUDOERS_PATH, text) ~= nil then
 				changed = true
 			end
@@ -255,7 +252,7 @@ function CeroSecOS.upgradeSystem(state)
 		local names = CeroSecOS.binNames()
 		for i = 1, #names do
 			local name = names[i]
-			local info = CeroSecOS.terminated(CeroSecOS.commandDesc(name))
+			local info = CeroSecOS.commandDesc(name)
 			if bin.children[name] == nil
 					and nodes + 1 <= CeroSecOS.MAX_NODES
 					and bytes + #info <= CeroSecOS.MAX_TOTAL_BYTES
@@ -417,7 +414,7 @@ function CeroSecOS.setHostname(state, name, now)
 	-- leaves the seeded line again.
 	local issue = CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH)
 	if type(issue) == "table" and issue.type == "file"
-			and (issue.data or "") == CeroSecOS.terminated(CeroSecOS.issueText(old)) then
+			and CeroSecOS.sameText(issue.data, CeroSecOS.issueText(old)) then
 		CeroSecOS.writeFile(state, CeroSecOS.rootSession(), CeroSecOS.ISSUE_PATH,
 			CeroSecOS.terminated(CeroSecOS.issueText(name)), false, now)
 	end

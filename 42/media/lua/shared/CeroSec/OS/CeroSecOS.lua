@@ -507,21 +507,96 @@ function CeroSecOS.terminated(text)
 	return text .. "\n"
 end
 
--- Every regular file under a tree, given the final "\n" a real one has, where
--- it has at least one line and does not already carry one. Idempotent by the
--- same check that makes CeroSecOS.terminated one: a file already ending in
--- "\n" is left untouched, so a second walk changes nothing. Shared by the
--- state's own migration (CeroSecOS.MIGRATIONS) and a floppy's
--- (CeroSecOS.DISK_MIGRATIONS), which is why it takes a bare tree and not a
--- state or a disk -- neither owns the shape, the filesystem under it does.
-function CeroSecOS.terminateFiles(node)
-	if type(node) ~= "table" then return end
-	if node.type == "file" then
-		node.data = CeroSecOS.terminated(node.data)
-		return
+-- Whether a file's bytes are the text a machine shipped, `want`, under either
+-- rule: bare, the way every file was stored before STATE_VERSION 3, or closed
+-- with the "\n" a file written since carries. A comparison that asked one form
+-- only would call a banner the machine seeded a survivor's own edit the moment
+-- the migration (CeroSecOS.terminateFiles) had left that one file as it was.
+function CeroSecOS.sameText(data, want)
+	if type(data) ~= "string" or type(want) ~= "string" then return false end
+	return data == want or data == want .. "\n"
+end
+
+-- One line put after whatever a file already holds, the way `echo line >> f`
+-- puts it: an open last line is closed first -- the "\n" a file stored before
+-- STATE_VERSION 3 never had -- and the new line carries its own.
+function CeroSecOS.appendLine(data, line)
+	local text = data or ""
+	if text ~= "" and not CeroSecOS.endsLine(text) then text = text .. "\n" end
+	return text .. line .. "\n"
+end
+
+-- The bytes the shipped executables in /bin hold. They are not text: a real
+-- /bin/ls is a binary that ends where its last byte does, and `cat /bin/ls`
+-- here shows its one-line stand-in the same way, unterminated. They are also
+-- the very bytes CeroSecOS.upgradeSystem's `drop` compares to retire a name,
+-- so a "\n" put on one would keep a retired command in /bin for ever.
+local function standIns()
+	local set = {}
+	for name in pairs(CeroSecOS.COMMAND_INFO or {}) do
+		local desc = CeroSecOS.commandDesc(name)
+		if type(desc) == "string" then set[desc] = true end
 	end
-	if type(node.children) ~= "table" then return end
-	for _, child in pairs(node.children) do CeroSecOS.terminateFiles(child) end
+	for _, desc in pairs(CeroSecOS.RETIRED_BIN or {}) do
+		if type(desc) == "string" then set[desc] = true end
+	end
+	return set
+end
+
+-- Every text file under a tree given the final "\n" a real one has: the step
+-- behind STATE_VERSION 3 (CeroSecOS.MIGRATIONS[3]) and FLOPPY_VERSION 2
+-- (CeroSecOS.DISK_MIGRATIONS[2]), which is why it takes a bare tree -- the
+-- filesystem owns the shape, not the state or the disk around it.
+--
+-- `room` is how many bytes the tree may still grow by, and the step never
+-- spends more: a floppy is refused at the slot past FLOPPY_BYTES and a file
+-- anywhere past MAX_FILE_BYTES (CeroSecOS.validateDisk), so a migration that
+-- added the byte regardless would turn a full disk into one no drive takes.
+-- A file it cannot close is left exactly as it was -- open, which a real Unix
+-- file may also be -- and reads the same lines either way (splitLines).
+--
+-- Left alone as well: an empty file (it has no line to end), one already
+-- ending in "\n", and the /bin stand-ins (standIns, above). Walked in
+-- childNames order, so which files a short budget closes is the same on
+-- every run. Idempotent: a second walk finds every file it could close
+-- already closed and no more room than the first left.
+--
+-- Bounded: one visit per node, and a tree is at most MAX_NODES of them.
+-- Answers how many files it closed.
+function CeroSecOS.terminateFiles(tree, room)
+	local skip = standIns()
+	local left = math.floor(tonumber(room) or 0)
+	local closed = 0
+	local function walk(node)
+		if type(node) ~= "table" then return end
+		if node.type == "file" then
+			local data = node.data
+			if type(data) ~= "string" or data == "" or CeroSecOS.endsLine(data) then return end
+			if skip[data] or left < 1 or #data + 1 > CeroSecOS.MAX_FILE_BYTES then return end
+			node.data = data .. "\n"
+			left = left - 1
+			closed = closed + 1
+			return
+		end
+		if node.type ~= "dir" or type(node.children) ~= "table" then return end
+		local names = CeroSecOS.childNames(node)
+		for i = 1, #names do walk(node.children[names[i]]) end
+	end
+	walk(tree)
+	return closed
+end
+
+-- What the editor shows of a file: its LINES, so the final "\n" -- the
+-- terminator of the last one, not a line of its own -- is taken off, and the
+-- save puts it back (SCeroSecSystem's editsave). That is vi's own round trip:
+-- a file is read into lines and written back with each one "followed by a
+-- <newline>" (POSIX ex(1), the write command), which is also why 4.4BSD vi
+-- adds the newline a file lacked. The same function gives the window the
+-- file to compare its buffer with, so an untouched buffer is not "modified".
+function CeroSecOS.bufferOf(data)
+	local text = data or ""
+	if CeroSecOS.endsLine(text) then return string.sub(text, 1, -2) end
+	return text
 end
 
 -- A list of lines, joined the way a real file holds them: every line ends in
