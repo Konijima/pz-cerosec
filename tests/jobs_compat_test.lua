@@ -109,20 +109,30 @@ do
 	eq("the pipe, uninterrupted, writes", want.pipe.files["/home/admin/up.txt"], "ONE\nTWO\nTHREE\n")
 end
 
--- The photograph, walked up, and the two jobs loaded and run to the end.
-do
-	local fixture = photo()
-	eq("the photograph is of the shape before STATE_VERSION 3", fixture.v, 2)
+-- The photograph, walked up with its book inside it, and the book read the
+-- way the server reads it at load (CeroSecJobs.readBook), on a stand-in for
+-- the machine object: what it needs of one is its state, that it is on,
+-- and where it is, for the log line.
+local function loadBook(fixture)
 	local state = fixture.state
 	local walked, why = CeroSecOS.migrate(state, "ksp-front-01")
 	check("the machine walks up (" .. tostring(why) .. ")", walked ~= nil)
 	local ok, reason = CeroSecOS.validate(state)
-	eq("and the gate takes it (" .. tostring(reason) .. ")", ok, true)
+	eq("and the gate takes it, book and all (" .. tostring(reason) .. ")", ok, true)
+	check("the book rode through", type(state.jobs) == "table" and #state.jobs.list == 2)
+	_G.getTimestampMs = function() return fixture.nowMs end
+	local machine = { os = state, on = true, x = 1, y = 2, z = 0 }
+	local back = CeroSecJobs.readBook(nil, machine)
+	return state, CeroSecJobs.book(machine).list, back
+end
 
-	for _, name in ipairs({ "loop", "pipe" }) do
-		check(name .. ": 0.6.1 saved it", type(fixture.jobs[name]) == "table")
-		local job, refusal = CeroSecJobs.jobFromData(fixture.jobs[name], fixture.nowMs)
-		check(name .. ": this build loads it (" .. tostring(refusal) .. ")", job ~= nil)
+do
+	local fixture = photo()
+	eq("the photograph is of the shape before STATE_VERSION 3", fixture.v, 2)
+	local state, list, back = loadBook(fixture)
+	eq("both jobs came back", back, 2)
+	for k, name in ipairs(fixture.order) do
+		local job = list[k]
 		eq(name .. ": asleep, as it was saved", job.state, "sleeping")
 		local env = { now = 725846400, nowMs = fixture.nowMs, jobs = { job } }
 		local out = finish(state, job, env)

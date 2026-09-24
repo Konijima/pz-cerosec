@@ -5,676 +5,11 @@
 -- loads it into whatever the code is now. Do not edit it to make a bench pass.
 --
 return {
-	jobs = {
-		loop = {
-			packed = {
-				args = {},
-				bg = true,
-				caps = {},
-				cmd = "sh /home/admin/loop.sh",
-				depth = 1,
-				exported = {
-					PATH = true,
-				},
-				frames = {
-					[1] = {
-						i = 3,
-						k = "block",
-						prog = {
-							[1] = {
-								k = "cmd",
-								line = 1,
-								redirect = {
-									append = false,
-									word = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "/home/admin/out.txt",
-											t = "lit",
-										},
-									},
-								},
-								words = {
-									[1] = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "echo",
-											t = "lit",
-										},
-									},
-									[2] = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "start",
-											t = "lit",
-										},
-									},
-								},
-							},
-							[2] = {
-								["$id"] = 1,
-								body = {
-									[1] = {
-										k = "cmd",
-										line = 3,
-										redirect = {
-											append = false,
-											word = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "/home/admin/last.txt",
-													t = "lit",
-												},
-											},
-										},
-										words = {
-											[1] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "echo",
-													t = "lit",
-												},
-											},
-											[2] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "line",
-													t = "lit",
-												},
-											},
-											[3] = {
-												[1] = {
-													name = "i",
-													q = false,
-													t = "var",
-												},
-											},
-										},
-									},
-									[2] = {
-										k = "cmd",
-										line = 4,
-										redirect = {
-											append = true,
-											word = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "/home/admin/out.txt",
-													t = "lit",
-												},
-											},
-										},
-										words = {
-											[1] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "echo",
-													t = "lit",
-												},
-											},
-											[2] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "line",
-													t = "lit",
-												},
-											},
-											[3] = {
-												[1] = {
-													name = "i",
-													q = false,
-													t = "var",
-												},
-											},
-										},
-									},
-									[3] = {
-										k = "cmd",
-										line = 5,
-										words = {
-											[1] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "sleep",
-													t = "lit",
-												},
-											},
-											[2] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "1",
-													t = "lit",
-												},
-											},
-										},
-									},
-									["$id"] = 2,
-								},
-								k = "for",
-								line = 2,
-								var = "i",
-								words = {
-									[1] = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "1",
-											t = "lit",
-										},
-									},
-									[2] = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "2",
-											t = "lit",
-										},
-									},
-									[3] = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "3",
-											t = "lit",
-										},
-									},
-								},
-							},
-							[3] = {
-								k = "cmd",
-								line = 7,
-								words = {
-									[1] = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "echo",
-											t = "lit",
-										},
-									},
-									[2] = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "after",
-											t = "lit",
-										},
-									},
-									[3] = {
-										[1] = {
-											q = false,
-											t = "status",
-										},
-									},
-								},
-							},
-							["$id"] = 3,
-						},
-					},
-					[2] = {
-						i = 3,
-						k = "for",
-						last = 0,
-						line = 2,
-						node = {
-							["$ref"] = 1,
-						},
-						phase = "body",
-						words = {
-							[1] = "1",
-							[2] = "2",
-							[3] = "3",
-						},
-					},
-					[3] = {
-						i = 4,
-						k = "block",
-						prog = {
-							["$ref"] = 2,
-						},
-					},
-				},
-				id = 1,
-				line = 5,
-				name = "loop.sh",
-				nvars = 2,
-				out = {},
-				partial = "",
-				prog = {
-					["$ref"] = 3,
-				},
-				session = {
-					cwd = "/home/admin",
-					login = "admin",
-					user = "admin",
-				},
-				sleepLeft = 600,
-				state = "sleeping",
-				status = 0,
-				steps = 9,
-				vars = {
-					PATH = "/bin:/usr/local/bin",
-					i = "2",
-				},
-			},
-		},
-		pipe = {
-			packed = {
-				["$id"] = 3,
-				args = {},
-				bg = true,
-				caps = {},
-				cmd = "sh /home/admin/pipe.sh",
-				depth = 1,
-				exported = {
-					PATH = true,
-				},
-				frames = {
-					[1] = {
-						i = 2,
-						k = "block",
-						prog = {
-							[1] = {
-								["$id"] = 12,
-								k = "pipe",
-								line = 1,
-								stages = {
-									[1] = {
-										["$id"] = 1,
-										body = {
-											[1] = {
-												k = "cmd",
-												line = 2,
-												words = {
-													[1] = {
-														[1] = {
-															bare = true,
-															q = true,
-															s = "echo",
-															t = "lit",
-														},
-													},
-													[2] = {
-														[1] = {
-															name = "w",
-															q = false,
-															t = "var",
-														},
-													},
-												},
-											},
-											[2] = {
-												k = "cmd",
-												line = 3,
-												words = {
-													[1] = {
-														[1] = {
-															bare = true,
-															q = true,
-															s = "sleep",
-															t = "lit",
-														},
-													},
-													[2] = {
-														[1] = {
-															bare = true,
-															q = true,
-															s = "1",
-															t = "lit",
-														},
-													},
-												},
-											},
-											["$id"] = 2,
-										},
-										k = "for",
-										line = 1,
-										var = "w",
-										words = {
-											[1] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "one",
-													t = "lit",
-												},
-											},
-											[2] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "two",
-													t = "lit",
-												},
-											},
-											[3] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "three",
-													t = "lit",
-												},
-											},
-										},
-									},
-									[2] = {
-										["$id"] = 5,
-										k = "cmd",
-										line = 4,
-										redirect = {
-											append = false,
-											word = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "/home/admin/up.txt",
-													t = "lit",
-												},
-												["$id"] = 9,
-											},
-										},
-										words = {
-											[1] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "tr",
-													t = "lit",
-												},
-												["$id"] = 6,
-											},
-											[2] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "a-z",
-													t = "lit",
-												},
-												["$id"] = 7,
-											},
-											[3] = {
-												[1] = {
-													bare = true,
-													q = true,
-													s = "A-Z",
-													t = "lit",
-												},
-												["$id"] = 8,
-											},
-										},
-									},
-								},
-							},
-							[2] = {
-								k = "cmd",
-								line = 5,
-								words = {
-									[1] = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "echo",
-											t = "lit",
-										},
-									},
-									[2] = {
-										[1] = {
-											bare = true,
-											q = true,
-											s = "piped",
-											t = "lit",
-										},
-									},
-									[3] = {
-										[1] = {
-											q = false,
-											t = "status",
-										},
-									},
-								},
-							},
-							["$id"] = 14,
-						},
-					},
-					[2] = {
-						k = "pipe",
-						line = 1,
-						node = {
-							["$ref"] = 12,
-						},
-						pipes = {
-							[1] = {
-								["$ref"] = 10,
-							},
-							[2] = {
-								["$ref"] = 13,
-							},
-						},
-						stages = {
-							[1] = {
-								args = {},
-								bg = true,
-								caps = {},
-								cmd = "sh /home/admin/pipe.sh",
-								depth = 1,
-								errTo = {
-									["$ref"] = 3,
-								},
-								frames = {
-									[1] = {
-										i = 2,
-										k = "block",
-										prog = {
-											[1] = {
-												["$ref"] = 1,
-											},
-											["$id"] = 4,
-										},
-									},
-									[2] = {
-										i = 3,
-										k = "for",
-										last = 0,
-										line = 1,
-										node = {
-											["$ref"] = 1,
-										},
-										phase = "body",
-										words = {
-											[1] = "one",
-											[2] = "two",
-											[3] = "three",
-										},
-									},
-									[3] = {
-										i = 3,
-										k = "block",
-										prog = {
-											["$ref"] = 2,
-										},
-									},
-								},
-								id = 2,
-								inPipe = true,
-								line = 3,
-								name = "pipe.sh",
-								nvars = 2,
-								out = {},
-								partial = "",
-								pipe = {
-									["$id"] = 10,
-									bytes = 0,
-									closed = false,
-									eof = false,
-									lines = {},
-								},
-								prog = {
-									["$ref"] = 4,
-								},
-								screen = false,
-								session = {
-									cwd = "/home/admin",
-									login = "admin",
-									user = "admin",
-								},
-								sleepLeft = 600,
-								state = "sleeping",
-								status = 0,
-								steps = 0,
-								vars = {
-									PATH = "/bin:/usr/local/bin",
-									w = "two",
-								},
-							},
-							[2] = {
-								args = {},
-								bg = true,
-								blocked = "input",
-								caps = {},
-								cmd = "sh /home/admin/pipe.sh",
-								depth = 1,
-								errTo = {
-									["$ref"] = 3,
-								},
-								frames = {
-									[1] = {
-										i = 2,
-										k = "block",
-										prog = {
-											[1] = {
-												["$ref"] = 5,
-											},
-											["$id"] = 11,
-										},
-									},
-									[2] = {
-										ex = {
-											buf = "",
-											counts = {
-												[1] = 1,
-												[2] = 1,
-												[3] = 1,
-												[4] = 1,
-											},
-											fieldMasks = {},
-											fields = {},
-											mask = "",
-											nosplit = false,
-											open = false,
-											out = {
-												[1] = "tr",
-												[2] = "a-z",
-												[3] = "A-Z",
-												[4] = "/home/admin/up.txt",
-											},
-											outMasks = {
-												[1] = "gg",
-												[2] = "ggg",
-												[3] = "ggg",
-												[4] = "gggggggggggggggggg",
-											},
-											pi = 1,
-											wi = 5,
-											words = {
-												[1] = {
-													["$ref"] = 6,
-												},
-												[2] = {
-													["$ref"] = 7,
-												},
-												[3] = {
-													["$ref"] = 8,
-												},
-												[4] = {
-													["$ref"] = 9,
-												},
-											},
-										},
-										k = "cmd",
-										line = 4,
-										node = {
-											["$ref"] = 5,
-										},
-										phase = "run",
-										rd = {
-											carry = {},
-											want = true,
-											wrote = true,
-										},
-									},
-								},
-								id = 2,
-								inPipe = true,
-								line = 4,
-								name = "pipe.sh",
-								nvars = 1,
-								out = {},
-								partial = "",
-								pipe = {
-									["$id"] = 13,
-									bytes = 0,
-									closed = false,
-									eof = false,
-									lines = {},
-								},
-								prog = {
-									["$ref"] = 11,
-								},
-								screen = true,
-								session = {
-									cwd = "/home/admin",
-									login = "admin",
-									user = "admin",
-								},
-								state = "running",
-								status = 0,
-								stdinBuf = {
-									["$ref"] = 10,
-								},
-								steps = 0,
-								vars = {
-									PATH = "/bin:/usr/local/bin",
-								},
-							},
-						},
-					},
-				},
-				id = 2,
-				line = 1,
-				name = "pipe.sh",
-				nvars = 1,
-				out = {},
-				partial = "",
-				prog = {
-					["$ref"] = 14,
-				},
-				session = {
-					cwd = "/home/admin",
-					login = "admin",
-					user = "admin",
-				},
-				sleepLeft = 600,
-				state = "sleeping",
-				status = 0,
-				steps = 102,
-				vars = {
-					PATH = "/bin:/usr/local/bin",
-				},
-			},
-		},
-	},
 	nowMs = 4000,
+	order = {
+		[1] = "loop",
+		[2] = "pipe",
+	},
 	printed = {
 		loop = {},
 		pipe = {},
@@ -1495,6 +830,678 @@ return {
 			type = "dir",
 		},
 		hostname = "ksp-front-01",
+		jobs = {
+			list = {
+				[1] = {
+					packed = {
+						args = {},
+						bg = true,
+						caps = {},
+						cmd = "sh /home/admin/loop.sh",
+						depth = 1,
+						exported = {
+							PATH = true,
+						},
+						frames = {
+							[1] = {
+								i = 3,
+								k = "block",
+								prog = {
+									[1] = {
+										k = "cmd",
+										line = 1,
+										redirect = {
+											append = false,
+											word = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "/home/admin/out.txt",
+													t = "lit",
+												},
+											},
+										},
+										words = {
+											[1] = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "echo",
+													t = "lit",
+												},
+											},
+											[2] = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "start",
+													t = "lit",
+												},
+											},
+										},
+									},
+									[2] = {
+										["$id"] = 1,
+										body = {
+											[1] = {
+												k = "cmd",
+												line = 3,
+												redirect = {
+													append = false,
+													word = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "/home/admin/last.txt",
+															t = "lit",
+														},
+													},
+												},
+												words = {
+													[1] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "echo",
+															t = "lit",
+														},
+													},
+													[2] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "line",
+															t = "lit",
+														},
+													},
+													[3] = {
+														[1] = {
+															name = "i",
+															q = false,
+															t = "var",
+														},
+													},
+												},
+											},
+											[2] = {
+												k = "cmd",
+												line = 4,
+												redirect = {
+													append = true,
+													word = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "/home/admin/out.txt",
+															t = "lit",
+														},
+													},
+												},
+												words = {
+													[1] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "echo",
+															t = "lit",
+														},
+													},
+													[2] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "line",
+															t = "lit",
+														},
+													},
+													[3] = {
+														[1] = {
+															name = "i",
+															q = false,
+															t = "var",
+														},
+													},
+												},
+											},
+											[3] = {
+												k = "cmd",
+												line = 5,
+												words = {
+													[1] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "sleep",
+															t = "lit",
+														},
+													},
+													[2] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "1",
+															t = "lit",
+														},
+													},
+												},
+											},
+											["$id"] = 2,
+										},
+										k = "for",
+										line = 2,
+										var = "i",
+										words = {
+											[1] = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "1",
+													t = "lit",
+												},
+											},
+											[2] = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "2",
+													t = "lit",
+												},
+											},
+											[3] = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "3",
+													t = "lit",
+												},
+											},
+										},
+									},
+									[3] = {
+										k = "cmd",
+										line = 7,
+										words = {
+											[1] = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "echo",
+													t = "lit",
+												},
+											},
+											[2] = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "after",
+													t = "lit",
+												},
+											},
+											[3] = {
+												[1] = {
+													q = false,
+													t = "status",
+												},
+											},
+										},
+									},
+									["$id"] = 3,
+								},
+							},
+							[2] = {
+								i = 3,
+								k = "for",
+								last = 0,
+								line = 2,
+								node = {
+									["$ref"] = 1,
+								},
+								phase = "body",
+								words = {
+									[1] = "1",
+									[2] = "2",
+									[3] = "3",
+								},
+							},
+							[3] = {
+								i = 4,
+								k = "block",
+								prog = {
+									["$ref"] = 2,
+								},
+							},
+						},
+						id = 1,
+						line = 5,
+						name = "loop.sh",
+						nvars = 2,
+						out = {},
+						partial = "",
+						prog = {
+							["$ref"] = 3,
+						},
+						session = {
+							cwd = "/home/admin",
+							login = "admin",
+							user = "admin",
+						},
+						sleepLeft = 600,
+						state = "sleeping",
+						status = 0,
+						steps = 9,
+						vars = {
+							PATH = "/bin:/usr/local/bin",
+							i = "2",
+						},
+					},
+				},
+				[2] = {
+					packed = {
+						["$id"] = 3,
+						args = {},
+						bg = true,
+						caps = {},
+						cmd = "sh /home/admin/pipe.sh",
+						depth = 1,
+						exported = {
+							PATH = true,
+						},
+						frames = {
+							[1] = {
+								i = 2,
+								k = "block",
+								prog = {
+									[1] = {
+										["$id"] = 12,
+										k = "pipe",
+										line = 1,
+										stages = {
+											[1] = {
+												["$id"] = 1,
+												body = {
+													[1] = {
+														k = "cmd",
+														line = 2,
+														words = {
+															[1] = {
+																[1] = {
+																	bare = true,
+																	q = true,
+																	s = "echo",
+																	t = "lit",
+																},
+															},
+															[2] = {
+																[1] = {
+																	name = "w",
+																	q = false,
+																	t = "var",
+																},
+															},
+														},
+													},
+													[2] = {
+														k = "cmd",
+														line = 3,
+														words = {
+															[1] = {
+																[1] = {
+																	bare = true,
+																	q = true,
+																	s = "sleep",
+																	t = "lit",
+																},
+															},
+															[2] = {
+																[1] = {
+																	bare = true,
+																	q = true,
+																	s = "1",
+																	t = "lit",
+																},
+															},
+														},
+													},
+													["$id"] = 2,
+												},
+												k = "for",
+												line = 1,
+												var = "w",
+												words = {
+													[1] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "one",
+															t = "lit",
+														},
+													},
+													[2] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "two",
+															t = "lit",
+														},
+													},
+													[3] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "three",
+															t = "lit",
+														},
+													},
+												},
+											},
+											[2] = {
+												["$id"] = 5,
+												k = "cmd",
+												line = 4,
+												redirect = {
+													append = false,
+													word = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "/home/admin/up.txt",
+															t = "lit",
+														},
+														["$id"] = 9,
+													},
+												},
+												words = {
+													[1] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "tr",
+															t = "lit",
+														},
+														["$id"] = 6,
+													},
+													[2] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "a-z",
+															t = "lit",
+														},
+														["$id"] = 7,
+													},
+													[3] = {
+														[1] = {
+															bare = true,
+															q = true,
+															s = "A-Z",
+															t = "lit",
+														},
+														["$id"] = 8,
+													},
+												},
+											},
+										},
+									},
+									[2] = {
+										k = "cmd",
+										line = 5,
+										words = {
+											[1] = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "echo",
+													t = "lit",
+												},
+											},
+											[2] = {
+												[1] = {
+													bare = true,
+													q = true,
+													s = "piped",
+													t = "lit",
+												},
+											},
+											[3] = {
+												[1] = {
+													q = false,
+													t = "status",
+												},
+											},
+										},
+									},
+									["$id"] = 14,
+								},
+							},
+							[2] = {
+								k = "pipe",
+								line = 1,
+								node = {
+									["$ref"] = 12,
+								},
+								pipes = {
+									[1] = {
+										["$ref"] = 10,
+									},
+									[2] = {
+										["$ref"] = 13,
+									},
+								},
+								stages = {
+									[1] = {
+										args = {},
+										bg = true,
+										caps = {},
+										cmd = "sh /home/admin/pipe.sh",
+										depth = 1,
+										errTo = {
+											["$ref"] = 3,
+										},
+										frames = {
+											[1] = {
+												i = 2,
+												k = "block",
+												prog = {
+													[1] = {
+														["$ref"] = 1,
+													},
+													["$id"] = 4,
+												},
+											},
+											[2] = {
+												i = 3,
+												k = "for",
+												last = 0,
+												line = 1,
+												node = {
+													["$ref"] = 1,
+												},
+												phase = "body",
+												words = {
+													[1] = "one",
+													[2] = "two",
+													[3] = "three",
+												},
+											},
+											[3] = {
+												i = 3,
+												k = "block",
+												prog = {
+													["$ref"] = 2,
+												},
+											},
+										},
+										id = 2,
+										inPipe = true,
+										line = 3,
+										name = "pipe.sh",
+										nvars = 2,
+										out = {},
+										partial = "",
+										pipe = {
+											["$id"] = 10,
+											bytes = 0,
+											closed = false,
+											eof = false,
+											lines = {},
+										},
+										prog = {
+											["$ref"] = 4,
+										},
+										screen = false,
+										session = {
+											cwd = "/home/admin",
+											login = "admin",
+											user = "admin",
+										},
+										sleepLeft = 600,
+										state = "sleeping",
+										status = 0,
+										steps = 0,
+										vars = {
+											PATH = "/bin:/usr/local/bin",
+											w = "two",
+										},
+									},
+									[2] = {
+										args = {},
+										bg = true,
+										blocked = "input",
+										caps = {},
+										cmd = "sh /home/admin/pipe.sh",
+										depth = 1,
+										errTo = {
+											["$ref"] = 3,
+										},
+										frames = {
+											[1] = {
+												i = 2,
+												k = "block",
+												prog = {
+													[1] = {
+														["$ref"] = 5,
+													},
+													["$id"] = 11,
+												},
+											},
+											[2] = {
+												ex = {
+													buf = "",
+													counts = {
+														[1] = 1,
+														[2] = 1,
+														[3] = 1,
+														[4] = 1,
+													},
+													fieldMasks = {},
+													fields = {},
+													mask = "",
+													nosplit = false,
+													open = false,
+													out = {
+														[1] = "tr",
+														[2] = "a-z",
+														[3] = "A-Z",
+														[4] = "/home/admin/up.txt",
+													},
+													outMasks = {
+														[1] = "gg",
+														[2] = "ggg",
+														[3] = "ggg",
+														[4] = "gggggggggggggggggg",
+													},
+													pi = 1,
+													wi = 5,
+													words = {
+														[1] = {
+															["$ref"] = 6,
+														},
+														[2] = {
+															["$ref"] = 7,
+														},
+														[3] = {
+															["$ref"] = 8,
+														},
+														[4] = {
+															["$ref"] = 9,
+														},
+													},
+												},
+												k = "cmd",
+												line = 4,
+												node = {
+													["$ref"] = 5,
+												},
+												phase = "run",
+												rd = {
+													carry = {},
+													want = true,
+													wrote = true,
+												},
+											},
+										},
+										id = 2,
+										inPipe = true,
+										line = 4,
+										name = "pipe.sh",
+										nvars = 1,
+										out = {},
+										partial = "",
+										pipe = {
+											["$id"] = 13,
+											bytes = 0,
+											closed = false,
+											eof = false,
+											lines = {},
+										},
+										prog = {
+											["$ref"] = 11,
+										},
+										screen = true,
+										session = {
+											cwd = "/home/admin",
+											login = "admin",
+											user = "admin",
+										},
+										state = "running",
+										status = 0,
+										stdinBuf = {
+											["$ref"] = 10,
+										},
+										steps = 0,
+										vars = {
+											PATH = "/bin:/usr/local/bin",
+										},
+									},
+								},
+							},
+						},
+						id = 2,
+						line = 1,
+						name = "pipe.sh",
+						nvars = 1,
+						out = {},
+						partial = "",
+						prog = {
+							["$ref"] = 14,
+						},
+						session = {
+							cwd = "/home/admin",
+							login = "admin",
+							user = "admin",
+						},
+						sleepLeft = 600,
+						state = "sleeping",
+						status = 0,
+						steps = 102,
+						vars = {
+							PATH = "/bin:/usr/local/bin",
+						},
+					},
+				},
+			},
+			seq = 2,
+		},
 		sessions = {},
 		sysv = 21,
 		v = 2,

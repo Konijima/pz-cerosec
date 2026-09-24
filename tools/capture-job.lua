@@ -161,13 +161,18 @@ write = function(value, indent, parts)
 	parts[#parts + 1] = indent .. "}"
 end
 
+-- Into the state the way the build's own writeBook puts a book there:
+-- { seq, list }, in the order the jobs were started. That is where a save
+-- keeps them, so migrate and validate meet them before any job is read.
+state.jobs = { seq = 2, list = { saved.loop, saved.pipe } }
+
 local fixture = {
 	v = state.v,
 	sysv = state.sysv,
 	nowMs = env.nowMs,
 	scripts = SCRIPTS,
 	printed = printed,
-	jobs = saved,
+	order = { "loop", "pipe" },
 	state = state,
 }
 local parts = {}

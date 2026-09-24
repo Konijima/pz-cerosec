@@ -689,6 +689,18 @@ do
 		end
 	end
 
+	-- The hole in the walk above: a command dated at the CURRENT number with
+	-- no bump passes it, because the newest photograph is below that number.
+	-- So what each number added is pinned with the number, and the next
+	-- command means the next number and a new line here.
+	local dated = {}
+	for name, since in pairs(CeroSecOS.BIN_SINCE) do
+		if since == CeroSecOS.SYSTEM_VERSION then dated[#dated + 1] = name end
+	end
+	table.sort(dated)
+	eq("what SYSTEM_VERSION added (a new command is a bump, not a line at 22)",
+		CeroSecOS.SYSTEM_VERSION .. ": " .. table.concat(dated, " "), "22: expr rmdir uname")
+
 	-- And what a gated top-up must NOT do: put back what the owner deleted. A
 	-- save at 21 had the whole top-up once; its missing /bin/wall, /etc/issue
 	-- and wheel line are his deletions, and the contract is that they stay.
