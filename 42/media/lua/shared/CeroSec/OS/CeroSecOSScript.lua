@@ -20,7 +20,7 @@
 --   statement := andor [ "&" ]
 --   andor     := pipeline (( "&&" | "||" ) pipeline)*
 --   pipeline  := piece ( "|" piece )*
---   piece     := if | for | while | until | case | func | simple
+--   piece     := if | for | while | until | case | group | func | simple
 --   if        := "if" program "then" program
 --                ("elif" program "then" program)* [ "else" program ] "fi"
 --   for       := "for" NAME [ "in" word* ] (";"|newline) "do" program "done"
@@ -28,8 +28,10 @@
 --   until     := "until" program "do" program "done"
 --   case      := "case" word "in" clause* "esac"
 --   clause    := [ "(" ] word ( "|" word )* ")" program [ ";;" ]
---   func      := NAME "()" "{" program "}"
---   simple    := word* [ (">"|">>") word ]
+--   group     := ( "{" program "}" | "(" program ")" ) redirect*
+--   func      := NAME "(" ")" "{" program "}"
+--   simple    := ( word | redirect )*
+--   redirect  := [ "2" ] ( ">" | ">>" ) word | [ "1" | "2" ] ">&" ( "1" | "2" )
 --
 -- A word is an array of PARTS, because what a word means is only known when
 -- the job runs it:
@@ -37,7 +39,7 @@
 --   { t = "lit",    s = "notes",  q = true  }   plain text, never split
 --   { t = "var",    name = "N",   q = false }   $N or ${N}
 --   { t = "arg",    n = 1,        q = false }   $1..$9, $0
---   { t = "count"|"all"|"status"|"job",   q }   $# $@ $? $$
+--   { t = "count"|"all"|"star"|"status"|"job"|"bang", q }   $# $@ $* $? $$ $!
 --   { t = "sub",    prog = <program>,     q }   $(command)
 --   { t = "arith",  expr = "1 + $x",      q }   $((expression))
 --
@@ -84,12 +86,16 @@ CeroSecOS.MAX_FUNCS = 16
 CeroSecOS.MAX_STAGES = 8
 
 -- The words that are only words in command position. `echo done` prints
--- "done"; `done` on its own is the end of a loop, or a mistake.
+-- "done"; `done` on its own is the end of a loop, or a mistake. The braces
+-- are among them (POSIX.2 XCU 2.4; 4.4BSD-Lite2 sh's TBEGIN and TEND in
+-- bin/sh/mktokens): `echo {` prints it, `{echo a;}` is the word `{echo` and
+-- then a `}` where a command starts, which is `"}" unexpected` on sh.
 CeroSecOS.RESERVED = {
 	["if"] = true, ["then"] = true, ["elif"] = true, ["else"] = true, ["fi"] = true,
 	["for"] = true, ["in"] = true, ["while"] = true, ["until"] = true,
 	["do"] = true, ["done"] = true,
 	["case"] = true, ["esac"] = true,
+	["{"] = true, ["}"] = true,
 }
 
 local function isNameStart(c)
@@ -98,6 +104,18 @@ end
 
 local function isNameChar(c)
 	return c ~= "" and string.find(c, "^[A-Za-z0-9_]") ~= nil
+end
+
+-- The special parameters that may stand in braces, and the part each is.
+local SPECIAL_IN_BRACES = {
+	["@"] = "all", ["*"] = "star", ["#"] = "count",
+	["?"] = "status", ["$"] = "job", ["!"] = "bang",
+}
+
+-- Digits and nothing else: ${1} and ${10}, a positional parameter inside
+-- braces. Never a variable -- isVarName refuses a leading digit.
+local function isPositional(name)
+	return name ~= "" and string.find(name, "^[0-9]+$") ~= nil
 end
 
 -- A variable name: what may sit on the left of "=" and inside ${}.
@@ -133,7 +151,7 @@ end
 -- shape that lets a short line ask for an unbounded amount of work, and there is
 -- no script worth writing on a 1993 desk machine that needs two.
 local function readCommandSub(text, i, depth)
-	if depth > 0 then return nil, "syntax error: bad substitution" end
+	if depth > 0 then return nil, "Syntax error: Bad substitution" end
 	local n = #text
 	local j, level, quote = i + 2, 0, nil
 	while j <= n do
@@ -152,7 +170,7 @@ local function readCommandSub(text, i, depth)
 		-- for a sum. Its brackets are balanced, so the level count below carries it.
 		elseif ch == "$" and string.sub(text, j + 1, j + 1) == "("
 				and string.sub(text, j + 2, j + 2) ~= "(" then
-			return nil, "syntax error: bad substitution"
+			return nil, "Syntax error: Bad substitution"
 		elseif ch == "(" then
 			level = level + 1
 		elseif ch == ")" then
@@ -166,7 +184,7 @@ local function readCommandSub(text, i, depth)
 		end
 		j = j + 1
 	end
-	return nil, "syntax error: bad substitution"
+	return nil, "Syntax error: Bad substitution"
 end
 
 -- `command`, from the opening backquote to the matching closing one: the
@@ -190,7 +208,7 @@ end
 -- { t = "sub", prog = ... } node, and every step after parsing, expansion,
 -- budget charging, field splitting, globbing, has one path.
 local function readBackquoteSub(text, i, depth)
-	if depth > 0 then return nil, "syntax error: bad substitution" end
+	if depth > 0 then return nil, "Syntax error: Bad substitution" end
 	local n = #text
 	local j, buf = i + 1, ""
 	while j <= n do
@@ -213,7 +231,7 @@ local function readBackquoteSub(text, i, depth)
 			j = j + 1
 		end
 	end
-	return nil, "syntax error: bad substitution"
+	return nil, "Syntax error: Bad substitution"
 end
 
 -- The inside of a $(( )) as an array of PARTS, when it holds a command
@@ -260,6 +278,12 @@ local function arithParts(text, depth)
 	return parts
 end
 
+-- The word after :- := :? :+ # ## % %%, defined below readDollar because the
+-- two call each other: a name inside the braces may itself hold a bare $x or
+-- ${x}, and readDollar's own "{" arm reads that word once it has the operator.
+-- Forward-declared so the mutual recursion compiles.
+local readBraceWord
+
 -- Everything from "$" onwards. Returns the part and the index just past it,
 -- or nil plus a reason.
 local function readDollar(text, i, quoted, depth)
@@ -279,7 +303,7 @@ local function readDollar(text, i, quoted, depth)
 				elseif ch == ")" then
 					if level == 0 then
 						if string.sub(text, j + 1, j + 1) ~= ")" then
-							return nil, "syntax error: bad substitution"
+							return nil, "Syntax error: Bad substitution"
 						end
 						local expr = string.sub(text, i + 3, j - 1)
 						-- The command substitutions in it, lifted out to be run
@@ -294,7 +318,7 @@ local function readDollar(text, i, quoted, depth)
 				end
 				j = j + 1
 			end
-			return nil, "syntax error: bad substitution"
+			return nil, "Syntax error: Bad substitution"
 		end
 
 		local prog, second = readCommandSub(text, i, depth)
@@ -303,15 +327,91 @@ local function readDollar(text, i, quoted, depth)
 	end
 
 	if c == "{" then
+		-- ${@} ${*} ${#} ${?} ${$} ${!}: the special parameters in braces,
+		-- the same parts their bare forms are (below). Before ${#name},
+		-- because ${#} is $# and not the length of nothing.
+		local sp = string.sub(text, i + 2, i + 2)
+		if string.sub(text, i + 3, i + 3) == "}" then
+			local kind = SPECIAL_IN_BRACES[sp]
+			if kind ~= nil then return { t = kind, q = quoted }, i + 4 end
+		end
+
+		-- ${#name}: the length, ksh88's own form and POSIX.2's. Read first
+		-- because "#" cannot start a name (isVarName says so), so it can
+		-- never be mistaken for one.
+		if string.sub(text, i + 2, i + 2) == "#" then
+			local k = i + 3
+			local name = ""
+			while k <= n and isNameChar(string.sub(text, k, k)) do
+				name = name .. string.sub(text, k, k)
+				k = k + 1
+			end
+			if string.sub(text, k, k) == "}" and CeroSecOS.isVarName(name) then
+				return { t = "vare", kind = "len", name = name, q = quoted }, k + 1
+			end
+			if string.sub(text, k, k) == "}" and isPositional(name) then
+				return { t = "vare", kind = "len", pos = tonumber(name), q = quoted }, k + 1
+			end
+			return nil, "Syntax error: Bad substitution"
+		end
+
 		local j = i + 2
 		local name = ""
-		while j <= n and string.sub(text, j, j) ~= "}" do
+		while j <= n and isNameChar(string.sub(text, j, j)) do
 			name = name .. string.sub(text, j, j)
 			j = j + 1
 		end
-		if j > n then return nil, "syntax error: bad substitution" end
-		if not CeroSecOS.isVarName(name) then return nil, "syntax error: bad substitution" end
-		return { t = "var", name = name, q = quoted }, j + 1
+		-- ${1}, ${10}: a positional parameter, the only way past $9 (POSIX.2
+		-- 2.5.1, "a positional parameter with more than one digit shall be
+		-- enclosed in braces"), and the name ${1:-default} carries.
+		local pos = nil
+		if isPositional(name) then
+			pos = tonumber(name)
+		elseif name == "" or not CeroSecOS.isVarName(name) then
+			return nil, "Syntax error: Bad substitution"
+		end
+		local nc = string.sub(text, j, j)
+		if nc == "}" then
+			if pos ~= nil then return { t = "arg", n = pos, q = quoted }, j + 1 end
+			return { t = "var", name = name, q = quoted }, j + 1
+		end
+
+		-- System V sh's :- := :? :+, and ksh88's # ## % %% -- the same set
+		-- CeroSecOS.globMatch already gives `case` and the shell's own
+		-- pathname expansion, so # and % read a PATTERN and never a Lua one.
+		local colon = false
+		if nc == ":" then
+			colon = true
+			j = j + 1
+			nc = string.sub(text, j, j)
+		end
+		local kind = nil
+		if nc == "-" then kind = "default"
+		elseif nc == "=" then kind = "assign"
+		elseif nc == "?" then kind = "error"
+		elseif nc == "+" then kind = "alt"
+		elseif not colon and nc == "#" then
+			if string.sub(text, j + 1, j + 1) == "#" then
+				kind = "trimPreLong"
+				j = j + 1
+			else
+				kind = "trimPre"
+			end
+		elseif not colon and nc == "%" then
+			if string.sub(text, j + 1, j + 1) == "%" then
+				kind = "trimSufLong"
+				j = j + 1
+			else
+				kind = "trimSuf"
+			end
+		end
+		if kind == nil then return nil, "Syntax error: Bad substitution" end
+		j = j + 1
+		local word, j2 = readBraceWord(text, j, depth)
+		if word == nil then return nil, j2 end
+		if pos ~= nil then name = nil end
+		return { t = "vare", kind = kind, name = name, pos = pos, word = word,
+			colon = colon, q = quoted }, j2
 	end
 
 	if isNameStart(c) then
@@ -328,11 +428,117 @@ local function readDollar(text, i, quoted, depth)
 	end
 	if c == "#" then return { t = "count", q = quoted }, i + 2 end
 	if c == "@" then return { t = "all", q = quoted }, i + 2 end
+	-- $* is every argument as one string, joined by a blank; $! is the process
+	-- number of the last job an `&` started. Both are in the Bourne shell's
+	-- sh(1) of Version 7 and in POSIX.2's list of special parameters.
+	if c == "*" then return { t = "star", q = quoted }, i + 2 end
+	if c == "!" then return { t = "bang", q = quoted }, i + 2 end
 	if c == "?" then return { t = "status", q = quoted }, i + 2 end
 	if c == "$" then return { t = "job", q = quoted }, i + 2 end
 
 	-- A dollar in front of anything else is a dollar.
 	return nil, nil, true
+end
+
+-- The word that follows :- := :? :+ # ## % %%, up to the "}" that closes it.
+-- Read like an ordinary word -- quotes, a bare $name and a bare ${name} all
+-- work -- but ONE level: $( ), `` `` and a second ${x:-y} inside it are each
+-- refused as a bad substitution, the same ceiling readCommandSub already
+-- holds $( ) inside $( ) to (one catch is bounded work; two is unbounded
+-- behind a single dollar sign). That is what lets this word be read straight
+-- through, with no capture to wait for and nothing that can recurse.
+readBraceWord = function(text, i, depth)
+	local n = #text
+	local parts = {}
+	-- A "$" met anywhere in this word: readDollar reads it, and only a
+	-- plain parameter (var, arg, count, star, bang, status, job, all) may
+	-- come back -- "sub", "arith" and a nested "vare" are refused here.
+	local function dollar(quoted)
+		local part, second, literal = readDollar(text, i, quoted, depth)
+		if literal then
+			addLit(parts, "$", true, false)
+			i = i + 1
+			return true
+		end
+		if part == nil then return nil, second end
+		if part.t == "sub" or part.t == "arith" or part.t == "vare" then
+			return nil, "Syntax error: Bad substitution"
+		end
+		parts[#parts + 1] = part
+		i = second
+		return true
+	end
+	while i <= n do
+		local c = string.sub(text, i, i)
+		if c == "}" then
+			return parts, i + 1
+		elseif c == "'" then
+			i = i + 1
+			local buf, closed = "", false
+			while i <= n do
+				local q = string.sub(text, i, i)
+				if q == "'" then
+					closed = true
+					i = i + 1
+					break
+				end
+				buf = buf .. q
+				i = i + 1
+			end
+			if not closed then return nil, "Syntax error: Unterminated quoted string" end
+			parts[#parts + 1] = { t = "lit", s = buf, q = true, bare = false }
+		elseif c == "\"" then
+			i = i + 1
+			local closed = false
+			parts[#parts + 1] = { t = "lit", s = "", q = true, bare = false }
+			while i <= n do
+				local q = string.sub(text, i, i)
+				if q == "\"" then
+					closed = true
+					i = i + 1
+					break
+				elseif q == "\\" then
+					local nx = string.sub(text, i + 1, i + 1)
+					if nx == "" then return nil, "Syntax error: Unterminated quoted string" end
+					if nx == "$" or nx == "`" or nx == "\"" or nx == "\\" then
+						addLit(parts, nx, true, false)
+					else
+						addLit(parts, "\\" .. nx, true, false)
+					end
+					i = i + 2
+				elseif q == "$" then
+					local ok, reason = dollar(true)
+					if ok == nil then return nil, reason end
+				elseif q == "`" then
+					return nil, "Syntax error: Bad substitution"
+				else
+					addLit(parts, q, true, false)
+					i = i + 1
+				end
+			end
+			if not closed then return nil, "Syntax error: Unterminated quoted string" end
+		elseif c == "$" then
+			local ok, reason = dollar(false)
+			if ok == nil then return nil, reason end
+		elseif c == "`" then
+			return nil, "Syntax error: Bad substitution"
+		elseif c == "\\" then
+			-- A backslash quotes the character after it, as it does outside
+			-- the braces: ${x#\*} cuts a literal star, never "anything".
+			local nx = string.sub(text, i + 1, i + 1)
+			if nx == "" then return nil, "Syntax error: Bad substitution" end
+			addLit(parts, nx, true, false)
+			i = i + 2
+		else
+			-- BARE, and marked so: in the pattern of # ## % %% an unquoted
+			-- * ? [ is a glob character and a quoted one is itself (POSIX.2
+			-- 3.6.2, "quoting ... shall cause the pattern character to be
+			-- matched literally"), so the matcher has to know which it was.
+			addLit(parts, c, true, true)
+			i = i + 1
+		end
+	end
+	return nil, "Syntax error: Bad substitution"
 end
 
 -- text -> array of tokens, or nil plus a reason and the line it is on.
@@ -389,16 +595,53 @@ local function tokenize(text, depth)
 				tokens[#tokens + 1] = { t = "op", v = "|", line = line }
 				i = i + 1
 			end
-		elseif c == ">" then
+		elseif c == ">" or ((c == "1" or c == "2") and string.sub(text, i + 1, i + 1) == ">") then
+			-- A digit is a file descriptor only where a word would START and only
+			-- when ">" follows it at once: `2>err` is the standard error, `a2>f` is
+			-- the word a2 and `echo 2 > f` prints a 2. sh(1) of 4.4BSD and ksh(1)
+			-- both read it that way. Only 1 and 2: this machine has no other
+			-- descriptor to name, so `3>f` stays the word 3, as it was.
+			local fd = 1
+			if c == "2" then fd = 2 end
+			if c ~= ">" then i = i + 1 end
 			local append = false
+			local dup = nil
 			i = i + 1
 			if string.sub(text, i, i) == ">" then
 				append = true
 				i = i + 1
+			elseif string.sub(text, i, i) == "&" then
+				-- ">&1" and ">&2": the descriptor made a copy of the other one, sh(1)'s
+				-- "<&digit / >&digit" duplication. Any other word after ">&" names a
+				-- descriptor this machine does not have.
+				local d = string.sub(text, i + 1, i + 1)
+				local after = string.sub(text, i + 2, i + 2)
+				local ends = after == "" or after == " " or after == "\t" or after == "\r"
+					or after == "\n" or after == ";" or after == "&" or after == "|"
+					or after == ">" or after == "<" or after == "(" or after == ")"
+				if (d ~= "1" and d ~= "2") or not ends then
+					return nil, "Syntax error: Bad fd number", line
+				end
+				dup = 1
+				if d == "2" then dup = 2 end
+				i = i + 2
 			end
-			tokens[#tokens + 1] = { t = "redir", append = append, line = line }
+			-- stop, as a word has: a function body may end on a `2>&1`.
+			tokens[#tokens + 1] = { t = "redir", append = append, fd = fd, dup = dup, line = line,
+				stop = i - 1 }
 		elseif c == "<" then
-			return nil, "syntax error: unexpected '<'", line
+			return nil, "Syntax error: redirection unexpected", line
+		elseif c == "(" or c == ")" then
+			-- Operators, and they end a word: POSIX.2 XCU 2.3 rule 6, and
+			-- 4.4BSD-Lite2 sh's TLP and TRP (bin/sh/mktokens, parser.c's
+			-- xxreadtoken). What they build is a subshell, a function's
+			-- `name ( )` and a case pattern's brackets; anywhere else one is
+			-- `"(" unexpected`, as `echo (a)` is on sh. Inside quotes, $( ),
+			-- ${ } and backquotes they are text, read by those readers.
+			-- stop, as a word has: a function whose body is a subshell ends
+			-- on its ")" and keeps its source up to it (parseFunc).
+			tokens[#tokens + 1] = { t = "op", v = c, line = line, stop = i }
+			i = i + 1
 		else
 			-- One word: bare text, quoted runs and expansions, until a blank or
 			-- an operator ends it.
@@ -407,7 +650,8 @@ local function tokenize(text, depth)
 			while i <= n do
 				local ch = string.sub(text, i, i)
 				if ch == " " or ch == "\t" or ch == "\r" or ch == "\n" or ch == ";"
-						or ch == "&" or ch == "|" or ch == ">" or ch == "<" then
+						or ch == "&" or ch == "|" or ch == ">" or ch == "<"
+						or ch == "(" or ch == ")" then
 					break
 				elseif ch == "'" then
 					i = i + 1
@@ -425,7 +669,7 @@ local function tokenize(text, depth)
 						i = i + 1
 					end
 					if not closed then
-						return nil, "syntax error: unterminated quote", startLine
+						return nil, "Syntax error: Unterminated quoted string", startLine
 					end
 					-- A single-quoted run is text and only text, empty run
 					-- included: `x=''` is a variable set to nothing, not a word
@@ -444,11 +688,23 @@ local function tokenize(text, depth)
 						elseif q == "\\" then
 							local nx = string.sub(text, i + 1, i + 1)
 							if nx == "" then
-								return nil, "syntax error: unterminated quote", startLine
+								return nil, "Syntax error: Unterminated quoted string", startLine
 							end
-							if nx == "n" then addLit(parts, "\n", true, false)
-							elseif nx == "t" then addLit(parts, "\t", true, false)
-							else addLit(parts, nx, true, false) end
+							-- sh(1) of 4.4BSD and ksh88, and POSIX.2 2.2.3:
+							-- within double quotes the backslash keeps its
+							-- meaning only before $ ` " \ and newline. A
+							-- backslash-newline is removed, both characters;
+							-- before anything else the backslash stays, so
+							-- "a\.c" is a\.c and "C:\dos" is C:\dos. The
+							-- shell makes no \n or \t: printf(1) does that
+							-- to its own format, echo here does not.
+							if nx == "\n" then
+								line = line + 1
+							elseif nx == "$" or nx == "`" or nx == "\"" or nx == "\\" then
+								addLit(parts, nx, true, false)
+							else
+								addLit(parts, "\\" .. nx, true, false)
+							end
 							i = i + 2
 						elseif q == "$" then
 							-- readDollar answers part + the index past it, or
@@ -478,11 +734,11 @@ local function tokenize(text, depth)
 						end
 					end
 					if not closed then
-						return nil, "syntax error: unterminated quote", startLine
+						return nil, "Syntax error: Unterminated quoted string", startLine
 					end
 				elseif ch == "\\" then
 					local nx = string.sub(text, i + 1, i + 1)
-					if nx == "" then return nil, "syntax error: unterminated quote", startLine end
+					if nx == "" then return nil, "Syntax error: Unterminated quoted string", startLine end
 					if nx == "\n" then
 						-- A backslash at the end of a line joins it to the next.
 						line = line + 1
@@ -542,19 +798,34 @@ local function take(P)
 	return t
 end
 
--- How a token is named in an error, the way a shell names it.
+-- How a token is named in an error: the names 4.4BSD-Lite2's sh gives its
+-- tokens (bin/sh/mktokens, the table synexpect() prints from, parser.c).
+-- An operator and a reserved word in double quotes -- "fi", "|", ";;" --
+-- and the rest by their KIND, not their text: end of file, newline,
+-- redirection, word. So `echo a | | b` is `"|" unexpected` and a stray
+-- `foo` where `then` was wanted is `word unexpected`, as sh said it.
+local QUOTED = { ["{"] = true, ["}"] = true, ["!"] = true }
 local function describe(t)
-	if t.t == "eof" then return "end of file" end
+	if t == nil or t.t == "eof" then return "end of file" end
 	if t.t == "op" then
-		if t.v == "\n" then return "end of line" end
-		return "'" .. t.v .. "'"
+		if t.v == "\n" then return "newline" end
+		return "\"" .. t.v .. "\""
 	end
-	if t.t == "redir" then
-		if t.append then return "'>>'" end
-		return "'>'"
+	if t.t == "redir" then return "redirection" end
+	-- "in" is not one of sh's tokens (mktokens has no TIN): a word.
+	if t.plain ~= nil and t.plain ~= "in"
+			and (CeroSecOS.RESERVED[t.plain] or QUOTED[t.plain]) then
+		return "\"" .. t.plain .. "\""
 	end
-	if t.plain ~= nil then return "'" .. t.plain .. "'" end
 	return "word"
+end
+
+-- synexpect(), parser.c: the token that was there, "unexpected", and the
+-- one that was wanted in brackets when the grammar knew which.
+local function unexpected(t, want)
+	local said = "Syntax error: " .. describe(t) .. " unexpected"
+	if want ~= nil then said = said .. " (expecting \"" .. want .. "\")" end
+	return said
 end
 
 -- Is this token one the caller asked to be left alone? A reserved word in `stops`,
@@ -562,7 +833,7 @@ end
 -- is the one operator any caller has ever needed to stop at.
 local function stopsHere(t, stops)
 	if t.t == "word" and t.plain ~= nil and stops[t.plain] then return true end
-	if t.t == "op" and t.v == ";;" and stops[";;"] then return true end
+	if t.t == "op" and (t.v == ";;" or t.v == ")") and stops[t.v] then return true end
 	return false
 end
 
@@ -589,6 +860,8 @@ local function skipNewlines(P)
 end
 
 local parseProgram
+local parseGroup
+local parsePiece
 
 -- A word token, or nil when what is next is not one.
 local function wordAt(P)
@@ -597,8 +870,48 @@ local function wordAt(P)
 	return t
 end
 
+-- One redirect off the token stream into st, or a reason and a line. A simple
+-- command reads its redirects with it, and so do the compound commands that may
+-- carry them -- `{ ...; } > f 2>&1`, `( ... ) 2>/dev/null` -- the same
+-- descriptors, in the same left-to-right order.
+--
+-- Where each descriptor ends up, worked out in the order the line names them,
+-- which is sh(1)'s rule and the whole difference between `> f 2>&1` (both into
+-- f) and `2>&1 > f` (errors where the output WAS, the output into f). In st.fds,
+-- "1" and "2" are the ones the command was started with, "w" the file ">" names
+-- and "e" the file "2>" names.
+local function takeRedirect(P, st)
+	local t = peek(P)
+	-- One redirect per descriptor: a second one is a line that says two
+	-- things about the same place, and this machine does not guess which.
+	local fd = t.fd or 1
+	if st.seen[fd] then
+		return "Syntax error: redirection unexpected", t.line
+	end
+	st.seen[fd] = true
+	P.i = P.i + 1
+	if t.dup ~= nil then
+		st.fds[fd] = st.fds[t.dup]
+	else
+		local target = wordAt(P)
+		if target == nil then
+			return unexpected(peek(P)), t.line
+		end
+		P.i = P.i + 1
+		if fd == 2 then
+			st.errRedirect = { word = target.parts, append = t.append }
+			st.fds[2] = "e"
+		else
+			st.redirect = { word = target.parts, append = t.append }
+			st.fds[1] = "w"
+		end
+	end
+	return nil
+end
+
 local function parseSimple(P)
-	local words, redirect = {}, nil
+	local words = {}
+	local st = { fds = { "1", "2" }, seen = {} }
 	local line = peek(P).line
 	while true do
 		local t = peek(P)
@@ -606,28 +919,21 @@ local function parseSimple(P)
 			-- Reserved words are only reserved where a command starts; every
 			-- other position is an ordinary argument, so `echo done` prints it.
 			if #words == 0 and t.plain ~= nil and CeroSecOS.RESERVED[t.plain] then
-				return nil, "syntax error: unexpected '" .. t.plain .. "'", t.line
+				return nil, unexpected(t), t.line
 			end
 			words[#words + 1] = t.parts
 			P.i = P.i + 1
 		elseif t.t == "redir" then
-			if redirect ~= nil then
-				return nil, "syntax error: bad redirect", t.line
-			end
-			P.i = P.i + 1
-			local target = wordAt(P)
-			if target == nil then
-				return nil, "syntax error: missing redirect target", t.line
-			end
-			P.i = P.i + 1
-			redirect = { word = target.parts, append = t.append }
+			local reason, rline = takeRedirect(P, st)
+			if reason ~= nil then return nil, reason, rline end
 		else
 			break
 		end
 	end
-	if #words == 0 and redirect == nil then
+	local redirect, errRedirect, fds, seen = st.redirect, st.errRedirect, st.fds, st.seen
+	if #words == 0 and not seen[1] and not seen[2] then
 		local t = peek(P)
-		return nil, "syntax error: unexpected " .. describe(t), t.line
+		return nil, unexpected(t), t.line
 	end
 
 	-- The leading NAME=value words are assignments and are told apart HERE,
@@ -651,7 +957,29 @@ local function parseSimple(P)
 		words = rest
 	end
 
-	return { k = "cmd", line = line, words = words, assigns = assigns, redirect = redirect }
+	local node = { k = "cmd", line = line, words = words, assigns = assigns, redirect = redirect }
+	-- Only a line that named a descriptor carries these, so every node a plain
+	-- `>` makes is the node it always was.
+	if seen[2] or fds[1] ~= (redirect ~= nil and "w" or "1") then
+		node.errRedirect = errRedirect
+		node.out = fds[1]
+		node.err = fds[2]
+	end
+	return node
+end
+
+-- A list with nothing in it where the grammar wants one. Every part of if, while,
+-- until, for and a function's braces is a compound_list (POSIX XCU 2.10.2), and a
+-- compound_list is at least one command: a comment or a blank line is not one.
+-- dash refuses `if true; then fi` with `"fi" unexpected`, and so does this, in the
+-- words synexpect() says it with. Only a list that stopped on a WORD is
+-- refused here: one that ran into the end of the file is missing its closing word,
+-- which the caller goes on to say.
+local function emptyList(P, prog)
+	if #prog > 0 then return nil end
+	local t = peek(P)
+	if t.t == "eof" then return nil end
+	return unexpected(t), t.line
 end
 
 local function parseIf(P, depth)
@@ -662,14 +990,18 @@ local function parseIf(P, depth)
 	while true do
 		local cond, reason, where = parseProgram(P, { ["then"] = true }, depth + 1)
 		if cond == nil then return nil, reason, where end
+		local empty, eline = emptyList(P, cond)
+		if empty ~= nil then return nil, empty, eline end
 		local t = wordAt(P)
 		if t == nil or t.plain ~= "then" then
-			return nil, "syntax error: missing 'then'", peek(P).line
+			return nil, unexpected(peek(P), "then"), peek(P).line
 		end
 		P.i = P.i + 1
 		local body, breason, bwhere =
 			parseProgram(P, { ["elif"] = true, ["else"] = true, ["fi"] = true }, depth + 1)
 		if body == nil then return nil, breason, bwhere end
+		empty, eline = emptyList(P, body)
+		if empty ~= nil then return nil, empty, eline end
 		clauses[#clauses + 1] = { cond = cond, body = body }
 
 		local nx = wordAt(P)
@@ -680,11 +1012,13 @@ local function parseIf(P, depth)
 				P.i = P.i + 1
 				local ebody, ereason, ewhere = parseProgram(P, { ["fi"] = true }, depth + 1)
 				if ebody == nil then return nil, ereason, ewhere end
+				empty, eline = emptyList(P, ebody)
+				if empty ~= nil then return nil, empty, eline end
 				otherwise = ebody
 				nx = wordAt(P)
 			end
 			if nx == nil or nx.plain ~= "fi" then
-				return nil, "syntax error: missing 'fi'", peek(P).line
+				return nil, unexpected(peek(P), "fi"), peek(P).line
 			end
 			P.i = P.i + 1
 			return { k = "if", line = line, clauses = clauses, otherwise = otherwise }
@@ -697,14 +1031,16 @@ local function parseDoDone(P, depth)
 	skipSeparators(P)
 	local t = wordAt(P)
 	if t == nil or t.plain ~= "do" then
-		return nil, "syntax error: missing 'do'", peek(P).line
+		return nil, unexpected(peek(P), "do"), peek(P).line
 	end
 	P.i = P.i + 1
 	local body, reason, where = parseProgram(P, { ["done"] = true }, depth + 1)
 	if body == nil then return nil, reason, where end
+	local empty, eline = emptyList(P, body)
+	if empty ~= nil then return nil, empty, eline end
 	local nx = wordAt(P)
 	if nx == nil or nx.plain ~= "done" then
-		return nil, "syntax error: missing 'done'", peek(P).line
+		return nil, unexpected(peek(P), "done"), peek(P).line
 	end
 	P.i = P.i + 1
 	return body
@@ -714,7 +1050,7 @@ local function parseFor(P, depth)
 	local line = take(P).line
 	local name = wordAt(P)
 	if name == nil or name.plain == nil or not CeroSecOS.isVarName(name.plain) then
-		return nil, "syntax error: not a name", peek(P).line
+		return nil, "Syntax error: Bad for loop variable", peek(P).line
 	end
 	P.i = P.i + 1
 
@@ -741,6 +1077,8 @@ local function parseLoop(P, depth)
 	local head = take(P)
 	local cond, reason, where = parseProgram(P, { ["do"] = true }, depth + 1)
 	if cond == nil then return nil, reason, where end
+	local empty, eline = emptyList(P, cond)
+	if empty ~= nil then return nil, empty, eline end
 	local body, breason, bwhere = parseDoDone(P, depth)
 	if body == nil then return nil, breason, bwhere end
 	return { k = "loop", line = head.line, negate = head.plain == "until",
@@ -750,52 +1088,23 @@ end
 --
 -- case
 --
--- `case word in pattern) ... ;; esac`, POSIX.2's own shape, and the one construct
--- whose grammar needs a bracket. ")" is NOT an operator on this machine -- it never
--- was, there being no subshell grouping here, and making one of it now would turn
--- every `echo (hi)` a survivor has already written into a syntax error -- so the
--- ")" that closes a pattern is taken off the END of the pattern word instead.
---
--- That reading is not a shortcut, it is the right one: only an UNQUOTED ")" closes a
--- pattern, so `"a)"` is a pattern with a bracket in it and `[)]` is a set holding
--- one, and both come out right because the strip asks whether the last piece of the
--- word was bare literal text (`bare`, which the tokenizer already records for
--- exactly this kind of question).
---
--- The leading "(" POSIX allows before a pattern is taken off the front the same way.
-
--- The ")" at the end of a pattern word, removed. false when the word does not end
--- in one, which is how the caller knows to go on looking.
-local function takeClose(parts)
-	local last = parts[#parts]
-	if last == nil or last.t ~= "lit" or not last.bare then return false end
-	if string.sub(last.s, #last.s) ~= ")" then return false end
-	last.s = string.sub(last.s, 1, #last.s - 1)
-	-- A part that is nothing but the bracket goes with it, unless it is the whole
-	-- word: `)` on its own is the pattern that matches an empty word.
-	if last.s == "" and #parts > 1 then parts[#parts] = nil end
-	return true
-end
-
--- And the "(" POSIX allows in front of one.
-local function takeOpen(parts)
-	local first = parts[1]
-	if first == nil or first.t ~= "lit" or not first.bare then return end
-	if string.sub(first.s, 1, 1) ~= "(" then return end
-	first.s = string.sub(first.s, 2)
-	if first.s == "" and #parts > 1 then table.remove(parts, 1) end
-end
+-- `case word in pattern) ... ;; esac`, POSIX.2's own shape. "(" and ")" are
+-- operators since the subshell came (the tokenizer), so the brackets round a
+-- pattern are tokens of their own and a pattern is an ordinary word: `"a)"` is a
+-- pattern with a bracket in it, and a bare `[)]` is the syntax error it is on sh
+-- (write `[\)]`). Until 0.7.0 ")" was not an operator here and was taken off the
+-- end of the pattern word, which is how `echo (hi)` used to print its brackets.
 
 local function parseCase(P, depth)
 	local line = take(P).line
 	local subject = wordAt(P)
 	if subject == nil then
-		return nil, "syntax error: unexpected " .. describe(peek(P)), peek(P).line
+		return nil, unexpected(peek(P)), peek(P).line
 	end
 	P.i = P.i + 1
 	local inWord = wordAt(P)
 	if inWord == nil or inWord.plain ~= "in" then
-		return nil, "syntax error: missing 'in'", peek(P).line
+		return nil, unexpected(peek(P), "in"), peek(P).line
 	end
 	P.i = P.i + 1
 
@@ -810,33 +1119,40 @@ local function parseCase(P, depth)
 		-- The file ran out where a pattern or the esac should be, and what is missing
 		-- is the esac -- not the bracket the pattern loop below would name.
 		if peek(P).t == "eof" then
-			return nil, "syntax error: missing 'esac'", peek(P).line
+			return nil, unexpected(peek(P), "esac"), peek(P).line
 		end
 
-		-- The patterns of one clause: words with "|" between them, the last of them
-		-- carrying the ")" that closes the list.
+		-- The patterns of one clause: the "(" POSIX allows in front, then words
+		-- with "|" between them, then the ")" that closes the list -- all three
+		-- operators (parser.c: `if (lasttoken == TLP) readtoken()`, then TPIPE
+		-- between the words and TRP after them).
 		local pats = {}
-		local closed = false
+		local open = peek(P)
+		if open.t == "op" and open.v == "(" then P.i = P.i + 1 end
 		while true do
 			local w = wordAt(P)
 			if w == nil then
-				return nil, "syntax error: missing ')'", peek(P).line
+				return nil, unexpected(peek(P), ")"), peek(P).line
 			end
 			P.i = P.i + 1
-			if #pats == 0 then takeOpen(w.parts) end
-			closed = takeClose(w.parts)
 			pats[#pats + 1] = w.parts
-			if closed then break end
 			local sep = peek(P)
+			if sep.t == "op" and sep.v == ")" then
+				P.i = P.i + 1
+				break
+			end
 			if not (sep.t == "op" and sep.v == "|") then
-				return nil, "syntax error: missing ')'", sep.line
+				return nil, unexpected(sep, ")"), sep.line
 			end
 			P.i = P.i + 1
 			skipNewlines(P)
 		end
 
+		-- A ")" stops the body too, so that a stray one is a clause that never
+		-- ended, as parser.c has it (list(), then synexpect(TENDCASE)): dash
+		-- says `")" unexpected (expecting ";;")` for `case ) in [)]) ...`.
 		local body, reason, where =
-			parseProgram(P, { [";;"] = true, ["esac"] = true }, depth + 1)
+			parseProgram(P, { [";;"] = true, ["esac"] = true, [")"] = true }, depth + 1)
 		if body == nil then return nil, reason, where end
 		clauses[#clauses + 1] = { pats = pats, body = body }
 
@@ -849,9 +1165,9 @@ local function parseCase(P, depth)
 			-- file is the other way of getting here and it is a different mistake --
 			-- what is missing there is the esac.
 			if nx.t == "eof" then
-				return nil, "syntax error: missing 'esac'", nx.line
+				return nil, unexpected(nx, "esac"), nx.line
 			end
-			return nil, "syntax error: missing ';;'", nx.line
+			return nil, unexpected(nx, ";;"), nx.line
 		end
 	end
 end
@@ -860,16 +1176,21 @@ end
 -- A function definition
 --
 -- `name() { list; }`, POSIX.2's shape and the one every sh has taken since the
--- seventh edition. Two spellings are read, which are the two a pair of hands types:
--- `name()` as one word, and `name ()` as two.
+-- seventh edition. `(` and `)` are operators and end a word (XCU 2.3 rule 6,
+-- 2.9.5 `fname ( ) compound-command`), so the blanks around them are free:
+-- `t(){`, `t() {`, `t (){`, `t ( ) {` and a `{` on the next line are all the same
+-- definition on dash, and here.
 --
--- The braces are NOT made reserved words. `{` and `}` are POSIX reserved words, and
--- making them so here would mean a brace group (`{ list; }` as a command) this
--- machine has not got and a refusal for every `echo {` already written. What is
--- needed instead is that `}` stops the body, and that falls out of the stops table
--- parseProgram already takes: a reserved word is only one where a command starts, so
--- `echo done }` prints the brace exactly as a real sh does and the body ends at the
--- `}` that begins a statement.
+-- `{` is a reserved word, not an operator: it needs a blank after it. In
+-- `t(){echo a;}` the word is `{echo`, and 4.4BSD-Lite2 parser.c takes `{echo a`
+-- for the body, stops at the `;`, and finds a `}` where a command starts:
+-- synexpect(-1), `Syntax error: "}" unexpected`, with nothing expected. The
+-- same line here. The body is
+-- any compound command, as POSIX.2 XCU 2.9.5 and 4.4BSD sh's parser.c
+-- (`n->nfunc.body = command()`) have it: a brace group most of the time, and
+-- `f() ( list )`, `f() if ...; fi` or a loop. A simple command is not one:
+-- XCU 2.9.5's grammar is `function_body : compound_command`, so `f() echo x`
+-- is `word unexpected (expecting "{")` here, though parser.c and dash take it.
 --
 -- The SOURCE of the definition travels with it (`src`). The console keeps a
 -- function between one line and the next, and what it keeps has to survive being
@@ -877,23 +1198,69 @@ end
 -- and checked like a variable's value, and the body is read out of it by this
 -- parser. A parsed program handed back out of modData is the one thing this machine
 -- will not do.
-local function parseFunc(P, depth, name, tokens)
+local function parseFunc(P, depth, name, tokens, braced)
 	local line = P.tokens[P.i].line
 	local at = P.tokens[P.i].at
 	P.i = P.i + tokens
-	skipNewlines(P)
-	local open = wordAt(P)
-	if open == nil or open.plain ~= "{" then
-		return nil, "syntax error: missing '{'", peek(P).line
+	if not braced then
+		skipNewlines(P)
+		-- Any other compound command: `f() ( list )` runs in a copy of the
+		-- shell at every call, and a redirect after its ")" is the call's.
+		-- The body is a program of that one command, and the source ends
+		-- on its last token, a ")" or the done, fi or esac that closed it.
+		local lp = peek(P)
+		local w = wordAt(P)
+		if (lp.t == "op" and lp.v == "(") or (w ~= nil and (w.plain == "if"
+				or w.plain == "for" or w.plain == "while" or w.plain == "until"
+				or w.plain == "case")) then
+			local node, reason, where = parsePiece(P, depth)
+			if node == nil then return nil, reason, where end
+			local last = P.tokens[P.i - 1]
+			local src = string.sub(P.text or "", at, last.stop or at)
+			if #src > CeroSecOS.MAX_FUNC_BYTES then
+				return nil, "function too large", line
+			end
+			return { k = "func", line = line, name = name, body = { node }, src = src }
+		end
+		local open = wordAt(P)
+		if open == nil or open.plain ~= "{" then
+			-- A word where the `{` was wanted is a body on parser.c, and its
+			-- error is the first one in the rest of the line (`t(){echo a;}`
+			-- is `"}" unexpected`); a rest that reads is refused as before.
+			if open ~= nil then
+				local from, ended = P.i, P.terminated
+				local _, reason, where = parseProgram(P, {}, depth + 1)
+				P.i, P.terminated = from, ended
+				if reason ~= nil then return nil, reason, where end
+			end
+			return nil, unexpected(peek(P), "{"), peek(P).line
+		end
+		P.i = P.i + 1
 	end
-	P.i = P.i + 1
+	local brace = P.i - 1
 	local body, reason, where = parseProgram(P, { ["}"] = true }, depth + 1)
 	if body == nil then return nil, reason, where end
+	local empty, eline = emptyList(P, body)
+	if empty ~= nil then return nil, empty, eline end
 	local close = wordAt(P)
 	if close == nil or close.plain ~= "}" then
-		return nil, "syntax error: missing '}'", peek(P).line
+		return nil, unexpected(peek(P), "}"), peek(P).line
 	end
 	P.i = P.i + 1
+	-- `f() { list; } > o`: XCU 2.9.5 `function_body : compound_command
+	-- redirect_list`, and 4.4BSD-Lite2 parser.c's command() reads the
+	-- redirects after the TEND and wraps the brace list in an NREDIR, so
+	-- they are the body's and are opened at every call, inside any the
+	-- call itself names (`f > p` still writes o, as on dash). Here the
+	-- body is read again as the brace group it is, which takes them; the
+	-- source ends on the last one, so a save hands them back.
+	if peek(P).t == "redir" then
+		P.i = brace
+		local node, reason, where = parseGroup(P, depth)
+		if node == nil then return nil, reason, where end
+		body = { node }
+		close = P.tokens[P.i - 1]
+	end
 	local src = string.sub(P.text or "", at, close.stop or at)
 	if #src > CeroSecOS.MAX_FUNC_BYTES then
 		return nil, "function too large", line
@@ -902,25 +1269,72 @@ local function parseFunc(P, depth, name, tokens)
 end
 
 -- Is what is next a function definition, and what is its name? nil when it is not
--- one, so the caller goes on to read an ordinary command.
+-- one, so the caller goes on to read an ordinary command. Else the name and the
+-- three tokens that spell `name ( )`. A NAME followed by "(" and anything but ")"
+-- is "bad": parser.c reads TLP after a word as a definition and asks for TRP
+-- (`if (readtoken() != TRP) synexpect(TRP)`).
 --
 -- A reserved word is not a name: `if() { :; }` is a syntax error on a real sh and is
--- one here, because `if` is grammar and cannot be a command.
+-- one here, because `if` is grammar and cannot be a command. A quoted word has no
+-- plain text: `"t" ()` is a command followed by a stray bracket.
 local function funcAhead(P)
 	local t = wordAt(P)
 	if t == nil or t.plain == nil then return nil end
-	local bare = string.match(t.plain, "^([A-Za-z_][A-Za-z0-9_]*)%(%)$")
-	if bare ~= nil then
-		if CeroSecOS.RESERVED[bare] then return nil end
-		return bare, 1
-	end
-	if not CeroSecOS.isVarName(t.plain) or CeroSecOS.RESERVED[t.plain] then return nil end
-	local nx = P.tokens[P.i + 1]
-	if nx == nil or nx.t ~= "word" or nx.plain ~= "()" then return nil end
-	return t.plain, 2
+	local lp = P.tokens[P.i + 1]
+	if lp == nil or lp.t ~= "op" or lp.v ~= "(" then return nil end
+	local name = string.match(t.plain, "^[A-Za-z_][A-Za-z0-9_]*$")
+	if name == nil or CeroSecOS.RESERVED[name] then return nil end
+	local rp = P.tokens[P.i + 2]
+	if rp == nil or rp.t ~= "op" or rp.v ~= ")" then return name, 2, "bad" end
+	return name, 3, false
 end
 
-local function parsePiece(P, depth)
+-- `{ list; }` and `( list )`: a brace group, run in this shell, and a subshell, run
+-- in a copy of it (POSIX.2 XCU 2.9.4; 4.4BSD-Lite2 sh's NBRACE and NSUBSHELL,
+-- parser.c's command()). `{` and `}` are reserved words -- only where a command
+-- starts, so `echo {` and `echo a }` print their braces -- and `(` `)` operators.
+-- A list is at least one command in either (the "}" or ")" unexpected dash gives
+-- `{ }` and `( )`), and what follows the closer is a redirect or the end of the
+-- command: `{ echo; } foo` is `word unexpected`, as on sh.
+parseGroup = function(P, depth)
+	local open = take(P)
+	local sub = open.t == "op"
+	local closer = "}"
+	if sub then closer = ")" end
+	local body, reason, where
+	if sub then
+		body, reason, where = parseProgram(P, { [")"] = true }, depth + 1)
+	else
+		body, reason, where = parseProgram(P, { ["}"] = true }, depth + 1)
+	end
+	if body == nil then return nil, reason, where end
+	local empty, eline = emptyList(P, body)
+	if empty ~= nil then return nil, empty, eline end
+	local close = peek(P)
+	local closed
+	if sub then
+		closed = close.t == "op" and close.v == ")"
+	else
+		closed = close.t == "word" and close.plain == "}"
+	end
+	if not closed then return nil, unexpected(close, closer), close.line end
+	P.i = P.i + 1
+	local node = { k = "group", line = open.line, body = body, sub = sub, words = {} }
+	local st = { fds = { "1", "2" }, seen = {} }
+	while peek(P).t == "redir" do
+		local r, rline = takeRedirect(P, st)
+		if r ~= nil then return nil, r, rline end
+	end
+	node.redirect = st.redirect
+	if st.seen[2] or st.fds[1] ~= (st.redirect ~= nil and "w" or "1") then
+		node.errRedirect = st.errRedirect
+		node.out = st.fds[1]
+		node.err = st.fds[2]
+	end
+	return node
+end
+
+parsePiece = function(P, depth)
 	if depth > CeroSecOS.MAX_NEST then
 		return nil, "too deeply nested", peek(P).line
 	end
@@ -931,8 +1345,15 @@ local function parsePiece(P, depth)
 		if t.plain == "while" or t.plain == "until" then return parseLoop(P, depth) end
 		if t.plain == "case" then return parseCase(P, depth) end
 	end
-	local fname, fwords = funcAhead(P)
-	if fname ~= nil then return parseFunc(P, depth, fname, fwords) end
+	if (t ~= nil and t.plain == "{") or (peek(P).t == "op" and peek(P).v == "(") then
+		return parseGroup(P, depth)
+	end
+	local fname, fwords, braced = funcAhead(P)
+	if braced == "bad" then
+		local at = P.tokens[P.i + fwords]
+		return nil, unexpected(at, ")"), at.line
+	end
+	if fname ~= nil then return parseFunc(P, depth, fname, fwords, braced) end
 	return parseSimple(P)
 end
 
@@ -1017,7 +1438,7 @@ parseProgram = function(P, stops, depth)
 		if P.terminated then
 			-- nothing: "&" already closed the statement
 		elseif not (nx.t == "op" and (nx.v == ";" or nx.v == "\n")) then
-			return nil, "syntax error: unexpected " .. describe(nx), nx.line
+			return nil, unexpected(nx), nx.line
 		end
 	end
 	return prog
@@ -1031,7 +1452,7 @@ end
 -- nothing.
 --
 function CeroSecOS.parseScript(text, depth)
-	if type(text) ~= "string" then return nil, "syntax error", 1 end
+	if type(text) ~= "string" then return nil, "Syntax error: end of file unexpected", 1 end
 	depth = depth or 0
 
 	local tokens, reason, line = tokenize(text, depth)
@@ -1043,13 +1464,25 @@ function CeroSecOS.parseScript(text, depth)
 
 	local last = peek(P)
 	if last.t ~= "eof" then
-		return nil, "syntax error: unexpected " .. describe(last), last.line
+		return nil, unexpected(last), last.line
 	end
 	return prog
 end
 
 -- What the shell prints when a script will not parse: the file, the line and
--- the reason, in the order every Unix has printed them.
+-- the reason, in the order every Unix has printed them. A syntax error is
+-- 4.4BSD-Lite2 sh's synerror() to the letter (parser.c: "%s: %d: " and then
+-- "Syntax error: %s"), the line a bare number. Every OTHER error in a file
+-- keeps this machine's "line N:" -- sh's error() printed no line at all,
+-- and a script's author has nothing else to find the line by (the
+-- "sh" entry of CeroSecOS.DEVIATIONS).
+function CeroSecOS.isSyntaxError(reason)
+	return type(reason) == "string" and string.sub(reason, 1, 13) == "Syntax error:"
+end
+
 function CeroSecOS.scriptError(name, reason, line)
+	if CeroSecOS.isSyntaxError(reason) then
+		return tostring(name) .. ": " .. tostring(line or 1) .. ": " .. reason
+	end
 	return tostring(name) .. ": line " .. tostring(line or 1) .. ": " .. tostring(reason)
 end

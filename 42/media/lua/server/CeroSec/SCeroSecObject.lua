@@ -974,6 +974,11 @@ function SCeroSecObject:turnOn()
 	-- the first command because the power check has just proved the chunk is
 	-- loaded, which is the one thing working a building out needs.
 	CeroSecNet.identify(self.luaSystem, self, state)
+	-- The cables its premises' first walk owed it for want of this state, if this
+	-- is that premises' automated machine (SCeroSecAuto, `record.later`). After
+	-- identify, whose network record names the premises; before atBoot, so an
+	-- @reboot line finds them on /dev. Two table lookups for any other machine.
+	CeroSecAuto.resolveLater(self.luaSystem, self)
 	self:apply()
 	self:playSound("CeroSecBootStart")
 	-- @reboot, which is the one crontab line that is not a time: the machine has

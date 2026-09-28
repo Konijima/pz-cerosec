@@ -220,7 +220,30 @@ CeroSecModules.LINKS_MAX = 4
 -- from the first one down the coax or over the telephone -- which is a machine a
 -- survivor has to find and put on a desk, and is the reason there is a limit at
 -- all.
+--
+-- This is the COMPATIBILITY value, kept exactly thirty forever: it is what
+-- CeroSecModules.linkRange() below falls back to when CeroSec.LinkRange has
+-- nothing to say (no sandbox group, a save from before the option, or a
+-- corrupt entry), so a sandbox file that failed to load answers exactly as
+-- this mod always has.
 CeroSecModules.LINK_RANGE = 30
+
+-- The HARD ceiling, matching CeroSec.LinkRange's own sandbox max. Used ONLY to
+-- sanity-check an already-stored cable (linkOk, below) -- never as policy for
+-- a new one. A server is free to shrink LinkRange after players have already
+-- run longer cables; a stored cable is read against this ceiling, not
+-- today's setting, so shrinking the range never turns yesterday's cable into
+-- a corrupt entry the next modData load throws away.
+--
+-- Forty-eight, not the sandbox option's own type ceiling: it is as far as the
+-- game guarantees a chunk stays loaded around a player at its default view
+-- width (zombie.iso.IsoChunkMap.CHUNK_SIZE_IN_SQUARES = 8 tiles a chunk,
+-- START_CHUNK_GRID_WIDTH = 13 chunks wide, half that either side of him),
+-- verified with javap against the installed jar. Past it a client may not
+-- have the far square loaded at all, so nothing in this mod should ever ask
+-- for more than the engine can promise -- see CeroSec.LinkRange's own max in
+-- sandbox-options.txt, which this constant must stay in lockstep with.
+CeroSecModules.LINK_RANGE_MAX = 48
 
 -- Tiles around a machine with no room of its own, on its own floor -- the same
 -- ten SCeroSecDevices.lua's building walk falls back to when the machine has no
@@ -255,14 +278,17 @@ CeroSecModules.LINK_TIME_MAX = 240
 -- Nothing in this mod had ever asked for math.sqrt, and this is not the place to
 -- start (docs/CONTRIBUTING.md, Kahlua purity).
 --
--- The loop is bounded by the range, because nothing past it is ever paid for: a
--- fixture further away answers LINK_RANGE + 1, which is the refusal and not a
--- price.
+-- The loop is bounded by LINK_RANGE_MAX, the HARD ceiling, and not by the
+-- current (possibly server-shrunk) CeroSec.LinkRange: a refused row still
+-- shows a real tile count on the menu (CeroSecLinkMenu.numberFor's "reach"
+-- case, and every "far" row's own tooltip), so this has to stay accurate for
+-- a distance beyond today's policy too, not just stop short at it and answer
+-- a number nobody asked for.
 local function ceilSqrt(square)
 	local n = 0
 	while n * n < square do
 		n = n + 1
-		if n > CeroSecModules.LINK_RANGE then return n end
+		if n > CeroSecModules.LINK_RANGE_MAX then return n end
 	end
 	return n
 end
@@ -275,6 +301,69 @@ function CeroSecModules.linkTiles(fx, fy, mx, my)
 	return ceilSqrt(dx * dx + dy * dy)
 end
 
+-- Is one BuildingDef's footprint entirely inside the other's? Strict on all
+-- four sides -- an edge shared or merely overlapping is not enough, because
+-- two ordinary neighbouring row-houses or mall shops share a wall too and
+-- this is not about them. x2/y2 are EXCLUSIVE, the same proof
+-- SCeroSecDebug.premises cites (javap zombie.iso.BuildingDef.getW,
+-- SCeroSecDebug.lua:628-636), so the box comparison below is corners, not
+-- widths.
+local function boxInside(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2)
+	return ax1 >= bx1 and ay1 >= by1 and ax2 <= bx2 and ay2 <= by2
+end
+
+-- Same house, two BuildingDefs: a basement whose lot was drawn on the map as
+-- its own building rather than appended into the house's at runtime -- the
+-- OTHER case from the one NewMapBinaryFile.SpawnBasement produces
+-- (docs/notes/tenancies.md, "A basement, during play", which only ever
+-- appends rooms into an EXISTING def and never merges two). Confirmed on a
+-- real save with CeroSecDebug.premises: a basement's building box, 6957,5583
+-- to 6968,5589, sitting entirely inside the house's above it, 6955,5575 to
+-- 6970,5592 (docs/notes/tenancies.md, "A basement baked in as its own lot").
+--
+-- Two DIFFERENT building objects (the same object is the ordinary "reach"
+-- case, reachRefusal below, and never reaches here), one footprint strictly
+-- inside the other's on all four sides. No floor/distance condition on top,
+-- and none underneath either: a nested pair is one house, so linkRange() does
+-- not apply to it at all -- linkRefusal's "far" and CeroSecLinkMenu.machines()'s
+-- row filter both skip it (CeroSecModules.nestedFree, below).
+function CeroSecModules.nestedBuilding(a, b)
+	if a == nil or b == nil or a == b then return false end
+	if type(a.getDef) ~= "function" or type(b.getDef) ~= "function" then
+		return false
+	end
+	local defA, defB = a:getDef(), b:getDef()
+	if defA == nil or defB == nil then return false end
+	if type(defA.getX) ~= "function" or type(defB.getX) ~= "function" then
+		return false
+	end
+	local ax1, ay1, ax2, ay2 = defA:getX(), defA:getY(), defA:getX2(), defA:getY2()
+	local bx1, by1, bx2, by2 = defB:getX(), defB:getY(), defB:getX2(), defB:getY2()
+	if ax1 == nil or ay1 == nil or ax2 == nil or ay2 == nil then return false end
+	if bx1 == nil or by1 == nil or bx2 == nil or by2 == nil then return false end
+	return boxInside(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2)
+		or boxInside(bx1, by1, bx2, by2, ax1, ay1, ax2, ay2)
+end
+
+-- Is the fixture's building nested with the machine's, the way a house and
+-- its own separately-lotted basement are (CeroSecModules.nestedBuilding)?
+-- Guarded the way reachRefusal's own square lookups are: no cell, no square,
+-- no building is "no", never "yes" -- a wrong "yes" here is a free cable a
+-- survivor never earned, which is a worse mistake than the ordinary price.
+--
+-- Exported, not local: the menu's row filter (CeroSecLinkMenu.machines) asks
+-- the same question linkRefusal does, or a nested pair past the range would
+-- never get the row the rule says is free. It already ran on the client
+-- through linkWire, which that menu calls, so getCell there is nothing new.
+function CeroSecModules.nestedFree(fx, fy, fz, mx, my, mz)
+	if getCell == nil then return false end
+	local cell = getCell()
+	if cell == nil then return false end
+	local fSquare, mSquare = cell:getGridSquare(fx, fy, fz), cell:getGridSquare(mx, my, mz)
+	if fSquare == nil or mSquare == nil then return false end
+	return CeroSecModules.nestedBuilding(fSquare:getBuilding(), mSquare:getBuilding())
+end
+
 -- What a cable from a fixture to a machine costs, in whole tiles of
 -- Base.ElectricWire. Euclidean on x and y -- a cable is run across a floor and not
 -- around the corners of it -- plus LINK_FLOOR_TILES a floor, and never less than
@@ -283,13 +372,39 @@ end
 -- ceil(a + k) is ceil(a) + k for a whole k, so adding the floors after the
 -- rounding is the same number as adding them before it, and this way nothing is
 -- ever a float.
-function CeroSecModules.linkWire(fx, fy, fz, mx, my, mz)
+--
+-- The raw geometry alone, before either free-cable waiver -- what linkWire was
+-- before FreeWiring existed, and what the linkRange() check below still measures
+-- against: neither waiver makes a cable's PATH any shorter, only what it costs.
+-- Split out because linkWire can now read 0 for a reason that has nothing to do
+-- with distance (CeroSecModules.wiringFree), and a range test that read linkWire
+-- directly would silently stop applying wherever FreeWiring is on -- nobody
+-- asked for unlimited-range free cabling. linkRefusal's "far" check and
+-- CeroSecLinkMenu.machines()'s row filter both read this one, never linkWire,
+-- for that reason.
+function CeroSecModules.linkSpan(fx, fy, fz, mx, my, mz)
 	local dz = fz - mz
 	if dz < 0 then dz = -dz end
 	local wire = CeroSecModules.linkTiles(fx, fy, mx, my)
 		+ dz * CeroSecModules.LINK_FLOOR_TILES
 	if wire < 1 then return 1 end
 	return wire
+end
+
+-- EXCEPT the nested-basement case, which is free: a fixture whose building's
+-- footprint sits entirely inside the machine's, or the other way round, is the
+-- same house by any survivor's reckoning even though the engine keeps them as
+-- two BuildingDefs (nestedFree, above) -- no cable was ever really run between
+-- two rooms of one house, so none is bought.
+--
+-- AND CeroSec.FreeWiring, the second and independent waiver: a cable still runs
+-- the same distance (linkSpan, above, is what the range check reads), it is
+-- simply not paid for. Checked after nestedFree so a nested-basement run stays
+-- free regardless of FreeWiring's own value, exactly as it already was.
+function CeroSecModules.linkWire(fx, fy, fz, mx, my, mz)
+	if CeroSecModules.nestedFree(fx, fy, fz, mx, my, mz) then return 0 end
+	if CeroSecModules.wiringFree() then return 0 end
+	return CeroSecModules.linkSpan(fx, fy, fz, mx, my, mz)
 end
 
 -- Is that entry one this build wrote? The three positions are whole numbers and
@@ -303,7 +418,17 @@ local function linkOk(entry)
 	if type(y) ~= "number" or y ~= math.floor(y) then return false end
 	if type(z) ~= "number" or z ~= math.floor(z) then return false end
 	if type(wire) ~= "number" or wire ~= math.floor(wire) then return false end
-	if wire < 1 or wire > CeroSecModules.LINK_RANGE then return false end
+	-- Floor 0, not 1: the nested-basement case stores a free cable
+	-- (CeroSecModules.linkWire), and it must read back as a cable and not as
+	-- nothing at all the next time the fixture's modData loads.
+	--
+	-- The HARD ceiling here, LINK_RANGE_MAX, and not linkRange()'s own
+	-- CURRENT reading: this is an already-stored entry, paid for under
+	-- whatever CeroSec.LinkRange answered the day it was run, and a server
+	-- that shrinks the setting afterward must not turn that cable into a
+	-- "corrupt" one the next load throws away. Only a value past the
+	-- ceiling nothing could ever legitimately have paid is refused.
+	if wire < 0 or wire > CeroSecModules.LINK_RANGE_MAX then return false end
 	return true
 end
 
@@ -414,7 +539,15 @@ function CeroSecModules.linkOn(object, x, y, z, wire)
 	local links = CeroSecModules.linksOn(object)
 	if CeroSecModules.linkIndexOf(links, x, y, z) ~= nil then return false, "linked" end
 	if #links >= CeroSecModules.LINKS_MAX then return false, "links" end
-	if type(wire) ~= "number" or wire < 1 or wire > CeroSecModules.LINK_RANGE then
+	-- 0 and up, not 1: the nested-basement case runs a free cable
+	-- (CeroSecModules.linkWire), and it must go on here the same as any other
+	-- price the shared rule already cleared, not bounce off this floor.
+	--
+	-- linkRange(), the CURRENT policy, and not the hard ceiling: this is a
+	-- NEW cable being written right now, so it answers to today's setting as
+	-- defense-in-depth, the same bound linkRefusal's own "far" check gates
+	-- the same run on before it ever reaches this call.
+	if type(wire) ~= "number" or wire < 0 or wire > CeroSecModules.linkRange() then
 		return false, "far"
 	end
 	local parts = CeroSecModules.gateParts(object)
@@ -1298,6 +1431,52 @@ function CeroSecModules.safehouseGated()
 	return group[CeroSecModules.SANDBOX_SAFEHOUSE] == true
 end
 
+CeroSecModules.SANDBOX_WIRING = "RequireWiring"
+CeroSecModules.SANDBOX_FREEWIRE = "FreeWiring"
+
+-- Does a fixture need an actual cable before a machine sees it at all, in a
+-- building or off one? Fails OPEN, the same direction as safehouseGated and
+-- for the same reason: the default is false, so a missing sandbox group or a
+-- save that predates the option must read as today's behaviour (free
+-- automatic discovery), never as the stricter one nobody asked for.
+function CeroSecModules.wiringRequired()
+	local group = SandboxVars and SandboxVars.CeroSec
+	if group == nil then return false end
+	return group[CeroSecModules.SANDBOX_WIRING] == true
+end
+
+-- Does a cable, wherever one is needed, cost nothing? Independent of
+-- wiringRequired above -- one option is whether a cable is needed, the other
+-- is what it costs when it is. Same fail-open reasoning: false as read is
+-- false as billed, and a save that predates the option is charged exactly
+-- what it always was.
+function CeroSecModules.wiringFree()
+	local group = SandboxVars and SandboxVars.CeroSec
+	if group == nil then return false end
+	return group[CeroSecModules.SANDBOX_FREEWIRE] == true
+end
+
+CeroSecModules.SANDBOX_LINKRANGE = "LinkRange"
+
+-- How far a cable reaches RIGHT NOW. Falls back to LINK_RANGE, the
+-- compatibility value, and not to false like the two booleans above: there is
+-- no "off" reading for a distance, so a missing group, a missing key, a
+-- corrupt entry (not a whole number, or under one tile) all answer the one
+-- number this mod always used before the option existed.
+function CeroSecModules.linkRange()
+	local group = SandboxVars and SandboxVars.CeroSec
+	if group == nil then return CeroSecModules.LINK_RANGE end
+	local v = group[CeroSecModules.SANDBOX_LINKRANGE]
+	if type(v) ~= "number" or v ~= math.floor(v) then return CeroSecModules.LINK_RANGE end
+	if v < 1 then return CeroSecModules.LINK_RANGE end
+	-- And never past LINK_RANGE_MAX, the ceiling a STORED cable is read back
+	-- against (linkOk): the option's own slider stops there, but a save or
+	-- another mod can write any number, and a cable accepted and priced past
+	-- the ceiling is one the next load throws away as corrupt.
+	if v > CeroSecModules.LINK_RANGE_MAX then return CeroSecModules.LINK_RANGE_MAX end
+	return v
+end
+
 -- Whose house is it? nil or "safehouse", and it is one function because it is one
 -- rule: every gesture at a fixture asks it the same way, off the same option, and a
 -- rule written out three times is a rule that will one day answer three things.
@@ -1486,6 +1665,20 @@ function CeroSecModules.anyFitted(object)
 	return false
 end
 
+-- Fitted enough to carry a cable: really fitted, or the sandbox does not ask
+-- for one at all. The same fiction SCeroSecDevices' own fittedOn/has keep for
+-- the building walk (fitted == nil reads as "yes" everywhere, SCeroSecDevices.
+-- lua) -- with CeroSec.HardwareRequired off, a bare fixture is not missing a
+-- module, it never had one to miss, and a cable to it under RequireWiring must
+-- not be refused for a module that was never asked for. Never a substitute for
+-- anyFitted itself, which stays the real, unconditional question and keeps
+-- meaning "is there actually a module here" for callers like envelopeRefusal's
+-- own bare-fixture carve-out.
+function CeroSecModules.anyFittedOrNotRequired(object)
+	if not CeroSecModules.required() then return true end
+	return CeroSecModules.anyFitted(object)
+end
+
 --
 -- RUNNING A CABLE
 --
@@ -1522,7 +1715,7 @@ end
 --   linked    this machine is already on the list
 --   reach     the machine's OWN /dev already has this fixture, cable-free
 --   links     the fixture is full (LINKS_MAX)
---   far       past LINK_RANGE
+--   far       past linkRange() (CeroSec.LinkRange)
 --
 -- What he is CARRYING is not asked here, for the reason the module's bag is not
 -- asked in fittingRefusal: it is a fact about him and it is asked by each side in
@@ -1593,6 +1786,12 @@ local function outdoorReachRefusal(object, mx, my, mz)
 end
 
 local function reachRefusal(object, mx, my, mz)
+	-- CeroSec.RequireWiring: no free "reach" anywhere, in a building or off
+	-- one, because SCeroSecDevices' own walk no longer lists a fixture by
+	-- proximity either (scanSquare/scanOutdoorSquare's skipFixtures) -- a
+	-- cable is the only way onto /dev under this option, so a "reach" refusal
+	-- here would grey the one row that still works.
+	if CeroSecModules.wiringRequired() then return nil end
 	-- Cable-only, decided in game: neither walk below ever lists a generator by
 	-- proximity any more (SCeroSecDevices.classify's allowGen,
 	-- SCeroSecDevices.lua:~637), building or radius, so "reach" would grey a
@@ -1635,8 +1834,11 @@ function CeroSecModules.linkRefusal(object, x, y, z, playerObj)
 
 	-- A cable to a bare fixture buys nothing: a link is what carries a MODULE's
 	-- device to a machine, and a fixture with no module on it has no device for
-	-- either of them to argue about.
-	if not CeroSecModules.anyFitted(object) then return "fixture" end
+	-- either of them to argue about. Unless CeroSec.HardwareRequired is off, in
+	-- which case no fixture ever carries one and every fixture reads as fitted
+	-- (anyFittedOrNotRequired, above) -- the one door onto /dev that
+	-- CeroSec.RequireWiring leaves standing for a bare fixture.
+	if not CeroSecModules.anyFittedOrNotRequired(object) then return "fixture" end
 
 	-- Whose house, first and for fittingRefusal's own reason.
 	local house = houseRefusal(object, playerObj)
@@ -1654,8 +1856,15 @@ function CeroSecModules.linkRefusal(object, x, y, z, playerObj)
 	local reach = reachRefusal(object, x, y, z)
 	if reach ~= nil then return reach end
 	if #links >= CeroSecModules.LINKS_MAX then return "links" end
-	if CeroSecModules.linkWire(square:getX(), square:getY(), square:getZ(), x, y, z)
-			> CeroSecModules.LINK_RANGE then
+	-- linkSpan, the raw geometry, and NOT linkWire: FreeWiring can make
+	-- linkWire read 0 with no distance behind it at all, and the range
+	-- limit (CeroSecModules.linkRange, CeroSec.LinkRange) is a separate
+	-- rule that waiver must never touch. Guarded by nestedFree the same way
+	-- linkWire itself is, so the existing nested-basement exemption's
+	-- behaviour (never "far"-refused) is unchanged by this split.
+	if not CeroSecModules.nestedFree(square:getX(), square:getY(), square:getZ(), x, y, z)
+			and CeroSecModules.linkSpan(square:getX(), square:getY(), square:getZ(), x, y, z)
+				> CeroSecModules.linkRange() then
 		return "far"
 	end
 	return nil

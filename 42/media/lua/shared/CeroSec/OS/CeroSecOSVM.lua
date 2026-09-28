@@ -186,6 +186,13 @@ local function trim(s)
 	return (string.gsub(string.gsub(s, "^[ \t\n]+", ""), "[ \t\n]+$", ""))
 end
 
+-- What a $( ) does to what it caught, and only that: sh(1) and POSIX.2
+-- 2.6.3 remove trailing NEWLINES and nothing else -- not a leading one, not
+-- a blank line in the middle, not a space or tab anywhere.
+local function stripTrailingNewlines(s)
+	return (string.gsub(s, "\n+$", ""))
+end
+
 --
 -- Output
 --
@@ -197,9 +204,20 @@ end
 
 -- Is what this job writes being caught by a $(...) instead of going to the
 -- screen? The one test, asked in the three places that must agree about it.
+--
+-- Not when the call running now has a `>` of its own opened INSIDE the
+-- capture: `x=$(g > f)` puts what g says in f and leaves x empty, because the
+-- substitution's pipe is the command's standard output before the command's own
+-- redirections are applied (POSIX.2 sh, Command Substitution and Redirection).
+-- rdto.depth is how many captures were open when the file was (rdtoOf); a
+-- capture opened after it -- `g() { y=$(echo in); }; g > f` -- still catches.
+-- An rdto with no depth is one from before this rule and keeps the old order.
 local function capturing(job)
 	local caps = job.caps
-	return caps ~= nil and #caps > 0
+	if caps == nil or #caps == 0 then return false end
+	local rd = job.rdto
+	if rd ~= nil and rd.depth ~= nil and rd.depth >= #caps then return false end
+	return true
 end
 
 -- Is what this job writes going to a SCREEN? Asked by the shell before it runs a
@@ -218,8 +236,12 @@ end
 local function toScreen(job)
 	if capturing(job) then return false end
 	if job.mailTo ~= nil then return false end
-	if job.pipe ~= nil then return job.screen == true end
+	-- The file before the pipe: a stage is born with no rdto (newStage), so one
+	-- it has is its own call's `>` -- `g > f | wc` -- and that call's standard
+	-- output is the file, whatever the stage's is (POSIX.2 sh, Pipelines: the
+	-- pipe is assigned before the command's own redirections).
 	if job.rdto ~= nil then return false end
+	if job.pipe ~= nil then return job.screen == true end
 	return true
 end
 
@@ -229,7 +251,7 @@ end
 local jobError
 
 -- How big the open capture has become: the value it would hand back if it
--- closed now, which is its lines joined by one separator, plus whatever is held
+-- closed now, which is its lines joined by "\n", plus whatever is held
 -- part way through a line. Kept as a running total on the buffer rather than
 -- measured, because it is asked on every write a captured job makes.
 local function captureBytes(job, extra)
@@ -255,12 +277,21 @@ local function captureTooLarge(job)
 	jobError(job, "word too large")
 end
 
+-- Where a line about what went wrong goes, written below with errLine.
+local routeErr
+
 -- notFile is a line that is NOT output: a refusal, or something the machine has to
 -- say about the job. It skips the redirect door below the way a refusal already
 -- skips the pipe -- `ls /nope > f` puts the refusal on the screen and not in the
 -- file, and a script whose standard output the shell pointed at a file is the same
 -- rule one level up.
-local function outLine(job, text, notFile)
+-- partial is true only when this line is the LAST byte the writer had and
+-- carried no newline behind it (flushPartial, below) -- `printf a` at the end
+-- of a job, not a line a command actually terminated. It is how the sink
+-- (a file's own bytes, or the next stage of a pipe) learns whether to close
+-- with "\n" of its own: unset on every other call, so any further output
+-- clears it again and only the true last write of a target decides.
+local function outLine(job, text, notFile, partial)
 	-- A job that has ENDED writes nowhere. One door, because a dead process has
 	-- one: whatever was still being handed over when it died is not something
 	-- anybody is owed.
@@ -278,7 +309,11 @@ local function outLine(job, text, notFile)
 	-- every one of them ends the job in the middle of somebody's output.
 	if CeroSecOS.jobIsOver(job) then return end
 	local caps = job.caps
-	if capturing(job) then
+	-- A $( ) catches the standard OUTPUT and nothing else: sh(1) substitutes
+	-- "the standard output of the command", and the error of one still reaches
+	-- the terminal -- `x=$(cat nosuch)` says so on the glass and leaves x empty.
+	-- `2>&1` inside it is what puts an error in the word (routeErr below).
+	if capturing(job) and not notFile then
 		-- One ceiling, and it is the WORD's: what a capture hands back is
 		-- substituted into the line being built, so bytes are the only thing that
 		-- can be too many of. There was a hundred-LINE cap here as well, and the
@@ -295,6 +330,37 @@ local function outLine(job, text, notFile)
 		if #buf > 0 then buf.bytes = (buf.bytes or 0) + 1 end
 		buf.bytes = (buf.bytes or 0) + #text
 		buf[#buf + 1] = text
+		-- The same open-or-closed fact the file door keeps (to.open, below): a
+		-- builtin's `> f` is caught here and written by linesToText, which
+		-- ends the last line only when the writer did -- `printf a > f`.
+		buf.open = partial == true
+		return
+	end
+	-- The FILE the shell opened for the script this job is running. A redirect is
+	-- not a screen either, so the line goes over whole -- uncut, unwrapped -- the
+	-- way it goes down a pipe, and for the same reason: what reads it is a file and
+	-- not a person. It is held in a buffer and written by the pass (jobFlush below),
+	-- because outLine is handed a job and nothing else -- no filesystem, no clock --
+	-- and a write needs both. What bounds the buffer is the SCREEN's own limiter,
+	-- asked of it in jobStep: forty lines, then the job is made to stop and let them
+	-- drain, exactly as a flood onto the glass is.
+	--
+	-- Ahead of the pipe, because in a stage the file IS the call's own: a stage is
+	-- born with no rdto (newStage), and `g > f | wc -l` sends what g says into f
+	-- and nothing down the pipe, so wc counts 0. POSIX.2 sh, Pipelines: the
+	-- pipe is assigned to a command BEFORE the redirections that are part of
+	-- it. A stage's buffer is written by pipeStep and jobFlush, which walk the
+	-- stages for it.
+	if job.rdto ~= nil and not notFile then
+		local to = job.rdto
+		-- `f >&2`: the standard output of what runs in this frame is a copy of the
+		-- standard error it was called with, and goes where that went.
+		if to.toErr then
+			routeErr(job, text, to.spec)
+			return
+		end
+		to.buf[#to.buf + 1] = text
+		to.open = partial == true
 		return
 	end
 	-- A stage of a pipeline writes into the pipe, and a pipe is not a screen:
@@ -306,19 +372,7 @@ local function outLine(job, text, notFile)
 		local buf = job.pipe
 		buf.lines[#buf.lines + 1] = text
 		buf.bytes = buf.bytes + #text + 1
-		return
-	end
-	-- The FILE the shell opened for the script this job is running. A redirect is
-	-- not a screen either, so the line goes over whole -- uncut, unwrapped -- the
-	-- way it goes down a pipe, and for the same reason: what reads it is a file and
-	-- not a person. It is held in a buffer and written by the pass (jobFlush below),
-	-- because outLine is handed a job and nothing else -- no filesystem, no clock --
-	-- and a write needs both. What bounds the buffer is the SCREEN's own limiter,
-	-- asked of it in jobStep: forty lines, then the job is made to stop and let them
-	-- drain, exactly as a flood onto the glass is.
-	if job.rdto ~= nil and not notFile then
-		local to = job.rdto
-		to.buf[#to.buf + 1] = text
+		buf.open = partial == true
 		return
 	end
 	-- The screen's own rule, applied once, here: a job's line is at most sixty
@@ -332,12 +386,49 @@ end
 -- down the pipe, exactly as `ls /nope > f` puts the refusal on the screen and
 -- not in the file -- this machine has no second channel, so the rule is the
 -- same one, written once, in both places.
-local function errLine(job, text)
+--
+-- `2>` is the one thing that moves it, and job.errRd is where a `2>` on the
+-- command, function or script that is running now sent it (runSimple):
+--   { path, who, buf }        a file, buffered and written like job.rdto
+--   { out, depth, rdto }      `2>&1`: the standard output as it was when the
+--                             line was read -- the captures under `depth` and
+--                             the file `rdto` -- so `2>&1 > f` puts the error
+--                             where the output WAS and not into f (sh(1):
+--                             redirections are read left to right).
+-- With none, a stage hands the line to the shell that runs the pipeline, whose
+-- own `2>` then counts -- `f 2>/dev/null` silences a pipeline inside f -- and
+-- the shell at the top puts it on the screen.
+routeErr = function(job, text, spec)
+	if spec ~= nil then
+		if spec.buf ~= nil then
+			spec.buf[#spec.buf + 1] = text
+			return
+		end
+		local caps = job.caps
+		local above = nil
+		if #caps > spec.depth then
+			above = {}
+			for i = spec.depth + 1, #caps do above[#above + 1] = caps[i] end
+			for i = #caps, spec.depth + 1, -1 do caps[i] = nil end
+		end
+		local rdto = job.rdto
+		job.rdto = spec.rdto
+		outLine(job, text)
+		job.rdto = rdto
+		if above ~= nil then
+			for i = 1, #above do caps[#caps + 1] = above[i] end
+		end
+		return
+	end
 	if job.errTo ~= nil then
-		outLine(job.errTo, text, true)
+		routeErr(job.errTo, text, job.errTo.errRd)
 		return
 	end
 	outLine(job, text, true)
+end
+
+local function errLine(job, text)
+	routeErr(job, text, job.errRd)
 end
 
 -- The row a job is part way through, wrapped the way a screen sixty columns
@@ -354,16 +445,29 @@ end
 -- bounds what is held to one row.
 --
 -- Only on the way to the screen. Inside a $(...) the text is not going to a
--- screen and must not be folded as if it were: the capture joins its lines with
--- a space, so a wrap there would push spaces into the middle of the captured
--- value. What bounds it there is the capture's byte ceiling, measured on what
--- is held as well as on what has been caught -- the same flood written into a
--- substitution instead of onto a screen must meet a ceiling of its own, or it
--- is the same unbounded string one door along.
+-- screen and must not be folded as if it were: the capture joins its lines
+-- with "\n" (POSIX.2 2.6.3), so a wrap there would push newlines into the
+-- middle of the captured value. What bounds it there is the capture's byte
+-- ceiling, measured on what is held as well as on what has been caught --
+-- the same flood written into a substitution instead of onto a screen must
+-- meet a ceiling of its own, or it is the same unbounded string one door
+-- along.
 local function wrapPartial(job)
 	if capturing(job) then
 		if captureBytes(job, job.partial) > CeroSecOS.MAX_VAR_BYTES then
 			captureTooLarge(job)
+		end
+		return
+	end
+	-- Into the FILE the shell opened for this script, the pipe's reasoning again: a
+	-- file is not sixty columns wide, so a row's worth of text with no newline in
+	-- it must not be folded as if it were -- `printf %s` into a file writes what it
+	-- was given -- and it cannot be held for ever either. Same ceiling as the pipe,
+	-- because the thing that is full is a buffer either way.
+	if job.rdto ~= nil then
+		while #job.partial >= CeroSecOS.PIPE_BYTES do
+			outLine(job, string.sub(job.partial, 1, CeroSecOS.PIPE_BYTES))
+			job.partial = string.sub(job.partial, CeroSecOS.PIPE_BYTES + 1)
 		end
 		return
 	end
@@ -375,18 +479,6 @@ local function wrapPartial(job)
 	-- bytes is held with no newline, that much goes down the pipe, which is
 	-- exactly what a full kernel buffer does to a writer that never ends a line.
 	if job.pipe ~= nil then
-		while #job.partial >= CeroSecOS.PIPE_BYTES do
-			outLine(job, string.sub(job.partial, 1, CeroSecOS.PIPE_BYTES))
-			job.partial = string.sub(job.partial, CeroSecOS.PIPE_BYTES + 1)
-		end
-		return
-	end
-	-- Into the FILE the shell opened for this script, the pipe's reasoning again: a
-	-- file is not sixty columns wide, so a row's worth of text with no newline in
-	-- it must not be folded as if it were -- `printf %s` into a file writes what it
-	-- was given -- and it cannot be held for ever either. Same ceiling as the pipe,
-	-- because the thing that is full is a buffer either way.
-	if job.rdto ~= nil then
 		while #job.partial >= CeroSecOS.PIPE_BYTES do
 			outLine(job, string.sub(job.partial, 1, CeroSecOS.PIPE_BYTES))
 			job.partial = string.sub(job.partial, CeroSecOS.PIPE_BYTES + 1)
@@ -419,15 +511,45 @@ end
 
 local function flushPartial(job)
 	if job.partial ~= nil and job.partial ~= "" then
-		outLine(job, job.partial)
+		-- partial=true: this line carries no newline behind it. It is the
+		-- LAST thing this job wrote if nothing else follows, which is what
+		-- lets the sink decide whether to close with a "\n" of its own.
+		outLine(job, job.partial, nil, true)
 	end
 	job.partial = ""
 end
 
+-- A command's returned lines, same door a builtin's writeText uses. `lines`
+-- may carry an `open` field (cat, and the /bin printf and echo doors): true
+-- when its own last line had no newline behind it -- read straight off the
+-- source, a file or a pipe that ended without one -- so a command whose
+-- INPUT is unterminated hands the same fact to whoever it writes to,
+-- exactly the way `printf a | cat; echo b` glues onto one line on a real sh.
 local function writeLines(job, lines)
 	if type(lines) ~= "table" then return end
-	if #lines > 0 then flushPartial(job) end
-	for i = 1, #lines do outLine(job, lines[i]) end
+	local n = #lines
+	if n == 0 then return end
+	-- The job's own last line may still be open -- `printf a; cat f` -- and
+	-- then this command's first line is the REST of it, because a real one
+	-- writes bytes onto the same standard output and nothing between: "aa".
+	local first = 1
+	if job.partial ~= nil and job.partial ~= "" then
+		if n == 1 and lines.open == true then
+			writeText(job, lines[1])
+			return
+		end
+		writeText(job, lines[1] .. "\n")
+		first = 2
+	end
+	if lines.open == true then
+		for i = first, n - 1 do outLine(job, lines[i]) end
+		-- The last line goes through writeText's own partial, which folds it
+		-- at the pipe/file/screen width the same way any other unterminated
+		-- text does, and leaves it open for whatever writes next.
+		writeText(job, lines[n])
+		return
+	end
+	for i = first, n do outLine(job, lines[i]) end
 end
 
 -- The same, for the lines of a command that FAILED: they go where an error
@@ -467,6 +589,39 @@ local function getVar(job, name)
 	return v
 end
 
+-- IFS, POSIX.2 2.6.5: unset reads as space, tab, newline; getVar cannot say
+-- that (it turns nil into ""), so field splitting reads job.vars.IFS itself.
+local IFS_DEFAULT = " \t\n"
+local function getIFS(job)
+	local v = job.vars.IFS
+	if v == nil then return IFS_DEFAULT end
+	return v
+end
+
+-- "$*"'s join character (POSIX.2 2.5.3): the first byte of IFS, a blank when
+-- IFS is unset, none at all when it is set empty.
+local function ifsJoinChar(job)
+	local v = job.vars.IFS
+	if v == nil then return " " end
+	if v == "" then return "" end
+	return string.sub(v, 1, 1)
+end
+
+-- Splits an IFS value into two membership tables: the space/tab/newline
+-- bytes it holds (IFS whitespace, collapsed and ignored at the ends) and
+-- every other byte it holds (an IFS delimiter, which delimits on its own
+-- even next to another one). A character loop over the value, never a
+-- pattern built from it -- IFS is the player's (tests/pattern-check.lua).
+local function ifsClasses(ifs)
+	local ws, delim = {}, {}
+	for i = 1, #ifs do
+		local c = string.sub(ifs, i, i)
+		if c == " " or c == "\t" or c == "\n" then ws[c] = true
+		else delim[c] = true end
+	end
+	return ws, delim
+end
+
 -- nil, or the reason it may not be set. The two ceilings live here and nowhere
 -- else, so every road into a variable meets them.
 local function setVar(job, name, value)
@@ -484,6 +639,202 @@ local function setVar(job, name, value)
 	end
 	job.vars[name] = value
 	return nil
+end
+
+-- One parameter of a ${...} word, as text. readBraceWord
+-- (CeroSecOSScript.lua) already refused every part that could recurse or
+-- wait on a capture -- no $( ), no `` ``, no second ${x:-y} -- so what is
+-- left is exactly the plain parameters expandStep resolves everywhere else,
+-- and none of them can yield. That is what lets the word be read straight
+-- through instead of through expandStep's own step machine.
+local function wordPartText(job, p)
+	if p.t == "lit" then return p.s end
+	if p.t == "var" then return getVar(job, p.name) end
+	if p.t == "arg" then
+		if p.n == 0 then return job.name end
+		return job.args[p.n] or ""
+	end
+	if p.t == "count" then return tostring(#job.args) end
+	if p.t == "status" then return CeroSecOS.intText(job.status) end
+	if p.t == "job" then return tostring(job.id) end
+	-- $* joins on IFS's first byte here as it does everywhere (POSIX.2
+	-- 2.5.2), so "${y:-$*}" is "$*"; $@ in a word that is one string is
+	-- the blank-joined string it is on the right of `x=`.
+	if p.t == "star" then return table.concat(job.args, ifsJoinChar(job)) end
+	if p.t == "all" then return table.concat(job.args, " ") end
+	if p.t == "bang" then
+		if job.lastBg ~= nil then return tostring(job.lastBg) end
+		return ""
+	end
+	return ""
+end
+
+-- The word after :- := :? :+, flattened to one string.
+local function resolveWordText(job, parts)
+	local buf = ""
+	for i = 1, #parts do
+		buf = buf .. wordPartText(job, parts[i])
+		if #buf > CeroSecOS.MAX_VAR_BYTES then return nil, "word too large" end
+	end
+	return buf
+end
+
+-- How many pieces the pattern of ${x#p} ${x##p} ${x%p} ${x%%p} may have: a
+-- piece is one character, one "?", one "[...]" set or one run of "*". The
+-- same ceiling grep's own pattern meets (CeroSecOS.MAX_BRE_ITEMS, 32) and for
+-- the same reason: the walk below costs a piece for every byte of the value,
+-- and a value is at most MAX_VAR_BYTES, so this is what makes one trim a
+-- bounded amount of work -- about thirty thousand piece-visits, at worst.
+CeroSecOS.MAX_TRIM_ITEMS = 32
+
+-- The pattern of a trim, as pieces. Quoting decides what globs, exactly as
+-- POSIX.2 3.6.2 has it: a bare * ? [ is a pattern character, a quoted or
+-- backslashed one is itself, and the value of a bare $p is a pattern while
+-- the value of "$p" is text. readBraceWord marks every literal piece `bare`
+-- or not, and a parameter carries `q`.
+--
+-- A set is kept as its own text, "[a-z]", and handed to CeroSecOS.globMatch
+-- one character at a time -- the matcher `case` and pathname expansion use,
+-- so the set grammar (ranges, a leading ! or ^, a "[" with no "]" standing
+-- for itself) is written once, there.
+local function trimPieces(job, parts)
+	local items = {}
+	local function add(text, glob)
+		local i, n = 1, #text
+		while i <= n do
+			local c = string.sub(text, i, i)
+			if glob and c == "*" then
+				if items[#items] == nil or items[#items].k ~= "star" then
+					items[#items + 1] = { k = "star" }
+				end
+				i = i + 1
+			elseif glob and c == "?" then
+				items[#items + 1] = { k = "any" }
+				i = i + 1
+			elseif glob and c == "[" and string.find(text, "]", i + 2, true) ~= nil then
+				local close = string.find(text, "]", i + 2, true)
+				items[#items + 1] = { k = "set", s = string.sub(text, i, close) }
+				i = close + 1
+			else
+				items[#items + 1] = { k = "ch", c = c }
+				i = i + 1
+			end
+			if #items > CeroSecOS.MAX_TRIM_ITEMS then return false end
+		end
+		return true
+	end
+	for i = 1, #parts do
+		local p = parts[i]
+		local glob
+		if p.t == "lit" then glob = p.bare == true else glob = not p.q end
+		if not add(wordPartText(job, p), glob) then return nil end
+	end
+	return items
+end
+
+-- The longest (or the shortest) run of value, from one end, that the pieces
+-- match whole: its length, or nil when none does. fromEnd walks the value
+-- backwards and the pieces backwards with it, which is a pattern read the
+-- other way round -- a star, a "?", a set and a character are each the same
+-- piece in either direction.
+--
+-- One pass over the value, carrying the set of places in the pattern the
+-- walk can be standing at -- the same shape as grep's breMatch -- so the cost
+-- is the value's length times the pieces', and never the square of the
+-- value's that trying every cut against globMatch would be (measured: 1.1 s
+-- for ${x##*[b]} over a kilobyte of "a", against a pass meant to cost four
+-- milliseconds). Answers the visits too, for the charge.
+local function trimRun(value, items, longest, fromEnd)
+	local m, n = #items, #value
+	local pieces = items
+	if fromEnd then
+		pieces = {}
+		for i = 1, m do pieces[i] = items[m - i + 1] end
+	end
+	-- What a set answered for a character, kept: globMatch walks the set
+	-- once per character the value holds and not once per visit.
+	local held = {}
+	for i = 1, m do
+		if pieces[i].k == "set" then held[i] = {} end
+	end
+	local visits = 0
+	-- Two sets of places, swapped each character rather than made anew:
+	-- the walk allocates nothing per byte.
+	local cur, nxt = {}, {}
+	for p = 1, m + 1 do
+		cur[p] = false
+		nxt[p] = false
+	end
+	-- A star may match nothing, so standing before one is standing after it.
+	local function closeOver(set)
+		for p = 1, m do
+			if set[p] and pieces[p].k == "star" then set[p + 1] = true end
+		end
+		visits = visits + m
+	end
+	cur[1] = true
+	closeOver(cur)
+	local best = nil
+	if cur[m + 1] then
+		best = 0
+		if not longest then return best, visits end
+	end
+	for k = 1, n do
+		local at = k
+		if fromEnd then at = n - k + 1 end
+		local c = string.sub(value, at, at)
+		local alive = false
+		for p = 1, m + 1 do nxt[p] = false end
+		for p = 1, m do
+			if cur[p] then
+				visits = visits + 1
+				local it = pieces[p]
+				local step = false
+				if it.k == "star" then
+					nxt[p] = true
+					alive = true
+				elseif it.k == "any" or (it.k == "ch" and it.c == c) then
+					step = true
+				elseif it.k == "set" then
+					local memo = held[p]
+					if memo[c] == nil then memo[c] = CeroSecOS.globMatch(c, it.s) end
+					step = memo[c]
+				end
+				if step then
+					nxt[p + 1] = true
+					alive = true
+				end
+			end
+		end
+		if not alive then break end
+		closeOver(nxt)
+		cur, nxt = nxt, cur
+		if cur[m + 1] then
+			best = k
+			if not longest then break end
+		end
+	end
+	return best, visits
+end
+
+-- ${name#p} ${name##p} ${name%p} ${name%%p}: the shortest or the longest
+-- prefix (#) or suffix (%) the pattern matches, cut away; the value as it
+-- stands when none does. ksh88's four and POSIX.2 3.6.2's. The walk is
+-- charged as DEBT, at grep's own rate (CeroSecOS.BRE_STEPS_PER), for the
+-- reason grep's is: `while true; do y=${x%%*a*}; done` over a kilobyte must
+-- slow down, not cost the pass what forty commands would.
+local function trimValue(job, value, items, kind)
+	local fromEnd = kind == "trimSuf" or kind == "trimSufLong"
+	local longest = kind == "trimPreLong" or kind == "trimSufLong"
+	local len, visits = trimRun(value, items, longest, fromEnd)
+	local cost = math.floor(visits / CeroSecOS.BRE_STEPS_PER)
+	if cost > 0 then
+		job.debt = (job.debt or 0) + cost
+		job.steps = job.steps + cost
+	end
+	if len == nil then return value end
+	if fromEnd then return string.sub(value, 1, #value - len) end
+	return string.sub(value, len + 1)
 end
 
 -- Mark a name as being in the environment. nil, or the reason it may not be.
@@ -672,8 +1023,11 @@ function CeroSecOS.newJob(opts)
 		-- whole path in a crontab line. A script run by hand is handed a copy of
 		-- its parent's ENVIRONMENT instead, and a subshell -- a stage, an `&` -- a
 		-- copy of everything its parent held.
-		vars = { PATH = CeroSecOS.DEFAULT_PATH }
-		nvars = 1
+		-- And IFS, which every sh sets at its start and nobody exports
+		-- (POSIX.2 2.5.3; 4.4BSD expand.c's ifsbreakup reads ifsval(),
+		-- which is always a variable there).
+		vars = { PATH = CeroSecOS.DEFAULT_PATH, IFS = IFS_DEFAULT }
+		nvars = 2
 		-- And it is an environment and not a shell variable: a machine with no
 		-- PATH in front of a cron line could not run a command at all.
 		if exported == nil then exported = { PATH = true } end
@@ -688,6 +1042,8 @@ function CeroSecOS.newJob(opts)
 		name = opts.name or "sh",
 		cmd = opts.cmd or opts.name or "sh",
 		bg = opts.bg and true or false,
+		-- $!: the id of the last job an `&` in this shell started, or nil.
+		lastBg = type(opts.lastBg) == "number" and opts.lastBg or nil,
 		prog = opts.prog,
 		args = args,
 		vars = vars,
@@ -777,12 +1133,25 @@ local function popFrame(job)
 	local f = frames[#frames]
 	if f == nil then return end
 	frames[#frames] = nil
+	-- An EXIT trap's action that ran to its end: $? is again what the shell
+	-- was leaving with (POSIX.2 3.14, "the value of $? after the trap action
+	-- completes shall be the value it had before trap was invoked"). An
+	-- `exit n` inside the action unwinds through here too, and handleSignal
+	-- sets n after, which is the one way a trap changes the status.
+	if f.trapStatus ~= nil then job.status = f.trapStatus end
+	if f.hadTraps then job.traps = f.oldTraps end
 	if f.k == "capture" then
 		flushPartial(job)
 		local buf = job.caps[#job.caps]
 		job.caps[#job.caps] = nil
-		-- Newlines become spaces, the way every shell folds a substitution.
-		job.capval = trim(table.concat(buf or {}, " "))
+		-- The lines it caught, joined back the way they came apart: outLine
+		-- split the command's output at each newline, table.concat with "\n"
+		-- puts them back, and only the newline(s) left at the very end are
+		-- gone (sh(1), POSIX.2 2.6.3) -- a captured "a\n\nb\n" is "a\n\nb",
+		-- the blank line kept and the run of trailing ones the only casualty.
+		-- Splitting IT further, if this word is unquoted, is field
+		-- splitting's job below, on IFS like any other expansion's result.
+		job.capval = stripTrailingNewlines(table.concat(buf or {}, "\n"))
 		job.hasCap = true
 		-- And the shell it was a SUBSHELL of comes back with its own variables.
 		-- POSIX.2: a command substitution is executed in a subshell environment,
@@ -832,23 +1201,46 @@ local function popFrame(job)
 			-- The bodies cached from the child's own definitions go with them.
 			job.fprog = f.oldFprog
 		end
-		-- And the file the shell had opened for it is closed: what the script wrote
-		-- and nobody has written yet goes on the queue the pass empties, IN ORDER,
-		-- before the target changes back -- flushing it here is not possible, because
-		-- popFrame has no filesystem and no clock to write with.
-		if f.hadRdto then
-			-- The row it was part way through goes in the FILE, like the rest of what
-			-- it wrote: the redirect is closed here, and a partial flushed afterwards
-			-- would find the target gone and land on the glass instead. `printf aaa`
-			-- with no newline in a redirected script printed on the screen and left an
-			-- empty file, which is the whole of what this line is for.
-			flushPartial(job)
-			if job.rdto ~= nil then
-				if job.rdDone == nil then job.rdDone = {} end
-				job.rdDone[#job.rdDone + 1] = job.rdto
-			end
-			job.rdto = f.oldRdto
+	elseif f.sub then
+		-- A ( list ) that is over: the shell it was a copy of comes back, as
+		-- after a $( ) (above) -- its variables, its environment, its working
+		-- directory, its functions and the bodies cached for them, and its
+		-- positional parameters.
+		job.vars = f.oldVars
+		job.nvars = f.oldNvars
+		job.exported = f.oldExported
+		job.session.cwd = f.oldCwd
+		job.funcs = f.oldFuncs
+		job.fprog = f.oldFprog
+		job.args = f.subArgs
+	end
+	-- And the file the shell had opened for it is closed -- a script's, a
+	-- function's or a group's: what it wrote and nobody has written yet goes
+	-- on a queue, IN ORDER, before the target changes back -- flushing it here is not possible, because popFrame has no
+	-- filesystem and no clock to write with. The queue is emptied before the
+	-- next step (flushDone, at the top of stepOnce), so the command after this
+	-- one finds the file whole, as it does after a real sh closed it.
+	if f.hadRdto then
+		-- The row it was part way through goes in the FILE, like the rest of what
+		-- it wrote: the redirect is closed here, and a partial flushed afterwards
+		-- would find the target gone and land on the glass instead. `printf aaa`
+		-- with no newline in a redirected script printed on the screen and left an
+		-- empty file, which is the whole of what this line is for.
+		flushPartial(job)
+		if job.rdto ~= nil then
+			if job.rdDone == nil then job.rdDone = {} end
+			job.rdDone[#job.rdDone + 1] = job.rdto
 		end
+		job.rdto = f.oldRdto
+	end
+	-- The `2>` of the call, closed the same way and onto the same queue.
+	if f.hadErd then
+		local e = job.errRd
+		if e ~= nil and e.buf ~= nil then
+			if job.rdDone == nil then job.rdDone = {} end
+			job.rdDone[#job.rdDone + 1] = e
+		end
+		job.errRd = f.oldErd
 	end
 end
 
@@ -860,6 +1252,128 @@ local function pushFrame(job, frame)
 	end
 	job.frames[#job.frames + 1] = frame
 	return true
+end
+
+--
+-- The machine's integer
+--
+-- Every number a player types -- printf's operands, expr's, $(( ))'s, test's,
+-- a count, a job number -- is read HERE and printed HERE, and never by
+-- tonumber or tostring. Both VMs' tonumber take "inf", "nan", "Infinity" and
+-- "1e999" (measured on lua5.1 and on the game's Kahlua, 2026-09-24), and a
+-- digit loop handed an infinity never ends: `printf %x 1e999` hung the
+-- machine. Kahlua also answers nil for "0x10" where lua5.1 answers 16, and
+-- prints 123456789012345 as "1.23456789012345E14" where lua5.1 prints
+-- "1.2345678901234e+14" -- neither of them digits.
+--
+-- The word is the double's exact range, +-9007199254740991, where a 1993
+-- long held 2147483647: a declared deviation ("numbers"). Past it a number
+-- saturates, the way strtol(3) clamps at LONG_MAX with ERANGE, and the
+-- callers that 4.4BSD had report ERANGE report it.
+CeroSecOS.INT_MAX = 9007199254740991
+
+-- strtol(3) in base 10, by hand: leading blanks, one sign, the digits. The
+-- value, the index of the first byte not read (1 when nothing was converted,
+-- as strtol leaves endptr at the start), and true when the value was clamped
+-- -- strtol's ERANGE. Bounded by the length of the text and never by what
+-- the digits add up to.
+function CeroSecOS.strtol(s)
+	s = tostring(s or "")
+	local n, i = #s, 1
+	while i <= n do
+		local c = string.sub(s, i, i)
+		if c ~= " " and c ~= "\t" and c ~= "\n" then break end
+		i = i + 1
+	end
+	local neg, c = false, string.sub(s, i, i)
+	if c == "-" or c == "+" then
+		neg = c == "-"
+		i = i + 1
+	end
+	local v, range, digits = 0, false, 0
+	while i <= n do
+		local b = string.byte(s, i)
+		if b < 48 or b > 57 then break end
+		if not range then
+			v = v * 10 + (b - 48)
+			if v > CeroSecOS.INT_MAX then
+				v = CeroSecOS.INT_MAX
+				range = true
+			end
+		end
+		digits = digits + 1
+		i = i + 1
+	end
+	if digits == 0 then return 0, 1, false end
+	if neg then v = -v end
+	return v, i, range
+end
+
+-- The whole text as one integer, blanks allowed round it, or nil: what sh's
+-- own number() and a count want. Clamped, like strtol.
+function CeroSecOS.intOf(s)
+	local v, stop = CeroSecOS.strtol(s)
+	if stop == 1 then return nil end
+	s = tostring(s)
+	while stop <= #s do
+		local c = string.sub(s, stop, stop)
+		if c ~= " " and c ~= "\t" and c ~= "\n" then return nil end
+		stop = stop + 1
+	end
+	return v
+end
+
+-- A result pulled back inside the word: saturated, never wrapped, and a
+-- NaN (inf - inf) is nought. The deviation above.
+function CeroSecOS.intClamp(v)
+	if type(v) ~= "number" or v ~= v then return 0 end
+	if v > CeroSecOS.INT_MAX then return CeroSecOS.INT_MAX end
+	if v < -CeroSecOS.INT_MAX then return -CeroSecOS.INT_MAX end
+	return v
+end
+
+-- An integer as its decimal digits, printf's %ld: a remainder at a time,
+-- never %d or %g (the two VMs format a big double differently, above), and
+-- never the "%" operator (CeroSecOS.mod: Kahlua's clamps at 2^31). At most
+-- sixteen turns of the loop, the word being what it is.
+function CeroSecOS.intText(v)
+	v = CeroSecOS.intClamp(v)
+	if v < 0 then v = -math.floor(-v) else v = math.floor(v) end
+	if v == 0 then return "0" end
+	local neg = v < 0
+	if neg then v = -v end
+	local s = ""
+	while v > 0 do
+		local q = math.floor(v / 10)
+		local d = v - q * 10
+		-- v / 10 is rounded before it is floored; this puts a digit the
+		-- rounding moved back where it belongs.
+		if d < 0 then q, d = q - 1, d + 10 elseif d > 9 then q, d = q + 1, d - 10 end
+		s = string.char(48 + d) .. s
+		v = q
+	end
+	if neg then s = "-" .. s end
+	return s
+end
+
+-- a / b and a % b the way C (and so sh and expr) have them: the quotient
+-- truncated toward zero, the remainder with a's sign. The quotient is
+-- corrected by one where a / b was rounded across a whole number, which a
+-- double does near the top of the word.
+function CeroSecOS.intDiv(a, b)
+	local q = a / b
+	if q < 0 then q = -math.floor(-q) else q = math.floor(q) end
+	local r = a - b * q
+	local babs = b
+	if babs < 0 then babs = -babs end
+	if r ~= 0 and (r < 0) ~= (a < 0) then
+		if (a < 0) == (b < 0) then q = q - 1 else q = q + 1 end
+		r = a - b * q
+	elseif r >= babs or -r >= babs then
+		if (a < 0) == (b < 0) then q = q + 1 else q = q - 1 end
+		r = a - b * q
+	end
+	return q, r
 end
 
 --
@@ -882,9 +1396,7 @@ local arithSum
 -- ends here -- a variable, an argument, ${name} -- and the rule an empty
 -- variable is nought by is the rule an empty argument has to be nought by.
 local function argNumber(text)
-	local v = tonumber(text)
-	if v == nil then return 0 end
-	return math.floor(v)
+	return CeroSecOS.intOf(text) or 0
 end
 
 -- A number, a variable, a parenthesised sum, or a unary minus.
@@ -927,6 +1439,7 @@ local function arithUnit(job, s, i)
 		if nx == "#" then return #job.args, i + 2 end
 		if nx == "?" then return math.floor(job.status), i + 2 end
 		if nx == "$" then return math.floor(job.id), i + 2 end
+		if nx == "!" then return argNumber(job.lastBg ~= nil and tostring(job.lastBg) or ""), i + 2 end
 		if nx == "{" then
 			local j = i + 2
 			local name = ""
@@ -942,7 +1455,8 @@ local function arithUnit(job, s, i)
 	if string.find(c, "^[0-9]") ~= nil then
 		local j = i
 		while j <= #s and string.find(string.sub(s, j, j), "^[0-9]") ~= nil do j = j + 1 end
-		return tonumber(string.sub(s, i, j - 1)), j
+		-- arith_lex.l's atol(yytext): strtol, clamped at the top of the word.
+		return (CeroSecOS.strtol(string.sub(s, i, j - 1))), j
 	end
 	if string.find(string.sub(s, i, i), "^[A-Za-z_]") ~= nil then
 		local j = i
@@ -962,14 +1476,15 @@ local function arithProduct(job, s, i)
 		if c ~= "*" and c ~= "/" and c ~= "%" then return left, j end
 		local right, k, rerr = arithUnit(job, s, j + 1)
 		if rerr ~= nil then return nil, k, rerr end
+		-- Every result is pulled back inside the word (CeroSecOS.intClamp):
+		-- 4.4BSD's int wrapped round in silence, this one stops at the top.
 		if c == "*" then
-			left = left * right
+			left = CeroSecOS.intClamp(left * right)
 		else
 			if right == 0 then return nil, k, "divide by zero" end
 			-- Truncated towards zero, the way C and every shell divide.
-			local q = left / right
-			if q < 0 then q = math.ceil(q) else q = math.floor(q) end
-			if c == "/" then left = q else left = left - right * q end
+			local q, r = CeroSecOS.intDiv(left, right)
+			if c == "/" then left = CeroSecOS.intClamp(q) else left = r end
 		end
 		j = k
 	end
@@ -985,17 +1500,19 @@ arithSum = function(job, s, i)
 		local right, k, rerr = arithProduct(job, s, j + 1)
 		if rerr ~= nil then return nil, k, rerr end
 		if c == "+" then left = left + right else left = left - right end
+		left = CeroSecOS.intClamp(left)
 		j = k
 	end
 end
 
--- value as a string, or nil plus the reason.
+-- value as a string, or nil plus the reason. Digits, never tostring's
+-- exponent (CeroSecOS.intText).
 local function arithEval(job, expr)
 	local v, j, err = arithSum(job, expr, 1)
 	if err ~= nil then return nil, err end
 	j = arithSkip(expr, j)
 	if j <= #expr then return nil, "bad arithmetic" end
-	return tostring(math.floor(v))
+	return CeroSecOS.intText(v)
 end
 
 --
@@ -1019,8 +1536,12 @@ end
 local function pushCapture(job, prog)
 	local frame = { k = "capture", prog = prog, i = 1,
 		oldVars = job.vars, oldNvars = job.nvars, oldExported = job.exported,
-		oldCwd = job.session.cwd, oldFuncs = job.funcs }
+		oldCwd = job.session.cwd, oldFuncs = job.funcs,
+		hadTraps = true, oldTraps = job.traps }
 	if not pushFrame(job, frame) then return false end
+	-- A subshell starts with no trap of its own (POSIX.2 3.12: traps "are
+	-- set to the default values"), and the one it sets is its own.
+	job.traps = nil
 	job.vars = CeroSecOS.copyVars(job.vars)
 	job.exported = CeroSecOS.copyExported(job.exported)
 	job.funcs = CeroSecOS.copyFuncs(job.funcs)
@@ -1034,7 +1555,11 @@ local function newExpansion(words, nosplit)
 	local kept = {}
 	for i = 1, #words do kept[i] = words[i] end
 	return { words = kept, wi = 1, pi = 1, buf = "", mask = "", open = false, nosplit = nosplit,
-		fields = {}, fieldMasks = {}, out = {}, outMasks = {}, counts = {} }
+		fields = {}, fieldMasks = {}, out = {}, outMasks = {}, counts = {},
+		-- IFS state for addSplit: ifsWs nil means "IFS unset, use the plain
+		-- whitespace splitter verbatim"; wsClosed is the one bit an IFS
+		-- delimiter needs across two parts of the same word (see addSplit).
+		ifsWs = nil, ifsDelim = nil, wsClosed = false }
 end
 
 -- The mask beside ex.buf: "g" for a byte a pathname expansion may still read
@@ -1048,33 +1573,125 @@ local function closeField(ex)
 	ex.open = false
 end
 
--- An unquoted expansion's text: every run of blanks in it ends a field and
--- starts the next one, which is what makes `for f in $list` walk a list.
--- `glob` is carried onto every byte handed in: a value that came out of an
--- unquoted "$x" still globs, which is what makes `x='*'; echo $x` expand.
+-- An unquoted expansion's text: every run of IFS delimiters in it ends a
+-- field and starts the next one, which is what makes `for f in $list` walk
+-- a list. `glob` is carried onto every byte handed in: a value that came out
+-- of an unquoted "$x" still globs, which is what makes `x='*'; echo $x`
+-- expand. Called once per PART of a word, so the field it is building may
+-- already be open (from an earlier part of the same word) and may still be
+-- open when it returns (for a later part to add to) -- ex.buf/ex.mask/
+-- ex.open carry that across calls, exactly as they did before IFS existed.
 local function addSplit(ex, text, glob)
 	if text == "" then return end
-	local tokens = {}
-	for piece in string.gmatch(text, "[^ \t\n]+") do tokens[#tokens + 1] = piece end
-	if #tokens == 0 then
-		-- Blanks and nothing else: it closes the open field and opens none.
-		if ex.open then closeField(ex) end
+	if ex.ifsWs == nil then
+		-- IFS unset: the default splitter, byte for byte as it always was,
+		-- so a script that never touches IFS is unchanged by this feature.
+		local tokens = {}
+		for piece in string.gmatch(text, "[^ \t\n]+") do tokens[#tokens + 1] = piece end
+		if #tokens == 0 then
+			-- Blanks and nothing else: it closes the open field and opens none.
+			if ex.open then closeField(ex) end
+			return
+		end
+		local mc = glob and "g" or "l"
+		if string.find(text, "^[ \t\n]") ~= nil and ex.open then closeField(ex) end
+		for i = 1, #tokens do
+			if i > 1 then closeField(ex) end
+			ex.buf = ex.buf .. tokens[i]
+			ex.mask = ex.mask .. string.rep(mc, #tokens[i])
+			ex.open = true
+		end
+		if string.find(text, "[ \t\n]$") ~= nil then closeField(ex) end
 		return
 	end
+
+	-- IFS is set (maybe to "", which holds no byte in either table below, so
+	-- every byte falls through to the plain "content" branch and the whole
+	-- text becomes one unsplit run -- POSIX.2 2.6.5's "no splitting occurs").
+	--
+	-- A character loop over the WORD now too, matching the one over IFS
+	-- above it: the word is the player's exactly as much as IFS is.
+	--
+	-- wsClosed is the one bit of state a delimiter needs to see across the
+	-- boundary between two parts of a word: an IFS delimiter, along with any
+	-- IFS whitespace next to it on EITHER side, is one separator (POSIX.2's
+	-- "along with any adjacent IFS white space"), so `x="a "; y=":b"; $x$y`
+	-- with IFS=" :" is two fields, not three, even though the space and the
+	-- colon arrive in different addSplit calls. It is true only right after
+	-- a field closed on pure whitespace, and it is spent (false) the moment
+	-- a delimiter uses it, content starts, or a field closes on a delimiter
+	-- of its own -- that delimiter already IS the boundary, nothing is left
+	-- to merge into it.
+	local ws, delim = ex.ifsWs, ex.ifsDelim
 	local mc = glob and "g" or "l"
-	if string.find(text, "^[ \t\n]") ~= nil and ex.open then closeField(ex) end
-	for i = 1, #tokens do
-		if i > 1 then closeField(ex) end
-		ex.buf = ex.buf .. tokens[i]
-		ex.mask = ex.mask .. string.rep(mc, #tokens[i])
-		ex.open = true
+	local n = #text
+	for i = 1, n do
+		local c = string.sub(text, i, i)
+		if ex.open then
+			if delim[c] then
+				closeField(ex)
+				ex.wsClosed = false
+			elseif ws[c] then
+				closeField(ex)
+				ex.wsClosed = true
+			else
+				ex.buf = ex.buf .. c
+				ex.mask = ex.mask .. mc
+			end
+		else
+			if delim[c] then
+				if ex.wsClosed then
+					-- Adjacent to the whitespace that just closed a field:
+					-- the same separator, not a second one.
+					ex.wsClosed = false
+				else
+					-- A delimiter on its own (or a second one in a row)
+					-- always delimits, empty field and all: closeField on
+					-- an empty, still-open buf pushes "" and nothing else.
+					closeField(ex)
+				end
+			elseif not ws[c] then
+				ex.buf = c
+				ex.mask = mc
+				ex.open = true
+			end
+			-- ws[c] while already closed: more of the same separator, and
+			-- nothing to do.
+		end
 	end
-	if string.find(text, "[ \t\n]$") ~= nil then closeField(ex) end
+end
+
+-- Bare $@ and $*: every positional parameter is a field of its own, and
+-- then IFS splits inside each (POSIX.2 2.5.2). The boundary between two is
+-- a field boundary whatever IFS holds, and it starts a fresh run for
+-- wsClosed, as a new word does -- `set -- 'a ' ':b'` with IFS=' :' is a,
+-- "" and b, the ":" delimiting on its own. An empty parameter adds no
+-- field, the way any empty unquoted expansion adds none.
+local function splitParams(ex, params)
+	for a = 1, #params do
+		if a > 1 then
+			if ex.open then closeField(ex) end
+			ex.wsClosed = false
+		end
+		addSplit(ex, params[a], true)
+	end
 end
 
 -- "done" when every word is expanded, "sub" when a $(...) has been pushed and
 -- the walker must run it first, or nil plus the reason.
 local function expandStep(job, state, ex, env)
+	-- Read IFS once per entry (this walker returns to the caller and is
+	-- re-entered for every $( ) it must run first, and job.vars is back to
+	-- the outer shell's by the time it is). nil means unset: addSplit keeps
+	-- its old path verbatim for that case.
+	local ifsRaw = job.vars.IFS
+	if not ex.ifsCached or ifsRaw ~= ex.ifsRaw then
+		ex.ifsRaw, ex.ifsCached = ifsRaw, true
+		-- Set to space, tab and newline -- what every shell starts with now
+		-- -- is the unset case byte for byte, so it takes the same splitter.
+		if ifsRaw == nil or ifsRaw == IFS_DEFAULT then ex.ifsWs, ex.ifsDelim = nil, nil
+		else ex.ifsWs, ex.ifsDelim = ifsClasses(ifsRaw) end
+	end
 	while ex.wi <= #ex.words do
 		local parts = ex.words[ex.wi]
 
@@ -1091,9 +1708,105 @@ local function expandStep(job, state, ex, env)
 			elseif part.t == "count" then
 				text = tostring(#job.args)
 			elseif part.t == "status" then
-				text = tostring(job.status)
+				text = CeroSecOS.intText(job.status)
 			elseif part.t == "job" then
 				text = tostring(job.id)
+			elseif part.t == "star" and not part.q and not ex.nosplit then
+				-- Bare, $* is $@: each positional parameter a field, and
+				-- then each field split on IFS (POSIX.2 2.5.2, "expands to
+				-- the positional parameters, starting from one", and 2.6.5
+				-- on the result). Not the joined string split again: with
+				-- IFS=: an argument "a b" stays one field, and with IFS
+				-- empty every argument stays its own.
+				splitParams(ex, job.args)
+				ex.pi = ex.pi + 1
+				text = nil
+			elseif part.t == "star" then
+				-- One string, joined by IFS's first byte -- a blank if IFS is
+				-- unset, nothing if it is set empty (POSIX.2 2.5.3). Quoted it
+				-- is one field, and so it is where nothing splits.
+				text = table.concat(job.args, ifsJoinChar(job))
+			elseif part.t == "bang" then
+				-- Empty until an `&` has started something, as in any sh.
+				if job.lastBg ~= nil then text = tostring(job.lastBg) else text = "" end
+			elseif part.t == "vare" then
+				-- System V sh's ${name:-word} family and ksh88's ${#name},
+				-- ${name#pat} and the rest -- POSIX.2 2.6.2's parameter
+				-- expansion, read by readDollar's "{" arm (CeroSecOSScript.lua)
+				-- into the operator and, for every kind but "len", the WORD
+				-- that follows it. "unset" there means POSIX's own test: the
+				-- name has never been given a value; a colon widens it to
+				-- "unset or set to the empty string" -- ${x:-w} where x=""
+				-- answers w, ${x-w} answers "".
+				-- ${1:-w} and the rest name a POSITIONAL parameter by `pos`
+				-- (readDollar); $0 is always set, $n is unset past $#.
+				local val, isNil
+				if part.pos ~= nil then
+					if part.pos == 0 then
+						val, isNil = job.name, false
+					else
+						val = job.args[part.pos]
+						isNil = val == nil
+						if val == nil then val = "" end
+					end
+				else
+					val = getVar(job, part.name)
+					isNil = job.vars[part.name] == nil
+				end
+				local label = part.name or tostring(part.pos)
+				if part.kind == "len" then
+					text = tostring(#val)
+				else
+					local unset = isNil or (part.colon and val == "")
+					if part.kind == "default" or part.kind == "assign" then
+						if unset then
+							local w, werr = resolveWordText(job, part.word)
+							if w == nil then return nil, werr end
+							if part.kind == "assign" then
+								-- A positional parameter is not a variable and
+								-- := cannot set one: ash's setvar refuses the
+								-- name in these words (4.4BSD var.c).
+								if part.pos ~= nil then
+									return nil, label .. ": bad variable name"
+								end
+								local reason = setVar(job, part.name, w)
+								if reason ~= nil then return nil, reason end
+							end
+							text = w
+						else
+							text = val
+						end
+					elseif part.kind == "error" then
+						if unset then
+							local w, werr = resolveWordText(job, part.word)
+							if w == nil then return nil, werr end
+							-- 4.4BSD expand.c's own wording for an omitted word --
+							-- error("%.*s: parameter %snot set", ..., varflags &
+							-- VSNUL ? "null or " : "") -- "null or" is what the
+							-- colon adds, because only ":?" widens "unset" to
+							-- "unset or empty".
+							if w == "" then
+								if part.colon then w = "parameter null or not set"
+								else w = "parameter not set" end
+							end
+							return nil, label .. ": " .. w
+						end
+						text = val
+					elseif part.kind == "alt" then
+						if unset then
+							text = ""
+						else
+							local w, werr = resolveWordText(job, part.word)
+							if w == nil then return nil, werr end
+							text = w
+						end
+					else
+						-- The trims: ${name#p} ${name##p} ${name%p} ${name%%p}.
+						local items = trimPieces(job, part.word)
+						if items == nil then return nil, label .. ": pattern too long" end
+						text = trimValue(job, val, items, part.kind)
+					end
+				end
 			elseif part.t == "arith" then
 				-- The expansions in POSIX.2's order: command substitution first, the
 				-- sum afterwards. A sum with no $( ) in it has no `parts` and is read
@@ -1131,13 +1844,28 @@ local function expandStep(job, state, ex, env)
 				if v == nil then return nil, err end
 				text = v
 			elseif part.t == "all" then
-				-- $@ is one field per argument, quoted or not: it is the one
-				-- expansion that is a list and not a string. Each field globs
-				-- exactly as any other unquoted expansion does, unless "$@"
-				-- was itself quoted.
+				-- "$@" is one field per argument: it is the one expansion that
+				-- is a list and not a string. A bare $@ is $*'s string, split on
+				-- blanks like every other unquoted expansion (POSIX.2 2.5.2), so
+				-- an argument with a blank in it becomes two words there.
+				--
+				-- Where nothing is split -- the right of `x=`, a case subject or
+				-- pattern -- it is ONE field, the arguments joined by a blank,
+				-- $@'s own rule and not $*'s IFS-joined one: `x=$@` and
+				-- `x="$@"` with a and b set x to "a b" in dash and bash alike,
+				-- whatever IFS holds, and `case "$@" in "a b")` matches. As a list
+				-- it made the assignment two words, the second with no "=" in
+				-- it, and runSimple's setVar fell over on it.
 				local allGlob = (not part.q) and (not ex.nosplit)
 				local allMc = allGlob and "g" or "l"
+				if ex.nosplit then
+					local joined = table.concat(job.args, " ")
+					ex.buf = ex.buf .. joined
+					ex.mask = ex.mask .. string.rep("l", #joined)
+					ex.open = true
+				elseif allGlob then splitParams(ex, job.args) end
 				for a = 1, #job.args do
+					if allGlob or ex.nosplit then break end
 					if a > 1 then closeField(ex) end
 					ex.buf = ex.buf .. job.args[a]
 					ex.mask = ex.mask .. string.rep(allMc, #job.args[a])
@@ -1193,6 +1921,9 @@ local function expandStep(job, state, ex, env)
 		ex.fieldMasks = {}
 		ex.wi = ex.wi + 1
 		ex.pi = 1
+		-- A new word starts a new run: nothing before it to merge a leading
+		-- delimiter into (`:a` is an empty field then "a", not one field).
+		ex.wsClosed = false
 	end
 	return "done"
 end
@@ -1206,10 +1937,28 @@ local testExpr
 local function testUnary(state, session, op, arg)
 	if op == "-z" then return #arg == 0 end
 	if op == "-n" then return #arg > 0 end
+	-- -h is 4.4BSD's (bin/test/operators.c lists it, test.1 says "exists
+	-- and is a symbolic link", test.c answers it with lstat). -L is the
+	-- letter later tests gave the same question; 4.4BSD's test has -h alone,
+	-- and -L is kept so a script written for either reads the same.
+	-- The one test here that must NOT follow the link, so it asks getNode with
+	-- noFollow rather than the node every other letter below shares.
+	if op == "-h" or op == "-L" then
+		local lnode = CeroSecOS.getNode(state, session, arg, true)
+		return lnode ~= nil and lnode.type == "link"
+	end
 	local node = CeroSecOS.getNode(state, session, arg)
 	if op == "-e" then return node ~= nil end
 	if op == "-f" then return node ~= nil and node.type == "file" end
 	if op == "-d" then return node ~= nil and node.type == "dir" end
+	-- -s: there, and st_size greater than zero (test.c's ISSIZE). A directory
+	-- on a 4.4BSD disk is never size zero -- it holds . and .. at least, a
+	-- block of them -- so one answers true whatever is in it.
+	if op == "-s" then
+		if node == nil then return false end
+		if node.type == "dir" then return true end
+		return #(node.data or "") > 0
+	end
 	if node == nil then return false end
 	if op == "-r" then return CeroSecOS.can(state, session, node, "r") end
 	if op == "-w" then return CeroSecOS.can(state, session, node, "w") end
@@ -1220,12 +1969,35 @@ end
 local NUMERIC = { ["-eq"] = true, ["-ne"] = true, ["-lt"] = true, ["-le"] = true,
 	["-gt"] = true, ["-ge"] = true }
 
+-- One operand of -eq and the rest, read the way 4.4BSD-Lite2 test.c's
+-- get_int reads it: blanks skipped in front, strtol, then
+--   errx(2, "%s: trailing non-numeric characters", v)  anything after
+--   errx(2, "%s: overflow" / "%s: underflow", v)        past the long
+--   errx(2, "%s: expected integer", v)                  no digit at all
+-- Read by strtol and never tonumber, which took "inf" and "1e5". get_int
+-- wants a digit first and so refused "-5"; POSIX.2 test takes a negative
+-- integer ("algebraically equal"), and so does this one.
+local function testInt(v)
+	local n, stop, range = CeroSecOS.strtol(v)
+	if stop == 1 then return nil, "test: " .. v .. ": expected integer" end
+	if stop <= #v then return nil, "test: " .. v .. ": trailing non-numeric characters" end
+	if range then
+		if n < 0 then return nil, "test: " .. v .. ": underflow" end
+		return nil, "test: " .. v .. ": overflow"
+	end
+	return n
+end
+
 local function testBinary(left, op, right)
 	if op == "=" then return left == right end
 	if op == "!=" then return left ~= right end
 	if NUMERIC[op] then
-		local a, b = tonumber(left), tonumber(right)
-		if a == nil or b == nil then return nil, "test: integer expected" end
+		-- The left operand whole, then the right: test.c's get_int is
+		-- called once for each, in that order.
+		local a, aerr = testInt(left)
+		if a == nil then return nil, aerr end
+		local b, berr = testInt(right)
+		if b == nil then return nil, berr end
 		if op == "-eq" then return a == b end
 		if op == "-ne" then return a ~= b end
 		if op == "-lt" then return a < b end
@@ -1269,18 +2041,18 @@ testExpr = function(state, session, args, lo, hi)
 	if n == 1 then return args[lo] ~= "" end
 	if n == 2 then
 		local v = testUnary(state, session, args[lo], args[lo + 1])
-		if v == nil then return nil, "test: unknown operator" end
+		if v == nil then return nil, "test: syntax error" end
 		return v
 	end
 	if n == 3 then
 		local v, err = testBinary(args[lo], args[lo + 1], args[lo + 2])
 		if v == nil then
 			if err ~= nil then return nil, err end
-			return nil, "test: unknown operator"
+			return nil, "test: syntax error"
 		end
 		return v
 	end
-	return nil, "test: argument expected"
+	return nil, "test: syntax error"
 end
 
 --
@@ -1321,51 +2093,226 @@ builtins.echo = function(job, args)
 	return 0
 end
 
--- printf, with the three conversions worth having on a machine this size.
--- The formatting, apart from the writing: the builtin below writes it into the
--- job and `sudo printf` returns it as lines, and there is ONE implementation of
--- the conversions.
-function CeroSecOS.printfText(args)
-	local format = args[2]
-	if format == nil then return nil end
-	local out, i, a = "", 1, 3
+-- printf(1)'s field: [-][0][width][.precision]conversion. `-` left-justifies
+-- (the default is right), `0` pads with zeros instead of blanks and only
+-- means anything where there is no `-` beside it (printf.c: "if the left
+-- adjustment flag is set, the zero-padding flag is ignored"). Bounded at 64 --
+-- this machine's screen is 60 columns and nothing typed at a prompt needs a
+-- field wider than one, and CeroSecOS.hostileTest is what a `%999999999s`
+-- would otherwise be handed to.
+local PRINTF_MAX_FIELD = 64
+
+local function printfPad(body, width, left, zero, sign)
+	sign = sign or ""
+	if width == nil or width <= #sign + #body then return sign .. body end
+	local fill = width - #sign - #body
+	if left then return sign .. body .. string.rep(" ", fill) end
+	if zero then return sign .. string.rep("0", fill) .. body end
+	return string.rep(" ", fill) .. sign .. body
+end
+
+-- Division, not string.format: Kahlua's %x and %o are not proven (there is no
+-- bit library either), so the digits are found the way K&R's itoa does it, one
+-- remainder at a time. Bounded by the width of the number itself -- a 53-bit
+-- float in base 8 is at most eighteen digits -- and never by anything a
+-- player types.
+-- %x and %o are unsigned in C, and a negative argument is really the bit
+-- pattern of a signed int reread as one -- which wants a word size this
+-- engine has no bit library to fix at (docs/CONTRIBUTING.md's Kahlua purity
+-- rule). Clamped to zero instead of guessing a width: a survivor typing
+-- `printf %x -1` gets 0, not a wrong answer dressed as a right one.
+local function toBase(v, base, digits)
+	-- Inside the word or nothing: an infinity here was a loop with no end.
+	v = math.floor(CeroSecOS.intClamp(v))
+	if v < 0 then v = 0 end
+	if v == 0 then return "0" end
+	local s = ""
+	while v > 0 do
+		local d = v - base * math.floor(v / base)
+		s = string.sub(digits, d + 1, d + 1) .. s
+		v = math.floor(v / base)
+	end
+	return s
+end
+
+-- The operand of %d, %o and %x: 4.4BSD-Lite2 usr.bin/printf/printf.c's
+-- getlong(), which hands every operand that starts with one of
+-- "+-.0123456789" (or is empty) to strtol and refuses what strtol did not
+-- read all of -- warnx("%s: illegal number") -- or had to clamp --
+-- warnx("%s: %s", strerror(ERANGE)), "Result too large" (errlst.c) -- and
+-- reads any other operand as its first character's code (asciicode(), which
+-- skips one leading quote: `printf %d "'A"` is 65). Either refusal is
+-- `return (1)` in main(): printf stops where it stands. Base 10 only, where
+-- getlong's strtol took 0x and a leading 0 too.
+local PRINTF_NUMBER = "+-.0123456789"
+local function printfLong(arg)
+	if arg == nil then return 0 end
+	local c = string.sub(arg, 1, 1)
+	if c ~= "" and string.find(PRINTF_NUMBER, c, 1, true) == nil then
+		if c == "'" or c == "\"" then c = string.sub(arg, 2, 2) end
+		if c == "" then return 0 end
+		return string.byte(c)
+	end
+	local v, stop, range = CeroSecOS.strtol(arg)
+	if stop <= #arg or (stop == 1 and arg ~= "") then
+		return nil, "printf: " .. arg .. ": illegal number"
+	end
+	if range then return nil, "printf: " .. arg .. ": Result too large" end
+	return v
+end
+
+-- One pass over the format, from args[from]. Answers the text and the next
+-- unread argument index, so the caller can tell whether the pass consumed
+-- anything -- which is what decides whether the format is reused (see the
+-- head of CeroSecOS.printfText) -- and, when an operand was refused, the
+-- refusal as a third answer.
+local function printfPass(format, args, from)
+	local out, i, a = "", 1, from
 	while i <= #format do
 		local c = string.sub(format, i, i)
 		if c == "\\" then
 			local nx = string.sub(format, i + 1, i + 1)
-			if nx == "n" then out = out .. "\n"
-			elseif nx == "t" then out = out .. "\t"
-			elseif nx == "\\" then out = out .. "\\"
-			else out = out .. "\\" .. nx end
-			i = i + 2
+			if nx == "n" then out = out .. "\n"; i = i + 2
+			elseif nx == "t" then out = out .. "\t"; i = i + 2
+			elseif nx == "\\" then out = out .. "\\"; i = i + 2
+			-- \NNN, up to three octal digits, sh(1)'s printf and the C escape it
+			-- is named after (K&R A2.5.2): the byte that octal names.
+			elseif string.match(nx, "^[0-7]$") ~= nil then
+				-- Kahlua's tonumber(s, base) is not trusted for anything but
+				-- base 10 (tests/kahlua-probe.lua), so the octal value is added
+				-- up a digit at a time instead of handed to it with an 8.
+				local j, val = i + 1, 0
+				local n = 0
+				while j <= #format and n < 3 and string.match(string.sub(format, j, j), "^[0-7]$") ~= nil do
+					val = val * 8 + tonumber(string.sub(format, j, j))
+					j = j + 1
+					n = n + 1
+				end
+				-- The byte, unless it is a control byte: nothing typed at
+				-- this machine may put one on a screen or a disk (the line
+				-- itself is refused with one in it, and writeFile refuses
+				-- them too -- docs/SECURITY.md), so \NNN naming anything
+				-- below a blank other than a tab or a newline, or DEL,
+				-- makes nothing. A declared deviation ("printf").
+				val = val % 256
+				if val == 9 or val == 10 or (val >= 32 and val ~= 127) then
+					out = out .. string.char(val)
+				end
+				i = j
+			else out = out .. "\\" .. nx; i = i + 2 end
 		elseif c == "%" then
-			local nx = string.sub(format, i + 1, i + 1)
-			if nx == "%" then
-				out = out .. "%"
-			elseif nx == "s" then
-				out = out .. (args[a] or "")
-				a = a + 1
-			elseif nx == "d" then
-				local v = tonumber(args[a] or "0")
-				if v == nil then v = 0 end
-				out = out .. tostring(math.floor(v))
-				a = a + 1
-			else
-				out = out .. c .. nx
+			local j = i + 1
+			local left, zero = false, false
+			while true do
+				local f = string.sub(format, j, j)
+				if f == "-" then left = true; j = j + 1
+				elseif f == "0" then zero = true; j = j + 1
+				else break end
 			end
-			i = i + 2
+			local width = nil
+			local wDigits = string.match(format, "^%d+", j)
+			if wDigits ~= nil then
+				width = (CeroSecOS.strtol(wDigits))
+				j = j + #wDigits
+			end
+			local prec = nil
+			if string.sub(format, j, j) == "." then
+				j = j + 1
+				local pDigits = string.match(format, "^%d+", j) or "0"
+				prec = (CeroSecOS.strtol(pDigits))
+				j = j + #pDigits
+			end
+			if width ~= nil and width > PRINTF_MAX_FIELD then width = PRINTF_MAX_FIELD end
+			if prec ~= nil and prec > PRINTF_MAX_FIELD then prec = PRINTF_MAX_FIELD end
+			local conv = string.sub(format, j, j)
+			if conv == "%" then
+				out = out .. "%"
+			elseif conv == "s" then
+				local v = tostring(args[a] or "")
+				a = a + 1
+				if prec ~= nil then v = string.sub(v, 1, prec) end
+				out = out .. printfPad(v, width, left, false)
+			elseif conv == "c" then
+				local v = string.sub(tostring(args[a] or ""), 1, 1)
+				a = a + 1
+				out = out .. printfPad(v, width, left, false)
+			elseif conv == "d" then
+				local v, bad = printfLong(args[a])
+				if v == nil then return out, a, bad end
+				a = a + 1
+				local sign = ""
+				if v < 0 then sign = "-"; v = -v end
+				local digits = CeroSecOS.intText(v)
+				-- Precision on a numeric conversion is a MINIMUM digit count
+				-- (printf(3)), not a truncation: `%.4d` on 3 is "0003", and
+				-- `%.0d` on 0 is nothing at all -- no digit, not even a zero.
+				if prec ~= nil then
+					if prec == 0 and v == 0 then digits = ""
+					elseif #digits < prec then digits = string.rep("0", prec - #digits) .. digits end
+				end
+				out = out .. printfPad(digits, width, left, zero and prec == nil, sign)
+			elseif conv == "x" or conv == "o" then
+				local v, bad = printfLong(args[a])
+				if v == nil then return out, a, bad end
+				a = a + 1
+				local digits = toBase(v, conv == "x" and 16 or 8, "0123456789abcdef")
+				if prec ~= nil and #digits < prec then
+					digits = string.rep("0", prec - #digits) .. digits
+				end
+				out = out .. printfPad(digits, width, left, zero and prec == nil)
+			elseif conv == "" then
+				out = out .. "%"
+			else
+				-- An unknown conversion prints as it stood in the format, flags,
+				-- width and precision included -- `%5.2f` comes out `%5.2f`, not
+				-- `%f` with the field thrown away (this machine has no %f: no
+				-- floating point conversion is trusted here, printf(3)'s NUL
+				-- termination and rounding wanting more than Kahlua's numbers
+				-- prove). No argument is consumed either: the operand is still
+				-- waiting for the conversion that would have read it.
+				out = out .. string.sub(format, i, j)
+			end
+			i = j + 1
 		else
 			out = out .. c
 			i = i + 1
 		end
 	end
+	return out, a
+end
+
+-- printf(1): the format is reused for as many arguments as there are, POSIX's
+-- own rule ("the format operand shall be reused as often as necessary to
+-- satisfy the argument operands") -- `printf '%s\n' a b c` is three lines, not
+-- one truncated to the first name. Reused only while a PASS is actually
+-- eating an argument, so a format with no conversion in it -- `printf hello
+-- extra` -- prints once and stops, the way a real printf does not spin on
+-- operands it has nowhere to put.
+function CeroSecOS.printfText(args)
+	local format = args[2]
+	if format == nil then return nil end
+	local out, a = "", 3
+	repeat
+		local before = a
+		local piece
+		local bad
+		piece, a, bad = printfPass(format, args, a)
+		out = out .. piece
+		-- A refused operand ends printf where it stood, what it printed
+		-- before it printed (getlong's `return (1)` in main).
+		if bad ~= nil then return out, bad end
+	until a > #args or a == before
 	return out
 end
 
 builtins.printf = function(job, args)
-	local text = CeroSecOS.printfText(args)
+	local text, bad = CeroSecOS.printfText(args)
 	if text == nil then return 1 end
 	writeText(job, text)
+	if bad ~= nil then
+		errLines(job, { bad })
+		return 1
+	end
 	return 0
 end
 
@@ -1383,7 +2330,7 @@ builtins.history = function(job, args, state, env)
 		return 0
 	end
 	if #args > 1 then
-		writeText(job, "history: usage: history [-c]\n")
+		errLines(job, { "history: usage: history [-c]" })
 		return 1
 	end
 	local lines = CeroSecOS.historyLines(state, job.session)
@@ -1398,7 +2345,7 @@ end
 builtins.shift = function(job, args)
 	local n = 1
 	if args[2] ~= nil then
-		n = tonumber(args[2])
+		n = CeroSecOS.intOf(args[2])
 		if n == nil or n < 0 then return 1 end
 		n = math.floor(n)
 	end
@@ -1406,6 +2353,172 @@ builtins.shift = function(job, args)
 	local kept = {}
 	for i = n + 1, #job.args do kept[#kept + 1] = job.args[i] end
 	job.args = kept
+	return 0
+end
+
+-- set: with no operand, every variable this shell holds, one a line as
+-- NAME=value and sorted -- POSIX.2's own words for it, "in a format that can
+-- be reused as input", the same re-inputtable shape export's bare form
+-- already prints, but every name and not only the exported ones.
+--
+-- `set -- word...` and, since none of this shell's own words starts with
+-- "-", the shorter `set word...` (POSIX.2 12.2's "If no options are given...
+-- and the first operand begins with a character other than -") replace the
+-- positional parameters: $1.. and $#. $0 is untouched -- POSIX.2 is explicit
+-- that set never sets it -- which is why job.name does not move.
+--
+-- A NEW table and never a mutation of the old one: `job.args` may be the
+-- table a caller up the stack is still holding (shift makes the same
+-- choice, just above), and `f(){ set -- z; }; set -- a b; f; echo $1` has to
+-- come back "a" -- the function's own `set --` must not reach through to
+-- the shell that called it.
+--
+-- 4.4BSD sh had -e, -x and -u; this one refuses every flag (the "set"
+-- deviation), because nothing here traces a script, stops it on a failed
+-- command, or treats an unset variable as one -- and a refusal that
+-- pretended to turn one of those on would be worse than saying so. The
+-- words are the ones 4.4BSD-Lite2 bin/sh/options.c refused a letter it did
+-- not know with, error("Illegal option -%c"), signed with the builtin's
+-- name because evalcommand sets commandname to argv[0] before running it.
+builtins.set = function(job, args)
+	if #args == 1 then
+		local names = CeroSecOS.envNames(job.vars, nil)
+		for i = 1, #names do
+			writeText(job, names[i] .. "=" .. job.vars[names[i]] .. "\n")
+		end
+		return 0
+	end
+	-- The walk is options.c's options(0), word for word: a word that starts
+	-- "-" turns its letters on and one that starts "+" turns them off, and
+	-- both are OPTIONS -- `set +e` never became $1. "-" alone (which turns
+	-- off -x and -v, neither of them here) and "--" end the options, and
+	-- "--" with nothing after it empties the list (setparam); any other
+	-- word ends them too. What is left, if anything, is the new list, so
+	-- `set -` and `set +` leave $1.. as they were. Every letter is one this
+	-- shell has not got, and setoption() refuses it in the one form
+	-- whichever sign it came with; -o NAME is minus_o's "Illegal option -o
+	-- %s".
+	local i, reset = 2, false
+	while args[i] ~= nil do
+		local p = args[i]
+		local c = string.sub(p, 1, 1)
+		if c == "-" then
+			i = i + 1
+			if p == "-" or p == "--" then
+				if p == "--" and args[i] == nil then reset = true end
+				break
+			end
+		elseif c == "+" then
+			i = i + 1
+		else
+			break
+		end
+		local letter = string.sub(p, 2, 2)
+		if letter == "o" and args[i] ~= nil then
+			return nil, "set: Illegal option -o " .. args[i]
+		end
+		if letter ~= "" then return nil, "set: Illegal option -" .. letter end
+	end
+	if args[i] ~= nil or reset then
+		local kept = {}
+		for k = i, #args do kept[#kept + 1] = args[k] end
+		job.args = kept
+	end
+	return 0
+end
+
+-- unset NAME...: drops each variable, sh(1) of the seventh edition; unset -f
+-- NAME... drops a function instead, and -v NAME... says "a variable" in as
+-- many words as the default already means, both POSIX.2's. A name that was
+-- never set is not an error, the way NAME= on an unset variable never was.
+--
+-- job.nvars is the ceiling setVar counts variables against as they are
+-- MADE (CeroSecOS.MAX_VARS, above); a variable unset has to give its seat
+-- back the same way, or `for i in ...; do x=$i; unset x; done` run enough
+-- times reads "too many variables" for a shell holding none. job.exported
+-- loses the name too -- a variable gone cannot still be in the environment.
+builtins.unset = function(job, args)
+	local i, doFuncs = 2, false
+	if args[2] == "-f" then
+		doFuncs = true
+		i = 3
+	elseif args[2] == "-v" then
+		i = 3
+	end
+	for k = i, #args do
+		local name = args[k]
+		-- ash's wording for a name that cannot be one (4.4BSD var.c).
+		if not CeroSecOS.isVarName(name) then
+			return nil, "unset: " .. name .. ": bad variable name"
+		end
+		if doFuncs then
+			if type(job.funcs) == "table" then job.funcs[name] = nil end
+		else
+			if job.vars[name] ~= nil then
+				job.vars[name] = nil
+				job.nvars = job.nvars - 1
+			end
+			if type(job.exported) == "table" then job.exported[name] = nil end
+		end
+	end
+	return 0
+end
+
+-- trap: this machine's shell has ONE condition worth catching, POSIX.2
+-- 3.14's EXIT -- spelled 0 in the Bourne shell and in 4.4BSD's trap.c, which
+-- took a number and never a name -- run once when the shell it was set in
+-- ends on its own or with `exit` (CeroSecOS.fireExitTrap, below). Every
+-- other way a job ends here is kill's: the `kill` command, Escape, a console
+-- that went away and the processor ceiling all go through CeroSecOS.killJob,
+-- which ends the job on the spot -- SIGKILL, which no sh could catch either.
+-- A trap on INT or TERM would be a promise nothing here can keep, and making
+-- one keepable would be a job its owner cannot stop. So those, and every
+-- other name, are refused in trap.c's own words: "bad trap".
+--
+-- The operands are 4.4BSD's: `trap action cond...` sets, `trap - cond...`
+-- and `trap 0` (a number first means there is no action) reset, and `trap
+-- action` alone names nothing and does nothing. `trap` with no operand lists
+-- in POSIX.2's form, "trap -- action EXIT", the action quoted so the line
+-- can be typed back in.
+local function trapQuote(s)
+	local out, from = "'", 1
+	while true do
+		local at = string.find(s, "'", from, true)
+		if at == nil then break end
+		out = out .. string.sub(s, from, at - 1) .. "'\\''"
+		from = at + 1
+	end
+	return out .. string.sub(s, from) .. "'"
+end
+
+builtins.trap = function(job, args)
+	if #args == 1 then
+		if type(job.traps) == "table" and job.traps.EXIT ~= nil then
+			writeText(job, "trap -- " .. trapQuote(job.traps.EXIT) .. " EXIT\n")
+		end
+		return 0
+	end
+	local first, action = 2, nil
+	if string.find(args[2], "^[0-9]+$") == nil then
+		action = args[2]
+		first = 3
+	end
+	if action == "-" then action = nil end
+	-- Every condition is checked before any is set, so a refused line
+	-- changes nothing.
+	for i = first, #args do
+		if args[i] ~= "EXIT" and args[i] ~= "0" then
+			return nil, "trap: " .. args[i] .. ": bad trap"
+		end
+	end
+	for _ = first, #args do
+		if action == nil then
+			if type(job.traps) == "table" then job.traps.EXIT = nil end
+		else
+			job.traps = job.traps or {}
+			job.traps.EXIT = action
+		end
+	end
 	return 0
 end
 
@@ -1471,9 +2584,27 @@ end
 -- what `>` names belongs to the lines that file prints and not to the nothing the
 -- word itself prints. `. setup > log` wrote an empty log and put the file's output
 -- on the glass. Same door `sh` uses, one argument along (BUILTIN_TAKES_REDIRECT).
-builtins["."] = function(job, args, state, env, redirect)
+builtins["."] = function(job, args, state, env, redirect, sinks)
+	-- Refusals, so the standard error's: not caught by a $( ), and into what a
+	-- `2>` on the dot named. runSimple leaves job.errRd alone for a word that
+	-- takes its own redirect, so the dot puts its own in place for them.
+	local function refuse(line)
+		local erd = nil
+		if type(sinks) == "table" then erd = sinks.erd end
+		local outer = job.errRd
+		if erd ~= nil then job.errRd = erd end
+		errLines(job, { line })
+		job.errRd = outer
+		if erd ~= nil and erd.buf ~= nil and #erd.buf > 0 then
+			local text = CeroSecOS.linesToText(erd.buf)
+			erd.buf = {}
+			local ok, lines = CeroSecOS.writeRedirect(state, job.session, ".",
+				{ path = erd.path, append = true }, text, env)
+			if not ok then errLines(job, lines) end
+		end
+	end
 	if #args ~= 2 then
-		writeText(job, ".: usage: " .. (CeroSecOS.commandUsage(".") or ". <file>") .. "\n")
+		refuse(".: usage: " .. (CeroSecOS.commandUsage(".") or ". <file>"))
 		return 1
 	end
 	local path = args[2]
@@ -1484,12 +2615,12 @@ builtins["."] = function(job, args, state, env, redirect)
 	end
 	local text, refusal = CeroSecOS.readScript(state, job.session, ".", path, false)
 	if text == nil then
-		writeText(job, refusal .. "\n")
+		refuse(refusal)
 		return 1
 	end
 	local prog, reason, where = CeroSecOS.parseScript(text)
 	if prog == nil then
-		writeText(job, CeroSecOS.scriptError(CeroSecOS.baseNameOf(path), reason, where) .. "\n")
+		refuse(CeroSecOS.scriptError(CeroSecOS.baseNameOf(path), reason, where))
 		return 1
 	end
 	-- What `>` named, opened where a shell opens it: before the file runs, so a
@@ -1504,18 +2635,28 @@ builtins["."] = function(job, args, state, env, redirect)
 		end
 		target = { path = redirect.path, who = "." }
 	end
+	-- What runSimple worked out from the whole line, `2>` and `>&2` included,
+	-- when it is the shell that called: the same file, and the errors' sink.
+	local erd = nil
+	if type(sinks) == "table" then
+		target = sinks.target
+		erd = sinks.erd
+	end
 	-- In place: the caller's arguments, the caller's variables, and everything
 	-- the file sets left behind in them.
 	if not CeroSecOS.jobRun(job, prog, job.args, CeroSecOS.baseNameOf(path), true,
-			target) then
+			target, erd) then
 		return nil
 	end
 	return 0
 end
 
+-- With no n, the status of the last command run (POSIX.2 XCU exit; 4.4BSD-
+-- Lite2 bin/sh/main.c exitcmd sets exitstatus only when argc > 1), so
+-- `false; (exit); echo $?` prints 1.
 builtins.exit = function(job, args)
-	local n = 0
-	if args[2] ~= nil then n = math.floor(tonumber(args[2]) or 0) end
+	local n = job.status or 0
+	if args[2] ~= nil then n = CeroSecOS.intOf(args[2]) or 0 end
 	job.sig = { k = "exit", n = n }
 	return n
 end
@@ -1526,9 +2667,13 @@ end
 -- With neither around it, it is `exit`: POSIX leaves that case unspecified, a real
 -- sh of 1993 took it as the end of the script, and so does every script already
 -- written on every machine in the county.
+--
+-- With no n, the status of the last command run, as exit's is (POSIX.2 XCU
+-- return: "the value of the special parameter ?" -- 4.4BSD-Lite2 eval.c
+-- returncmd), so `f() { false; return; }; f; echo $?` prints 1.
 builtins["return"] = function(job, args)
-	local n = 0
-	if args[2] ~= nil then n = math.floor(tonumber(args[2]) or 0) end
+	local n = job.status or 0
+	if args[2] ~= nil then n = CeroSecOS.intOf(args[2]) or 0 end
 	job.sig = { k = "return", n = n }
 	return n
 end
@@ -1536,7 +2681,7 @@ end
 local function loopSignal(job, args, kind)
 	local n = 1
 	if args[2] ~= nil then
-		n = tonumber(args[2])
+		n = CeroSecOS.intOf(args[2])
 		if n == nil or n < 1 then return 1 end
 		n = math.floor(n)
 	end
@@ -1547,32 +2692,183 @@ end
 builtins["break"] = function(job, args) return loopSignal(job, args, "break") end
 builtins["continue"] = function(job, args) return loopSignal(job, args, "continue") end
 
+-- read's fields. POSIX.2 read and the ksh88 manual page: the line is split on
+-- blanks, the first word goes to the first name, the second to the second, and
+-- the LAST name gets whatever is left of the line, blanks inside it and all --
+-- which is what makes `read cmd rest` the way to take a line apart. Names with
+-- no word left for them are set empty. Leading and trailing blanks are dropped.
+--
+-- Without -r a backslash is the escape it is everywhere else in sh: it is taken
+-- away and the character behind it is kept as it stands, so `a\ b` is one word.
+-- -r keeps every backslash as typed. A backslash at the very end of a line asks
+-- a real read for the next line; this console hands over one line and nothing
+-- after it (the `more` entry of CeroSecOS.DEVIATIONS), so it is dropped.
+--
+-- A character loop and never a pattern: the line, and IFS, are the player's.
+--
+-- Interior fields (all but the last) split exactly as any unquoted expansion
+-- does (addSplit above): an IFS delimiter, with any IFS whitespace adjacent
+-- to it, is one boundary, and a second delimiter in the same run still
+-- delimits its own -- possibly empty -- field. The LAST name never re-splits:
+-- it is everything left on the line after that one boundary, with only ITS
+-- OWN leading and trailing IFS whitespace gone -- POSIX.2's read hands the
+-- rest of the line to the last variable, delimiters and all, not a rejoin of
+-- further fields. `dash` on this box is the oracle every one of these rules
+-- was checked against, `a::b` through a lone `read x y z` included.
+local function readFields(job, line, raw, count)
+	local chars, prot = {}, {}
+	local i, n = 1, #line
+	while i <= n do
+		local c = string.sub(line, i, i)
+		if c == "\\" and not raw then
+			if i < n then
+				chars[#chars + 1] = string.sub(line, i + 1, i + 1)
+				prot[#prot + 1] = true
+			end
+			i = i + 2
+		else
+			chars[#chars + 1] = c
+			prot[#prot + 1] = false
+			i = i + 1
+		end
+	end
+	local total = #chars
+
+	local ifs = getIFS(job)
+	if ifs == "" then
+		-- IFS null: no field splitting at all. The whole line, untouched,
+		-- is the first name; every other name is left empty.
+		local fields = {}
+		local word = {}
+		for j = 1, total do word[#word + 1] = chars[j] end
+		fields[1] = table.concat(word)
+		for f = 2, count do fields[f] = "" end
+		return fields
+	end
+	local ws, delim = ifsClasses(ifs)
+	local function isW(k) return not prot[k] and ws[chars[k]] end
+	local function isD(k) return not prot[k] and delim[chars[k]] end
+	local function slice(a, b)
+		local word = {}
+		for j = a, b do word[#word + 1] = chars[j] end
+		return table.concat(word)
+	end
+
+	local fields, k = {}, 1
+	local open, start, wsClosed = false, 1, false
+	local f = 1
+	while f < count do
+		local val = nil
+		while k <= total do
+			if open then
+				if isD(k) then
+					val, wsClosed = slice(start, k - 1), false
+					k, open = k + 1, false
+					break
+				elseif isW(k) then
+					val, wsClosed = slice(start, k - 1), true
+					k, open = k + 1, false
+					break
+				else
+					k = k + 1
+				end
+			elseif isD(k) then
+				if wsClosed then
+					-- Adjacent to the whitespace that just closed a field:
+					-- the same boundary, not a second one.
+					wsClosed = false
+					k = k + 1
+				else
+					val = ""
+					k = k + 1
+					break
+				end
+			elseif isW(k) then
+				k = k + 1
+			else
+				open, start = true, k
+				k = k + 1
+			end
+		end
+		if val == nil then
+			-- The line ran out before this field closed on its own.
+			if open then val, open = slice(start, total), false
+			else val = "" end
+			k = total + 1
+		end
+		fields[f] = val
+		f = f + 1
+	end
+
+	-- The one absorption a delimiter right after a whitespace-close still
+	-- owes, same as inside addSplit: at most one, and only if the run has
+	-- not already spent it.
+	if not open and wsClosed and k <= total and isD(k) then k = k + 1 end
+	while k <= total and isW(k) do k = k + 1 end
+	local last = total
+	while last >= k and isW(last) do last = last - 1 end
+	fields[count] = slice(k, last)
+	return fields
+end
+
+-- Every name, set from one line, from each of the three places a line reaches
+-- read: the pipe, end of file, and the answer typed at the question.
+local function assignFields(job, names, line, raw)
+	local fields = readFields(job, line, raw, #names)
+	for i = 1, #names do
+		local reason = setVar(job, names[i], fields[i])
+		if reason ~= nil then return reason end
+	end
+	return nil
+end
+
 -- read: the continuation every interactive script is built on. The job stops
 -- where it stands, the console puts the question up, and the next line typed
 -- comes back through CeroSecOS.jobInput.
 builtins.read = function(job, args, state, env)
-	local prompt, mask, one, name = "", false, false, nil
+	local prompt, mask, count, raw, names = "", false, nil, false, {}
 	local i = 2
 	while i <= #args do
 		local a = args[i]
-		if a == "-p" then
+		if #names > 0 then
+			names[#names + 1] = a
+			i = i + 1
+		elseif a == "-p" then
 			prompt = args[i + 1] or ""
 			i = i + 2
 		elseif a == "-s" then
 			mask = true
 			i = i + 1
+		elseif a == "-r" then
+			raw = true
+			i = i + 1
 		elseif a == "-n" then
-			if args[i + 1] ~= "1" then return nil, "read: only -n 1" end
-			one = true
+			-- -n N: the first N characters of the answer. A count that is not a
+			-- whole number above nought is ksh's "bad number".
+			local want = args[i + 1] or ""
+			count = CeroSecOS.intOf(want)
+			if count == nil or count < 1 or count ~= math.floor(count)
+					or string.find(want, "^[0-9]+$") == nil then
+				return nil, "read: " .. want .. ": bad number"
+			end
 			i = i + 2
 		elseif string.sub(a, 1, 1) == "-" and #a > 1 then
-			return nil, "read: " .. a .. ": unknown option"
+			-- read is a shell WORD, not a file in /bin, so it is not
+			-- getopt(3)'s "illegal option -- x": it is nextopt()'s, the
+			-- Bourne shell's own flag parser for its builtins (4.4BSD-Lite2
+			-- bin/sh/options.c), which prints "Illegal option -x" -- capital
+			-- I, one dash, no usage() line after it, because a builtin has
+			-- none of its own.
+			return nil, "read: Illegal option -" .. string.sub(a, 2, 2)
 		else
-			name = a
+			names[#names + 1] = a
 			i = i + 1
 		end
 	end
-	if name == nil or not CeroSecOS.isVarName(name) then return nil, "read: not a name" end
+	if #names == 0 then return nil, "read: not a name" end
+	for k = 1, #names do
+		if not CeroSecOS.isVarName(names[k]) then return nil, "read: not a name" end
+	end
 
 	-- A stage of a pipeline reads the PIPE, because that is what its standard
 	-- input is. It is also a subshell, and its variables die with it -- which is
@@ -1581,15 +2877,27 @@ builtins.read = function(job, args, state, env)
 	if job.stdinBuf ~= nil then
 		local buf = job.stdinBuf
 		if #buf.lines > 0 then
-			local line = table.remove(buf.lines, 1)
-			buf.bytes = buf.bytes - #line - 1
+			local line = buf.lines[1]
+			-- -n N on a stream takes N characters and leaves the rest where it
+			-- was, for the next read: `printf 'abcdef\nxy\n' | while read -n 2 a`
+			-- gives ab, cd, ef, an empty one, xy and an empty one under bash, the
+			-- empty ones being the newline itself, left behind by a read that had
+			-- already taken its N. A shorter line is taken whole, newline too.
+			if count ~= nil and #line >= count then
+				buf.lines[1] = string.sub(line, count + 1)
+				buf.bytes = buf.bytes - count
+				line = string.sub(line, 1, count)
+			else
+				table.remove(buf.lines, 1)
+				buf.bytes = buf.bytes - #line - 1
+			end
 			if buf.bytes < 0 then buf.bytes = 0 end
-			local reason = setVar(job, name, line)
+			local reason = assignFields(job, names, line, raw)
 			if reason ~= nil then return nil, reason end
 			return 0
 		end
 		if buf.eof then
-			local reason = setVar(job, name, "")
+			local reason = assignFields(job, names, "", raw)
 			if reason ~= nil then return nil, reason end
 			return 1
 		end
@@ -1606,24 +2914,51 @@ builtins.read = function(job, args, state, env)
 	-- of file, the way a real one reading a closed input does, and say so with
 	-- their status rather than hanging forever where nobody can see it.
 	if job.bg or job.inPipe then
-		local reason = setVar(job, name, "")
+		local reason = assignFields(job, names, "", raw)
 		if reason ~= nil then return nil, reason end
 		return 1
 	end
 
 	flushPartial(job)
-	job.ask = { var = name, text = prompt, mask = mask, one = one }
+	job.ask = { names = names, text = prompt, mask = mask, count = count, raw = raw }
 	job.state = "waiting"
 	return 0
 end
 
+-- sleep is a program on a real machine (/bin/sleep, 4.4BSD-Lite2 sleep.c), and
+-- this one reads its operand the way that main() does: getopt(argc, argv, "")
+-- knows no flag, exactly one operand or usage() -- "usage: sleep seconds" and
+-- exit 1 -- and then `if ((secs = atoi(*argv)) > 0) (void)sleep(secs);
+-- exit(0);`. atoi(3) is strtol's leading number and never an error, so `sleep
+-- abc`, `sleep 0.5` and `sleep inf` are a sleep of nought, silent, status 0,
+-- and only a wrong count of operands complains. That goes on the standard
+-- ERROR, where usage() prints: `sleep > f` leaves f empty, `x=$(sleep)`
+-- leaves x empty, `2>/dev/null` hushes it, and the script goes on.
 builtins.sleep = function(job, args, state, env)
-	local n = tonumber(args[2] or "")
-	if n == nil or n < 0 then return nil, "sleep: invalid interval" end
+	local first = 2
+	if args[2] == "--" then first = 3 end
+	local text = args[first]
+	if first == 2 and text ~= nil and #text > 1 and string.sub(text, 1, 1) == "-" then
+		-- getopt(3)'s own complaint, then sleep.c's usage().
+		errLines(job, { "sleep: illegal option -- " .. string.sub(text, 2, 2),
+			"usage: sleep seconds" })
+		return 1
+	end
+	if text == nil or args[first + 1] ~= nil then
+		errLines(job, { "usage: sleep seconds" })
+		return 1
+	end
+	-- atoi(), which cannot say more than an int's 2147483647.
+	local n = CeroSecOS.strtol(text)
+	if n > 2147483647 then n = 2147483647 end
+	if n <= 0 then return 0 end
 	local now = CeroSecOS.nowMsOf(env)
 	-- A machine with no clock cannot sleep; it says so rather than sleeping
 	-- forever or not at all.
-	if now == nil then return nil, "sleep: no clock" end
+	if now == nil then
+		errLines(job, { "sleep: no clock" })
+		return 1
+	end
 	job.wakeMs = now + math.floor(n * 1000)
 	job.state = "sleeping"
 	return 0
@@ -1632,27 +2967,29 @@ end
 -- The expression, judged. Shared by the builtin below and by /bin's own door
 -- into it (`sudo test -f /root/notes`), so there is one evaluator and one set
 -- of refusals.
--- true/false, or nil plus the line to print and whether it is FATAL. A bracket
--- with no other half is a mistake in the script and stops it; an expression
--- that cannot be judged is a status of two and the script goes on. The two
--- answers were already different before this evaluator was shared, and the
--- difference is the third return rather than two call sites that each remember.
+-- true/false, or nil plus the line to print. test and [ are a program on a real
+-- machine (/bin/test, /bin/[ -- 4.4BSD test.c), and a program that cannot judge
+-- its expression prints why and exits 2. 4.4BSD-Lite2 test.c 8.3's words:
+-- errx(2, "missing ]") for a [ with no ], and syntax(), err(2, "syntax
+-- error"), for every other malformed expression -- an operator it does not
+-- know, a word too many, an operand missing. err() also printed strerror of
+-- whatever errno was lying about, and errx() signed with the name it was
+-- called by, [ as well as test; both are left out here (the "test" entry of
+-- CeroSecOS.DEVIATIONS). The script that ran it goes on. Why is on the
+-- standard error: `[ 1 -eq x ] | wc -l` counts nought, `2>/dev/null` hushes it.
 function CeroSecOS.evalTest(state, session, args)
 	local hi = #args
 	if args[1] == "[" then
-		if args[hi] ~= "]" then return nil, "test: missing ']'", true end
+		if args[hi] ~= "]" then return nil, "test: missing ]" end
 		hi = hi - 1
 	end
-	local v, err = testExpr(state, session, args, 2, hi)
-	return v, err, false
+	return testExpr(state, session, args, 2, hi)
 end
 
 builtins.test = function(job, args, state)
-	local v, err, fatal = CeroSecOS.evalTest(state, job.session, args)
+	local v, err = CeroSecOS.evalTest(state, job.session, args)
 	if v == nil then
-		if fatal then return nil, err end
-		flushPartial(job)
-		outLine(job, err)
+		errLines(job, { err })
 		return 2
 	end
 	if v then return 0 end
@@ -1669,7 +3006,7 @@ builtins.wait = function(job, args, state, env)
 	for i = 2, #args do
 		local id = args[i]
 		if string.sub(id, 1, 1) == "%" then id = string.sub(id, 2) end
-		id = tonumber(id)
+		id = CeroSecOS.intOf(id)
 		if id == nil then return nil, "wait: " .. args[i] .. ": no such job" end
 		local found = false
 		for k = 1, #jobs do
@@ -1916,7 +3253,8 @@ local function applyControl(job, control, data, env)
 	-- by the shell (runSimple): the file the script's standard output goes to, which
 	-- is the process's and not the word `sh`'s.
 	if control == "job" and type(data) == "table" then
-		if CeroSecOS.jobRun(job, data.prog, data.args, data.name, false, data.rd) then
+		if CeroSecOS.jobRun(job, data.prog, data.args, data.name, false, data.rd,
+				data.erd) then
 			job.status = 0
 		end
 		return true
@@ -2114,6 +3452,11 @@ end
 local function exitLeavesTheMachine(job)
 	if not jobHasTerminal(job) then return false end
 	if job.depth > 1 then return false end
+	-- `(exit)` at the glass leaves the subshell and nothing else: the ( ) is
+	-- the house it is standing in, though it still has the terminal.
+	for i = 1, #job.frames do
+		if job.frames[i].sub then return false end
+	end
 	return true
 end
 
@@ -2124,8 +3467,10 @@ end
 local function resumeCont(state, job, text, env)
 	local cont = job.cont
 	local pending = job.contRedirect
+	local erd = job.contErd
 	job.cont = nil
 	job.contRedirect = nil
+	job.contErd = nil
 	job.ask = nil
 	-- The ring is over, whichever way it ended, so the line is not held any more.
 	-- Cleared BEFORE the continuation runs: the continuation of a dial that was
@@ -2141,13 +3486,25 @@ local function resumeCont(state, job, text, env)
 	-- A chain that is still asking -- `sudo passwd root > out` -- has still
 	-- written nothing, so its redirect waits for the next answer.
 	if pending ~= nil and control == "prompt" then job.contRedirect = pending end
+	if erd ~= nil and control == "prompt" then job.contErd = erd end
 	if ok then
 		writeLines(job, lines)
 		job.status = 0
 	else
 		-- A refusal is not output, so in a stage it goes to the screen and
 		-- not down the pipe -- the rule every other command already runs on.
+		-- And into the file `2>` named, when the line named one.
+		local outer = job.errRd
+		if erd ~= nil then job.errRd = erd end
 		errLines(job, lines)
+		job.errRd = outer
+		if erd ~= nil and erd.buf ~= nil and #erd.buf > 0 then
+			local text = CeroSecOS.linesToText(erd.buf)
+			erd.buf = {}
+			local errOk, errWrote = CeroSecOS.writeRedirect(state, job.session, erd.who,
+				{ path = erd.path, append = true }, text, env)
+			if not errOk then errLines(job, errWrote) end
+		end
 		job.status = 1
 	end
 	applyControl(job, control, data, env)
@@ -2202,16 +3559,26 @@ local function runSimple(state, job, f, env)
 		args[i] = f.ex.out[i]
 		masks[i] = f.ex.outMasks[i]
 	end
-	local redirect = nil
+	local redirect, errTarget = nil, nil
+	-- The redirect's target is the last word of the expansion -- the `2>` one's,
+	-- when there is one, after it (pushNode) -- and it has to be exactly one
+	-- field: a target that is two names, or none, is a line the machine cannot
+	-- carry out and will not guess at. It is also never globbed -- sh reads a
+	-- redirect's target as one word and never a pattern, so it is popped off
+	-- here, before the glob stage below ever sees the word it came from.
+	local lastWord = #f.ex.words
+	if node.errRedirect ~= nil then
+		if (f.ex.counts[lastWord] or 0) ~= 1 then
+			jobError(job, "ambiguous redirect")
+			return 1
+		end
+		errTarget = { path = args[#args], append = node.errRedirect.append }
+		args[#args] = nil
+		masks[#masks] = nil
+		lastWord = lastWord - 1
+	end
 	if node.redirect ~= nil then
-		-- The redirect's target is the last word of the expansion, and it has
-		-- to be exactly one field: a target that is two names, or none, is a
-		-- line the machine cannot carry out and will not guess at. It is also
-		-- never globbed -- sh reads a redirect's target as one word and never
-		-- a pattern, so it is popped off here, before the glob stage below
-		-- ever sees the word it came from.
-		local count = f.ex.counts[#f.ex.words] or 0
-		if count ~= 1 then
+		if (f.ex.counts[lastWord] or 0) ~= 1 then
 			jobError(job, "ambiguous redirect")
 			return 1
 		end
@@ -2219,16 +3586,41 @@ local function runSimple(state, job, f, env)
 		args[#args] = nil
 		masks[#masks] = nil
 	end
+	-- Where the two descriptors go (CeroSecOSScript's parseSimple): "1" and "2"
+	-- are where they already went, "w" is the file ">" named, "e" the one "2>" did.
+	local outGoes = node.out or (redirect ~= nil and "w" or "1")
+	local errGoes = node.err or "2"
+	if errTarget ~= nil then CeroSecOS.expandTilde(state, job.session, {}, errTarget) end
 
-	if #args == 0 then
+	if #args == 0 and node.k ~= "group" then
+		-- No command name: the status is 0, or the last command substitution's
+		-- when there was one (POSIX.2 XCU 2.9.1, "the exit status of the last
+		-- command substitution performed"), so `x=$(false); echo $?` prints 1,
+		-- as dash does. Nothing has run since the capture came back, so
+		-- job.status is still its status.
+		local quiet = 0
+		if f.subRan then quiet = job.status or 0 end
+		if errTarget ~= nil then
+			local openOk, openLines =
+				CeroSecOS.openRedirect(state, job.session, "sh", errTarget, env)
+			if not openOk then
+				errLines(job, openLines)
+				job.status = 1
+				return CeroSecOS.STEP_COST_COMMAND
+			end
+		end
 		if redirect ~= nil then
 			local ok, lines = CeroSecOS.runArgs(state, job.session, {}, redirect, env, nil,
 				{ path = CeroSecOS.pathValue(job.vars), tty = false })
 			errLines(job, lines)
-			if ok then job.status = 0 else job.status = 1 end
+			if ok then job.status = quiet else job.status = 1 end
 			return CeroSecOS.STEP_COST_COMMAND
 		end
-		job.status = 0
+		if errTarget ~= nil then
+			job.status = quiet
+			return CeroSecOS.STEP_COST_COMMAND
+		end
+		job.status = quiet
 		return 1
 	end
 
@@ -2265,6 +3657,144 @@ local function runSimple(state, job, f, env)
 	end
 
 	local name = args[1]
+	-- A group has no name of its own; a target it cannot open is the shell's.
+	if node.k == "group" then name = "sh" end
+
+	-- exec: POSIX.2's own words, "the command specified... shall replace the
+	-- current shell". There is no process here to fork and then replace, so
+	-- REPLACE is done by dropping the word "exec" -- name below becomes the
+	-- exec'd command's, and every refusal past this point names IT and not
+	-- exec -- and pushing a MARKER frame rather than setting a flag on this
+	-- one: exec may run a FUNCTION or a stage of a pipe, and those come back
+	-- through this very frame more than once before there is a final status.
+	-- The marker sits under whatever the command itself pushes and is what is
+	-- left on top once that is over; the step loop below turns it straight
+	-- into the same `exit $?` that ends the innermost script, function or
+	-- capture around it -- exactly what a real exec, replacing the process
+	-- that ran it, leaves behind. `exec` with no operand is the one sh took
+	-- no fork for either: it does nothing and the line after it still runs.
+	if name == "exec" then
+		if #args == 1 then
+			-- `exec > file` would move this shell's output for good; a
+			-- redirect here belongs to one command and ends with it, so the
+			-- form is refused rather than quietly doing nothing.
+			if redirect ~= nil or errTarget ~= nil then
+				jobError(job, "exec: redirect with no command")
+				return 1
+			end
+			job.status = 0
+			return 1
+		end
+		table.remove(args, 1)
+		table.remove(masks, 1)
+		name = args[1]
+		if not pushFrame(job, { k = "execmark" }) then return 1 end
+	end
+
+	-- What ">" and "2>" name is OPENED here, before anything is looked up or run,
+	-- which is the order every sh has: the shell forks, opens the redirections,
+	-- and only then execs. So a target that cannot be opened is a command that
+	-- never runs -- `rm f > /etc/hosts` leaves f alone -- and one that can is
+	-- there, created or emptied, whatever the command does next: `cat nosuch >
+	-- out` and `nosuchcmd > out` both leave an empty out, as on any Unix.
+	--
+	-- Once per command: a pipe reader, or a command that asked for another turn,
+	-- comes back through this frame, and must not empty what it has already
+	-- written. f.opened is the frame's own and nothing else reads it.
+	--
+	-- A job saved by 0.6 has no f.opened: its frame said the same thing with
+	-- f.rd.wrote, set once the target had been emptied and written. A frame
+	-- that carries it is one whose file is open already, so the first turn
+	-- under this build adds to it rather than emptying what that job wrote.
+	if not f.opened and f.rd ~= nil and f.rd.wrote == true then f.opened = true end
+	if not f.opened and (redirect ~= nil or errTarget ~= nil) then
+		f.opened = true
+		local targets = { redirect, errTarget }
+		for i = 1, 2 do
+			if targets[i] ~= nil then
+				local openOk, openLines =
+					CeroSecOS.openRedirect(state, job.session, name, targets[i], env)
+				if not openOk then
+					errLines(job, openLines)
+					job.status = 1
+					return CeroSecOS.STEP_COST_COMMAND
+				end
+			end
+		end
+	end
+
+	-- The two sinks as a frame or a command is handed them. outFile is the file
+	-- the standard output goes to, if a file; errSpec is job.errRd's shape
+	-- (routeErr), and nil where the errors go where they already went. Both are
+	-- worked out from the job as it is NOW, before anything below changes it,
+	-- because `2>&1` and `>&2` mean the other descriptor as the line found it.
+	local outFile = nil
+	if outGoes == "w" then outFile = redirect elseif outGoes == "e" then outFile = errTarget end
+	local errSpec = nil
+	if errGoes == "w" or errGoes == "e" then
+		local to = redirect
+		if errGoes == "e" then to = errTarget end
+		errSpec = { path = to.path, who = name, buf = {} }
+		-- `> f 2>&1`: ONE open file behind both descriptors, so the lines go into
+		-- it in the order they were said. Where the output is caught -- a builtin's
+		-- buffer, a frame's file -- the errors join that very buffer (sameOut);
+		-- a command that hands its lines back all at once needs no such care.
+		if errGoes == outGoes then errSpec.same = true end
+	elseif errGoes == "1" then
+		errSpec = { out = true, depth = #job.caps, rdto = job.rdto }
+	end
+	local outerErr = job.errRd
+	-- What a frame's standard output becomes: a file, or `>&2`'s copy of the
+	-- standard error the call found.
+	local frameTarget = nil
+	if outFile ~= nil then
+		frameTarget = { path = outFile.path, who = name }
+	elseif outGoes == "2" then
+		frameTarget = { toErr = true, spec = outerErr }
+	end
+
+	-- A GROUP: `{ list; }` runs its list in this shell, `( list )` in a copy of
+	-- it (POSIX.2 XCU 2.9.4). Its redirects were opened above, before anything
+	-- in it ran, and are the whole group's, exactly as a function call's are:
+	-- one `>` catches everything the list prints. One step, like the call.
+	--
+	-- The subshell is what pushCapture makes of a $( ), without the catching:
+	-- a copy of the variables, the exported set and the functions, the working
+	-- directory put back, no trap of its own (POSIX.2 3.12). And the positional
+	-- parameters, which `set --` and `shift` replace. handleSignal treats it as
+	-- the wall a $( ) is: `exit` ends it and nothing further, `return` does not
+	-- cross it, nor `break`. It is a frame of this job and not a job of its
+	-- own, so the scheduler's budget is spent on it like on any other list.
+	if node.k == "group" then
+		local frame = { k = "block", prog = node.body, i = 1 }
+		if node.sub then
+			frame.sub = true
+			frame.oldVars, frame.oldNvars = job.vars, job.nvars
+			frame.oldExported, frame.oldCwd = job.exported, job.session.cwd
+			frame.oldFuncs, frame.oldFprog = job.funcs, job.fprog
+			frame.subArgs = job.args
+			frame.hadTraps, frame.oldTraps = true, job.traps
+		end
+		if frameTarget ~= nil then
+			frame.hadRdto = true
+			frame.oldRdto = job.rdto
+		end
+		if errSpec ~= nil then
+			frame.hadErd = true
+			frame.oldErd = job.errRd
+		end
+		if not pushFrame(job, frame) then return 1 end
+		if frameTarget ~= nil then job.rdto = CeroSecOS.rdtoOf(frameTarget, #job.caps) end
+		if errSpec ~= nil then job.errRd = CeroSecOS.sameOut(job, errSpec) end
+		if node.sub then
+			job.traps = nil
+			job.vars = CeroSecOS.copyVars(job.vars)
+			job.exported = CeroSecOS.copyExported(job.exported)
+			job.funcs = CeroSecOS.copyFuncs(job.funcs)
+			job.fprog = nil
+		end
+		return 1
+	end
 
 	-- A FUNCTION the shell holds. Looked for before /bin and before the builtins that
 	-- are files there (echo, printf, test), which is POSIX's order -- a function is
@@ -2280,23 +3810,16 @@ local function runSimple(state, job, f, env)
 		local body, reason = funcBody(job, name)
 		if body == nil then
 			errLines(job, CeroSecOS.fit({ name .. ": " .. tostring(reason) }))
+			-- A function with no body left is a name nothing answers to: 127, as
+			-- for any command not found (see CeroSecOS.notRunStatus).
 			job.status = 1
+			if reason == "not a function" then job.status = CeroSecOS.notRunStatus("not found") end
 			return 1
 		end
 		-- The redirect on the call is the FUNCTION's, the way it is a script's: one
-		-- sign catches everything the whole of it prints. Opened here, where a shell
-		-- opens it, and handed to the frame.
-		local target = nil
-		if redirect ~= nil then
-			local openOk, openLines =
-				CeroSecOS.openRedirect(state, job.session, name, redirect, env)
-			if not openOk then
-				errLines(job, openLines)
-				job.status = 1
-				return 1
-			end
-			target = { path = redirect.path, who = name }
-		end
+		-- sign catches everything the whole of it prints. Opened above, where a
+		-- shell opens it, and handed to the frame -- `2>` with it.
+		local target = frameTarget
 		local kept = {}
 		for i = 2, #args do kept[#kept + 1] = args[i] end
 		local frame = { k = "block", prog = body, i = 1, func = true, ret = true,
@@ -2305,10 +3828,13 @@ local function runSimple(state, job, f, env)
 			frame.hadRdto = true
 			frame.oldRdto = job.rdto
 		end
-		if not pushFrame(job, frame) then return 1 end
-		if target ~= nil then
-			job.rdto = { path = target.path, who = target.who, buf = {} }
+		if errSpec ~= nil then
+			frame.hadErd = true
+			frame.oldErd = job.errRd
 		end
+		if not pushFrame(job, frame) then return 1 end
+		if target ~= nil then job.rdto = CeroSecOS.rdtoOf(target, #job.caps) end
+		if errSpec ~= nil then job.errRd = CeroSecOS.sameOut(job, errSpec) end
 		job.args = kept
 		-- $0 is NOT the function's name: POSIX leaves it the script's, and so does
 		-- every sh -- which is why job.name is untouched here.
@@ -2336,8 +3862,8 @@ local function runSimple(state, job, f, env)
 		-- in /bin is looked up like any other command, and the walk is what it is.
 		if type(walked) == "number" and walked > 1 then builtinWalk = walked - 1 end
 		if refusal ~= nil then
-			errLines(job, CeroSecOS.fit({ name .. ": " .. refusal }))
-			job.status = 1
+			errLines(job, CeroSecOS.fit({ name .. ": " .. CeroSecOS.execError(refusal) }))
+			job.status = CeroSecOS.notRunStatus(refusal)
 			return 1 + builtinWalk
 		end
 	end
@@ -2349,23 +3875,45 @@ local function runSimple(state, job, f, env)
 		-- Except the dot, which runs a FILE and takes its redirect itself
 		-- (BUILTIN_TAKES_REDIRECT): catching what the word printed would catch
 		-- nothing and leave the file writing to the glass.
-		local ownRedirect = false
-		if redirect ~= nil and BUILTIN_TAKES_REDIRECT[name] == true then ownRedirect = true end
-		if redirect ~= nil and not ownRedirect then job.caps[#job.caps + 1] = {} end
-		local handRedirect = nil
-		if ownRedirect then handRedirect = redirect end
-		local status, fatal = builtin(job, args, state, env, handRedirect)
-		if redirect ~= nil and not ownRedirect then
-			flushPartial(job)
+		--
+		-- The file was opened above, so what was caught is ADDED to it. `>&2` is
+		-- caught the same way and handed to the errors the line found; `2>` is
+		-- job.errRd for as long as the builtin runs, and its file written after.
+		local ownRedirect = BUILTIN_TAKES_REDIRECT[name] == true
+		local catch = not ownRedirect and (outFile ~= nil or outGoes == "2")
+		if catch then job.caps[#job.caps + 1] = {} end
+		local handRedirect, sinks = nil, nil
+		if ownRedirect then
+			handRedirect = outFile
+			sinks = { target = frameTarget, erd = errSpec }
+		elseif errSpec ~= nil then
+			job.errRd = errSpec
+			if catch then job.errRd = CeroSecOS.sameOut(job, errSpec) end
+		end
+		local status, fatal = builtin(job, args, state, env, handRedirect, sinks)
+		if catch then flushPartial(job) end
+		if not ownRedirect then job.errRd = outerErr end
+		local sinkOk, sinkLines = true, {}
+		if not ownRedirect and errSpec ~= nil and errSpec.buf ~= nil
+				and #errSpec.buf > 0 then
+			sinkOk, sinkLines = CeroSecOS.writeRedirect(state, job.session, name,
+				{ path = errSpec.path, append = true }, CeroSecOS.linesToText(errSpec.buf), env)
+		end
+		if catch then
 			local buf = job.caps[#job.caps]
 			job.caps[#job.caps] = nil
-			local ok, lines = CeroSecOS.writeRedirect(state, job.session, name, redirect,
-				table.concat(buf, "\n"), env)
-			errLines(job, lines)
-			if not ok then
-				job.status = 1
-				return 1
+			if outFile ~= nil then
+				local ok, lines = CeroSecOS.writeRedirect(state, job.session, name,
+					{ path = outFile.path, append = true }, CeroSecOS.linesToText(buf), env)
+				if not ok then sinkOk, sinkLines = ok, lines end
+			else
+				errLines(job, buf)
 			end
+		end
+		if not sinkOk then
+			errLines(job, sinkLines)
+			job.status = 1
+			return 1
 		end
 		if status == nil then
 			if fatal ~= nil then jobError(job, fatal) end
@@ -2387,8 +3935,12 @@ local function runSimple(state, job, f, env)
 	local stdin = nil
 	if job.stdinBuf ~= nil then
 		if f.rd == nil then f.rd = { carry = {} } end
+		-- open: the writer on the other end of the pipe ended its last line
+		-- with no "\n" behind it -- `printf a | cat` -- so a reader that
+		-- passes the bytes on (cat) can leave the same line open instead of
+		-- closing it with a terminator nothing on the real pipe ever wrote.
 		stdin = { lines = job.stdinBuf.lines, eof = job.stdinBuf.eof,
-			carry = f.rd.carry, want = false, done = false }
+			open = job.stdinBuf.open, carry = f.rd.carry, want = false, done = false }
 	end
 
 	-- A command that reads a pipe is run more than once, and a redirect on one
@@ -2413,28 +3965,23 @@ local function runSimple(state, job, f, env)
 	-- gets one. Nothing is allocated for a command that asks for neither, which is
 	-- every command but that one.
 	local resumed = f.rd ~= nil and f.rd.carry ~= nil
-	local sh = { path = CeroSecOS.pathValue(job.vars), tty = redirect == nil and toScreen(job),
+	local sh = { path = CeroSecOS.pathValue(job.vars), tty = outFile == nil and toScreen(job),
 		keys = jobHasKeyboard(job) }
 	if resumed then sh.carry = f.rd.carry end
-	-- A resumed command has already written what the redirect named, on the turn
-	-- that opened it, so from the second turn on the write is made HERE and
-	-- appends -- the door a pipe reader's redirect goes through, and for the same
-	-- reason: a target must not be truncated twice by one command.
-	local hold = stdin ~= nil or (f.rd ~= nil and f.rd.wrote == true)
-	-- Written out and not as `hold and nil or redirect`: that reads like a choice
-	-- and is not one -- `and nil` is false, so the `or` hands the redirect back
-	-- every time. It cost a pipeline's redirect an afternoon.
-	local handOver = redirect
-	if hold then handOver = nil end
+	-- The redirect is never handed to the command: the file was opened above, so
+	-- every write is made HERE and appends -- the first one onto the file the
+	-- open emptied, every later one (a pipe reader's, a resumed command's) after
+	-- what the one before it wrote. A target must not be truncated twice by one
+	-- command, and now it is truncated once, before the command runs.
+	-- The errors are job.errRd's for as long as the command runs, and put back
+	-- before anything below prints on the shell's behalf.
+	if errSpec ~= nil then job.errRd = errSpec end
 	local ok, lines, control, data =
-		CeroSecOS.runArgs(state, job.session, args, handOver, env, stdin, sh)
+		CeroSecOS.runArgs(state, job.session, args, nil, env, stdin, sh)
 	if sh.again == true and job.state == "running" then
 		if f.rd == nil then f.rd = {} end
 		f.rd.carry = sh.carry
 		job.again = true
-		-- What it wrote this turn went through the redirect above; the turns after
-		-- it add to the file rather than replacing it.
-		if redirect ~= nil then f.rd.wrote = true end
 	end
 	if stdin ~= nil and stdin.want then
 		f.rd.want = true
@@ -2447,50 +3994,73 @@ local function runSimple(state, job, f, env)
 		-- turn, on whatever the stage to its left has written by then.
 		if not stdin.done and not job.stdinBuf.eof then job.again = true end
 	end
-	if (stdin ~= nil or hold) and redirect ~= nil and ok then
+	-- runArgs' old rule, kept: a command that has not finished -- one that asks,
+	-- opens the editor, has handed back a script or gone to wait for another
+	-- machine -- has written nothing yet, and what it hands back now is for the
+	-- screen. Its redirect is carried below, to where its lines will land.
+	local redirectable = control ~= "prompt" and control ~= "edit" and control ~= "job"
+		and control ~= "rsh"
+	-- Output goes to the file only when the command succeeded; the lines of one
+	-- that failed are its errors, and go where errors go. A command that half
+	-- failed hands back one list with both in it, and this machine has one
+	-- stream: the whole of it is the errors' (docs/SCRIPTING.md).
+	-- Except a command that said its lines are output even though it failed
+	-- (grep -c counting nothing, sh.outOnFail): routed as output, status 1.
+	local asOut = ok or sh.outOnFail == true
+	local toErr = false
+	if asOut and outFile ~= nil and redirectable then
 		local wrote = f.rd ~= nil and f.rd.wrote == true
+		-- A device is written even when there is nothing to say, once: it has no
+		-- contents for the open to empty, only a state the write puts it into.
 		if #lines > 0 or not wrote then
-			local target = { path = redirect.path, append = redirect.append or wrote }
 			local wroteOk, wroteLines = CeroSecOS.writeRedirect(state, job.session, name,
-				target, table.concat(lines, "\n"), env)
+				{ path = outFile.path, append = true }, CeroSecOS.linesToText(lines), env)
 			if f.rd ~= nil then f.rd.wrote = true end
 			lines = wroteLines
-			ok = wroteOk
+			if not wroteOk then
+				ok = false
+				asOut = false
+			end
 		else
 			lines = {}
 		end
+	elseif asOut and outGoes == "2" and redirectable then
+		toErr = true
 	end
-	if ok then
-		writeLines(job, lines)
-		job.status = 0
-	else
-		errLines(job, lines)
-		job.status = 1
+	if asOut and not toErr then writeLines(job, lines) end
+	if not asOut then errLines(job, lines) end
+	-- The command is over, and its `2>` with it: what it said there goes into the
+	-- file now, after it, and `>&2`'s output goes to the errors the line found.
+	job.errRd = outerErr
+	if errSpec ~= nil and errSpec.buf ~= nil and #errSpec.buf > 0 then
+		local text = CeroSecOS.linesToText(errSpec.buf)
+		errSpec.buf = {}
+		local errOk, errWrote = CeroSecOS.writeRedirect(state, job.session, name,
+			{ path = errSpec.path, append = true }, text, env)
+		if not errOk then
+			errLines(job, errWrote)
+			ok = false
+		end
 	end
+	if toErr then errLines(job, lines) end
+	-- A command that could not be RUN at all -- not found, or found and not
+	-- executable -- says so with its own status (sh.status, set by runArgs).
+	if ok then job.status = 0 else job.status = sh.status or 1 end
 
 	-- A command that hands back a JOB -- `sh a.sh`, `./a.sh`, a name on PATH that
 	-- turned out to be a script -- has printed nothing and never will: what the
 	-- redirect names belongs to the PROCESS it started, exactly as it does on a real
-	-- machine. So the file is opened here, where a shell opens it, and handed to the
-	-- frame the script runs in (applyControl's "job", CeroSecOS.jobRun). A command
-	-- that FAILED never reaches this, which is the rule the whole machine already
-	-- runs on: `cat nosuch > f` leaves no f here either (see openRedirect).
+	-- machine. The file was opened above, before anything ran, and is handed to the
+	-- frame the script runs in (applyControl's "job", CeroSecOS.jobRun) with the
+	-- `2>` beside it. A command that failed to start still leaves the file there,
+	-- empty, which is what `cat nosuch > f` does on any Unix.
 	--
-	-- Opened BEFORE the order is carried out, because a target that cannot be opened
-	-- is a command that does not run: the script must not start and write onto the
-	-- glass instead.
-	if control == "job" and redirect ~= nil and type(data) == "table" then
-		local openOk, openLines =
-			CeroSecOS.openRedirect(state, job.session, name, redirect, env)
-		if not openOk then
-			errLines(job, openLines)
-			job.status = 1
-			return CeroSecOS.STEP_COST_COMMAND
-		end
-		-- No `append` on it: the open above has just truncated (or made) the file, so
-		-- every write from here on ADDS -- which is what a process writing to an open
-		-- file does, and what keeps a script's second line from replacing its first.
-		data.rd = { path = redirect.path, who = name }
+	-- No `append` on it: the open has truncated (or made) the file, so every write
+	-- from here on ADDS -- which is what a process writing to an open file does, and
+	-- what keeps a script's second line from replacing its first.
+	if control == "job" and type(data) == "table" then
+		if frameTarget ~= nil then data.rd = frameTarget end
+		if errSpec ~= nil then data.erd = errSpec end
 	end
 	applyControl(job, control, data, env)
 
@@ -2532,24 +4102,17 @@ local function runSimple(state, job, f, env)
 
 	-- An rsh is the other command that has written nothing yet: it has gone to
 	-- wait for another machine, and the lines it will hand back are the far
-	-- command's (CeroSecOS.jobRemote). Same shape, same reason, same file opened
-	-- here where a shell opens it.
-	if redirect ~= nil and (job.cont ~= nil or job.dial ~= nil) then
-		local openOk, openLines =
-			CeroSecOS.openRedirect(state, job.session, name, redirect, env)
-		if openOk then
-			local pending = { path = redirect.path, append = redirect.append, who = name }
+	-- command's (CeroSecOS.jobRemote). Same shape, same reason, same file -- opened
+	-- above, before the command ran, so a target that cannot be opened never got
+	-- as far as asking. The `2>` waits beside it, for the errors the answer brings.
+	if job.cont ~= nil or job.dial ~= nil then
+		if outFile ~= nil then
+			-- append: the open emptied it, and nothing has been written since.
+			local pending = { path = outFile.path, append = true, who = name }
 			if job.dial ~= nil then job.dialRedirect = pending else job.contRedirect = pending end
-		else
-			-- A target that cannot be opened is a command that does not run, the
-			-- way it is on a real shell. The question -- or the dial -- goes with
-			-- it: there is nothing left for an answer to do.
-			job.cont = nil
-			job.ask = nil
-			job.dial = nil
-			job.state = "running"
-			errLines(job, openLines)
-			job.status = 1
+		end
+		if errSpec ~= nil then
+			if job.dial ~= nil then job.dialErd = errSpec else job.contErd = errSpec end
 		end
 	end
 	return CeroSecOS.STEP_COST_COMMAND + walkCost
@@ -2574,6 +4137,9 @@ end
 --   * a stage whose reader has finished is killed, with 141 -- SIGPIPE, as sh
 --     reports it. That is what ends the flood in `yes | head -1`: head reads
 --     its one line, closes its input, and the writer dies where it stands.
+--     Only a stage that has started and is writing into the pipe: one inside
+--     its own call's `>` is writing into a file, and write(2) raises SIGPIPE
+--     on a pipe and nothing else.
 --
 -- Reading right to left is what makes the back-pressure fall out: the last
 -- stage runs until it has read everything there is, and only then does the one
@@ -2585,7 +4151,7 @@ end
 -- of shells hanging off one of them.
 --
 
-local stepOnce, handleSignal
+local stepOnce, handleSignal, flushDone, jobFlush
 
 -- One pipe. lines is what is in it, eof says the stage on the left has
 -- finished, closed says the stage on the right will read no more.
@@ -2610,6 +4176,14 @@ local function newStage(job, node, out, into, last)
 		-- is handed a copy of the variables: `greet | cat` calls the greet the shell
 		-- holds, and a definition inside a stage dies with the stage.
 		funcs = CeroSecOS.copyFuncs(job.funcs),
+		-- And of the exported SET, the same copy pushCapture hands a $( ):
+		-- job.exported == nil reads as "everything is exported" (the honest
+		-- reading a machine saved before export existed has to get), and
+		-- copyExported(nil) is nil, so that reading survives into the stage
+		-- too. Without this a fresh login's stage started with exported left
+		-- at nil read as "everything", and `Q=1; env | cat` put Q where a
+		-- real sh's execve for cat never would have.
+		exported = CeroSecOS.copyExported(job.exported),
 	})
 	stage.pipe = out
 	stage.stdinBuf = into
@@ -2643,8 +4217,19 @@ end
 local function drainTail(job, buf)
 	local lines = buf.lines
 	if #lines == 0 then return end
+	local open = buf.open == true
 	buf.lines = {}
 	buf.bytes = 0
+	buf.open = false
+	if open then
+		-- The pipeline's own last line had no newline behind it: leave it
+		-- open on the job draining the pipe too, through the same partial a
+		-- builtin's writeText uses, instead of closing it with a "\n" the
+		-- pipe never carried (`printf a | cat; echo b` glues onto one line).
+		for i = 1, #lines - 1 do outLine(job, lines[i]) end
+		writeText(job, lines[#lines])
+		return
+	end
 	for i = 1, #lines do outLine(job, lines[i]) end
 end
 
@@ -2768,15 +4353,28 @@ function CeroSecOS.jobRemote(job, lines, status, failed, state, env)
 	-- is a stage with nowhere to put what came back. The session still closes.
 	if CeroSecOS.jobIsOver(target) then return false end
 	local pending = target.dialRedirect
+	local erd = target.dialErd
 	target.dialRedirect = nil
+	target.dialErd = nil
 	if type(lines) == "table" then
 		if failed then
 			-- A refusal is not output and never goes where output was going: not
-			-- down a pipe, not into a word, and not into the file `>` named.
+			-- down a pipe, not into a word, and not into the file `>` named --
+			-- only into the one `2>` did, when the line named one.
+			local outer = target.errRd
+			if erd ~= nil then target.errRd = erd end
 			errLines(target, lines)
+			target.errRd = outer
+			if erd ~= nil and erd.buf ~= nil and #erd.buf > 0 and type(state) == "table" then
+				local text = CeroSecOS.linesToText(erd.buf)
+				erd.buf = {}
+				local errOk, errWrote = CeroSecOS.writeRedirect(state, target.session, erd.who,
+					{ path = erd.path, append = true }, text, env)
+				if not errOk then errLines(target, errWrote) end
+			end
 		elseif pending ~= nil and type(state) == "table" then
 			local ok, refusal = CeroSecOS.writeRedirect(state, target.session, pending.who,
-				pending, table.concat(lines, "\n"), env)
+				pending, CeroSecOS.linesToText(lines), env)
 			if not ok then
 				errLines(target, refusal)
 				status = 1
@@ -2859,6 +4457,11 @@ local function pipeStep(state, job, f, env)
 				job.control = stage.control
 				job.controlData = stage.controlData
 			end
+			-- What it wrote into a file of its own goes on the disk now, before the
+			-- pipeline is popped and the stage with it: `g() { echo a; exit 3; }; g >
+			-- f | wc -l` ends the stage with the call's frame still open, and the
+			-- next command must find f whole.
+			jobFlush(state, stage, env)
 		end
 	end
 
@@ -2873,7 +4476,14 @@ local function pipeStep(state, job, f, env)
 	for i = n, 1, -1 do
 		local stage = stages[i]
 		if not CeroSecOS.jobIsOver(stage) then
-			if i < n and pipes[i].closed then
+			-- SIGPIPE is what WRITING into a pipe nobody reads earns (write(2),
+			-- EPIPE), so a stage whose standard output is not the pipe is not
+			-- killed for it: one inside its own call's `>` -- `g > f | true` --
+			-- writes into f and runs on, as it does under sh. And a stage whose
+			-- first command has not run yet is let run it: sh starts every
+			-- command of the pipeline, so `echo a > f | true` leaves a in f even
+			-- when true was over before echo ever ran here (job.ran, stepOnce).
+			if i < n and pipes[i].closed and stage.ran and stage.rdto == nil then
 				sigpipe(stage)
 				return 0
 			end
@@ -2891,6 +4501,18 @@ local function pipeStep(state, job, f, env)
 				-- here; the stage to the left is no help either, so the loop
 				-- walks on and finds the one that is.
 			else
+				-- A file of the stage's own (`g > f | cat`) is not the pipe and has
+				-- no reader to hold it back, and jobStep's forty-line limiter asks
+				-- the job and never a stage. So it is written here, at the same
+				-- forty lines, or `g() { while true; do echo x; done; }` would
+				-- grow one table for as long as the pass lasts.
+				local rd, erd = stage.rdto, stage.errRd
+				if (rd ~= nil and rd.buf ~= nil and #rd.buf >= CeroSecOS.JOB_OUT_MAX)
+						or (erd ~= nil and erd.buf ~= nil
+							and #erd.buf >= CeroSecOS.JOB_OUT_MAX) then
+					jobFlush(state, stage, env)
+					if CeroSecOS.jobIsOver(stage) then return 0 end
+				end
 				return stageStep(state, stage, env)
 			end
 		end
@@ -2947,10 +4569,14 @@ end
 
 local function pushNode(job, node)
 	job.line = node.line or job.line
-	if node.k == "cmd" then
+	-- A group is walked as far as its redirects as a command with no words is:
+	-- the targets are expanded and opened by runSimple, which then pushes the
+	-- body (see "A GROUP" there).
+	if node.k == "cmd" or node.k == "group" then
 		local words = {}
 		for i = 1, #node.words do words[i] = node.words[i] end
 		if node.redirect ~= nil then words[#words + 1] = node.redirect.word end
+		if node.errRedirect ~= nil then words[#words + 1] = node.errRedirect.word end
 		local frame = { k = "cmd", node = node, line = node.line,
 			phase = "expand", ex = newExpansion(words, false) }
 		if node.assigns ~= nil and #node.assigns > 0 then
@@ -3004,6 +4630,39 @@ local function pushNode(job, node)
 	return false
 end
 
+-- The EXIT trap of the shell that is ending, pushed to run before it goes.
+-- owner is the frame that shell is -- a $( ), or a script's own frame, the
+-- two that set hadTraps -- or nil for the job itself. true when an action
+-- was pushed (or refused) and the ending has to wait for it.
+--
+-- Once per shell, and the mark is on the shell and not on the trap: an
+-- action that sets `trap ... EXIT` again is not run a second time, which is
+-- what every sh does and what keeps an action from re-arming itself for
+-- ever. The owner's own program is marked finished, because the shell is
+-- leaving: an `exit` in the middle of a script must not come back to the
+-- line after it once the action is done.
+local function fireExitTrap(job, owner)
+	local traps = job.traps
+	if type(traps) ~= "table" or traps.EXIT == nil then return false end
+	if owner ~= nil then
+		if owner.trapped then return false end
+		owner.trapped = true
+		owner.i = #owner.prog + 1
+	else
+		if job.trapped then return false end
+		job.trapped = true
+	end
+	-- Read when it fires, as sh reads it: what trap was handed is a string.
+	-- Parsed by the same reader as every other line; never evaluated as Lua.
+	local prog, reason = CeroSecOS.parseScript(traps.EXIT)
+	if prog == nil then
+		jobError(job, reason)
+		return true
+	end
+	pushFrame(job, { k = "block", prog = prog, i = 1, trapStatus = job.status })
+	return true
+end
+
 -- One turn of the machine. Returns how many steps it cost -- 0 for the frame
 -- work between commands, 1 for a command or a loop iteration.
 stepOnce = function(state, job, env)
@@ -3011,15 +4670,21 @@ stepOnce = function(state, job, env)
 	-- Written on every turn and for a STAGE as well as for a job, so it is never
 	-- last pass's job and never the pipeline instead of the shell in it.
 	if type(env) == "table" then env.job = job end
+	-- What a call that is over wrote goes on the disk before anything else
+	-- runs, so the next command reads the file whole (flushDone).
+	if job.rdDone ~= nil and not flushDone(state, job, env) then return 0 end
 	local frames = job.frames
 	local f = frames[#frames]
 	if f == nil then
+		if fireExitTrap(job, nil) then return 0 end
 		finish(job, "done")
 		return 0
 	end
 
 	if f.k == "block" or f.k == "capture" then
 		if f.i > #f.prog then
+			-- A script or a $( ) that ran off its end: its EXIT trap first.
+			if f.hadTraps and fireExitTrap(job, f) then return 0 end
 			popFrame(job)
 			return 0
 		end
@@ -3243,7 +4908,12 @@ stepOnce = function(state, job, env)
 				if reason ~= nil then jobError(job, reason) end
 				return 0
 			end
-			if how == "sub" then return 0 end
+			-- A $( ) is being run for this command: marked, because a line
+			-- with no command name left answers with its status (runSimple).
+			if how == "sub" then
+				f.subRan = true
+				return 0
+			end
 			if f.phase == "assign" then f.phase = "expand" else f.phase = "run" end
 			return 0
 		end
@@ -3264,6 +4934,13 @@ stepOnce = function(state, job, env)
 		-- one command.
 		popFrame(job)
 		job.again = nil
+		-- A command has run: in a stage, from here on a closed pipe in front of
+		-- it is a SIGPIPE (pipeStep), and not before -- the first command opens
+		-- its redirect even when the reader is already gone. A group is not
+		-- that command: walking it only opens its redirects and pushes its
+		-- list, so the first command INSIDE it is the one that counts --
+		-- `{ echo a > f; echo b > g; } | true` makes f, as the page says.
+		if f.node.k ~= "group" then job.ran = true end
 		local cost = runSimple(state, job, f, env)
 		if job.again ~= nil and job.state == "running" then pushFrame(job, f) end
 		job.again = nil
@@ -3271,6 +4948,16 @@ stepOnce = function(state, job, env)
 	end
 	if f.k == "pipe" then
 		return pipeStep(state, job, f, env)
+	end
+
+	-- exec's marker, popped once whatever it ran is over: the same job.sig an
+	-- `exit $?` sets, so handleSignal's existing rule -- the innermost script,
+	-- capture or job the exit belongs to -- is what decides how far this
+	-- reaches, exactly as it would for a real exec replacing a real process.
+	if f.k == "execmark" then
+		popFrame(job)
+		job.sig = { k = "exit", n = job.status, noTrap = true }
+		return 0
 	end
 
 	jobError(job, "syntax error")
@@ -3293,8 +4980,9 @@ handleSignal = function(job)
 				at = i
 				break
 			end
-			-- A subshell is a wall: `$(return)` returns from nothing outside itself.
-			if f.k == "capture" then break end
+			-- A subshell is a wall: `$(return)` returns from nothing outside itself,
+			-- and nor does `(return)`.
+			if f.k == "capture" or f.sub then break end
 		end
 		if at ~= nil then
 			while #job.frames >= at do popFrame(job) end
@@ -3324,18 +5012,34 @@ handleSignal = function(job)
 				-- arguments like a script's: `exit` inside a function ends the shell or
 				-- the script it is in, which is POSIX and is the whole difference between
 				-- it and `return`.
-				if f.k == "capture" or (f.oldArgs ~= nil and not f.func) then
+				if f.k == "capture" or f.sub or (f.oldArgs ~= nil and not f.func) then
 					at = i
 					break
 				end
 			end
 		end
 		if at ~= nil then
-			while #job.frames >= at do popFrame(job) end
+			while #job.frames > at do popFrame(job) end
 			job.status = sig.n
+			-- The shell being left runs its EXIT trap first -- unless it was
+			-- exec that ended it: the process that set the trap is gone.
+			if not sig.noTrap and job.frames[at].hadTraps
+					and fireExitTrap(job, job.frames[at]) then
+				return
+			end
+			popFrame(job)
 			return
 		end
 		job.status = sig.n
+		-- The job's own shell, the same way. Of the orders that end a job
+		-- (`all`), only the logout is the shell ending: the rest hand the
+		-- glass to something else or switch the machine off.
+		if not sig.noTrap and (not sig.all or job.control == "exit")
+				and type(job.traps) == "table" and job.traps.EXIT ~= nil
+				and not job.trapped then
+			while #job.frames > 0 do popFrame(job) end
+			if fireExitTrap(job, nil) then return end
+		end
 		finish(job, "done")
 		return
 	end
@@ -3345,7 +5049,7 @@ handleSignal = function(job)
 	local loops = 0
 	for i = 1, #job.frames do
 		local k = job.frames[i].k
-		if k == "capture" then loops = 0 end
+		if k == "capture" or job.frames[i].sub then loops = 0 end
 		if k == "loop" or k == "for" then loops = loops + 1 end
 	end
 	if loops == 0 then return end
@@ -3425,6 +5129,7 @@ local function progressKey(job)
 	-- put a line in it is a turn that got somewhere.
 	local held = #job.out
 	if job.rdto ~= nil then held = held + #job.rdto.buf end
+	if job.errRd ~= nil and job.errRd.buf ~= nil then held = held + #job.errRd.buf end
 	local key = tostring(job.state) .. " " .. tostring(job.blocked) ..
 		" " .. held .. " " .. #(job.partial or "") .. " " .. frameKey(job)
 	local frames = job.frames
@@ -3458,31 +5163,76 @@ end
 -- where every other refusal about a redirect goes.
 local function flushOne(state, job, to, env)
 	if #to.buf == 0 then return true end
+	-- Every line in this chunk gets its own "\n" behind it -- writeFile's
+	-- append is a raw concat now the file carries its own terminators -- and
+	-- so does the LAST one, unless it is truly the job's own unterminated
+	-- last line (to.open, set by outLine's partial flush): `printf a > f`
+	-- leaves f without one, `echo a > f` does not.
 	local text = table.concat(to.buf, "\n")
+	if not to.open then text = text .. "\n" end
 	to.buf = {}
+	to.open = false
 	local ok, lines = CeroSecOS.writeRedirect(state, job.session, to.who,
 		{ path = to.path, append = true }, text, env)
 	if ok then return true end
+	-- Not into the very file that just refused: the refusal goes where errors
+	-- went before it was opened.
+	if job.errRd == to then job.errRd = nil end
 	errLines(job, lines)
 	return false
 end
 
-local function jobFlush(state, job, env)
-	local bad = false
+-- The files of calls that are OVER (popFrame's rdDone), written now. Called
+-- before every step as well as at the end of the pass: `h > o; wc -l o` ran
+-- wc on the same pass h ended, before the last of h's lines had reached the
+-- disk, and counted 80 of 100. A closed file is a whole file. Only these: the
+-- redirect still open keeps its buffer to the end of the pass, so a pass makes
+-- the same writes it did and only WHEN moves. false when a write was refused,
+-- and the job is over then, as jobFlush has always ended it.
+flushDone = function(state, job, env)
 	local done = job.rdDone
-	if done ~= nil then
-		job.rdDone = nil
-		for i = 1, #done do
-			if not flushOne(state, job, done[i], env) then bad = true end
-		end
+	if done == nil then return true end
+	job.rdDone = nil
+	local good = true
+	for i = 1, #done do
+		if not flushOne(state, job, done[i], env) then good = false end
 	end
+	if not good and not CeroSecOS.jobIsOver(job) then
+		job.rdto = nil
+		job.errRd = nil
+		job.status = 1
+		finish(job, "done")
+	end
+	return good
+end
+
+jobFlush = function(state, job, env)
+	local bad = false
+	if not flushDone(state, job, env) then bad = true end
 	if job.rdto ~= nil then
 		if not flushOne(state, job, job.rdto, env) then bad = true end
 	end
+	if job.errRd ~= nil and job.errRd.buf ~= nil then
+		if not flushOne(state, job, job.errRd, env) then bad = true end
+	end
 	if bad and not CeroSecOS.jobIsOver(job) then
 		job.rdto = nil
+		job.errRd = nil
 		job.status = 1
 		finish(job, "done")
+	end
+	-- And the files the STAGES of a running pipeline hold: `g > f | cat` is
+	-- g writing into its own f from inside a stage (outLine), which is a job
+	-- the scheduler never sees, so the pass that ends writes its lines too --
+	-- the same once a pass the shell's own file gets. Bounded by how deep the
+	-- frames go (MAX_FRAMES), like every other walk of them.
+	local frames = job.frames
+	if frames == nil then return end
+	for i = 1, #frames do
+		local stages = frames[i].stages
+		if frames[i].k == "pipe" and stages ~= nil then
+			for k = 1, #stages do jobFlush(state, stages[k], env) end
+		end
 	end
 end
 
@@ -3591,6 +5341,12 @@ function CeroSecOS.jobStep(state, job, env, budget)
 		-- forty lines and the pass ends so that jobFlush can empty it.
 		local screenFull = #job.out >= CeroSecOS.JOB_OUT_MAX
 		local fileFull = job.rdto ~= nil and #job.rdto.buf >= CeroSecOS.JOB_OUT_MAX
+		-- And the file `2>` named for the function or script running now: the
+		-- same buffer, the same forty lines.
+		if job.errRd ~= nil and job.errRd.buf ~= nil
+				and #job.errRd.buf >= CeroSecOS.JOB_OUT_MAX then
+			fileFull = true
+		end
 		if screenFull or fileFull then
 			job.blocked = "output"
 			-- Waiting on the screen is not spending the processor, so the
@@ -3702,8 +5458,15 @@ function CeroSecOS.jobInput(state, job, text, env)
 	job.ask = nil
 	job.state = "running"
 	local value = text
+	if ask.count ~= nil then value = string.sub(text, 1, ask.count) end
+	-- A question asked before read took several names (a job saved waiting on
+	-- one) still carries the one name it had.
+	local names = ask.names
+	if names == nil then names = { ask.var } end
 	if ask.one then value = string.sub(text, 1, 1) end
-	local reason = setVar(job, ask.var, value)
+	-- And read the line as it stood, which is what it did then.
+	local raw = ask.raw == true or ask.names == nil
+	local reason = assignFields(job, names, value, raw)
 	if reason ~= nil then
 		jobError(job, reason)
 		return true
@@ -3750,7 +5513,29 @@ end
 -- prints nothing, so `out` came out empty and the script's own lines went to the
 -- screen. The pipe and the capture were never wrong: those are doors on the JOB,
 -- and a script runs in the job that asked for it.
-function CeroSecOS.jobRun(job, prog, args, name, inPlace, target)
+-- What a frame's standard output is, made from what the shell opened for it: a
+-- file ({ path, who }), or `>&2`'s copy of the standard error the call found
+-- ({ toErr, spec }, which outLine hands to routeErr). The buffer is there on
+-- both, empty on the second, so everything that counts it counts nought. depth is
+-- how many $( ) captures were open when it was, which is what lets it win over
+-- them (capturing).
+function CeroSecOS.rdtoOf(target, depth)
+	if target.toErr then
+		return { toErr = true, spec = target.spec, buf = {}, depth = depth }
+	end
+	return { path = target.path, who = target.who, buf = {}, depth = depth }
+end
+
+-- The `2>` of a line that sent both descriptors into one file, turned into
+-- `2>&1` on the output as it is NOW -- the catch buffer on top of job.caps, or
+-- the frame's own job.rdto -- so the two share one buffer and keep their order.
+-- Any other spec is handed back as it is.
+function CeroSecOS.sameOut(job, spec)
+	if not spec.same then return spec end
+	return { out = true, depth = #job.caps, rdto = job.rdto }
+end
+
+function CeroSecOS.jobRun(job, prog, args, name, inPlace, target, erd)
 	if job.depth >= CeroSecOS.SCRIPT_DEPTH_MAX then
 		jobError(job, "too deeply nested")
 		return false
@@ -3764,6 +5549,11 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace, target)
 	if target ~= nil then
 		frame.hadRdto = true
 		frame.oldRdto = job.rdto
+	end
+	-- And the `2>` the line carried, the process's as much as its `>` is.
+	if erd ~= nil then
+		frame.hadErd = true
+		frame.oldErd = job.errRd
 	end
 	local kept = nil
 	if not inPlace then
@@ -3780,20 +5570,28 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace, target)
 		frame.oldFuncs = job.funcs
 		frame.oldFprog = job.fprog
 		frame.hadFuncs = true
+		-- And the traps: a new sh has set none, and what it sets dies with it.
+		frame.hadTraps = true
+		frame.oldTraps = job.traps
 	end
 	if not pushFrame(job, frame) then
 		job.depth = job.depth - 1
 		return false
 	end
-	if target ~= nil then
-		job.rdto = { path = target.path, who = target.who, buf = {} }
-	end
+	if target ~= nil then job.rdto = CeroSecOS.rdtoOf(target, #job.caps) end
+	if erd ~= nil then job.errRd = CeroSecOS.sameOut(job, erd) end
 	job.name = name
 	if not inPlace then
 		job.args = kept
 		job.funcs = nil
 		job.fprog = nil
+		job.traps = nil
 		local child = CeroSecOS.exportedVars(job.vars, job.exported)
+		-- A new sh sets IFS to space, tab and newline whatever it was handed:
+		-- POSIX.2 2.5.3 lets a shell ignore an IFS in the environment, and a
+		-- script that starts splitting on whatever its caller exported is a
+		-- script nobody can read. Not exported, so it is the child's own.
+		child.IFS = IFS_DEFAULT
 		local n = 0
 		for _, _ in pairs(child) do n = n + 1 end
 		job.vars = child
@@ -3856,17 +5654,42 @@ end
 -- The script a name points at, as text. needX says whether it has to be
 -- executable (./thing) or merely readable (sh thing).
 -- text, or nil plus the line to print.
+-- A file that is RUN (needX) is refused in sh's own E_EXEC words --
+-- "./x: not found", "./x: permission denied" (CeroSecOS.execError); one
+-- handed to sh or to `.` that cannot be opened is sh's "Can't open", and
+-- one that opens but is no file is refused with strerror(3)'s.
 function CeroSecOS.readScript(state, session, who, path, needX)
 	local label = scriptLabel(who, path)
+	local says = CeroSecOS.strerror
+	if needX then says = CeroSecOS.execError end
 	local node, reason = CeroSecOS.getNode(state, session, path)
-	if node == nil then return nil, label .. ": " .. reason end
-	if node.type == "dir" then return nil, label .. ": is a directory" end
+	-- A file sh or `.` READS and open(2) refuses -- not there, or not
+	-- readable -- is 4.4BSD-Lite2 bin/sh/input.c setinputfile's
+	-- error("Can't open %s", fname), signed (error.c) with commandname:
+	-- the builtin's own word for `.` (eval.c evalcommand sets it to
+	-- argv[0]), and for `sh file` the file itself, which options.c
+	-- procargs makes commandname before it calls setinputfile.
+	local cantOpen = nil
+	if not needX then
+		local sign = who
+		if who == "sh" then sign = path end
+		cantOpen = sign .. ": Can't open " .. path
+	end
+	if node == nil then
+		if cantOpen ~= nil then return nil, cantOpen end
+		return nil, label .. ": " .. says(reason)
+	end
+	-- A directory RUN is execve(2)'s EACCES (4.4BSD's manual: "The new
+	-- process file is not an ordinary file"), so sh says permission denied.
+	if node.type == "dir" and needX then return nil, label .. ": " .. says("permission denied") end
+	if node.type == "dir" then return nil, label .. ": " .. says("is a directory") end
 	if node.type ~= "file" then return nil, label .. ": " .. CeroSecOS.notAFile(node) end
 	if needX and not CeroSecOS.can(state, session, node, "x") then
-		return nil, label .. ": permission denied"
+		return nil, label .. ": " .. says("permission denied")
 	end
 	if not CeroSecOS.can(state, session, node, "r") then
-		return nil, label .. ": permission denied"
+		if cantOpen ~= nil then return nil, cantOpen end
+		return nil, label .. ": " .. says("permission denied")
 	end
 	return node.data or ""
 end
@@ -3917,13 +5740,29 @@ end
 -- lines deep and a prompt one line wide can be asked to keep track of.
 CeroSecOS.MAX_JOBS = 4
 
-commands.sh = function(state, session, args, env)
-	if #args < 2 then
+-- sh's own options come first, read by options.c's options(1): "-" and
+-- "--" end them, and a letter this sh has not got -- all of them; -c is the
+-- "sh" deviation -- is setoption()'s error("Illegal option -%c"), bare,
+-- because error() puts commandname in front and procargs sets commandname
+-- only AFTER the options are read (4.4BSD-Lite2 bin/sh/options.c, error.c).
+-- And the status is 2: main.c's handler sets exitstatus = 2 for an EXERROR
+-- and exitshell(2) for a shell that is not interactive yet.
+commands.sh = function(state, session, args, env, stdin, sh)
+	local at = 2
+	local first = args[2]
+	if first == "-" or first == "--" then
+		at = 3
+	elseif first ~= nil and (string.sub(first, 1, 1) == "-" or string.sub(first, 1, 1) == "+")
+			and #first > 1 then
+		if type(sh) == "table" then sh.status = 2 end
+		return false, { "Illegal option -" .. string.sub(first, 2, 2) }
+	end
+	if #args < at then
 		return false, { "sh: usage: " .. (CeroSecOS.commandUsage("sh") or "sh <file> [args]") }
 	end
 	local rest = {}
-	for i = 3, #args do rest[#rest + 1] = args[i] end
-	return CeroSecOS.startScript(state, session, "sh", args[2], rest,
+	for i = at + 1, #args do rest[#rest + 1] = args[i] end
+	return CeroSecOS.startScript(state, session, "sh", args[at], rest,
 		table.concat(args, " "), env, false)
 end
 
@@ -4013,7 +5852,7 @@ commands.fg = function(state, session, args, env)
 			want = string.sub(want, 2)
 			bySlot = true
 		end
-		local n = tonumber(want)
+		local n = CeroSecOS.intOf(want)
 		if n == nil then return false, { "fg: " .. args[2] .. ": no such job" } end
 		for i = 1, #jobs do
 			local job = jobs[i]
@@ -4046,17 +5885,145 @@ end
 -- one forward, because a survivor who sits down at a glass has to be able to SEE
 -- what is running and to watch it. What he may not do is stop another account's
 -- work, which is Unix's rule and not this machine's.
+--
+-- THE SIGNAL. 4.4BSD-Lite2's bin/kill/kill.c: `-s name`, `-name` and
+-- `-number`, and `-l` to list them. A name is matched without regard to case
+-- and with or without "sig" in front (signame_to_signum: strncasecmp(sig,
+-- "sig", 3), then strcasecmp against sys_signame), and the names are
+-- lib/libc/gen/siglist.c's sys_signame, lower case, in number order -- so
+-- this table is that one and not this engine's invention.
+--
+-- There is no process under a job, only a script the scheduler steps, so the
+-- one thing a signal can do here is end it, which is the default action
+-- sigaction(2)'s table gives HUP, INT, QUIT, KILL and TERM alike. Those five
+-- are honoured. A signal that would stop, resume or merely be reported --
+-- STOP, TSTP and CONT among them -- is refused by name, a declared deviation
+-- (CeroSecOS.DEVIATIONS, "kill"), rather than faking a pause nothing behind
+-- it could hold. Signal 0 is kill(2)'s own "is it there": the job is looked
+-- up and left alone.
+local KILL_NAMES = {
+	"hup", "int", "quit", "ill", "trap", "abrt", "emt", "fpe",
+	"kill", "bus", "segv", "sys", "pipe", "alrm", "term", "urg",
+	"stop", "tstp", "cont", "chld", "ttin", "ttou", "io", "xcpu",
+	"xfsz", "vtalrm", "prof", "winch", "info", "usr1", "usr2",
+}
+local KILL_HONOURED = { [1] = true, [2] = true, [3] = true, [9] = true, [15] = true }
+
+-- printsignals(), 4.4BSD-Lite2 kill.c 8.4: NSIG is 32, and it breaks the
+-- line after NSIG / 2 and after NSIG - 1 -- two lines, of 71 and 75
+-- columns, measured by nothing. The glass is sixty wide and would cut them
+-- in the middle of a name (`...pipe al` / `rm term urg`), so each of the
+-- two is folded at the last blank that fits: four lines, where kill.c
+-- printed two (the "kill" entry of CeroSecOS.DEVIATIONS).
+local function killSignalLines()
+	local rows, lines = { {}, {} }, {}
+	for n = 1, #KILL_NAMES do
+		local r = rows[1]
+		if n > 16 then r = rows[2] end
+		r[#r + 1] = KILL_NAMES[n]
+	end
+	for i = 1, 2 do
+		local line = ""
+		for _, name in ipairs(rows[i]) do
+			if line ~= "" and #line + 1 + #name > CeroSecOS.COLS then
+				lines[#lines + 1] = line
+				line = name
+			elseif line == "" then
+				line = name
+			else
+				line = line .. " " .. name
+			end
+		end
+		lines[#lines + 1] = line
+	end
+	return lines
+end
+
+-- nosig(): warnx's line, then the list, both on the error side.
+local function killNoSig(name)
+	local lines = { "kill: unknown signal " .. name .. "; valid signals:" }
+	local list = killSignalLines()
+	for i = 1, #list do lines[#lines + 1] = list[i] end
+	return false, lines
+end
+
+-- The number for a name, or nil: string.lower on both sides is strcasecmp,
+-- and a plain comparison, never a pattern, is what reads the typed word.
+local function killNumberOf(name)
+	local low = string.lower(name)
+	if string.sub(low, 1, 3) == "sig" then low = string.sub(low, 4) end
+	for n = 1, #KILL_NAMES do
+		if KILL_NAMES[n] == low then return n end
+	end
+	return nil
+end
+
 commands.kill = function(state, session, args, env)
-	if #args ~= 2 then return false, { "kill: usage: " .. CeroSecOS.commandUsage("kill") } end
+	local usageLines = { "kill: usage: " .. CeroSecOS.commandUsage("kill") }
+	if args[2] == nil then return false, usageLines end
+	local signum, at = 15, 2
+	local first = args[2]
+	if first == "-l" then
+		-- kill -l: the list, on the output side (printsignals(stdout)).
+		-- With one operand, kill.c's own branch: a number and nothing else
+		-- (`if (!isdigit(**argv)) usage();`, so `kill -l TERM` is the usage
+		-- line), read by strtol and refused whole if anything trails it;
+		-- 128 and up is an exit status and loses its 128; then the name, as
+		-- sys_signame spells it, or nosig().
+		if #args > 3 then return false, usageLines end
+		if #args == 3 then
+			local word = args[3]
+			if string.find(word, "^%d") == nil then return false, usageLines end
+			local numsig, stop = CeroSecOS.strtol(word)
+			if stop <= #word then
+				return false, { "kill: illegal signal number: " .. word }
+			end
+			if numsig >= 128 then numsig = numsig - 128 end
+			if numsig <= 0 or numsig > #KILL_NAMES then return killNoSig(word) end
+			return true, { KILL_NAMES[numsig] }
+		end
+		return true, killSignalLines()
+	elseif first == "-s" then
+		if args[3] == nil then
+			return false, { "kill: option requires an argument -- s", usageLines[1] }
+		end
+		if args[3] == "0" then signum = 0 else
+			signum = killNumberOf(args[3])
+			if signum == nil then return killNoSig(args[3]) end
+		end
+		at = 4
+	elseif string.sub(first, 1, 1) == "-" then
+		local rest = string.sub(first, 2)
+		local c = string.sub(rest, 1, 1)
+		if string.match(c, "^%a$") ~= nil then
+			signum = killNumberOf(rest)
+			if signum == nil then return killNoSig(rest) end
+		elseif string.match(c, "^%d$") ~= nil then
+			-- strtol and `*ep`: every character a digit, or the number is
+			-- illegal outright; then 1..NSIG-1, or unknown.
+			if string.match(rest, "^%d+$") == nil then
+				return false, { "kill: illegal signal number: " .. rest }
+			end
+			signum = CeroSecOS.intOf(rest)
+			if signum < 1 or signum > #KILL_NAMES then return killNoSig(rest) end
+		else
+			return killNoSig(rest)
+		end
+		at = 3
+	end
+	if #args ~= at then return false, usageLines end
+	if signum ~= 0 and not KILL_HONOURED[signum] then
+		return false, { "kill: " .. KILL_NAMES[signum] .. ": not honoured" }
+	end
 	local jobs = CeroSecOS.jobsOf(env)
-	local want = args[2]
+	local want = args[at]
 	local bySlot = false
 	if string.sub(want, 1, 1) == "%" then
 		want = string.sub(want, 2)
 		bySlot = true
 	end
-	local n = tonumber(want)
-	if n == nil then return false, { "kill: " .. args[2] .. ": no such job" } end
+	local n = CeroSecOS.intOf(want)
+	if n == nil then return false, { "kill: " .. args[at] .. ": no such job" } end
 	for i = 1, #jobs do
 		local job = jobs[i]
 		local matches = false
@@ -4065,13 +6032,15 @@ commands.kill = function(state, session, args, env)
 			local me = CeroSecOS.userOf(session)
 			local owner = (job.session or {}).user
 			if me ~= "root" and owner ~= nil and owner ~= me then
-				return false, { "kill: " .. args[2] .. ": Operation not permitted" }
+				return false, { "kill: " .. args[at] .. ": Operation not permitted" }
 			end
-			job.killReq = "user"
+			-- Whichever of the five it was, the job ends the one way this
+			-- scheduler ends one, and says "killed" as it always has.
+			if signum ~= 0 then job.killReq = "user" end
 			return true, {}
 		end
 	end
-	return false, { "kill: " .. args[2] .. ": no such job" }
+	return false, { "kill: " .. args[at] .. ": no such job" }
 end
 
 --
@@ -4097,9 +6066,18 @@ commands["false"] = function(state, session, args, env)
 end
 
 commands.printf = function(state, session, args, env)
-	local text = CeroSecOS.printfText(args)
+	local text, bad = CeroSecOS.printfText(args)
 	if text == nil then return false, {} end
-	return true, CeroSecOS.splitLines(text)
+	local lines = CeroSecOS.splitLines(text)
+	if bad ~= nil then
+		lines[#lines + 1] = bad
+		return false, lines
+	end
+	-- printf writes only what its own format asked for -- no "\n" unless one
+	-- is in it -- so `sudo printf a` leaves its line open exactly as the
+	-- builtin's own writeText does (builtins.printf, above).
+	if not CeroSecOS.endsLine(text) then lines.open = true end
+	return true, lines
 end
 
 local function testCommand(state, session, args, env)

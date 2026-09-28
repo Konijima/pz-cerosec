@@ -247,17 +247,16 @@ is whether the account is in the group wheel -- and wheel is what grants,
 because the shipped /etc/sudoers carries a %wheel line. usermod -G writes
 this field from that membership, so the two never disagree.]],
 
-[[Making one. useradd is root's, and it does three things: writes the
-line, makes the home, and says out loud that the account is open.
+[[Making one. useradd is root's, and it does two things: writes the
+line and makes the home. It says nothing when it has done both -- and
+the account it made has an EMPTY password.
 
 Try it.
 
   root@ksp-04-11:~# useradd bob
-  useradd: bob: created
-  useradd: set a password with passwd bob
 
-Do the second line now, not later. Between those two commands bob is an
-account anybody in the office can log in to by pressing Enter.
+Give him a password now, not later. Until you do, bob is an account
+anybody in the office can log in to by pressing Enter.
 
   root@ksp-04-11:~# passwd bob
   New password:
@@ -279,7 +278,6 @@ obstacle to giving him an account.]],
 [[Unmaking one, and this is where care is owed.
 
   root@ksp-04-11:~# userdel kate
-  userdel: kate: removed
 
 That takes the line out of /etc/passwd, and takes the name out of
 /etc/sudoers with it -- a name left in that file is a line waiting for
@@ -495,7 +493,7 @@ So this is not a demonstration. It is a machine losing a command:
 
   root@ksp-04-11:~# rm /bin/ls
   root@ksp-04-11:~# ls
-  ls: command not found
+  ls: not found
 
 And a mode is enough on its own. chmod 600 /bin/ls leaves the file there
 and every account, root included, gets ls: permission denied instead: a
@@ -588,7 +586,7 @@ may remove it or rename it out again.
   bob@ksp-04-11:~$ cat /var/tmp/mine.txt
   mine
   bob@ksp-04-11:~$ rm /var/tmp/mine.txt
-  rm: /var/tmp/mine.txt: permission denied
+  rm: /var/tmp/mine.txt: Permission denied
 
 Bob may read it, may write his own beside it, and may not take it away.
 The rule belongs to the PLACE: a copy of it elsewhere is an ordinary file.
@@ -646,7 +644,7 @@ Try it, on a machine you have just broken on purpose.
 
   root@ksp-04-11:~# rm -r /bin
   root@ksp-04-11:~# ls
-  ls: command not found
+  ls: not found
 
 Switch the machine off and on, answer y, and:
 
@@ -664,7 +662,7 @@ session, and that is not an ordinary account's to take. Nothing is lost
 either way -- it is all on the disk.
 
   admin@ksp-04-11:~$ shutdown
-  shutdown: permission denied
+  shutdown: Permission denied
   root@ksp-04-11:~# shutdown
 
 shutdown switches the machine off: the screen goes, the glow goes, every
@@ -1180,7 +1178,7 @@ not about your typing. A device answers in its OWN name.
       the doorway is not clear: a wall, a tree, a car
   light0: invalid value
       that word means nothing to that kind
-  light0: permission denied
+  light0: Permission denied
       the mode says no
   win0: cannot toggle
       smashed or barricaded: no opposite to turn into
@@ -1229,7 +1227,7 @@ and no fourth:
 reach the file itself, and that is deliberate:
 
   admin@ksp-04-11:~$ ls -l /var/spool/cron
-  ls: /var/spool/cron: permission denied
+  ls: /var/spool/cron: Permission denied
 
 The directory is root's at mode 700 and each crontab in it is root's at
 600. crontab is the one command on the machine that reaches a file its
@@ -2043,7 +2041,7 @@ when you leave for the night -- after who.
   admin@ksp-04-11:~$ exit
 
 What a stranger at your keyboard can then do: try names at login: and be
-told only login incorrect, which never says which half was wrong; read
+told only Login incorrect, which never says which half was wrong; read
 /etc/group and /etc/hosts, public on purpose; and read last, and see
 himself in it.
 
@@ -2090,10 +2088,11 @@ Groups, and who may read what.
 [==[The machine itself.
 
   hostname [name]
+  uname [-asnrv]
   df
   ps
   jobs
-  kill <id>|%<n>
+  kill [-<signal>|-s <signal>] <id>|%<n>
   fg [%<n>|<id>]
   shutdown [-h|-r] now|+N
   halt
@@ -2167,15 +2166,17 @@ meets. Below are the ones that belong to this book.
 
 Being somebody else, and the accounts.
 
-  su: authentication failure
-      one wrong answer; there is no second try
+  Sorry
+      su's one wrong answer; there is no second try
   su: too many levels
       a fifth su, past the four the machine allows
   sudo: authentication failure
       the same, and for the same reason
+  sudo: <name>: command not found
+      nothing on PATH answers the name sudo was given
   <name> is not in the sudoers file.
       not in the file at all; sudo will not ask twice
-  passwd: authentication failure
+  passwd: Permission denied
   passwd: passwords do not match
   passwd: password too long
   passwd: no such user
@@ -2224,7 +2225,7 @@ command's, so none of these carries dev: in front of it.
   door0: barricaded
   door0: blocked
   light0: invalid value
-  light0: permission denied
+  light0: Permission denied
   win0: cannot toggle
   sensor0: invalid value
   door0: operation not supported
@@ -2285,8 +2286,8 @@ refused whole, and the refusal names the file, the line and the field:
   no crontab for <name>
   No mail for <name>
       an empty mailbox, which is not an error
-  mail: <path>: permission denied
-  crontab: <path>: disk full
+  mail: <path>: Permission denied
+  crontab: <path>: No space left on device
 
 And sending:
 
@@ -2295,7 +2296,7 @@ And sending:
       and <host>!<name> too: no mailer off this machine
   Null message body; hope that's ok
       an empty message, and it is SENT anyway
-  mail: <path>: disk full
+  mail: <path>: No space left on device
 
 And the log, for a minute the machine had no room for:
 

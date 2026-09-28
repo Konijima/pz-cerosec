@@ -103,7 +103,15 @@ local function scan(line, cursor)
 					ok = false
 					i = i + 1
 				else
-					text = text .. string.sub(line, i + 1, i + 1)
+					-- The tokenizer's rule, so the name looked up is the
+					-- name the command will get: the backslash goes only
+					-- before $ ` " \ ; anywhere else it is kept.
+					local nx = string.sub(line, i + 1, i + 1)
+					if nx == "$" or nx == "`" or nx == "\"" or nx == "\\" then
+						text = text .. nx
+					else
+						text = text .. "\\" .. nx
+					end
 					i = i + 2
 				end
 			elseif c == "$" then

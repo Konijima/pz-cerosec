@@ -897,7 +897,7 @@ CeroSecContent.SCRIPTS["audit.sh"] = {
 		"  exit 1",
 		"fi",
 		"if [ ! -f $1 ]; then",
-		"  echo \"audit.sh: $1: no such file\"",
+		"  echo \"audit.sh: $1: No such file or directory\"",
 		"  exit 1",
 		"fi",
 		"n=$(grep -c $2 $1)",
@@ -923,7 +923,7 @@ CeroSecContent.SCRIPTS["total.sh"] = {
 		"  exit 1",
 		"fi",
 		"if [ ! -f $1 ]; then",
-		"  echo \"total.sh: $1: no such file\"",
+		"  echo \"total.sh: $1: No such file or directory\"",
 		"  exit 1",
 		"fi",
 		"t=0",
@@ -951,7 +951,7 @@ CeroSecContent.SCRIPTS["rounds.sh"] = {
 		"  exit 1",
 		"fi",
 		"if [ ! -f $1 ]; then",
-		"  echo \"rounds.sh: $1: no such file\"",
+		"  echo \"rounds.sh: $1: No such file or directory\"",
 		"  exit 1",
 		"fi",
 		"cut -d : -f 1 $1 | sort",
@@ -1092,7 +1092,7 @@ CeroSecContent.SCRIPTS["hangman.sh"] = {
 		"  exit 1",
 		"fi",
 		"if [ ! -f $1 ]; then",
-		"  echo \"hangman.sh: $1: no such file\"",
+		"  echo \"hangman.sh: $1: No such file or directory\"",
 		"  exit 1",
 		"fi",
 		"c=$(cat $1 | wc -l)",
@@ -1586,9 +1586,9 @@ CeroSecContent.SCRIPTS["setup.sh"] = {
 --
 --   * A PIPELINE'S REFUSAL LANDS IN THE CAPTURE, not in the pipe. `f=$(cat
 --     /dev/gen0 | cut -d' ' -f3)` on a machine with no generator comes back as
---     the whole of `cat: /dev/gen0: no such file` -- errLine writes to the job's
+--     the whole of `cat: /dev/gen0: No such file or directory` -- errLine writes to the job's
 --     door and skips the pipe -- and `[ $f -ge 10 ]` on that is
---     `test: argument expected`. So genwatch.sh sifts the field through a `case`
+--     `test: syntax error`. So genwatch.sh sifts the field through a `case`
 --     with `*[!0-9]*` in it before it does arithmetic on it.
 --
 -- WHAT THE POLLING COSTS, and it is not what a reader would guess. The walk of
@@ -1884,7 +1884,7 @@ CeroSecContent.SCRIPTS["genwatch.sh"] = {
 	-- (docs/DEVICES.md) -- and it is sifted through a `case` before any arithmetic
 	-- touches it, for the reason at the head of this block: a machine with no
 	-- generator puts `cat`'s whole refusal in the capture, and `[ $f -ge 10 ]` on
-	-- that is `test: argument expected` rather than a clean line.
+	-- that is `test: syntax error` rather than a clean line.
 	--
 	-- It does not START the generator, deliberately. A generator that starts itself
 	-- is a noise in an empty street, which is the same sentence CeroSecAuto.lua is
@@ -1892,7 +1892,7 @@ CeroSecContent.SCRIPTS["genwatch.sh"] = {
 	--
 	-- THE THRESHOLD TEST IS WRITTEN `-lt` AND NOT `-ge`, and that is the one line in
 	-- here that is about failing safe. `test` on a threshold that is not a number
-	-- answers `test: integer expected` and FALSE, so `-ge` would have dropped a
+	-- answers `test: -h: expected integer` and FALSE, so `-ge` would have dropped a
 	-- `genwatch.sh -h` straight into the warning -- a broadcast on every screen and
 	-- a letter to root because somebody typed a flag this shell has not got. Round
 	-- this way the same mistake prints the tank and says the threshold was not a
@@ -1915,7 +1915,9 @@ CeroSecContent.SCRIPTS["genwatch.sh"] = {
 		"n=$1",
 		"if [ -z \"$n\" ]; then n=10; fi",
 		"F=/var/tmp/genwatch.said",
-		"s=$(cat /dev/gen0)",
+		-- 2>/dev/null: a $( ) catches the standard output only, and with no gen0
+		-- cat's own complaint would reach the glass ahead of the line below.
+		"s=$(cat /dev/gen0 2>/dev/null)",
 		"f=$(echo $s | cut -d' ' -f3)",
 		"case \"$f\" in",
 		"\"\" | *[!0-9]*)",
@@ -3393,14 +3395,20 @@ CeroSecContent.DISKS = {
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"n=sort; e=a; g=$(printf \"c\\na\\nb\\n\" | sort | head -n 1)",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				-- wc -l's count is a fixed-width field (see wc(1) here), so a
+				-- straight $(...) of it carries leading blanks; $(( )) reads
+				-- it as a number and drops them, same as `expr $(...)` would.
 				"n=sort-u; e=2; g=$(printf \"b\\na\\nb\\n\" | sort -u | wc -l)",
+				"g=$((g))",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"n=wc; e=3; g=$(printf \"a\\nb\\nc\\n\" | wc -l)",
+				"g=$((g))",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"printf \"a\\nba\\nc\\n\" >~/st.t",
 				"n=grep; e=2; g=$(grep -c a ~/st.t)",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"n=more; e=3; g=$(cat ~/st.t | more | wc -l)",
+				"g=$((g))",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"n=tee; e=\"z z\"; g=\"$(echo z | tee ~/st.u) $(cat ~/st.u)\"",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
@@ -3458,6 +3466,7 @@ CeroSecContent.DISKS = {
 				"n=sleep; e=0; g=$?",
 				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
 				"f=$(cat $F | wc -l)",
+				"f=$((f))",
 				"s=\"PASS $p FAIL $f\"",
 				"cat $F",
 				"echo \"$s\"",
@@ -3737,7 +3746,7 @@ function CeroSecContent.diskData(entry, now, variant)
 		if file.dir then
 			node = CeroSecOS.newDir("root", mode or 755)
 		elseif type(text) == "string" then
-			node = CeroSecOS.newFile("root", mode or 644, text)
+			node = CeroSecOS.newFile("root", mode or 644, CeroSecOS.terminated(text))
 		end
 		if node ~= nil and CeroSecContent.diskNameOk(file.name) then
 			local path = CeroSecOS.MNT_PATH .. "/" .. file.name
@@ -3828,7 +3837,9 @@ function CeroSecContent.lateEntryFor(disk)
 	if type(root) ~= "table" or type(root.children) ~= "table" then return nil end
 	local node = root.children[name]
 	if type(node) ~= "table" or node.type ~= "file" then return nil end
-	if node.data ~= stub then return nil end
+	-- Either form: a disk written before FLOPPY_VERSION 2 may hold the stub
+	-- bare, when the step had no room to close it (CeroSecOS.terminateFiles).
+	if not CeroSecOS.sameText(node.data, stub) then return nil end
 	return entry, name
 end
 
@@ -3911,7 +3922,7 @@ function CeroSecContent.fillLate(disk, exchange, numbers, now)
 	end
 	local session = CeroSecOS.rootSession()
 	local done = CeroSecOS.writeFile(state, session,
-		CeroSecOS.MNT_PATH .. "/" .. name, text, false, now)
+		CeroSecOS.MNT_PATH .. "/" .. name, CeroSecOS.terminated(text), false, now)
 	CeroSecOS.unmountAll(state)
 	return done ~= nil
 end
@@ -4596,7 +4607,7 @@ CeroSecContent.LOG_DAYS = 7
 -- That is the trimming rule, in one function, so no caller can forget it.
 local function place(state, session, path, owner, mode, text, now)
 	if type(text) ~= "string" then return false end
-	local node = CeroSecOS.newFile(owner, mode or 644, text)
+	local node = CeroSecOS.newFile(owner, mode or 644, CeroSecOS.terminated(text))
 	return CeroSecOS.createNode(state, session, path, node, now) ~= nil
 end
 
@@ -4887,7 +4898,7 @@ CeroSecContent.LOG_EVENTS = {
 }
 CeroSecContent.LOG_EVENT_COUNT = 3
 
-local function placeLog(state, session, profile, secret, mkey, startTime, now)
+local function placeLog(state, session, profile, secret, mkey, startTime, now, names)
 	if type(profile.logs) ~= "table" or #profile.logs == 0 then return end
 	if type(startTime) ~= "number" then return end
 	-- The premises' own week, and then the county's. Built into a list of its own
@@ -4895,7 +4906,9 @@ local function placeLog(state, session, profile, secret, mkey, startTime, now)
 	-- appended to profile.logs would be a change whose second machine had six extra
 	-- lines on it.
 	local messages, own = {}, #profile.logs
-	for i = 1, own do messages[i] = profile.logs[i] end
+	-- The premises' own lines may name their people ({owner}, the way su's
+	-- "BAD SU owner to root" does); the county's week names nobody.
+	for i = 1, own do messages[i] = CeroSecContent.fillNames(profile.logs[i], names) end
 	for i = 1, CeroSecContent.LOG_EVENT_COUNT do
 		local pick = CeroSecContent.pick(CeroSecContent.LOG_EVENTS, secret,
 			CeroSecContent.key(mkey, "logev", i))
@@ -5043,10 +5056,10 @@ local function placeMail(state, session, profile, secret, b1, b2, logins, owner,
 		-- a mailbox is read from the top and the first message is the one that sets
 		-- the scene.
 		while #kept > CeroSecOS.MAIL_LINES do table.remove(kept) end
-		local text = table.concat(kept, "\n")
+		local text = CeroSecOS.linesToText(kept)
 		while #text > CeroSecOS.MAIL_BYTES and #kept > 1 do
 			table.remove(kept)
-			text = table.concat(kept, "\n")
+			text = CeroSecOS.linesToText(kept)
 		end
 		place(state, session, CeroSecOS.mailPath(to), to, CeroSecOS.MAIL_MODE,
 			text, now)
@@ -5610,12 +5623,12 @@ function CeroSecContent.prefill(state, opts)
 		if role == CeroSecContent.DESK_SPARE and type(profile.motd) == "string" then
 			motd = profile.motd
 		end
-		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, motd, now)
+		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, CeroSecOS.terminated(motd), now)
 		-- The banner over the login prompt, on the same terms as the motd: a spare
 		-- desk in the company's own office carries the company's, and a machine the
 		-- shop has not sold carries the one it was built with.
 		if role == CeroSecContent.DESK_SPARE and type(profile.issue) == "string" then
-			CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, profile.issue, now)
+			CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, CeroSecOS.terminated(profile.issue), now)
 		end
 		local password =
 			setRoot(state, session, profile, secret, opts.b1, opts.b2, mkey, now)
@@ -5686,16 +5699,16 @@ function CeroSecContent.prefill(state, opts)
 	end
 
 	if type(profile.motd) == "string" then
-		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, profile.motd, now)
+		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, CeroSecOS.terminated(profile.motd), now)
 	end
 	-- And the banner, for the two kinds of building that put a warning over the
 	-- login prompt rather than under it. A profile with none keeps the seeded line,
 	-- which setHostname has already rewritten with this machine's own name.
 	if type(profile.issue) == "string" then
-		CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, profile.issue, now)
+		CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, CeroSecOS.terminated(profile.issue), now)
 	end
 
-	placeLog(state, session, profile, secret, mkey, opts.start, now)
+	placeLog(state, session, profile, secret, mkey, opts.start, now, names)
 	placeMail(state, session, profile, secret, opts.b1, opts.b2, logins, owner,
 		names, opts.start, now)
 
@@ -6934,7 +6947,12 @@ CeroSecContent.PROFILES.bank = {
 	logs = {
 		"login: failed login on console",
 		"login: failed login on console",
-		"su: authentication failure",
+		-- 4.4BSD-Lite2 usr.bin/su/su.c: a wrong password is
+		-- syslog(LOG_AUTH|LOG_WARNING, "BAD SU %s to %s%s", username,
+		-- user, ontty()). ontty() is " on " and ttyname(2) of stderr,
+		-- left off here as on the dispatch desk's "su: dispatch to
+		-- root": sixty columns are not enough for both.
+		"su: BAD SU {owner} to root",
 		"login: root logged in on console",
 		"kernel: fd0 write protected",
 		"shutdown: halt by root",

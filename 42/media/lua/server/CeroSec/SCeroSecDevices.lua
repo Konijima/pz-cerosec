@@ -979,10 +979,19 @@ end
 -- Everything on one square, and the square's own place answered back: the
 -- far-edge walk below needs those three numbers to find the two neighbours, and
 -- there is no reason to ask the square twice. nil for a square that is not there.
-local function scanSquare(square, found, seen)
+--
+-- `skipFixtures` is CeroSec.RequireWiring, read once by the caller (find) and
+-- threaded down rather than asked here per square: this walk runs hundreds of
+-- times a building and a repeated SandboxVars read is the cost the mall
+-- benchmark in tests/hostile_test.lua exists to catch. It skips only the
+-- object-classification loop (addDevices) -- scanWorldItems stays unconditional,
+-- because a floor-item device is not cable-able at all and gating it would make
+-- it permanently unreachable, which the generator precedent never does.
+local function scanSquare(square, found, seen, skipFixtures)
 	if square == nil then return end
 	local x, y, z = square:getX(), square:getY(), square:getZ()
 	scanWorldItems(square, found, seen, x, y, z)
+	if skipFixtures then return x, y, z end
 	local objects = square:getObjects()
 	if objects == nil then return x, y, z end
 	for i = 0, objects:size() - 1 do
@@ -1508,11 +1517,14 @@ end
 -- a player-built base answers true on the second half. Reading it here would
 -- take a base's own radius away from it -- the very machine the radius exists
 -- for -- while closing nothing the room test does not close already.
-local function scanOutdoorSquare(cell, square, found, seen)
+-- `skipFixtures`: see scanSquare's own comment -- same rule, same reason,
+-- read once by find() and passed down rather than asked here per square.
+local function scanOutdoorSquare(cell, square, found, seen, skipFixtures)
 	if square == nil then return end
 	if square:getRoom() ~= nil then return end
 	local x, y, z = square:getX(), square:getY(), square:getZ()
 	scanWorldItems(square, found, seen, x, y, z)
+	if skipFixtures then return end
 	local objects = square:getObjects()
 	if objects == nil then return end
 	for i = 0, objects:size() - 1 do
@@ -1549,15 +1561,30 @@ function CeroSecDevices.find(x, y, z, links)
 
 	local building = square:getBuilding()
 
+	-- CeroSec.RequireWiring, read ONCE for the whole walk and not per square or
+	-- per fixture: this is a mall's several hundred rooms, once a minute per
+	-- machine with a job (see the cost note below), and the hard ceilings in
+	-- tests/hostile_test.lua measure exactly that walk. On, a fixture is on
+	-- /dev only once a cable reaches it -- CeroSecModules.reachRefusal's own
+	-- gate stops the free "reach" refusal the same way, so the two move
+	-- together. Off (default), skipFixtures is always false and every branch
+	-- below that reads it is dead: byte-identical to before this option
+	-- existed.
+	local skipFixtures = CeroSecModules.wiringRequired()
+
 	if building ~= nil then
 		-- Every room of the building, and a room whose chunks are away is a room the
 		-- machine cannot act on: eachBuildingSquare above is the whole of that rule.
 		--
 		-- And the far edge of every one of those squares, which is where a south or
-		-- east door stands: scanFarEdges above is the whole of THAT rule.
+		-- east door stands: scanFarEdges above is the whole of THAT rule. Skipped
+		-- wholesale under RequireWiring -- it does no scanWorldItems of its own, so
+		-- there is nothing unconditional in it to keep.
 		eachBuildingSquare(building, function(sq)
-			local sx, sy, sz = scanSquare(sq, found, seen)
-			if sx ~= nil then scanFarEdges(cell, sq, sx, sy, sz, found, seen) end
+			local sx, sy, sz = scanSquare(sq, found, seen, skipFixtures)
+			if sx ~= nil and not skipFixtures then
+				scanFarEdges(cell, sq, sx, sy, sz, found, seen)
+			end
 		end)
 		-- And the squares somebody ran a cable to, which are in no room of this
 		-- building and are on the machine all the same (scanLinked).
@@ -1573,7 +1600,7 @@ function CeroSecDevices.find(x, y, z, links)
 	for dx = -r, r do
 		for dy = -r, r do
 			scanOutdoorSquare(cell, cell:getGridSquare(x + dx, y + dy, z),
-				found, seen)
+				found, seen, skipFixtures)
 		end
 	end
 	local kept = scanLinked(cell, links, found, seen, x, y, z)

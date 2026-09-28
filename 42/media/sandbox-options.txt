@@ -12,7 +12,12 @@ VERSION = 1,
  * The bytecode is quoted in docs/notes/modules-proofs.md.
  *
  * The names a player reads are in 42/media/lua/shared/Translate/EN/Sandbox.json,
- * keyed "Sandbox_" plus what `translation` says here.
+ * keyed "Sandbox_" plus what `translation` says here. Each label carries a
+ * tag -- (MP), (REALISM) or (EASY) -- for what turning it ON does: (MP) it
+ * only matters with other players around, (REALISM) it asks more of the
+ * player the way the real thing would, (EASY) it takes work off the player.
+ * Options are listed here in the order the page shows them; the two with no
+ * bearing on solo difficulty (safehouses, the server log) are kept last.
  */
 
 /* Does a door, a window or a light have to be WIRED before a computer can see
@@ -51,6 +56,67 @@ option CeroSec.PrefilledMachines
     default = true,
     page = CeroSec,
     translation = CeroSec_PrefilledMachines,
+}
+
+/* Does a fixture need an actual cable before a computer sees it, even one in
+ * the same building? On: nothing is free, a cable is the only way onto /dev,
+ * anywhere. Off, the default and the world as it was before this option
+ * existed: a machine sees its whole building (or, with no building, a small
+ * radius) for free, and cabling is only for what's outside that reach.
+ *
+ * Independent of CeroSec.FreeWiring below: this is about whether a cable is
+ * NEEDED, not what one costs.
+ */
+option CeroSec.RequireWiring
+{
+    type = boolean,
+    default = false,
+    page = CeroSec,
+    translation = CeroSec_RequireWiring,
+}
+
+/* Does a cable cost wire? On: every cable is free, wherever one is needed.
+ * Off, the default: a cable is bought in whole tiles of wire, as before.
+ * Either way the cable range (CeroSec.LinkRange, below) is unchanged --
+ * this is about cost, not reach.
+ *
+ * Independent of RequireWiring above: FreeWiring alone, with RequireWiring
+ * off, just makes outdoor/cross-building cables free while indoor discovery
+ * stays automatic.
+ */
+option CeroSec.FreeWiring
+{
+    type = boolean,
+    default = false,
+    page = CeroSec,
+    translation = CeroSec_FreeWiring,
+}
+
+/* How far a cable reaches, in tiles, before "far" is the only answer left.
+ * Thirty is the number this mod always used before this option existed, so
+ * that is the default -- a sandbox file that failed to load, or a save from
+ * before this option, answers exactly as it always did.
+ *
+ * Lowering it later never breaks a cable already run: the range only gates
+ * a NEW cable and the "far" refusal, never a length already paid for and
+ * stored on a fixture, which keeps answering after the setting shrinks
+ * under it.
+ *
+ * Forty-eight is as far as the game guarantees a chunk stays loaded around a
+ * player at its default view width -- eight tiles a chunk, thirteen chunks
+ * wide, half that either side of him (zombie.iso.IsoChunkMap.
+ * CHUNK_SIZE_IN_SQUARES = 8, START_CHUNK_GRID_WIDTH = 13). Past that a
+ * client may not have the far square loaded at all, so this option never
+ * asks for more than the engine can promise.
+ */
+option CeroSec.LinkRange
+{
+    type = integer,
+    min = 10,
+    max = 48,
+    default = 30,
+    page = CeroSec,
+    translation = CeroSec_LinkRange,
 }
 
 /* May anybody fit and remove modules on a fixture standing in somebody else's

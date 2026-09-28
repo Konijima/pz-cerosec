@@ -28,19 +28,19 @@ function CeroSecOS.newState(hostname)
 	root.children.root = CeroSecOS.newDir("root", 700)
 	root.children.dev = CeroSecOS.newDir("root", 755)
 	root.children.etc = CeroSecOS.newDir("root", 755)
-	root.children.etc.children.hostname = CeroSecOS.newFile("root", 644, hostname)
-	root.children.etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.MOTD)
+	root.children.etc.children.hostname = CeroSecOS.newFile("root", 644, CeroSecOS.terminated(hostname))
+	root.children.etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.terminated(CeroSecOS.MOTD))
 	-- The banner over the login prompt, with the machine's own name written into
 	-- it: nothing expands a token on its way to the glass, so the name goes in
 	-- here and setHostname keeps it true (CeroSecOS.issueText).
 	root.children.etc.children.issue =
-		CeroSecOS.newFile("root", 644, CeroSecOS.issueText(hostname))
+		CeroSecOS.newFile("root", 644, CeroSecOS.terminated(CeroSecOS.issueText(hostname)))
 	root.children.etc.children.passwd =
-		CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.defaultPasswd())
+		CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.terminated(CeroSecOS.defaultPasswd()))
 	root.children.etc.children.group =
-		CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, CeroSecOS.defaultGroup())
+		CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, CeroSecOS.terminated(CeroSecOS.defaultGroup()))
 	root.children.etc.children.sudoers =
-		CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, CeroSecOS.defaultSudoers())
+		CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, CeroSecOS.terminated(CeroSecOS.defaultSudoers()))
 
 	local state = {
 		v = CeroSecOS.STATE_VERSION,
@@ -529,6 +529,23 @@ end
 CeroSecOS.MIGRATIONS[2] = function(state)
 	CeroSecOS.migrateUsers(state)
 	dropQuotaFlags(state.fs)
+end
+
+-- 3: a file's last line carries its "\n". Until now a stored file was its
+-- lines joined by "\n" with nothing after the last one, so every text file on
+-- a machine saved before this step is one whose last line is open -- it reads
+-- the same (CeroSecOS.splitLines answers the same lines either way) but `>>`
+-- would glue the next line onto it and `wc -c` would count one short of what
+-- the same file written today holds.
+--
+-- The byte is paid out of the disk's own room and never past it
+-- (CeroSecOS.terminateFiles says what is left alone and why): a machine at its
+-- quota keeps its files exactly as they were, rather than coming back over
+-- it and refusing the next write. Idempotent by the same walk.
+CeroSecOS.MIGRATIONS[3] = function(state)
+	if type(state.fs) ~= "table" then return end
+	local _, bytes = CeroSecOS.usage(state)
+	CeroSecOS.terminateFiles(state.fs, CeroSecOS.MAX_TOTAL_BYTES - (bytes or 0))
 end
 
 -- One disk, brought up to this build. Its own chain, against its own number

@@ -92,5 +92,26 @@ if ! diff -u "$WANT" "$GOT" > /dev/null; then
 	exit 1
 fi
 
-echo "kahlua-run: passed, and the probe agrees on both VMs ($(wc -l < "$WANT") lines)"
+# Third half: the self-test's SHELL cases (CeroSecSelfTestShell.lua), run on
+# Kahlua. Not a diff: every case carries its own answer, and lua5.1 is already
+# held to FAIL 0 by tests/selftest_shell_test.lua. What this adds is the same
+# table on the VM the game has. The summary is the last line, and nothing but
+# FAIL 0 passes -- a run that printed nothing is not a pass either.
+SHELL="$ROOT/tests/kahlua-selftest-shell.lua"
+if ! "$JAVA" -cp "$JAR:$OUT" KahluaRun --eval "$SHELL" "$ROOT" > "$GOT"; then
+	echo "kahlua-run: the shell selftest does not run on Kahlua"
+	cat "$GOT"
+	exit 1
+fi
+LAST=$(tail -1 "$GOT")
+case "$LAST" in
+"shell selftest: PASS "*" FAIL 0") ;;
+*)
+	echo "kahlua-run: FAILED -- the shell selftest on Kahlua:"
+	cat "$GOT"
+	exit 1
+	;;
+esac
+
+echo "kahlua-run: passed, the probe agrees on both VMs ($(wc -l < "$WANT") lines), $LAST on Kahlua"
 exit 0

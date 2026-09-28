@@ -14,12 +14,43 @@ The suites, in the order they run:
 
 - `defs_test.lua` — the shared definitions (sprites, facings, state).
 - `os_test.lua` — the OS core: filesystem, permissions, users, shell, passwords.
+- `ifs_test.lua` — IFS field splitting (POSIX.2 2.6.5): the default, unset vs.
+  empty, whitespace vs. non-whitespace delimiters, a delimiter split across two
+  parts of the same word, `"$*"`'s join character, and `read`'s last-name-gets-
+  the-remainder rule. Every expected value was checked against `dash` first.
+- `groups_test.lua` — `{ list; }` and `( list )` (POSIX.2 XCU 2.9.4): a
+  redirect, a pipe and `&&`/`||` take the group whole; a group in front of a
+  finished reader runs its first command; nothing a subshell changes (variables,
+  `cd`, `set --`, `shift`, functions, traps) reaches the parent, on the same line
+  or the next; `exit`, `return` and `break` stop at the brackets and not at the
+  braces; a function body that is a subshell; the braces as reserved words;
+  empty and unclosed groups refused; nesting past the ceiling refused.
+  The hostile shape of it -- a word that is nothing but delimiters -- is in
+  `hostile_test.lua` instead, because its calibration lives in that process.
+- `newline_test.lua` — a file's last line carries its newline: what `echo` and
+  `printf` store, `wc`, and every consumer (cat, head, tail, tee, grep, sort, cp,
+  a redirect, the editor's round trip, a mailbox) held to a real Unix's answer.
+- `commands_test.lua` — the commands and flags taken from 4.4BSD in 0.7.0
+  (`rmdir`, `expr`, `uname`, `rm -f`, `kill`'s signals, `tail +N`, `printf`'s
+  fields, `test -s/-h/-L`, several `touch` names, the `wc`/`uniq -c`/`which`
+  formats), each against the source its comment cites. It lists every red
+  before it exits, so one broken command shows all it breaks.
+- `builtins_test.lua` — the shell's `set`, `unset`, `exec` and `trap`, the
+  `${...}` expansions, and what a pipeline stage inherits, on a console with the
+  exported set a login gives.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `compat_computermod_test.lua`: living beside the Workshop mod *Computer Mod*:
   who owns a desktop, and which of the two fillers gets the right-click. Against
   a **double** of that mod, not the mod itself, so what it proves is the decision
   and the wire between our two client files -- never that the game behaves. The
   step that decides is in `docs/PARCOURS-TEST.md`, section AR.
+- `leftclick_test.lua` — the left-click shortcut onto "Use computer": the
+  wrapper on `ISObjectClickHandler.doClickSpecificObject`, against a double of
+  that vanilla dispatcher. Proves the wrapper is idempotent, that it queues
+  `onUse` for an ON computer and nothing else, and that an OFF computer, a
+  non-computer object and a Computer-Mod-owned desktop all fall through to the
+  original dispatcher untouched. Never that the game hands the dispatcher the
+  object it did — only a game can show that.
 - `window_test.lua` — the window wired to the machine end to end: type a line, get
   an answer on the glass, and a script's output, question and `^C` through it.
 - `window_test.lua` also holds the network bench: three real machines on one real
@@ -182,6 +213,13 @@ The suites, in the order they run:
   all — the machine found still logged in — and is held to the literal `phrase` it
   carries rather than to its name, because its name is a word the page already uses
   for something else and would be green on a page that never mentioned it.
+  Every entry now carries a `phrase`, and the page is read BACK by them: each prose
+  paragraph up to "That is the whole list." (with the screens under it) must hold
+  one, bar the titles and a named handful of framing sentences — so a declaration
+  on the page with no entry is red too. `shell` entries must be words of the shell
+  and `absent` ones must be nowhere on the machine. The error appendix is also held
+  to every refusal the VM, the parser and the shell `return` directly, not only to
+  what passes through `fail()`.
 - `hostile_test.lua` — the one that matters to a server owner: an endless loop, a
   script that runs itself, a doubling string, an output flood, a hundred background
   jobs and a substitution bomb, each driven through the real scheduler for a
@@ -248,8 +286,12 @@ The suites, in the order they run:
   `CeroSecSelfTestVectors.lua`. Not a suite: a two-line check that the numbers the
   in-game self-test weighs the game against are this build's and not last week's.
   The fix for a red is to run the generator, never to edit the table.
-- `kahlua-check.sh` — `luac5.1 -p` on every shipped file, plus a grep of the OS core
-  for constructs the game's Kahlua cannot run.
+- `kahlua-check.sh` — `luac5.1 -p` on every shipped file, a grep of every shipped
+  file for constructs the game's Kahlua cannot run (`goto`, `//`, `string.pack`,
+  `table.unpack`, `\z`, the bit library, `%b`, the loaders), a stricter grep of
+  the OS core (no `require`, `io`, `os`, metatables, unfloored `tostring`), and
+  `pattern-check.lua`: every pattern argument that is not a literal or a plain
+  find, named on an allow-list with its reason or red.
 - `kahlua-run.sh` — every shipped file actually loaded on the real Kahlua, out of the
   game's own jar. See below.
 
@@ -445,7 +487,7 @@ present), the event bus (`Events.OnFoo.Add` is accepted and never fires), Java o
 any kind, and therefore the world, the save file, the wire and the sync.
 
 **3. The in-game self-test (the debug window's `Self-test` button, and
-`sh /mnt/selftest.sh` off the diagnostics floppy).** Two halves:
+`sh /mnt/selftest.sh` off the diagnostics floppy).** Three halves, and the floppy:
 
 - `CeroSecSelfTest.run()` evaluates the very same vectors **in the save**, on the
   Kahlua the game is actually running, with the game's own `stdlib.lua` and every
@@ -464,8 +506,30 @@ any kind, and therefore the world, the save file, the wire and the sync.
   every read, while `v`, `on` and `facing` ride into the save file weighed by
   nothing — drop `facing` and a computer picked up and put down faces the wrong
   way, with a green suite behind it.
+- The **shell half** (`CeroSecSelfTestShell.lua`, 2026-09-23): 356 cases, each a
+  line typed at a prompt on a scratch machine — `CeroSecOS.newState`, the
+  constructor a first power-on uses, made once and deep-copied for every case —
+  with what the screen must show, what `$?` must be and, where the point is a
+  file, what the file must hold. Every command a script can drive without the
+  world, errors included, every rule of this release's shell (`2>`, `2>&1` in both
+  orders, `>&2`, the redirect opened before the command, a stage's redirect over
+  the pipe, `read` with several names, `-r` and `-n`, `$*`, `$@`, `$!`, 126 and
+  127) and the basics of pipes, redirects, `$(( ))` and control flow. Its last
+  section is the lines `docs/PARCOURS-TEST.md` had a player type for 0.7.0 and
+  that need no real login, machine, screen or job book: the same answers word
+  for word, as root in `/root` instead of admin in `~`. Each answer
+  is 1993's or names the entry of `CeroSecOS.DEVIATIONS` it leans on, and
+  `tests/selftest_shell_test.lua` holds every such name to the table. The press
+  starts it and the server's `Events.OnTick` carries it, a few milliseconds a
+  tick; the verdict is `shell selftest: PASS n FAIL m`, failing cases at **warn**.
+  The same three kinds of failure as `run()`: a wrong answer, a case never
+  evaluated (malformed, a name twice, stopped short, raised), and an empty table.
+  The same table runs offline twice: on lua5.1 in `tests/selftest_shell_test.lua`,
+  which demands FAIL 0, pins the count and breaks `whoami` in memory to watch one
+  case go red, and on the game's Kahlua in `tests/kahlua-run.sh`
+  (`tests/kahlua-selftest-shell.lua`), which fails unless the summary says FAIL 0.
 
-And `sh /mnt/selftest.sh`, which is the other half again: twenty-six checks of the
+And `sh /mnt/selftest.sh`, the shell again but typed on the machine itself: twenty-six checks of the
 **shell** — `echo`, a pipe, `cut`, `sort`, `wc`, `grep -c`, `more`, `tee`,
 `$(( ))` at a quotient over 2^31, `for`, `while`, `read` off a pipe, `mkdir`/`rm`,
 `test` on files, `chmod`, `find`, the clock, `df`, `mount`'s label, `ls -l /dev`,
@@ -503,8 +567,30 @@ prove `FAIL 0` is an assertion and not a sentence the script prints either way.
 
 ### What the shell suite could not be asked, and why
 
-Two things on the wish list are not on the floppy, and both for the same kind of
-reason:
+**The shell half of the button** runs everything a script can drive on a machine
+with no world under it, and nothing else — a scratch machine with a fixed clock, an
+empty job book, no devices and no network is what makes it safe to run in a save.
+So these are not in it, and each is `os_test.lua`'s headless and a step of
+[PARCOURS-TEST.md](PARCOURS-TEST.md) on the glass (the same list closes the case
+table):
+
+- `passwd`, `su`, `sudo` — a password question on the glass, which nothing can
+  answer without a password written into a shipped file;
+- `edit`, `crontab -e` — the screen editor, which wants a terminal;
+- `at HH:MM` — reads the commands to run from the terminal until ^D (`at -l`,
+  `atq` and `atrm` are in);
+- `fg`, `history`, `exit` at the prompt — the console's own job, lines and session
+  (`exit` in a script is in);
+- `ps`, `uptime`, `w` — the machine's job book, its power-on time and its consoles;
+- `wall` — every console of the machine;
+- `halt`, `reboot`, `shutdown` — they stop the machine;
+- `mount`, `umount`, `newfs` — a drive with a floppy in it (`df` is in);
+- `dev` — the premises' devices, which are in the world;
+- `arp`, `ifconfig`, `ping`, `rlogin`, `rsh`, `rcp`, `ruptime`, `rwho`, `cu` — the
+  coax, the telephone line and the radio: another machine or a modem.
+
+**The floppy.** Two things on the wish list are not on it, and both for the same
+kind of reason:
 
 - **A crontab round trip.** A crontab is writable only through `crontab -e`, which
   opens the editor and wants a terminal; a script has none, and `crontab` takes no

@@ -1,11 +1,17 @@
 {
     "Sandbox_CeroSec": "CeroSec",
-    "Sandbox_CeroSec_HardwareRequired": "Modules matériels obligatoires",
+    "Sandbox_CeroSec_HardwareRequired": "Modules matériels obligatoires (RÉALISME)",
     "Sandbox_CeroSec_HardwareRequired_tooltip": "Activé : un ordinateur n'atteint qu'une porte, une fenêtre, une serrure ou une lumière sur laquelle quelqu'un a posé un module CeroSec -- contact magnétique, relais, gâche électrique ou opérateur de porte, installé au tournevis avec la compétence Électricité. Désactivé : toutes les portes, fenêtres, serrures et lumières du bâtiment sont dans /dev, câblées ou non, comme avant l'existence de cette option.",
-    "Sandbox_CeroSec_PrefilledMachines": "Machines et disquettes garnies",
+    "Sandbox_CeroSec_PrefilledMachines": "Machines et disquettes garnies (RÉALISME)",
     "Sandbox_CeroSec_PrefilledMachines_tooltip": "Activé : un ordinateur allumé pour la première fois démarre avec les comptes de quelqu'un, ses fichiers, un motd, une semaine de journal et parfois un mot de passe à trouver dans un tiroir à côté; une disquette ramassée porte parfois un programme et un README. Désactivé : la machine nue -- deux comptes ouverts, un disque vide. Un ordinateur que quelqu'un a déjà allumé n'est jamais touché, dans les deux cas.",
-    "Sandbox_CeroSec_SafehouseModules": "Membres du refuge seulement",
+    "Sandbox_CeroSec_RequireWiring": "Câblage requis même à l'intérieur (RÉALISME)",
+    "Sandbox_CeroSec_RequireWiring_tooltip": "Activé : chaque dispositif a besoin d'un câble pour apparaître dans /dev, même dans le même bâtiment. Désactivé, la valeur par défaut : un ordinateur voit tout son bâtiment gratuitement, comme avant.",
+    "Sandbox_CeroSec_FreeWiring": "Le câblage ne coûte rien (FACILE)",
+    "Sandbox_CeroSec_FreeWiring_tooltip": "Activé : tirer un câble ne coûte plus de fil. Désactivé, la valeur par défaut : un câble coûte du fil à la tuile, comme avant. Ne change pas la portée d'un câble.",
+    "Sandbox_CeroSec_LinkRange": "Portée d'un câble, en tuiles (FACILE : augmenter)",
+    "Sandbox_CeroSec_LinkRange_tooltip": "Jusqu'où un câble porte avant d'être trop loin. Augmenter couvre plus de bâtiment avec moins de machines; diminuer force à répartir les ordinateurs. Diminuer ne coupe jamais un câble déjà tiré -- seuls les nouveaux sentent le changement.",
+    "Sandbox_CeroSec_SafehouseModules": "Membres du refuge seulement (MULTIJOUEUR)",
     "Sandbox_CeroSec_SafehouseModules_tooltip": "Activé : une porte, une fenêtre, une lumière, un appareil ou un poste situé dans un refuge n'accepte un module CeroSec -- et ne le rend -- que pour quelqu'un que le refuge autorise : son propriétaire, ses membres et un administrateur. Désactivé, ce qui est la valeur par défaut et l'état d'avant cette option : le refuge n'est pas une barrière et n'importe qui avec le boîtier, un tournevis et la compétence Électricité peut le câbler. Sans effet en solo. Les règles de pillage ne sont consultées ni dans un cas ni dans l'autre : poser un module n'est pas piller.",
-    "Sandbox_CeroSec_ServerLog": "Journal du mod dans la console du serveur",
+    "Sandbox_CeroSec_ServerLog": "Journal du mod dans la console du serveur (MULTIJOUEUR)",
     "Sandbox_CeroSec_ServerLog_tooltip": "Activé : tout ce que le mod dit de lui-même est aussi écrit dans la console du jeu -- la console du serveur sur un serveur dédié -- en lignes « CeroSec: ... », y compris chaque tâche sauvegardée abandonnée ou refusée au chargement, chaque carnet revenu et combien de ses tâches sont revenues, et chaque machine éteinte faute de courant. Désactivé, ce qui est la valeur par défaut : le mod ne garde ces lignes qu'en mémoire, et un serveur dédié les perd à chaque redémarrage. Sans risque à activer pour une chasse au bogue."
 }

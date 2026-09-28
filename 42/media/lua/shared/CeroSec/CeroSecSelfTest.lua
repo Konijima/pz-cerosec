@@ -200,6 +200,13 @@ function CeroSecSelfTest.probe(say)
 	say("sub past end", "[" .. string.sub("abc", 2, 99) .. "]")
 	say("sub negative", string.sub("abcdef", -3))
 	say("upper", string.upper("aBc1"))
+	-- kill's signal names are matched as strcasecmp does, through lower.
+	say("lower", string.lower("SiGkIlL1"))
+	-- printf's field, flags and digits: math.floor and the remainders
+	-- %x and %o are built from, not string.format.
+	say("printf fields", CeroSecOS.printfText({ "printf",
+		"[%5s|%-3d|%03x|%o|%.2s|%c|%.3d]", "ab", "7", "255", "8", "xyz", "q", "-5" }))
+	say("printf octal", CeroSecOS.printfText({ "printf", "\\101\\1\\011" }))
 	say("gsub count", select(2, string.gsub("a.b.c", "%.", "-")))
 	say("find plain", tostring(string.find("a.b", ".", 1, true)))
 	say("concat", table.concat({ "a", "b", "c" }, ","))
@@ -305,7 +312,7 @@ function CeroSecSelfTest.probe(say)
 	say("function source kept",
 		type(fnSrc) == "table" and type(fnSrc[1]) == "table" and tostring(fnSrc[1].src)
 			or "NO NODE")
-	local noBrace, noBraceWhy = CeroSecOS.parseScript("bad() echo x; }")
+	local noBrace, noBraceWhy = CeroSecOS.parseScript("bad() echo x")
 	say("function missing brace", noBrace == nil and tostring(noBraceWhy) or "PARSED")
 
 	--

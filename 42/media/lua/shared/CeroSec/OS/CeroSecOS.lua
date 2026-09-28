@@ -25,7 +25,21 @@ CeroSecOS = CeroSecOS or {}
 --    they had already been done: state.users -> /etc/passwd with hashed
 --    passwords (CeroSecOS.migrateUsers), and the `nq` flag swept off every node
 --    of the filesystem (the exemption is a PATH now, CeroSecOS.exemptPaths).
-CeroSecOS.STATE_VERSION = 2
+-- 3: what a stored file's own bytes MEAN. A file used to be its lines joined by
+--    "\n" with nothing after the last one -- CeroSecOS.DEVIATIONS carried the
+--    declared deviation, "a file keeps no newline after its last line" -- and
+--    now "\n" terminates a line the way a real Unix's does, so `echo a > f`
+--    leaves "a\n" behind and `wc -l` counts the byte and not the line. Every
+--    file already on a machine was written under the old rule, which means
+--    every one of them is now a file whose LAST line is missing its
+--    terminator -- not a file that reads wrong (CeroSecOS.splitLines answers
+--    the same lines either way, docs/notes/ has no note for this because
+--    nothing about the SHAPE changed) but a file that would glue its last
+--    line to whatever `>>` next puts after it. CeroSecOS.MIGRATIONS[3] closes
+--    them, out of the disk's own room and never past it, and leaves the /bin
+--    stand-ins alone (CeroSecOS.terminateFiles says which and why); the
+--    floppy's own number moved with it (FLOPPY_VERSION 2).
+CeroSecOS.STATE_VERSION = 3
 
 -- What the machine's own system files are expected to hold, as opposed to what
 -- shape the state is in. STATE_VERSION is the schema, and a save written in an
@@ -120,7 +134,21 @@ CeroSecOS.STATE_VERSION = 2
 --    last of them so a program installed there is a command you can type (see
 --    CeroSecOS.ensureLocalBin and CeroSecOS.DEFAULT_PATH). A name of somebody's
 --    own anywhere on the chain stops the walk there. Nothing deleted.
-CeroSecOS.SYSTEM_VERSION = 21
+-- 22: /bin/expr, /bin/uname and /bin/rmdir, the three commands 0.7.0 added.
+--    The first bump that seeds ONLY what it added (CeroSecOS.BIN_SINCE): every
+--    top-up before it re-filled every gap it found, so a `rm /bin/wall` done at
+--    20 came back at 21. Nothing deleted.
+CeroSecOS.SYSTEM_VERSION = 22
+
+-- The executables a SYSTEM_VERSION added, by the number that added them, for
+-- every bump from 22 on. A machine already at SYSTEM_GATED or later has had
+-- the whole top-up once, so what is missing from it now is what its owner
+-- deleted -- and upgradeSystem puts back only a name listed here above the
+-- machine's own number. A command added to COMMAND_INFO without a line here
+-- and a bump is a command no world saved before it ever gets
+-- (tests/migrate_test.lua walks the fixtures and goes red on it).
+CeroSecOS.BIN_SINCE = { expr = 22, rmdir = 22, uname = 22 }
+CeroSecOS.SYSTEM_GATED = 21
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
@@ -446,11 +474,21 @@ end
 
 -- Split a blob of text into display lines. An empty file has no lines at all,
 -- which is what cat on an empty file should print.
+--
+-- "\n" TERMINATES a line rather than separating two of them, the way a real
+-- Unix reads a text file: "a\n" and "a" are both the one line "a", and only a
+-- SECOND "\n" makes an empty line appear between two others ("a\n\nb" is
+-- three lines, the middle one empty). A trailing "\n" never manufactures an
+-- empty line after the last one -- that used to be how this engine stored a
+-- file (CeroSecOS.DEVIATIONS carried the deviation; see writeFile), and it is
+-- why an old save's data, which never ends in "\n", splits exactly as it did
+-- before: this only changes what a file that DOES end in "\n" means.
 function CeroSecOS.splitLines(text)
 	local out = {}
 	if text == nil or text == "" then return out end
+	local len = #text
 	local start = 1
-	while true do
+	while start <= len do
 		local p = string.find(text, "\n", start, true)
 		if p == nil then
 			out[#out + 1] = string.sub(text, start)
@@ -459,6 +497,188 @@ function CeroSecOS.splitLines(text)
 		out[#out + 1] = string.sub(text, start, p - 1)
 		start = p + 1
 	end
+	return out
+end
+
+-- Whether a blob of text ends with a newline -- a file's own answer to "is
+-- its last line complete" -- so a consumer that stores or re-emits it whole
+-- (cat, cp, a redirect's sink) can carry the same answer forward instead of
+-- guessing from the split lines, which look identical either way.
+function CeroSecOS.endsLine(text)
+	return type(text) == "string" and text ~= "" and string.sub(text, -1) == "\n"
+end
+
+-- A shipped file's own text, with the final "\n" a real one has -- CeroSec's
+-- generators (CeroSecContent.lua) hold their literals the old way, one line
+-- joined to the next with nothing after the last, because that is how a
+-- stored file read until now. Wrapping every one of them here, at the two
+-- places a machine or a floppy actually gets a file (CeroSecContent.place
+-- and its disk-file twin), means the literals never have to change one by
+-- one -- a script, a README, a log, a mailbox: whatever text a profile
+-- writes comes out newline-terminated, the same file a survivor's own
+-- `echo` would have left.
+function CeroSecOS.terminated(text)
+	if type(text) ~= "string" or text == "" then return text end
+	if CeroSecOS.endsLine(text) then return text end
+	return text .. "\n"
+end
+
+-- Whether a file's bytes are the text a machine shipped, `want`, under either
+-- rule: bare, the way every file was stored before STATE_VERSION 3, or closed
+-- with the "\n" a file written since carries. A comparison that asked one form
+-- only would call a banner the machine seeded a survivor's own edit the moment
+-- the migration (CeroSecOS.terminateFiles) had left that one file as it was.
+function CeroSecOS.sameText(data, want)
+	if type(data) ~= "string" or type(want) ~= "string" then return false end
+	return data == want or data == want .. "\n"
+end
+
+-- One line put after whatever a file already holds, the way `echo line >> f`
+-- puts it: an open last line is closed first -- the "\n" a file stored before
+-- STATE_VERSION 3 never had -- and the new line carries its own.
+function CeroSecOS.appendLine(data, line)
+	local text = data or ""
+	if text ~= "" and not CeroSecOS.endsLine(text) then text = text .. "\n" end
+	return text .. line .. "\n"
+end
+
+-- The bytes the shipped executables in /bin hold. They are not text: a real
+-- /bin/ls is a binary that ends where its last byte does, and `cat /bin/ls`
+-- here shows its one-line stand-in the same way, unterminated. They are also
+-- the very bytes CeroSecOS.upgradeSystem's `drop` compares to retire a name,
+-- so a "\n" put on one would keep a retired command in /bin for ever.
+local function standIns()
+	local set = {}
+	for name in pairs(CeroSecOS.COMMAND_INFO or {}) do
+		local desc = CeroSecOS.commandDesc(name)
+		if type(desc) == "string" then set[desc] = true end
+	end
+	for _, desc in pairs(CeroSecOS.RETIRED_BIN or {}) do
+		if type(desc) == "string" then set[desc] = true end
+	end
+	return set
+end
+
+-- Every text file under a tree given the final "\n" a real one has: the step
+-- behind STATE_VERSION 3 (CeroSecOS.MIGRATIONS[3]) and FLOPPY_VERSION 2
+-- (CeroSecOS.DISK_MIGRATIONS[2]), which is why it takes a bare tree -- the
+-- filesystem owns the shape, not the state or the disk around it.
+--
+-- `room` is how many bytes the tree may still grow by, and the step never
+-- spends more: a floppy is refused at the slot past FLOPPY_BYTES and a file
+-- anywhere past MAX_FILE_BYTES (CeroSecOS.validateDisk), so a migration that
+-- added the byte regardless would turn a full disk into one no drive takes.
+-- A file it cannot close is left exactly as it was -- open, which a real Unix
+-- file may also be -- and reads the same lines either way (splitLines).
+--
+-- Left alone as well: an empty file (it has no line to end), one already
+-- ending in "\n", and the /bin stand-ins (standIns, above). Walked in
+-- childNames order, so which files a short budget closes is the same on
+-- every run. Idempotent: a second walk finds every file it could close
+-- already closed and no more room than the first left.
+--
+-- Bounded: one visit per node, and a tree is at most MAX_NODES of them.
+-- Answers how many files it closed.
+function CeroSecOS.terminateFiles(tree, room)
+	local skip = standIns()
+	local left = math.floor(tonumber(room) or 0)
+	local closed = 0
+	local function walk(node)
+		if type(node) ~= "table" then return end
+		if node.type == "file" then
+			local data = node.data
+			if type(data) ~= "string" or data == "" or CeroSecOS.endsLine(data) then return end
+			if skip[data] or left < 1 or #data + 1 > CeroSecOS.MAX_FILE_BYTES then return end
+			node.data = data .. "\n"
+			left = left - 1
+			closed = closed + 1
+			return
+		end
+		if node.type ~= "dir" or type(node.children) ~= "table" then return end
+		local names = CeroSecOS.childNames(node)
+		for i = 1, #names do walk(node.children[names[i]]) end
+	end
+	walk(tree)
+	return closed
+end
+
+-- What the editor shows of a file: its LINES, so the final "\n" -- the
+-- terminator of the last one, not a line of its own -- is taken off, and the
+-- save puts it back (SCeroSecSystem's editsave). That is vi's own round trip:
+-- a file is read into lines and written back with each one "followed by a
+-- <newline>" (POSIX ex(1), the write command), which is also why 4.4BSD vi
+-- adds the newline a file lacked. The same function gives the window the
+-- file to compare its buffer with, so an untouched buffer is not "modified".
+function CeroSecOS.bufferOf(data)
+	local text = data or ""
+	if CeroSecOS.endsLine(text) then return string.sub(text, 1, -2) end
+	return text
+end
+
+-- And the save's half: every line of the buffer goes back followed by its
+-- "\n", the last one included. An empty buffer is an empty file.
+function CeroSecOS.bufferBytes(buffer)
+	if type(buffer) ~= "string" or buffer == "" then return "" end
+	return buffer .. "\n"
+end
+
+-- The editor's save: the buffer written to `path` as bufferBytes makes it,
+-- with two exceptions, both for one rule -- a save of what the file already
+-- holds must never be refused, and must never change it.
+--
+--   * An unchanged buffer over a file that ends its line writes the file's
+--     own bytes. That is bufferBytes everywhere but one file: "\n", one empty
+--     line (`echo > f`), whose buffer is "" -- the same as an empty file's --
+--     and which bufferBytes would save as nothing at all.
+--   * Where the final "\n" ALONE is what the disk refuses -- "file too large"
+--     past MAX_FILE_BYTES, "disk full" on a machine at its quota or a floppy
+--     at its FLOPPY_BYTES -- the last line goes back open, and the fourth
+--     answer is true so the save can say so. Such a file is real: a file the
+--     v2->v3 walk (terminateFiles) had no room to close, opened and saved
+--     unchanged, was refused over the one byte it never had. An edited buffer
+--     at the same limit gets the same rule rather than a refusal.
+--
+-- The refusal is the filesystem's own (CeroSecOS.writeFile), asked first
+-- with the newline and then without: both refusals are made before anything
+-- is touched (setData puts the old bytes back; createNode refuses before it
+-- links), so the second try is a first try.
+--
+-- No 1993 editor wrote a file without its newline (nvi 1.43, 4.4BSD-Lite2
+-- contrib, ex/ex_write.c puts one after every line), so this is a
+-- declared deviation ("edit", CeroSecOS.DEVIATIONS). What it SAYS is
+-- borrowed from vi 3.7, 4.3BSD ucb/ex/ex_io.c getfile(), which printed
+-- " [Incomplete last line]" for a file read without one.
+--
+-- done, reason, the bytes written (or tried), incomplete.
+function CeroSecOS.saveBuffer(state, session, path, buffer, now)
+	local bytes = CeroSecOS.bufferBytes(buffer)
+	local node = CeroSecOS.getNode(state, session, path)
+	if type(node) == "table" and node.type == "file" and type(node.data) == "string"
+			and CeroSecOS.endsLine(node.data) and CeroSecOS.bufferOf(node.data) == buffer then
+		bytes = node.data
+	end
+	local done, reason = CeroSecOS.writeFile(state, session, path, bytes, false, now)
+	if done == nil and (reason == "disk full" or reason == "file too large")
+			and buffer ~= "" and bytes == buffer .. "\n" then
+		local open, why = CeroSecOS.writeFile(state, session, path, buffer, false, now)
+		if open ~= nil then return open, nil, buffer, true end
+		return nil, why, buffer, false
+	end
+	return done, reason, bytes, false
+end
+
+-- A list of lines, joined the way a real file holds them: every line ends in
+-- "\n", including the last one, UNLESS the list is marked `open` (cat's own
+-- and the /bin printf door's, when what they read had no final newline
+-- either). Used wherever a whole buffer of lines becomes the text a redirect
+-- or a device write hands to writeFile -- error lines and refusals are never
+-- `open`, so they always come out newline-terminated, which is what a real
+-- shell's stderr does.
+function CeroSecOS.linesToText(lines)
+	if type(lines) ~= "table" or #lines == 0 then return "" end
+	local text = table.concat(lines, "\n")
+	if not lines.open then text = text .. "\n" end
+	return text
 end
 
 -- Last gate before output leaves the core: one array entry is one screen line.
@@ -698,4 +918,89 @@ function CeroSecOS.stampTree(node, now)
 	if node.children == nil then return end
 	local names = CeroSecOS.childNames(node)
 	for i = 1, #names do CeroSecOS.stampTree(node.children[names[i]], now) end
+end
+
+-- The six filesystem refusals, worded the way strerror(3) worded them in
+-- 4.4BSD's own errlist (errno.h's ENOENT, EACCES, EISDIR, ENOTDIR, EEXIST and
+-- ENOTEMPTY): capitalised, and the whole sentence, not this machine's short
+-- lower-case codes. Every caller still SIGNS a refusal with the short code
+-- below -- getNode, can and the rest go on returning "no such file" and the
+-- like, and every comparison against those codes (CeroSecOSShell's `reason ~=
+-- "no such file"`, the exit-status table) is unchanged -- and only where a
+-- code becomes a LINE on the glass (CeroSecOSShell's fail, CeroSecOSDev's
+-- refuse, and every command that builds its own "cmd: file: reason" instead
+-- of calling fail) does it pass through the table below first. One table
+-- instead of a strerror() written out at every call site, so the wording
+-- cannot drift between a `cat`, a `cd` and a `cp` that hit the same errno.
+-- The shell's OWN redirect errors are the one exception: see
+-- CeroSecOS.sherror below, which is not this table at all.
+CeroSecOS.STRERROR = {
+	["no such file"]         = "No such file or directory",
+	["not a directory"]      = "Not a directory",
+	["is a directory"]       = "Is a directory",
+	["permission denied"]    = "Permission denied",
+	["file exists"]          = "File exists",
+	["directory not empty"]  = "Directory not empty",
+	-- And the three more that have an errno of their own in errlst.c:
+	-- ENOSPC, EFBIG and ELOOP.
+	["disk full"]            = "No space left on device",
+	["file too large"]       = "File too large",
+	["too many levels of symbolic links"] = "Too many levels of symbolic links",
+}
+
+-- A reason as it goes on the glass: strerror(3)'s wording for the ones above,
+-- and every other reason exactly as the caller wrote it -- "is a device",
+-- "invalid characters" and the rest are this machine's own words for things
+-- no errno named, and stay as they are (the "errno" entry of
+-- CeroSecOS.DEVIATIONS).
+function CeroSecOS.strerror(reason)
+	if type(reason) ~= "string" then return reason end
+	return CeroSecOS.STRERROR[reason] or reason
+end
+
+-- What the SHELL itself says about a redirect it could not open, which is not
+-- what a command says about the same errno: sh does not call strerror(3), it
+-- carries its own table (4.4BSD-Lite2 bin/sh/error.c, the errormsg[] array)
+-- and it is lower-case and shorter -- "permission denied", not "Permission
+-- denied", and a missing parent on a create is "directory nonexistent", not
+-- "no such file" (bin/sh/redir.c: NTO and NAPPEND call errmsg(errno,
+-- E_CREAT), and E_CREAT's ENOENT/ENOTDIR row says "directory nonexistent";
+-- E_OPEN's row, for "<", says "no such file", the same words this machine's
+-- getNode already signs a lookup with). CeroSecOSShell.writeRedirect and
+-- .openRedirect are always a CREATE (">" truncates or makes; there is no "<"
+-- on this shell), so only the E_CREAT row applies here.
+-- The rest of the E_CREAT rows: ENOSPC is "file system full" and ELOOP
+-- "symbolic link loop"; EACCES and EISDIR are the lower-case words this
+-- machine already signs with. EFBIG has no row at all -- errmsg() falls back
+-- on "error 27" -- and "file too large" is kept (the "errno" entry).
+local SH_CREAT = {
+	["no such file"] = "directory nonexistent",
+	["not a directory"] = "directory nonexistent",
+	["disk full"] = "file system full",
+	["too many levels of symbolic links"] = "symbolic link loop",
+}
+
+function CeroSecOS.sherror(reason)
+	return SH_CREAT[reason] or reason
+end
+
+-- The line for a redirect sh could not open. bin/sh/redir.c's openredirect():
+-- error("cannot create %s: %s", fname, errmsg(errno, E_CREAT)), and error()
+-- signs with commandname only when there is one -- which an interactive sh
+-- never has (bin/sh/options.c sets it for a script FILE only), so at the
+-- prompt the line starts with "cannot". Inside a script sh would have put the
+-- script's name in front; this one does not (the "sh" entry).
+function CeroSecOS.cannotCreate(path, reason)
+	return "cannot create " .. tostring(path) .. ": " .. tostring(CeroSecOS.sherror(reason))
+end
+
+-- What sh says about a command it could not RUN, which is the E_EXEC column of
+-- the same errormsg[] table and not strerror(3): bin/sh/exec.c prints
+-- "%s: %s" with errmsg(e, E_EXEC) both when the PATH walk finds nothing
+-- (find_command) and when the exec of a path fails (shellexec). ENOENT and
+-- ENOTDIR are "not found"; EACCES and EISDIR are the lower-case words
+-- this machine already signs with.
+function CeroSecOS.execError(reason)
+	if reason == "no such file" or reason == "not a directory" then return "not found" end
+	return reason
 end

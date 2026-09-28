@@ -761,10 +761,8 @@ function CeroSecOS.writeOwnHost(state, now)
 	local host = CeroSecOS.hostname(state)
 	local _, byName, byAddr = CeroSecOS.readHosts(state)
 	if byAddr[addr] ~= nil or byName[host] ~= nil then return false end
-	local text = node.data or ""
-	if text ~= "" then text = text .. "\n" end
 	local done = CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
-		text .. addr .. " " .. host, now)
+		CeroSecOS.appendLine(node.data, addr .. " " .. host), now)
 	if done == nil then return false end
 	return true
 end
@@ -780,11 +778,11 @@ function CeroSecOS.ensureNet(state)
 	if etc == nil then return nil end
 	if etc.children.hosts == nil then
 		etc.children.hosts =
-			CeroSecOS.newFile("root", CeroSecOS.HOSTS_MODE, CeroSecOS.defaultHosts())
+			CeroSecOS.newFile("root", CeroSecOS.HOSTS_MODE, CeroSecOS.terminated(CeroSecOS.defaultHosts()))
 	end
 	if etc.children["hosts.equiv"] == nil then
 		etc.children["hosts.equiv"] =
-			CeroSecOS.newFile("root", CeroSecOS.EQUIV_MODE, CeroSecOS.defaultEquiv())
+			CeroSecOS.newFile("root", CeroSecOS.EQUIV_MODE, CeroSecOS.terminated(CeroSecOS.defaultEquiv()))
 	end
 	-- And the station's callsign, which is the third link's half of the same job
 	-- and is seeded on the same terms: only where the name is free, and only for a
@@ -1076,10 +1074,10 @@ function CeroSecOS.wtmpAppend(state, kind, user, line, host, now)
 	local kept = CeroSecOS.splitLines(node.data or "")
 	kept[#kept + 1] = text
 	while #kept > CeroSecOS.WTMP_LINES do table.remove(kept, 1) end
-	local out = table.concat(kept, "\n")
+	local out = CeroSecOS.linesToText(kept)
 	while #out > CeroSecOS.WTMP_BYTES and #kept > 1 do
 		table.remove(kept, 1)
-		out = table.concat(kept, "\n")
+		out = CeroSecOS.linesToText(kept)
 	end
 	node.data = out
 	node.mtime = math.floor(now)
@@ -1264,6 +1262,7 @@ end
 local commands = CeroSecOS.commands
 
 local function fail(cmd, arg, reason)
+	reason = CeroSecOS.strerror(reason)
 	if arg == nil then return false, { cmd .. ": " .. reason } end
 	return false, { cmd .. ": " .. arg .. ": " .. reason }
 end
@@ -2316,7 +2315,7 @@ commands.rcp = function(state, session, args, env)
 		-- the wire that file was on.
 		local about = spec.remote
 		if reason == CeroSecOS.NET_REASON.denied then about = host end
-		return false, { "rcp: " .. tostring(about) .. ": " .. tostring(reason) }
+		return false, { "rcp: " .. tostring(about) .. ": " .. tostring(CeroSecOS.strerror(reason)) }
 	end
 
 	-- The bytes have landed; what is left is the time the wire would have taken.

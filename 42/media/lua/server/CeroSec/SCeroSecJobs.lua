@@ -165,7 +165,9 @@ function CeroSecJobs.startPrompt(system, luaObject, console, line, name)
 	-- that has defined none.
 	if type(console.shfuncs) ~= "table" then console.shfuncs = {} end
 	local job, refusal = CeroSecOS.promptJob(state, system:sessionOf(console), line,
-		console.shvars, console.status, name, console.shexport, console.shfuncs)
+		console.shvars, console.status, name, console.shexport, console.shfuncs,
+		-- $!, kept on the console the way $? is (see where the status is).
+		tonumber(console.lastBg))
 	if job == nil then return nil, refusal end
 	return enrol(system, luaObject, console, job, false)
 end
@@ -456,8 +458,12 @@ local function cronFire(system, luaObject, console, state, user, home, entry, no
 		-- A command that will not parse never becomes a job, exactly as `sh` on
 		-- a broken file does not -- and what sh would have said goes to the
 		-- account's mail, because that is where a cron job's output goes.
+		-- cron ran the line as `sh -c`, and sh -c never set commandname
+		-- (4.4BSD-Lite2 bin/sh/options.c sets it for a script FILE only), so
+		-- synerror() printed the bare "Syntax error: ..." with no name and
+		-- no line in front of it.
 		CeroSecOS.mailAppend(state, user, CeroSecOS.hostname(state), entry.cmd,
-			{ CeroSecOS.scriptError("sh", reason, where) }, now)
+			{ reason }, now)
 		return nil
 	end
 
@@ -877,6 +883,8 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 			if screen ~= nil then
 				made = CeroSecJobs.start(system, luaObject, screen, order, true)
 			end
+			-- $! in the shell that wrote the `&`.
+			if made ~= nil then job.lastBg = made.id end
 			if made == nil then
 				-- Said by the job that asked, so it drains at the same rate its
 				-- own output does: a loop full of refusals is as quiet as a
@@ -1074,6 +1082,7 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 				-- The status the prompt comes back with, kept on the console the
 				-- way a shell keeps $?.
 				screen.status = job.status
+				screen.lastBg = job.lastBg
 				if screen.prompt ~= nil and type(screen.prompt.cont) == "table"
 						and screen.prompt.cont.cmd == "job" then
 					screen.prompt = nil

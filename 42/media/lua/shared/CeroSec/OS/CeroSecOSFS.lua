@@ -986,9 +986,14 @@ function CeroSecOS.writeFile(state, session, path, text, append, now)
 		-- to replace.
 		if node.type ~= "file" then return nil, CeroSecOS.notAFile(node) end
 		local data = text
+		-- ">>" is a raw concat now that a file carries its own newlines: what
+		-- was there already ends in "\n" or it does not, and gluing onto
+		-- whatever byte is last is exactly what a real file appended to does.
+		-- The separating "\n" this used to insert stood in for the terminator
+		-- a stored file never had.
 		if append then
 			local old = node.data or ""
-			if old ~= "" then data = old .. "\n" .. text else data = text end
+			data = old .. text
 		end
 		return CeroSecOS.setData(state, session, path, data, now)
 	end

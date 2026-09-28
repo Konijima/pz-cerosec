@@ -8,17 +8,29 @@ set -e
 
 lua5.1 tests/defs_test.lua
 lua5.1 tests/os_test.lua
+lua5.1 tests/ifs_test.lua
+# { list; } and ( list ): redirects, pipes, the subshell wall, the braces as words.
+lua5.1 tests/groups_test.lua
+lua5.1 tests/commands_test.lua
+# What a refusal SAYS, against 4.4BSD-Lite2, and the $? each kind leaves.
+lua5.1 tests/errors_test.lua
+lua5.1 tests/builtins_test.lua
 # The photographed saves under tests/fixtures/, walked up to whatever the code is now:
 # the one bench that reads bytes a real build wrote instead of building its own.
 lua5.1 tests/migrate_test.lua
+lua5.1 tests/newline_test.lua
+lua5.1 tests/jobs_compat_test.lua
 lua5.1 tests/content_test.lua
 lua5.1 tests/manual_test.lua
 lua5.1 tests/terminal_test.lua
 lua5.1 tests/window_test.lua
 lua5.1 tests/compat_computermod_test.lua
+lua5.1 tests/leftclick_test.lua
 lua5.1 tests/hostile_test.lua
 lua5.1 tests/manual_ui_test.lua
 lua5.1 tests/debug_ui_test.lua
+# The self-test's shell half: the case table the game runs, run here on lua5.1.
+lua5.1 tests/selftest_shell_test.lua
 # Not piped: a pipe would hide its exit status from set -e.
 log=$(mktemp)
 if sh tests/selfcalls-check.sh > "$log" 2>&1; then

@@ -66,9 +66,11 @@ design. The commands wear the names 1993 gave them: `useradd`, `userdel`,
 `usermod -G` (System V, 1989), never Debian's `adduser` or shadow-utils'
 `gpasswd`.
 
-**A deviation is allowed, and it is declared.** The handful of things with no 1993
-model that are kept anyway — `help`, `dev`, `mkpasswd`, `edit`, `sudo`, and jobs
-that belong to the machine rather than to the shell — are listed in
+**A deviation is allowed, and it is declared.** The things with no 1993
+model that are kept anyway — `help`, `dev`, `mkpasswd`, `edit`, `sudo`, jobs
+that belong to the machine rather than to the shell, the wording of the errors,
+the files' missing last newline, and the commands and flags that are not here —
+are listed in
 `CeroSecOS.DEVIATIONS` *and* written on a page of the in-game Volume 1, *What is
 not Unix here*. A bench checks the list against the page in **both** directions,
 so a deviation that is not declared is a red, and a declaration with nothing
@@ -79,6 +81,11 @@ prompt after a power cut is the worked example — is marked `world = true` and 
 the `phrase` the page has to say, literally. Its name alone cannot be the check: a
 word like `login` is already on that page for another reason, so the bench would be
 green on a page that never mentioned the deviation at all.
+
+Every entry carries a `phrase`, one line of the page, and the page is read back
+by those phrases: a paragraph of it that holds none is a declaration the list does
+not have, and is red. `shell = true` marks a word of the shell and `absent = true`
+a name 1993 had and this machine has not; several entries may share one phrase.
 
 ### The sources of truth, in order
 
@@ -107,8 +114,8 @@ The game runs Lua on **Kahlua**, not on PUC Lua 5.1, and the subset is smaller
 than it looks:
 
 - No bit library, no `string.pack`, no integer division, no `goto`, no `%b`
-  patterns. `tests/kahlua-check.sh` greps for the constructs that are known to
-  break and it is the cheap half of the guard.
+  patterns. `tests/kahlua-check.sh` greps every shipped file for the constructs
+  that are known to break and it is the cheap half of the guard.
 - `tonumber(s, 16)` is not PUC Lua's `tonumber(s, 16)`: Kahlua has
   `Integer.parseInt` behind it and returned `nil` for half of all hashes while
   every `lua5.1` bench stayed green and the game died on the first power-on of a
@@ -118,8 +125,11 @@ than it looks:
 - **No Lua is ever evaluated from a file**, in either direction. The OS core reads
   and writes plain data; nothing a player types or a script contains is ever
   handed to `load` or `loadstring`; and no player-supplied string reaches Lua's
-  own pattern matching unescaped. This is the one rule a grep enforces rather than
-  a reviewer.
+  own pattern matching unescaped. A check enforces this rather than a reviewer:
+  `kahlua-check.sh` greps every shipped file for the loaders, and
+  `tests/pattern-check.lua` (run by it) reads every `find`, `match`, `gmatch` and
+  `gsub` and fails on a pattern -- or a `gsub` replacement -- that is not a
+  literal, a plain `find`, or on its allow-list with the reason written beside it.
 
 `luac5.1 -p <file>` before you commit, always. It catches a syntax error; it
 catches nothing else on this list.

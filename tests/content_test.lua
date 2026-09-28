@@ -728,7 +728,7 @@ do
 			eq(id .. " keeps the coordinate tail",
 				string.match(state.hostname, "(%-.*)$"), "-4-b")
 			eq(id .. " writes it to /etc/hostname",
-				CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname)
+				CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname .. "\n")
 
 			-- The accounts, read back out of the file the way the machine reads them.
 			if type(profile.accounts) == "table" then
@@ -819,10 +819,10 @@ do
 			check(id .. " has a banner over its login prompt",
 				banner ~= nil and banner.type == "file")
 			if type(profile.issue) == "string" then
-				eq(id .. " writes the banner", banner.data, profile.issue)
+				eq(id .. " writes the banner", banner.data, profile.issue .. "\n")
 			else
 				eq(id .. " keeps the seeded banner, naming itself",
-					banner.data, CeroSecOS.issueText(state.hostname))
+					banner.data, CeroSecOS.issueText(state.hostname) .. "\n")
 			end
 			eq(id .. " and a login prompt has exactly one line over it",
 				#CeroSecOS.issueLines(state), 1)
@@ -830,7 +830,7 @@ do
 			-- The motd, inside what a login will print.
 			if type(profile.motd) == "string" then
 				eq(id .. " writes the motd",
-					CeroSecOS.systemNode(state, CeroSecOS.MOTD_PATH).data, profile.motd)
+					CeroSecOS.systemNode(state, CeroSecOS.MOTD_PATH).data, profile.motd .. "\n")
 				local lines = CeroSecOS.motdLines(state)
 				eq(id .. " and every line of it is printed", #lines,
 					select(2, string.gsub(profile.motd, "\n", "")) + 1)
@@ -858,6 +858,18 @@ do
 						.. tostring(day) .. ")", tonumber(day) < 9)
 					check(id .. " log line " .. l .. " is inside the week",
 						tonumber(day) >= 9 - CeroSecContent.LOG_DAYS)
+					check(id .. " log line " .. l .. " names nobody in braces",
+						string.find(lines[l], "{", 1, true) == nil)
+				end
+				-- su's wrong password is its own syslog line (4.4BSD-Lite2
+				-- usr.bin/su/su.c, "BAD SU %s to %s%s"), and the man who typed
+				-- it is the one whose desk this is.
+				for k = 1, #profile.logs do
+					if string.find(profile.logs[k], "BAD SU", 1, true) ~= nil then
+						check(id .. " the BAD SU line names the owner, whole",
+							ownerName ~= nil and string.find(log.data,
+								" su: BAD SU " .. ownerName .. " to root\n", 1, true) ~= nil)
+					end
 				end
 			end
 
@@ -1715,7 +1727,7 @@ do
 							end
 							-- EVERY LINE IS A COMMAND THIS MACHINE HAS. The shell's own lookup,
 							-- on this machine, as this account: a word the shell has no file for
-							-- and no word of its own is a line that prints "command not found"
+							-- and no word of its own is a line that prints "not found"
 							-- on the day a player presses Up.
 							for l = 1, #lines do
 								local line = lines[l]
@@ -2221,7 +2233,7 @@ do
 		eq("and nobody was left logged in at it", m.live, nil)
 		-- The dealer's card, and the dealer's name on the machine.
 		eq("it carries the dealer's motd",
-			CeroSecOS.systemNode(m.state, CeroSecOS.MOTD_PATH).data, DEMO.motd)
+			CeroSecOS.systemNode(m.state, CeroSecOS.MOTD_PATH).data, DEMO.motd .. "\n")
 		eq("and the dealer's name on it", string.match(m.state.hostname, "^[a-z0-9]+"),
 			DEMO.host)
 		-- THE BOOT GATE, on a machine built by the other branch of the prefill.
@@ -2348,7 +2360,7 @@ do
 	eq("the company's name is still on it",
 		string.match(spare.state.hostname, "^[a-z0-9]+"), profile.host)
 	eq("and the company's own motd",
-		CeroSecOS.systemNode(spare.state, CeroSecOS.MOTD_PATH).data, profile.motd)
+		CeroSecOS.systemNode(spare.state, CeroSecOS.MOTD_PATH).data, profile.motd .. "\n")
 	eq("and nobody's work is on it", spare.owner, nil)
 	local demo = CeroSecOS.getUser(spare.state, CeroSecContent.DEMO.login)
 	check("it came up on the dealer's disk", demo ~= nil)
@@ -2642,7 +2654,7 @@ do
 			local bare, bareLines = run(state, session, "./" .. name, env)
 			check(name .. " with no arguments says something", #bareLines > 0)
 			check(name .. " with no arguments does not say sh had an error",
-				string.find(table.concat(bareLines, " "), "syntax error", 1, true) == nil)
+				string.find(table.concat(bareLines, " "), "Syntax error", 1, true) == nil)
 			check(name .. " with no arguments is not a nil call",
 				string.find(table.concat(bareLines, " "), "attempt to", 1, true) == nil)
 			if script.optional then
@@ -2754,7 +2766,7 @@ do
 	-- that only read the lines could not tell a paged screen from an unpaged one.
 	-- Everything every program in this section ever printed, in one place. A
 	-- script is a list of commands and a line that is not one of them is not a
-	-- syntax error: the shell says `command not found`, the line does nothing, and
+	-- syntax error: the shell says `not found`, the line does nothing, and
 	-- the script runs on to its last `echo` and exits 0. So a bench that reads only
 	-- the status of these five would be green with a dead line in the middle of the
 	-- menu. This is what catches that, and it is asked of every line of output the
@@ -2998,8 +3010,9 @@ do
 	-- carry for ever without failing: a word that is not a command, a file it may
 	-- not touch, a line the parser would not take, and a nil call in the engine.
 	local whole = table.concat(said, "\n")
-	for _, bad in ipairs({ "command not found", "permission denied",
-			"syntax error", "attempt to", "no such file" }) do
+	for _, bad in ipairs({ "not found", "permission denied", "Permission denied",
+			"Syntax error", "attempt to", "No such file or directory",
+			"cannot create" }) do
 		check("nothing the board printed says \"" .. bad .. "\"",
 			string.find(whole, bad, 1, true) == nil)
 	end
@@ -3059,8 +3072,8 @@ do
 		local ok, lines = run(state, session, "./" .. name .. " " .. WITH[name], env)
 		local whole = table.concat(lines, " / ")
 		check(name .. " with no devices says something: " .. whole, #lines > 0)
-		for _, bad in ipairs({ "syntax error", "attempt to", "bad arithmetic",
-				"bad substitution", "test: " }) do
+		for _, bad in ipairs({ "Syntax error", "attempt to", "bad arithmetic",
+				"Bad substitution", "test: " }) do
 			check(name .. " with no devices does not say \"" .. bad .. "\": " .. whole,
 				string.find(whole, bad, 1, true) == nil)
 		end
@@ -3498,7 +3511,7 @@ do
 		local got, gotName = CeroSecContent.lateEntryFor(disk)
 		eq("a disk off a shelf is the entry it came from", got, entry)
 		eq("and the file waiting to be filled is the one named", gotName, name)
-		eq("which still holds the stub", disk.fs.children[name].data, stub)
+		eq("which still holds the stub", disk.fs.children[name].data, stub .. "\n")
 
 		check("the fill writes it", CeroSecContent.fillLate(disk, 418, HERE, START))
 		local filled = disk.fs.children[name].data
@@ -3553,7 +3566,7 @@ do
 			local empty = CeroSecContent.diskData(entry, START)
 			check("a county with no listings fills nothing",
 				not CeroSecContent.fillLate(empty, 418, {}, START))
-			eq("and the stub is untouched", empty.fs.children[name].data, stub)
+			eq("and the stub is untouched", empty.fs.children[name].data, stub .. "\n")
 		end
 
 		-- Every other disk in the county, and every kind of junk, answers nothing.
@@ -3750,6 +3763,18 @@ do
 	-- Which it could only do because the stub ships world-writable: /mnt is root's
 	-- and the account running the suite is not.
 	eq("because the stub ships world-writable", results.mode, 666)
+
+	-- The floppy's 4096 bytes, measured and not assumed: every text file on the
+	-- disk ends its last line with a newline since FLOPPY_VERSION 2, a byte each,
+	-- and the RESULTS.TXT the suite writes has to fit beside the script and the
+	-- README it shipped with, or the survivor's run ends on "disk full".
+	local _, shipped = CeroSecOS.subtreeUsage(CeroSecContent.diskData(entry, START).fs)
+	local _, used = CeroSecOS.subtreeUsage(state.floppy.fs)
+	check("the disk as shipped fits its bytes (" .. shipped .. ")",
+		shipped <= CeroSecOS.FLOPPY_BYTES)
+	check("and with its results written (" .. used .. ")", used <= CeroSecOS.FLOPPY_BYTES)
+	print("content_test: the diagnostics floppy holds " .. shipped .. " of "
+		.. CeroSecOS.FLOPPY_BYTES .. " bytes shipped, " .. used .. " after a run")
 
 	-- It took its scratch files away with it, both because a suite that fills a
 	-- survivor's home is a suite nobody runs twice and because the disk quota is

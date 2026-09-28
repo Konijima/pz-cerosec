@@ -17,6 +17,9 @@ ISCeroSecUseAction = ISBaseTimedAction:derive("ISCeroSecUseAction")
 function ISCeroSecUseAction:isValid()
 	if not self.object or not self.object:getSquare() then return false end
 	if not CeroSec.isOnSprite(self.object:getSpriteName()) then return false end
+	-- Out of reach is a refusal the menu greys out (Tooltip_CeroSec_TooHigh);
+	-- the action holds the same line for whatever queues it.
+	if self.height == "high" then return false end
 	local front = CeroSecReach.frontSquare(self.object)
 	return front ~= nil and CeroSecReach.standingSquare(self.character, self.object) == front
 end

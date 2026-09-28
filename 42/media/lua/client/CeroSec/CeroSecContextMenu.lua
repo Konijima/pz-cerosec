@@ -464,4 +464,93 @@ function CeroSecContextMenu.onDevDebug(playerObj, computer)
 	CeroSecDebugUI.open(playerObj, square:getX(), square:getY(), square:getZ())
 end
 
+-- A left click on a lit computer does what the menu's "Use computer" does,
+-- one click instead of right-click-then-select. Wired into vanilla's own
+-- dispatcher, not a new event: ISObjectClickHandler.onObjectLeftMouseButtonDown
+-- hands doClickSpecificObject the ONE object the engine already picked
+-- (ISObjectClickHandler.lua:333-364) and its instanceof ladder never matches a
+-- computer -- it is a plain IsoObject known only by sprite -- so today every
+-- click on one falls through to false and whatever the generic click does next
+-- (loot, a crafting surface) runs instead. Returning true here is read the same
+-- way vanilla's own branches read it: handled, and nothing else about this
+-- click happens (ISObjectClickHandler.lua:362-364, the same short-circuit a
+-- vanilla door's own doClickDoor relies on).
+--
+-- playerNum is not used, and no CancelAction either: the menu's "Use
+-- computer" already drops what the player was doing -- walkToFront clears
+-- his ISTimedActionQueue before it queues the walk (CeroSecReach.walkToFront,
+-- as luautils.walkAdj does) -- and a left click is only a shortcut onto that
+-- same entry, not a reason for it to behave differently from the menu it
+-- stands in for. That clear is also why every refusal below has to come
+-- BEFORE onUse: a click that should have meant nothing would otherwise cost
+-- the player the action he was in the middle of.
+function CeroSecContextMenu.leftClick(object, playerNum, playerObj)
+	-- This runs in FRONT of vanilla's dispatcher, so its own guards have not
+	-- run yet. The same five, in the same order, with the same conditions
+	-- (ISObjectClickHandler.lua:196-205): paused, no player or a dead one, no
+	-- current square, aiming, ignoring the context key. Each is a fall-through
+	-- to the original, which then refuses the click itself.
+	local speed = UIManager.getSpeedControls()
+	if speed and speed:getCurrentGameSpeed() == 0 then return false end
+	if not playerObj or playerObj:isDead() then return false end
+	if not playerObj:getCurrentSquare() then return false end
+	if playerObj:isAiming() then return false end
+	if playerObj:isIgnoreContextKey() then return false end
+	-- The menu offers nothing to a player in a vehicle
+	-- (OnFillWorldObjectContextMenu above), so neither does the click.
+	if playerObj:getVehicle() then return false end
+
+	if object == nil or object.getSpriteName == nil then return false end
+	local sprite = object:getSpriteName()
+	if not CeroSec.isComputerSprite(sprite) then return false end
+	-- Off screens keep today's behaviour: the menu itself offers no "Use
+	-- computer" on a dark machine, only "Turn on computer", so a left click
+	-- has nothing of ours to stand in for.
+	if not CeroSec.isOnSprite(sprite) then return false end
+
+	-- Same compat guard as the menu (OnFillWorldObjectContextMenu above): a
+	-- desktop Computer Mod is running is theirs, click and all.
+	if CeroSecCompatComputerMod ~= nil and
+			CeroSecCompatComputerMod.ownerOf(object) == "computermod" then
+		return false
+	end
+
+	-- Where the menu greys "Use computer" out, the click does not act either,
+	-- for the same two reasons in the same order: out of reach, then no
+	-- square in front to stand on. The second is the one walkToFront would
+	-- refuse on its own, but by then the click would already be counted as
+	-- handled; falling through keeps its vanilla meaning instead.
+	local height = CeroSecReach.height(object)
+	if height == "high" then return false end
+	if not CeroSecReach.canStandInFront(playerObj, object) then return false end
+
+	CeroSecContextMenu.onUse(nil, object, playerObj, height)
+	return true
+end
+
+function CeroSecContextMenu.hookLeftClick()
+	if ISObjectClickHandler == nil then return false end
+	if CeroSecContextMenu.vanillaClickSpecific ~= nil then return false end
+	local original = ISObjectClickHandler.doClickSpecificObject
+	if original == nil then return false end
+	CeroSecContextMenu.vanillaClickSpecific = original
+	ISObjectClickHandler.doClickSpecificObject = function(object, playerNum, playerObj)
+		if CeroSecContextMenu.leftClick(object, playerNum, playerObj) then return true end
+		return original(object, playerNum, playerObj)
+	end
+	return true
+end
+
 Events.OnFillWorldObjectContextMenu.Add(CeroSecContextMenu.OnFillWorldObjectContextMenu)
+-- At OnGameStart and not at load: ISObjectClickHandler lives in media/lua/SERVER,
+-- and this file does not find it there. The client and the server folders load
+-- at two different moments -- LuaManager.LoadDirBase() runs "shared" then
+-- "client" (offsets 3-12), and "server" comes later, in
+-- GameLoadingState.enter() (ldc "server" then LoadDirBase at 115-117). A call
+-- from here would meet a nil ISObjectClickHandler, return false, and never try
+-- again: no error, no left click. OnGameStart is triggered in
+-- IngameState.enter() (offsets 199-202), and the loading state is what hands
+-- over to that state (GameLoadingState.redirectState(): new IngameState at
+-- offset 0), so vanilla's table is there by then. The sentinel in hookLeftClick keeps a
+-- second firing from wrapping the wrapper.
+Events.OnGameStart.Add(CeroSecContextMenu.hookLeftClick)

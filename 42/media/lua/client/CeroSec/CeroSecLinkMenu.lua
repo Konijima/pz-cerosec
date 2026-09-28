@@ -143,7 +143,20 @@ function CeroSecLinkMenu.machines(object)
 			-- Out of range is not a line. It is the one thing about a cable a
 			-- survivor cannot do anything about from where he is standing, and a
 			-- county's worth of machines he cannot reach is a menu he cannot read.
-			if wire <= CeroSecModules.LINK_RANGE then
+			--
+			-- Measured with linkSpan, the raw geometry, not linkWire: FreeWiring
+			-- waives what a cable COSTS, never how far one reaches, and wire itself
+			-- can read 0 under that option regardless of distance.
+			--
+			-- Except a nested pair, a house and its own basement lot, which the
+			-- range never applies to (CeroSecModules.nestedFree): linkRefusal
+			-- never calls it "far", so this filter must not hide the row either,
+			-- or the free cable the rule allows has no line to click.
+			local nested = CeroSecModules.nestedFree(fx, fy, fz,
+				luaObject.x, luaObject.y, luaObject.z)
+			local span = CeroSecModules.linkSpan(fx, fy, fz,
+				luaObject.x, luaObject.y, luaObject.z)
+			if nested or span <= CeroSecModules.linkRange() then
 				local state = CeroSecLinkMenu.mirrorOf(luaObject)
 				local book = CeroSecOS.linkSquares(state)
 				out[#out + 1] = {
@@ -151,6 +164,10 @@ function CeroSecLinkMenu.machines(object)
 					host = CeroSecLinkMenu.hostOf(luaObject),
 					tiles = CeroSecModules.linkTiles(fx, fy, luaObject.x, luaObject.y),
 					wire = wire,
+					span = span,
+					-- Which waiver a free row is, for its tooltip: this one is
+					-- the house's, anything else at 0 is CeroSec.FreeWiring's.
+					nested = nested,
 					full = CeroSecOS.linkAt(book, bx, by, bz) == nil
 						and #book >= CeroSecOS.LINKS_PER_MACHINE,
 					iso = CeroSecLinkMenu.isoOf(luaObject),
@@ -162,8 +179,13 @@ function CeroSecLinkMenu.machines(object)
 	-- Nearest first, and the hostname breaks a tie: two machines the same distance
 	-- away must not swap places between two right-clicks, which is what a walk of a
 	-- hash table would do to them.
+	--
+	-- The price first and then the run itself (span): a paid cable's price IS its
+	-- run, so the second key only ever decides between free rows -- which, under
+	-- CeroSec.FreeWiring, is every row, and they are still nearest first.
 	table.sort(out, function(a, b)
 		if a.wire ~= b.wire then return a.wire < b.wire end
+		if a.span ~= b.span then return a.span < b.span end
 		if a.host ~= b.host then return a.host < b.host end
 		if a.x ~= b.x then return a.x < b.x end
 		if a.y ~= b.y then return a.y < b.y end
@@ -190,13 +212,14 @@ end
 
 -- The %1 a refusal's own sentence has in it, which is a CAP and never a word in
 -- a translation: "a cable runs 30 tiles" and "already answers 4 computers" are
--- CeroSecModules.LINK_RANGE and LINKS_MAX, so the day one of them moves the menu
--- moves with it. "reach" names the machine instead -- row.host, the same word
+-- CeroSecModules.linkRange() and LINKS_MAX, so the day either one moves -- the
+-- range now a live sandbox read rather than a constant -- the menu moves with
+-- it. "reach" names the machine instead -- row.host, the same word
 -- ContextMenu_CeroSec_LinkTo already puts on this row -- because the sentence is
 -- about what THAT computer already sees, not a count. A word with no %1 in its
 -- line gets 0 and prints a sentence that does not ask for one.
 function CeroSecLinkMenu.numberFor(why, row)
-	if why == "far" then return CeroSecModules.LINK_RANGE end
+	if why == "far" then return CeroSecModules.linkRange() end
 	if why == "links" then return CeroSecModules.LINKS_MAX end
 	if why == "reach" then return row.host end
 	return 0
@@ -271,10 +294,6 @@ end
 
 function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobjects, test)
 	if test and ISWorldObjectContextMenu.Test then return true end
-	-- The same gate the module menu wears: with the hardware option off every
-	-- machine reaches every door in its building already, nothing is ever fitted,
-	-- and a cable would be a gesture with no effect.
-	if not CeroSecModules.required() then return end
 
 	local playerObj = getSpecificPlayer(player)
 	if not playerObj or playerObj:getVehicle() then return end
@@ -290,7 +309,21 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 	-- about anyFitted, on purpose. Gating the WHOLE menu on anyFitted would bury
 	-- that loose cable where nothing can ever cut it again, so only the
 	-- install-side rows are gated; the raw links are read regardless.
-	local fitted = CeroSecModules.anyFitted(object)
+	-- anyFittedOrNotRequired, not the raw anyFitted: with CeroSec.HardwareRequired
+	-- off a bare fixture reads as fitted here too, the same fiction
+	-- linkRefusal itself keeps (CeroSecModules.lua), so the rows below are not
+	-- buried behind a module the sandbox never asked the survivor to fit. There
+	-- USED to be a second, blanket gate here too (`not CeroSecModules.
+	-- required()`, then `... and not CeroSecModules.wiringRequired()`),
+	-- deciding from the sandbox alone that a cable was pointless for every
+	-- fixture whenever both options were off. It never was: a generator, an
+	-- outdoor fixture, a cross-building fixture and a nested-basement pair are
+	-- none of them "already free" just because those two flags are off, and
+	-- the blanket gate hid all of them. Removed outright -- the per-row rule
+	-- below (`refusal`, and CeroSecModules.linkRefusal's own "reach") already
+	-- decides this correctly, pair by pair, the way it always has whenever
+	-- CeroSecModules.required() was true.
+	local fitted = CeroSecModules.anyFittedOrNotRequired(object)
 	local links = CeroSecModules.linksOn(object)
 	if not fitted and #links == 0 then return end
 	-- The same door CeroSecModuleMenu's `doable` guards the parent with: a row
@@ -328,12 +361,27 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 		-- same `links` list) already says so, and a row a survivor can never
 		-- act on is the one refusal this menu otherwise hides on purpose.
 		if CeroSecModules.linkIndexOf(links, row.x, row.y, row.z) == nil then
-			local option = sub:addOption(
-				getText("ContextMenu_CeroSec_LinkTo", row.host, row.tiles, row.wire),
+			-- 0 wire is the nested-basement case or CeroSec.FreeWiring
+			-- (CeroSecModules.linkWire): worded "free" rather than "0 wire",
+			-- because a survivor who paces out the distance and reads "0"
+			-- would think the number came back wrong. The tooltip says which
+			-- waiver it is: only the nested pair is "the same house".
+			local label, desc
+			if row.wire == 0 then
+				label = getText("ContextMenu_CeroSec_LinkToFree", row.host, row.tiles)
+				if row.nested then
+					desc = getText("Tooltip_CeroSec_LinkDescFree", row.host)
+				else
+					desc = getText("Tooltip_CeroSec_LinkDescNoWire", row.host)
+				end
+			else
+				label = getText("ContextMenu_CeroSec_LinkTo", row.host, row.tiles, row.wire)
+				desc = getText("Tooltip_CeroSec_LinkDesc", row.wire, row.host)
+			end
+			local option = sub:addOption(label,
 				worldobjects, CeroSecLinkMenu.onLink, object, playerObj, row)
 			local key, number = CeroSecLinkMenu.refusal(object, playerObj, row)
-			describe(option, key,
-				getText("Tooltip_CeroSec_LinkDesc", row.wire, row.host), number)
+			describe(option, key, desc, number)
 			-- The COMPUTER lights up here, not the fixture: this line names a
 			-- machine and the survivor is choosing which one to wire. Nothing at
 			-- all when its chunk is away (row.iso is nil then).
@@ -359,7 +407,12 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 			local host = CeroSecLinkMenu.hostOf(luaObject)
 			option = sub:addOption(getText("ContextMenu_CeroSec_Unlink", host),
 				worldobjects, CeroSecLinkMenu.onUnlink, object, playerObj, row)
-			tooltipDesc = getText("Tooltip_CeroSec_UnlinkDesc", at.wire, host)
+			-- A free cable gives nothing back, and says so rather than "the 0".
+			if at.wire == 0 then
+				tooltipDesc = getText("Tooltip_CeroSec_UnlinkDescFree", host)
+			else
+				tooltipDesc = getText("Tooltip_CeroSec_UnlinkDesc", at.wire, host)
+			end
 		else
 			-- No machine on that square: the link is indexed by where a
 			-- computer STOOD (CeroSecModules.LINK_KEY), so a survivor never
@@ -368,7 +421,11 @@ function CeroSecLinkMenu.OnFillWorldObjectContextMenu(player, context, worldobje
 				at.x, at.y)
 			option = sub:addOption(getText("ContextMenu_CeroSec_UnlinkLoose"),
 				worldobjects, CeroSecLinkMenu.onUnlink, object, playerObj, row)
-			tooltipDesc = getText("Tooltip_CeroSec_UnlinkLooseDesc", tiles, at.wire)
+			if at.wire == 0 then
+				tooltipDesc = getText("Tooltip_CeroSec_UnlinkLooseDescFree", tiles)
+			else
+				tooltipDesc = getText("Tooltip_CeroSec_UnlinkLooseDesc", tiles, at.wire)
+			end
 		end
 		local key, number = CeroSecLinkMenu.unlinkRefusal(object, playerObj, row)
 		describe(option, key, tooltipDesc, number)

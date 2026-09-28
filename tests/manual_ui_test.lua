@@ -5700,15 +5700,249 @@ do
 		CeroSecOS.hostname(front.state), "ksp-renamed")
 
 	--
-	-- 6. THE GATE the whole menu wears
+	-- 6. THERE IS NO BLANKET GATE ON THIS MENU
 	--
-	-- With the hardware option off every machine reaches every door in its
-	-- building already and nothing is ever fitted, so a cable is a gesture with no
-	-- effect and there is no line to click.
+	-- A gate here used to read `not CeroSecModules.required()` (and later
+	-- `... and not CeroSecModules.wiringRequired()`), on the reasoning that
+	-- with the hardware option off every machine already reaches every
+	-- fixture of its own building for free and a cable buys nothing. That
+	-- was already wrong for a REAL fixture like this one -- `post` carries
+	-- an actual relay and an actual cable, fitted-or-not is a fact about the
+	-- fixture and never about a sandbox option -- and along the way it also
+	-- hid a generator, an outdoor fixture, a cross-building one and the
+	-- nested-basement pair, none of which are ever "already free" just
+	-- because two sandbox flags happen to be off (see section 6b, right
+	-- below). Removed outright: the hardware option toggles nothing about
+	-- this menu on its own, only the per-row rule downstream does
+	-- (CeroSecLinkMenu.refusal, CeroSecModules.linkRefusal's "reach").
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
-	eq("with the hardware option off there is no cable menu", rowsOn(post), "")
+	check("with the hardware option off the menu is unchanged for a fitted fixture",
+		rowsOn(post) ~= "")
+	eq("the cable already run is still there to cut",
+		rowsOn(post), "ContextMenu_CeroSec_Unlink(ksp-renamed)")
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
-	check("and with it on there is", rowsOn(post) ~= "")
+	check("and with it on, the same is true", rowsOn(post) ~= "")
+
+	--
+	-- 6b. CeroSec.RequireWiring's own bug, and its deeper version reported
+	-- after the first fix: the outer gate used to read `not CeroSecModules.
+	-- required()`, then `... and not CeroSecModules.wiringRequired()` -- both
+	-- wrong for the same reason, a BLANKET gate deciding from two sandbox
+	-- flags alone that a cable is pointless for EVERY fixture everywhere.
+	-- It never is: a generator is cable-only regardless of any sandbox
+	-- option, an outdoor or cross-building fixture was never covered by the
+	-- free walk either way, and the nested-basement pair NEEDS a (free)
+	-- cable precisely because the walk never crosses that boundary. The
+	-- per-row rule already downstream (CeroSecLinkMenu.refusal,
+	-- CeroSecModules.linkRefusal's own "reach") already answers all of this
+	-- correctly, pair by pair -- it is what HardwareRequired=true has relied
+	-- on with NO blanket gate at all, forever (section 2b/2c above). The fix
+	-- is deleting the blanket gate outright, never replacing it with a third
+	-- condition: what follows re-asks 2b/2c's own questions, bare and with
+	-- HardwareRequired off, which the blanket gate made untestable in this
+	-- combination at all. Kept ABOVE section 7's `_G.getText = realGetText`:
+	-- rowFor/desc/reason all read the mocked getText that keeps its
+	-- arguments.
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, RequireWiring = false } }
+
+		local function buildingBox(bx, by, w, h)
+			local def = { getX = function() return bx end,
+				getY = function() return by end,
+				getX2 = function() return bx + w end,
+				getY2 = function() return by + h end }
+			return { getDef = function() return def end }
+		end
+		local buildingA, buildingB = {}, {}
+
+		local machSq = square(30, 20, 0)
+		machSq.getRoom = function() return {} end
+		machSq.getBuilding = function() return buildingA end
+		local cells = { ["30,20,0"] = machSq }
+		_G.getCell = function()
+			return { getGridSquare = function(_, x, y, z)
+				return cells[x .. "," .. y .. "," .. z]
+			end }
+		end
+		objects = { machine(30, 20, 0, "ksp-bare-01") }
+
+		-- (a) SAME BUILDING, a bare fixture -- no module fitted at all, the
+		-- sandbox never asked for one. Before this fix the WHOLE menu was
+		-- hidden here; now the row is there, greyed "reach", exactly the
+		-- word HardwareRequired=true already greys the identical pair with
+		-- (section 2b above): a cable would still buy nothing, the free walk
+		-- already covers it, and the survivor is told so rather than finding
+		-- no entry at all.
+		local sameSq = square(20, 20, 0)
+		sameSq.getBuilding = function() return buildingA end
+		local bareSwitch = fixture("IsoLightSwitch", sameSq)
+		local row = rowFor(bareSwitch, "ksp-bare-01")
+		check("(a) a bare fixture in the machine's own building gets a row",
+			row ~= nil)
+		eq("(a) greyed with reach, same word as a fitted fixture would get",
+			row and row.notAvailable, true)
+		eq("(a) and the same sentence", row and reason(row),
+			"Tooltip_CeroSec_LinkReach(ksp-bare-01)")
+
+		-- (b) CROSS-BUILDING: the same bare fixture, moved to a DIFFERENT
+		-- building than the machine's -- the free walk never covered it
+		-- either way, so the row is offered and enabled.
+		sameSq.getBuilding = function() return buildingB end
+		row = rowFor(bareSwitch, "ksp-bare-01")
+		check("(b) a bare fixture of a different building still gets a row",
+			row ~= nil)
+		eq("(b) and it is not greyed reach", row and row.notAvailable, nil)
+		sameSq.getBuilding = function() return buildingA end
+
+		-- (c) A GENERATOR, same building, same square as the switch above:
+		-- cable-only unconditionally (SCeroSecDevices.classify's allowGen),
+		-- so it is never "reach", building or not, sandbox or not.
+		local bareGenerator = fixture("IsoGenerator", sameSq)
+		row = rowFor(bareGenerator, "ksp-bare-01")
+		check("(c) a bare generator in the machine's own building gets a row",
+			row ~= nil)
+		eq("(c) and it is never reach", row and row.notAvailable, nil)
+
+		-- (d) AN OUTDOOR FIXTURE, a roomless tile within OUTDOOR_RADIUS of a
+		-- machine that is ALSO outdoors (getRoom nil): the no-building radius
+		-- branch would have listed it for free, so the row is offered,
+		-- greyed "reach" -- the outdoor mirror of (a). A stove, not a light
+		-- switch: outdoorReachRefusal excludes light switches by name.
+		local outMachSq = square(50, 50, 0)
+		outMachSq.getRoom = function() return nil end
+		cells["50,50,0"] = outMachSq
+		objects = { machine(50, 50, 0, "ksp-out-01") }
+		local outSq = square(55, 50, 0)
+		outSq.getRoom = function() return nil end
+		local bareStove = fixture("IsoStove", outSq)
+		row = rowFor(bareStove, "ksp-out-01")
+		check("(d) an outdoor bare fixture within the radius gets a row",
+			row ~= nil)
+		eq("(d) greyed reach, the radius mirror of (a)", row and row.notAvailable,
+			true)
+
+		-- The nested-basement row is worded "free" and not "LinkTo", so it
+		-- needs its own finder -- rowFor's prefix is "ContextMenu_CeroSec_
+		-- LinkTo(", which a "LinkToFree(" label does not start with on
+		-- purpose (rowFor is shared with every other section in this file
+		-- and its matching stays exactly what they rely on).
+		local function freeRowFor(object, host)
+			local sub = subOn(object)
+			if sub == nil then return nil end
+			local want = "ContextMenu_CeroSec_LinkToFree(" .. host .. ","
+			for i = 1, #sub.labels do
+				if string.sub(sub.labels[i], 1, #want) == want then
+					return sub.options[i]
+				end
+			end
+			return nil
+		end
+
+		-- (e) THE ACTUAL BUG REPORT: a nested basement and the house above
+		-- it, both bare. Confirmed on a real save (docs/notes/tenancies.md,
+		-- "A basement baked in as its own lot"): a basement whose lot is its
+		-- own BuildingDef, entirely inside the house's -- the free walk
+		-- never crosses that boundary either way, so a cable is the ONLY way
+		-- onto /dev for the pair, and CeroSecModules.linkWire waives its
+		-- price (nestedBuilding). Bare, because HardwareRequired is off: the
+		-- survivor never fitted a module anywhere and must still be able to
+		-- wire his own basement.
+		local house = buildingBox(6955, 5575, 15, 17)
+		local basement = buildingBox(6957, 5583, 11, 6)
+		check("(e) sanity: the basement's box sits inside the house's",
+			CeroSecModules.nestedBuilding(basement, house))
+
+		local houseSq = square(6960, 5585, 0)
+		houseSq.getRoom = function() return {} end
+		houseSq.getBuilding = function() return house end
+		local basementSq = square(6960, 5585, -1)
+		basementSq.getRoom = function() return {} end
+		basementSq.getBuilding = function() return basement end
+		cells["6960,5585,0"] = houseSq
+		cells["6960,5585,-1"] = basementSq
+
+		objects = { machine(6960, 5585, 0, "ksp-house-01") }
+		local bareBasementFixture = fixture("IsoLightSwitch", basementSq)
+		row = freeRowFor(bareBasementFixture, "ksp-house-01")
+		check("(e) the basement's bare fixture gets a row to the house computer",
+			row ~= nil)
+		eq("(e) not greyed", row and row.notAvailable, nil)
+		eq("(e) worded free, the nested waiver, not a tile count",
+			row and desc(row), "Tooltip_CeroSec_LinkDescFree(ksp-house-01)")
+
+		-- The other direction: a bare fixture in the house, a machine down
+		-- in the basement.
+		objects = { machine(6960, 5585, -1, "ksp-basement-01") }
+		local bareHouseFixture = fixture("IsoLightSwitch", houseSq)
+		row = freeRowFor(bareHouseFixture, "ksp-basement-01")
+		check("(e) and the house's bare fixture gets a free row to the basement",
+			row ~= nil)
+		eq("(e) not greyed either", row and row.notAvailable, nil)
+
+		-- End to end: the click actually queues the job, at zero wire.
+		click(row)
+		eq("(e) the click queues one job", #queued, 1)
+		eq("(e) for zero wire, the waiver reaching all the way to the action",
+			queued[1].wire, 0)
+
+		-- (f) THE SAME PAIR, PAST THE RANGE: a basement fixture and a machine
+		-- five floors up in the far corner of the house. linkSpan is 14 tiles
+		-- plus 5 floors of LINK_FLOOR_TILES, over the default range -- the
+		-- menu's row filter used to measure that and drop the row before
+		-- linkRefusal (which never calls a nested pair "far") was asked.
+		local highSq = square(6969, 5591, 4)
+		highSq.getRoom = function() return {} end
+		highSq.getBuilding = function() return house end
+		cells["6969,5591,4"] = highSq
+		local deepSq = square(6958, 5584, -1)
+		deepSq.getRoom = function() return {} end
+		deepSq.getBuilding = function() return basement end
+		cells["6958,5584,-1"] = deepSq
+		check("(f) sanity: the pair is past the range by the tile math",
+			CeroSecModules.linkSpan(6958, 5584, -1, 6969, 5591, 4)
+				> CeroSecModules.linkRange())
+		objects = { machine(6969, 5591, 4, "ksp-attic-01") }
+		row = freeRowFor(fixture("IsoLightSwitch", deepSq), "ksp-attic-01")
+		check("(f) a nested pair past the range still gets its free row",
+			row ~= nil)
+		eq("(f) and it is not greyed far", row and row.notAvailable, nil)
+
+		-- (g) CeroSec.FreeWiring: every cable is free, and only the nested
+		-- pair is worded "the same house". A cross-building cable at no cost
+		-- says the server waived it; the nested row keeps its own sentence.
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, FreeWiring = true } }
+		sameSq.getBuilding = function() return buildingB end
+		objects = { machine(30, 20, 0, "ksp-bare-01") }
+		row = freeRowFor(bareSwitch, "ksp-bare-01")
+		check("(g) a FreeWiring row is worded free", row ~= nil)
+		eq("(g) and its tooltip is the server's waiver, not the house's",
+			row and desc(row), "Tooltip_CeroSec_LinkDescNoWire(ksp-bare-01)")
+		objects = { machine(6960, 5585, 0, "ksp-house-01") }
+		row = freeRowFor(bareBasementFixture, "ksp-house-01")
+		eq("(g) the nested pair keeps the house's sentence under FreeWiring",
+			row and desc(row), "Tooltip_CeroSec_LinkDescFree(ksp-house-01)")
+
+		-- Nearest first still, when every price is 0: the hostname would put
+		-- aaa-far (18 tiles) ahead of zzz-near (2) if the price were the
+		-- only distance the sort knew.
+		objects = { machine(38, 20, 0, "aaa-far"), machine(22, 20, 0, "zzz-near") }
+		local ms = CeroSecLinkMenu.machines(bareSwitch)
+		eq("(g) two free rows", #ms, 2)
+		eq("(g) nearest first", ms[1] and ms[1].host, "zzz-near")
+
+		-- And a free cable's cut says nothing comes back, not "the 0 wire".
+		objects = { machine(30, 20, 0, "ksp-bare-01") }
+		check("(g) a free cable is run", CeroSecModules.linkOn(bareSwitch, 30, 20, 0, 0))
+		local cut = rowFor(bareSwitch, "ksp-bare-01", true)
+		eq("(g) its cut gives nothing back, and says so",
+			cut and desc(cut), "Tooltip_CeroSec_UnlinkDescFree(ksp-bare-01)")
+		CeroSecModules.unlinkOn(bareSwitch, 30, 20, 0)
+		sameSq.getBuilding = function() return buildingA end
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, RequireWiring = false } }
+
+		_G.getCell = nil
+	end
 
 	--
 	-- 7. THE KEY IS BUILT FROM THE WORD, and every key is a string that exists
@@ -5725,6 +5959,45 @@ do
 		CeroSecModules.LINKS_MAX)
 	eq("and a word with no number in its line asks for none",
 		CeroSecLinkMenu.numberFor("safehouse"), 0)
+
+	--
+	-- 8. CeroSec.LinkRange -- the tile cap is a live sandbox read now, not
+	-- the LINK_RANGE constant, so both what "far" prints and what the menu
+	-- itself offers move the day a server raises the option.
+	--
+	do
+		local hadSandbox = _G.SandboxVars
+		local hadObjects = objects
+		_G.SandboxVars = { CeroSec = { LinkRange = 45 } }
+		eq("far now prints the sandbox range, not the constant",
+			CeroSecLinkMenu.numberFor("far"), 45)
+
+		-- A machine 40 tiles from `post` is "never a line" under the fixed
+		-- 30. Raised to 45, it is in range. (`county`, at 50, is past
+		-- LINK_RANGE_MAX and so past anything the option can be set to.)
+		local mid = machine(10, 50, 0, "ksp-mid-05")
+		objects = { mid, county }
+		local found, far = false, false
+		local ms = CeroSecLinkMenu.machines(post)
+		for i = 1, #ms do
+			if ms[i].host == "ksp-mid-05" then found = true end
+			if ms[i].host == "ksp-far-09" then far = true end
+		end
+		check("raised to 45: CeroSecLinkMenu.machines() now offers it", found)
+		check("and the cable submenu carries a row for it",
+			rowFor(post, "ksp-mid-05") ~= nil)
+		eq("and not the one past the ceiling", far, false)
+
+		-- A value past the ceiling, which the slider cannot give but a save
+		-- or another mod can: read as the ceiling, and county at 50 is
+		-- still no line.
+		_G.SandboxVars = { CeroSec = { LinkRange = 999 } }
+		eq("999 prints the ceiling", CeroSecLinkMenu.numberFor("far"),
+			CeroSecModules.LINK_RANGE_MAX)
+		eq("and county at 50 is still no line", rowFor(post, "ksp-far-09"), nil)
+
+		_G.SandboxVars, objects = hadSandbox, hadObjects
+	end
 
 	_G.getText = realGetText
 
@@ -5745,11 +6018,16 @@ do
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreGenerator", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_GenreSet", 0 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_LinkTo", 3 },
+		{ "ContextMenu.json", "ContextMenu_CeroSec_LinkToFree", 2 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_Unlink", 1 },
 		{ "ContextMenu.json", "ContextMenu_CeroSec_UnlinkLoose", 0 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkDesc", 2 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkDescFree", 1 },
 		{ "Tooltip.json", "Tooltip_CeroSec_UnlinkDesc", 2 },
 		{ "Tooltip.json", "Tooltip_CeroSec_UnlinkLooseDesc", 2 },
+		{ "Tooltip.json", "Tooltip_CeroSec_LinkDescNoWire", 1 },
+		{ "Tooltip.json", "Tooltip_CeroSec_UnlinkDescFree", 1 },
+		{ "Tooltip.json", "Tooltip_CeroSec_UnlinkLooseDescFree", 1 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkFixture", 0 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkSafehouse", 0 },
 		{ "Tooltip.json", "Tooltip_CeroSec_LinkLinked", 0 },

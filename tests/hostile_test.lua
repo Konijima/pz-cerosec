@@ -852,6 +852,120 @@ do
 end
 
 --
+-- 8c2. The same flood, through BOTH descriptors of every command.
+--
+-- `g > o 2> e` in a loop: every call opens two files (runSimple, before g runs)
+-- and, when g is over, writes two (popFrame's queue, emptied before the next step
+-- by flushDone). So a command is two opens and two writes on top of what 8c pays,
+-- and the budget, the flat cost and the chunk ceiling must hold all the same --
+-- the invariants every step call is checked against above, and the chunk
+-- measured here as 8c measures it.
+--
+do
+	local machine, state, console = newMachine()
+	local LINES = 100
+	put(state, "/home/admin/lines", string.rep("y\n", LINES - 1) .. "y")
+	put(state, "/home/admin/both.sh",
+		"g() { cat /home/admin/lines; cat /home/admin/nosuch; }\n" ..
+		"while true; do g > o 2> e; done\n")
+
+	local realOpen, realWrite = CeroSecOS.openRedirect, CeroSecOS.writeRedirect
+	local opens, writes, worstChunk = {}, {}, 0
+	CeroSecOS.openRedirect = function(st, session, who, target, env)
+		opens[target.path] = (opens[target.path] or 0) + 1
+		return realOpen(st, session, who, target, env)
+	end
+	CeroSecOS.writeRedirect = function(st, session, who, redirect, text, env)
+		writes[redirect.path] = (writes[redirect.path] or 0) + 1
+		local n = 1
+		for _ in string.gmatch(text, "\n") do n = n + 1 end
+		if n > worstChunk then worstChunk = n end
+		return realWrite(st, session, who, redirect, text, env)
+	end
+
+	typeLine(system, machine, state, console, "sh both.sh")
+	local result = drive(machine, PASSES)
+	CeroSecOS.openRedirect, CeroSecOS.writeRedirect = realOpen, realWrite
+
+	flat("both descriptors", result)
+	timely("both descriptors", result)
+	note("both descriptors", result)
+	local o, e = opens["o"] or 0, opens["e"] or 0
+	check("the loop opened both files, many times (" .. o .. ", " .. e .. ")",
+		o > 10 and e > 10)
+	-- One open of each per call: the second descriptor is opened with the
+	-- first, never once per line or once per turn of the call.
+	check("and once each per call (" .. o .. ", " .. e .. ")", o - e >= 0 and o - e <= 1)
+	check("both files were written (" .. tostring(writes["o"]) .. ", " ..
+		tostring(writes["e"]) .. ")", (writes["o"] or 0) > 0 and (writes["e"] or 0) > 0)
+	-- A call writes its error file once, when it is over: never more writes
+	-- than opens, whatever the loop does.
+	check("the error file was written no more often than it was opened (" ..
+		tostring(writes["e"]) .. " of " .. e .. ")", (writes["e"] or 0) <= e)
+	check("no write carried more than the ceiling and one command (" ..
+		worstChunk .. " lines)", worstChunk <= CeroSecOS.JOB_OUT_MAX + LINES)
+	eq("and it is still running, on nothing but the budget",
+		CeroSecJobs.foreground(machine, console) ~= nil, true)
+	report[#report + 1] = string.format("  %-22s %d+%d opens, %d+%d writes",
+		"`> o 2> e` loop", o, e, writes["o"] or 0, writes["e"] or 0)
+end
+
+--
+-- 8c3. The same flood, from a function's own files INSIDE a pipeline stage.
+--
+-- `g > f 2> e | cat`: g's lines go into its files and not down the pipe, so
+-- the pipe's back-pressure no longer holds the stage, and jobStep's forty-line
+-- limiter asks the job and never a stage. pipeStep writes a stage's files at
+-- the same forty lines; without it a pass carries every line its budget
+-- affords -- three hundred here -- in one write, and a pass that never ended
+-- would grow the buffer for ever. It must end on the FILE's ceiling.
+--
+-- And `| true`: the reader is gone at once, but a stage writing into a file
+-- of its own is not writing into the pipe, so no SIGPIPE ends it (write(2))
+-- -- it floods its file exactly as under `| cat`, and on the same leash. And
+-- `x=$( )`: the call's own file wins over the capture, so the word's ceiling
+-- no longer ends it -- the file's must.
+--
+for _, shape in ipairs({ "g > f 2> e | cat", "g > f 2> e | true", "x=$(g > f 2> e)" }) do
+	local label = shape
+	local machine, state, console = newMachine()
+	local LINES = 100
+	put(state, "/home/admin/lines", string.rep("y\n", LINES - 1) .. "y")
+
+	local realWrite = CeroSecOS.writeRedirect
+	local writes, worstChunk = {}, 0
+	CeroSecOS.writeRedirect = function(st, session, who, redirect, text, env)
+		writes[redirect.path] = (writes[redirect.path] or 0) + 1
+		local n = 1
+		for _ in string.gmatch(text, "\n") do n = n + 1 end
+		if n > worstChunk then worstChunk = n end
+		return realWrite(st, session, who, redirect, text, env)
+	end
+
+	typeLine(system, machine, state, console,
+		"g() { while true; do cat /home/admin/lines; cat nosuch; done; }; " ..
+		shape)
+	local result = drive(machine, PASSES)
+	CeroSecOS.writeRedirect = realWrite
+
+	flat(label, result)
+	timely(label, result)
+	note(label, result)
+	check("both of the stage's files were written (" .. tostring(writes["f"]) ..
+		", " .. tostring(writes["e"]) .. ")",
+		(writes["f"] or 0) > 1 and (writes["e"] or 0) > 0)
+	check("no write carried more than the ceiling and one command (" ..
+		worstChunk .. " lines)", worstChunk <= CeroSecOS.JOB_OUT_MAX + LINES)
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/f")
+	check("the file holds what fitted (" .. #(node.data or "") .. " bytes)",
+		#(node.data or "") > 0 and #(node.data or "") <= CeroSecOS.MAX_FILE_BYTES)
+	eq("and the pipeline ended on the file's ceiling",
+		CeroSecJobs.foreground(machine, console), nil)
+	report[#report + 1] = string.format("  %-22s worst %4d lines/write, %d writes",
+		label, worstChunk, writes["f"] or 0)
+end
+
+--
 -- 8d. A `case` of forty patterns, in a loop (debts 2).
 --
 -- A case of forty alternatives does forty comparisons every time round, and each
@@ -1053,8 +1167,16 @@ do
 	-- before it held theirs -- a fifth clear, the way 1440 stood a fifth over 1299 --
 	-- and `late - early`, growth over nine hundred passes, which is the assertion
 	-- that catches a LEAK, did not move at all.
-	check("and the whole bench holds well under 2560K (" ..
-		string.format("%.0f", late) .. "K)", late < 2560)
+	--
+	-- A sixth time, for the same reason: 0.7.0 put a shell's worth of source
+	-- into the engine files -- IFS, set/unset/exec/trap and the ${...} forms,
+	-- brace groups and subshells, rmdir, expr, uname and printf's widths, the
+	-- 1993 wording table -- and the 261-case shell self-test table, which the
+	-- server file requires. Measured at 2560K, which is what 2560 was catching; 3072
+	-- holds it with the fifth of room every number before it had, and
+	-- `late - early` measured 0K over nine hundred passes.
+	check("and the whole bench holds well under 3072K (" ..
+		string.format("%.0f", late) .. "K)", late < 3072)
 	report[#report + 1] = string.format("  %-22s %.0fK after 100 passes, %.0fK after 1000",
 		"memory", early, late)
 	local _ = before
@@ -1552,7 +1674,9 @@ do
 			check("cron fired something", fired ~= nil)
 			eq("with the default PATH", fired.vars.PATH, CeroSecOS.DEFAULT_PATH)
 			eq("and the account's HOME", fired.vars.HOME, "/home/admin")
-			eq("and nothing else at all", fired.nvars, 2)
+			-- And IFS, which every sh starts with and nobody exports.
+			eq("and IFS at space, tab and newline", fired.vars.IFS, " \t\n")
+			eq("and nothing else at all", fired.nvars, 3)
 		end
 		for _ = 1, 10 do
 			_G.__now = _G.__now + CeroSec.JOB_PASS_MS
@@ -2631,7 +2755,7 @@ do
 	local found, reason, walked =
 		CeroSecOS.lookupPath(state, system:sessionOf(console), "ls", forged)
 	eq("the walk finds nothing past the ceiling", found, nil)
-	eq("and says so", reason, "command not found")
+	eq("and says so", reason, "not found")
 	eq("having looked in exactly the ceiling's worth of directories", walked,
 		CeroSecOS.MAX_PATH_DIRS)
 
@@ -2650,7 +2774,7 @@ do
 	note("forged long PATH", result)
 
 	check("every iteration said the same thing",
-		string.find(console.lines[#console.lines] or "", "command not found", 1, true) ~= nil)
+		string.find(console.lines[#console.lines] or "", "not found", 1, true) ~= nil)
 	check("the console never kept more than its hundred lines",
 		#console.lines <= CeroSec.CONSOLE_MAX)
 	check("the machine still boots", CeroSecOS.validate(state) == true)
@@ -2696,7 +2820,7 @@ do
 
 	check("it is still running", job ~= nil and not CeroSecOS.jobIsOver(job))
 	check("saying the same thing every time round",
-		string.find(console.lines[#console.lines] or "", "too many levels", 1, true) ~= nil)
+		string.find(console.lines[#console.lines] or "", "Too many levels", 1, true) ~= nil)
 	check("the console never kept more than its hundred lines",
 		#console.lines <= CeroSec.CONSOLE_MAX)
 	check("the machine still boots with the loop on its disk",
@@ -3311,7 +3435,7 @@ do
 	-- every byte of it, and the write was weighed like any other.
 	local refused = false
 	for i = 1, #console.lines do
-		if string.find(console.lines[i], "file too large", 1, true) ~= nil then
+		if string.find(console.lines[i], "File too large", 1, true) ~= nil then
 			refused = true
 		end
 	end
@@ -3457,6 +3581,32 @@ do
 	-- five times the budget in one pass.
 	check("and the loop is still running (" .. job.steps .. " steps)",
 		not CeroSecOS.jobIsOver(job))
+end
+
+--
+-- 22f. ${x##pattern} in a loop, on the widest value a variable holds.
+--
+-- A trim is a walk of the value for every piece of its pattern
+-- (CeroSecOSVM's trimRun), capped at CeroSecOS.MAX_TRIM_ITEMS pieces and
+-- charged at grep's rate. Trying every cut of the value against globMatch
+-- instead -- the first way it was written -- cost 1.1 s for ONE of these
+-- over a kilobyte of "a", inside one step: the one expansion that could
+-- stall a server with no loop to charge.
+--
+do
+	local machine, state, console = newMachine()
+	local pat = string.rep("*[a]", CeroSecOS.MAX_TRIM_ITEMS / 2 - 1) .. "*[b]"
+	put(state, "/home/admin/grind.sh",
+		"x=" .. string.rep("a", 960) ..
+		"\nwhile true; do y=${x##" .. pat .. "}; y=${x%%" .. pat .. "}; done\n")
+	local job = typeLine(system, machine, state, console, "sh /home/admin/grind.sh")
+	local trimmed = drive(machine, PASSES, CeroSec.JOB_PASS_MS)
+	flat("a trim over a maximal value", trimmed)
+	timely("a trim over a maximal value", trimmed)
+	note("trim, 960 bytes", trimmed)
+	check("and the loop is still running (" .. job.steps .. " steps)",
+		not CeroSecOS.jobIsOver(job))
+	eq("having said nothing", #console.lines, 0)
 end
 
 --
@@ -4200,6 +4350,262 @@ do
 	CeroSecDevices.invalidate()
 	_G.instanceof = hadInstanceof
 	_G.__world, _G.__now, _G.SandboxVars = hadWorld, hadNow, hadSandbox
+end
+
+--
+-- A login is a new shell, and $! is the last one's (SCeroSecSystem:beginSession
+-- at the console, CeroSecNet.logIn down a line). Here because this file is the
+-- one that loads both.
+--
+do
+	local _, state, console = newMachine()
+	console.lastBg = 7
+	console.status = 3
+	SCeroSecSystem.beginSession(SCeroSecSystem, state, console,
+		{ user = "admin", cwd = "/home/admin" })
+	eq("a login at the glass forgets the last shell's $!", console.lastBg, nil)
+	eq("as it forgets its $?", console.status, nil)
+	local far = CeroSec.newConsole()
+	far.lastBg = 9
+	CeroSecNet.logIn(nil, { mirrorOS = function() end }, state,
+		{ console = far, quiet = true, line = "ttyp0" },
+		{ name = "admin", home = "/home/admin" }, nil)
+	eq("and so does one down a line", far.lastBg, nil)
+end
+
+--
+-- 28. A hostile IFS, splitting a word of nothing but delimiters (rung 6b)
+--
+-- Every non-whitespace IFS byte delimits on its own (CeroSecOSVM's addSplit),
+-- so a value that is nothing else is the worst shape splitting has: about a
+-- thousand fields out of one MAX_VAR_BYTES-sized word, every one of them
+-- empty. What this asks is whether that walk stays flat and inside budget,
+-- the same question 21's forged PATH asked of the walk that follows it.
+--
+do
+	local machine, state, console = newMachine()
+	-- The word itself is one literal token to the parser (no whitespace in
+	-- it), so it is set into a variable first: only an UNQUOTED EXPANSION's
+	-- result ever meets addSplit, script text never does.
+	local forged = string.rep(":", CeroSecOS.MAX_VAR_BYTES)
+	put(state, "/home/admin/ifsbomb.sh",
+		"IFS=:\nx=" .. forged .. "\nfor i in $x; do test 1 = 1; done\n")
+	local job = typeLine(system, machine, state, console, "sh ifsbomb.sh")
+
+	local result = drive(machine, 400)
+	flat("a word split into a thousand empty fields", result)
+	timely("a word split into a thousand empty fields", result)
+	note("a word split into a thousand empty fields", result)
+
+	check("the machine still boots", CeroSecOS.validate(state) == true)
+end
+
+-- A file's last line carries its newline (STATE_VERSION 3), and two new
+-- shapes of work came with it.
+--
+-- cat GLUES an open last line onto the next file's first, which is a string
+-- that grows with every file on the line: sixty copies of a 4K file with no
+-- newline in it is one quarter-megabyte line, built by concatenation. It is
+-- the terminal's to fold and the scheduler's to pace, and it must be neither a
+-- stall nor a line past the screen's width.
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/big", string.rep("y", CeroSecOS.MAX_FILE_BYTES))
+	local names = {}
+	for i = 1, 60 do names[i] = "big" end
+	put(state, "/home/admin/glue.sh",
+		"while true; do cat " .. table.concat(names, " ") .. "; done\n")
+	local job = typeLine(system, machine, state, console, "sh glue.sh")
+	local result = drive(machine, 300)
+	flat("cat glues 60 open 4K files", result)
+	timely("cat glues 60 open 4K files", result)
+	check("the gluing job is alive and merely slow", not CeroSecOS.jobIsOver(job))
+	for i = 1, #console.lines do
+		check("no glued line passes the screen's width",
+			#tostring(console.lines[i]) <= CeroSecOS.COLS + 16)
+	end
+	note("cat glues open 4K", result)
+end
+
+-- The MIGRATION walks every file on a machine once: a machine at its node
+-- ceiling, every file open and 4K-1 long, is the most it can be asked to do,
+-- and it is asked on the way in, before the first command. So it has a wall
+-- ceiling of its own, scaled by the calibration like every other.
+do
+	local state = CeroSecOS.newState("ksp")
+	local nodes = CeroSecOS.usage(state)
+	local home = state.fs.children.home.children.admin
+	local dirN, made = 0, 0
+	local dir = nil
+	while nodes < CeroSecOS.MAX_NODES do
+		if dir == nil or CeroSecOS.countEntries(dir) >= CeroSecOS.MAX_DIR_ENTRIES - 1 then
+			dirN = dirN + 1
+			dir = CeroSecOS.newDir("admin", 755)
+			home.children["d" .. dirN] = dir
+			nodes = nodes + 1
+		else
+			made = made + 1
+			dir.children["f" .. made] = CeroSecOS.newFile("admin", 644,
+				string.rep("z\n", 2046) .. "zz")
+			nodes = nodes + 1
+		end
+	end
+	state.v = 2
+	local t0 = os.clock()
+	CeroSecOS.migrate(state, "ksp")
+	local ms = (os.clock() - t0) * 1000
+	local limit = ceiling(60)
+	check("a full machine migrates under " .. string.format("%.1f", limit) ..
+		" ms (" .. string.format("%.2f", ms) .. ")", ms < limit)
+	eq("and it is at this build's shape", state.v, CeroSecOS.STATE_VERSION)
+	-- The byte is paid out of the disk's room and never past it: this machine
+	-- is far over its quota already (a save can be), so it has no room and
+	-- the walk closes nothing at all -- not even the smallest file.
+	local closed = 0
+	for name, d in pairs(home.children) do
+		if string.sub(name, 1, 1) == "d" and d.type == "dir" then
+			for _, f in pairs(d.children) do
+				if string.sub(f.data, -1) == "\n" then closed = closed + 1 end
+			end
+		end
+	end
+	eq("over its quota already, it closed nothing", closed, 0)
+	report[#report + 1] = string.format("  %-22s %6.2f ms for %d files", "migration v3", ms, made)
+end
+
+-- 29. expr handed a wall of brackets. Each ( is a level of Lua recursion in
+-- exprPrimary, and a file holds 4096 bytes and a word MAX_VAR_BYTES, but a
+-- line may expand a word several times: four copies of 256 brackets is a
+-- thousand levels of recursion inside one job step. yacc ran out of state
+-- stack first, and so does this -- EXPR_DEPTH, and yaccpar's own "yacc
+-- stack overflow" -- in a pass that costs what any other pass costs.
+--
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/deep.sh", "a='('; b=')'; i=0\n"
+		.. "while [ $i -lt 8 ]; do a=\"$a $a\"; b=\"$b $b\"; i=$((i+1)); done\n"
+		.. "expr $a $a $a $a 1 $b $b $b $b\necho status $?\n")
+	typeLine(system, machine, state, console, "sh deep.sh")
+	local result = drive(machine, 20)
+	timely("expr brackets", result)
+	note("expr brackets", result)
+	local said = table.concat(console.lines, "|")
+	check("it answers yacc's own words (" .. string.sub(said, 1, 80) .. ")",
+		string.find(said, "yacc stack overflow", 1, true) ~= nil)
+	check("and the script goes on with $? 2",
+		string.find(said, "status 2", 1, true) ~= nil)
+end
+
+-- 30. Numbers nobody can hold. Every numeric path that reads a player's
+-- word -- printf's %d %x %o and its widths, $(( )), expr, test -eq, sleep,
+-- cut's list, tail's count, kill -l, read -n, shift -- handed infinity, NaN
+-- and four hundred nines. `printf %x 1e999` was a digit loop over an
+-- infinity: one command step that never returned, which no budget can stop
+-- because the budget is only asked BETWEEN steps. Each must answer, and
+-- answer what 4.4BSD answered (CeroSecOS.strtol, CeroSecOSVM.lua).
+--
+do
+	local machine, state, console = newMachine()
+	local nines = string.rep("9", 400)
+	put(state, "/home/admin/big.sh", "n=" .. nines .. "\n"
+		.. "printf '%x\\n' 1e999; echo s$?\n"
+		.. "printf '%o\\n' $n; echo s$?\n"
+		.. "printf '%x %d\\n' inf; printf '%d\\n' nan; printf '%999999999999999999999d|\\n' 1\n"
+		.. "echo $(( n * n )) $(( n + 1 )) $(( -n - 1 ))\n"
+		.. "expr $n \\* $n; expr $n / 7\n"
+		.. "test inf -eq inf; echo t$?; test $n -eq 1; echo t$?\n"
+		.. "sleep inf; sleep nan; echo w$?\n"
+		.. "echo abc | cut -c 1-$n; echo abc | cut -c 1-99999999\n"
+		.. "echo x | tail -n 1e999; echo y | tail -n $n; echo z | head -n $n\n"
+		.. "kill -l $n; set -- a; shift $n; echo sh$?\n"
+		.. "echo done\n"
+		.. "echo $(( 1e999 ))\n")
+	typeLine(system, machine, state, console, "sh big.sh")
+	local result = drive(machine, 80)
+	timely("numbers nobody can hold", result)
+	note("big numbers", result)
+	local said = table.concat(console.lines, "|")
+	local function says(what, text)
+		check(what .. " (" .. string.sub(said, 1, 60) .. "...)",
+			string.find(said, text, 1, true) ~= nil)
+	end
+	says("printf refuses 1e999 as getlong did", "printf: 1e999: illegal number|s1")
+	-- The line is wider than the glass: the refusal wraps after "too".
+	says("and four hundred nines as strtol's ERANGE", "Result too| large|s1")
+	-- inf and nan do not start with one of "+-.0123456789", so getlong
+	-- reads them as asciicode(): 'i' and 'n', and a missing operand is 0.
+	says("inf and nan are characters to printf", "69 0|110")
+	says("$(( )) holds at the top of the word",
+		"9007199254740991 9007199254740991 -9007199254740991")
+	says("and 1e999 is a 1 and then junk", "big.sh: line 13: bad arithmetic")
+	says("expr holds there too", "9007199254740991|1286742750677284")
+	says("test refuses inf", "test: inf: expected integer|t2")
+	says("and says overflow past the word", "9999: overflow|t2")
+	-- sleep.c's atoi() reads neither as a number: a sleep of nought, and 0.
+	says("sleep takes neither", "overflow|t2|w0")
+	says("cut refuses a list past its line", "cut: 1-99999999: invalid list")
+	says("tail refuses 1e999, holds the nines", "tail: usage")
+	says("and the lines still come", "y|z")
+	says("kill -l on the nines is nosig", "; valid signals:")
+	says("shift past $# is 1", "sh1")
+	says("and the script reaches its end", "done")
+end
+
+--
+-- 31. Groups and subshells. A ( list ) is a frame of the job and not a job of
+-- its own, so a loop inside one spends the same budget as a loop anywhere;
+-- and entering one copies the variables, the exported set and the functions
+-- (at most MAX_VARS of the first two), which a loop of them must not turn
+-- into a pass that climbs. A function that calls itself in brackets meets the
+-- frame ceiling like any recursion.
+--
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/subspin.sh", "( { while true; do x=1; done; } )\n")
+	typeLine(system, machine, state, console, "sh subspin.sh")
+	local result = drive(machine, PASSES)
+	flat("loop in a subshell", result)
+	timely("loop in a subshell", result)
+	note("loop in a subshell", result)
+	local job = CeroSecJobs.foreground(machine, console)
+	check("the subshell loop is still running", job ~= nil)
+	check("having spent its steps (" .. (job and job.steps or 0) .. ")",
+		job ~= nil and job.steps > 50000)
+	eq("and having said nothing", #console.lines, 0)
+end
+
+do
+	local machine, state, console = newMachine()
+	local lines = {}
+	for i = 1, 60 do lines[#lines + 1] = "v" .. i .. "=" .. string.rep("x", 40) end
+	for i = 1, 12 do lines[#lines + 1] = "f" .. i .. "() { echo " .. i .. "; }" end
+	-- Nothing in the brackets but the copy itself: a function call with a
+	-- redirect costs what it costs anywhere, and is not what is measured.
+	lines[#lines + 1] = "while true; do ( x=1 ); done"
+	put(state, "/home/admin/subcopy.sh", table.concat(lines, "\n") .. "\n")
+	typeLine(system, machine, state, console, "sh subcopy.sh")
+	local result = drive(machine, PASSES)
+	flat("subshell copies", result)
+	timely("subshell copies", result)
+	note("subshell copies", result)
+	local job = CeroSecJobs.foreground(machine, console)
+	check("the subshell copies still run", job ~= nil)
+	eq("and said nothing", #console.lines, 0)
+end
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/subrec.sh", "f() { ( f ); }\nf\necho after $?\n")
+	local job = typeLine(system, machine, state, console, "sh subrec.sh")
+	local result = drive(machine, PASSES)
+	flat("subshell recursion", result)
+	timely("subshell recursion", result)
+	note("subshell recursion", result)
+	check("the recursion ended (" .. tostring(job.state) .. ")", CeroSecOS.jobIsOver(job))
+	eq("and the machine is running nothing", #CeroSecJobs.book(machine).list, 0)
+	local said = table.concat(console.lines, "|")
+	check("saying why (" .. said .. ")", string.find(said, "too deeply nested", 1, true) ~= nil)
 end
 
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",

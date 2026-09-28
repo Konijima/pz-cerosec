@@ -18,6 +18,7 @@
     "ContextMenu_CeroSec_LookUpNumbers": "Look up numbers",
     "ContextMenu_CeroSec_Link": "Link to computer",
     "ContextMenu_CeroSec_LinkTo": "%1, %2 tiles, %3 wire",
+    "ContextMenu_CeroSec_LinkToFree": "%1, %2 tiles, free",
     "ContextMenu_CeroSec_Unlink": "Unlink from %1",
     "ContextMenu_CeroSec_UnlinkLoose": "Unlink loose cable",
     "ContextMenu_CeroSec_Fixture": "CeroSec: %1",

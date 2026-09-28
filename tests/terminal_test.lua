@@ -620,43 +620,26 @@ do
 	eq("at the end: and that is the block width", width, 1)
 end
 
--- Getting closer counts, even while it is still refused. A file the shell wrote
--- can hold a row wider than the screen (writeFile has no width rule -- the
--- width belongs to the glass, not to the disk), and an editor that undid every
--- keystroke on such a buffer would undo the backspaces too and could never fix
--- what it had opened.
+-- A line wider than the screen is legal now: the editor wraps it onto
+-- continuation screen rows instead of refusing it, the way vi's default
+-- `wrap` folds a long line rather than losing what runs past the edge. A
+-- file the shell wrote can already hold a row wider than the screen
+-- (writeFile has no width rule -- the width belongs to the glass, not to the
+-- disk), and there is no longer anything for the editor to undo about that.
 do
 	local wide = string.rep("a", 70)
-	eq("a 70 character row is refused", CeroSec.editRefusal(wide),
-		"Line too long: 60 characters")
-	check("and it is over the line by ten", CeroSec.editBadness(wide) == 10)
+	eq("a 70 character row is legal", CeroSec.editRefusal(wide), nil)
+	check("and it carries no badness at all", CeroSec.editBadness(wide) == 0)
 	check("legal text has no badness at all", CeroSec.editBadness("ok\nfine") == 0)
 	check("an empty buffer has none", CeroSec.editBadness("") == 0)
 	check("what is not a string is as bad as it gets",
 		CeroSec.editBadness(nil) > CeroSec.EDIT_MAX_BYTES)
-
-	-- Every backspace strictly helps, all the way down to legal.
-	local text, steps = wide, 0
-	while CeroSec.editRefusal(text) ~= nil do
-		local shorter = string.sub(text, 1, #text - 1)
-		check("a backspace at " .. #text .. " gets closer",
-			CeroSec.editBadness(shorter) < CeroSec.editBadness(text))
-		text, steps = shorter, steps + 1
-		check("and never runs away", steps <= 70)
-	end
-	eq("ten backspaces make it legal", steps, 10)
-	eq("and what is left is a full row", #text, CeroSec.EDIT_MAX_LINE)
-
-	-- Typing more never does.
-	check("the 71st character gets no closer",
-		CeroSec.editBadness(wide .. "b") >= CeroSec.editBadness(wide))
-	-- Two long rows: fixing one of them helps even though the other is still bad.
+	-- Two long rows are still no worse than one: length alone is never bad.
 	local two = string.rep("a", 70) .. "\n" .. string.rep("b", 70)
-	check("two long rows are worth twenty", CeroSec.editBadness(two) == 20)
-	check("shortening one of them helps",
-		CeroSec.editBadness(string.sub(two, 2)) < CeroSec.editBadness(two))
+	check("two long rows carry no badness either", CeroSec.editBadness(two) == 0)
 
-	-- The byte ceiling behaves the same way.
+	-- The byte ceiling still behaves the way it always did: over it is bad,
+	-- and deleting still helps.
 	local big = string.rep("x\n", CeroSec.EDIT_MAX_BYTES)
 	check("well over the ceiling", CeroSec.editBadness(big) > 0)
 	check("and deleting still helps",
@@ -665,6 +648,157 @@ do
 	-- A control byte is badness of its own, and losing it helps.
 	check("a control byte is bad", CeroSec.editBadness("a\1b") == 1)
 	check("and dropping it fixes it", CeroSec.editBadness("ab") == 0)
+end
+
+-- Folding one buffer line to screen width: editWrap.
+do
+	local COLS = CeroSec.COLS
+	eq("an empty line is one empty segment", #CeroSec.editWrap("", COLS), 1)
+	eq("and that segment is empty", CeroSec.editWrap("", COLS)[1], "")
+
+	local exact = string.rep("x", COLS)
+	eq("a line exactly cols long is one segment, not two",
+		#CeroSec.editWrap(exact, COLS), 1)
+	eq("and it is the whole line", CeroSec.editWrap(exact, COLS)[1], exact)
+
+	local over = string.rep("x", COLS + 1)
+	eq("one character over cols is two segments", #CeroSec.editWrap(over, COLS), 2)
+	eq("the first is a full row", CeroSec.editWrap(over, COLS)[1], string.rep("x", COLS))
+	eq("the second is the overflow", CeroSec.editWrap(over, COLS)[2], "x")
+
+	local three = string.rep("x", COLS * 2 + 5)
+	eq("two full rows and a remainder is three segments",
+		#CeroSec.editWrap(three, COLS), 3)
+	eq("the third segment is the remainder", #CeroSec.editWrap(three, COLS)[3], 5)
+end
+
+-- Flattening every buffer line into ordered screen rows: editRows.
+do
+	local COLS = CeroSec.COLS
+	local text = "short\n" .. string.rep("x", COLS + 10) .. "\nend"
+	local rows = CeroSec.editRows(text, COLS)
+	eq("three buffer lines fold to four screen rows", #rows, 4)
+	eq("row 1 is the short line, whole", rows[1].text, "short")
+	eq("row 1 is line 1 of the buffer", rows[1].line, 1)
+	eq("row 2 is the first segment of the wide line", rows[2].text, string.rep("x", COLS))
+	eq("row 2 is line 2 of the buffer", rows[2].line, 2)
+	eq("row 3 is the overflow of the wide line", rows[3].text, string.rep("x", 10))
+	eq("row 3 is still line 2", rows[3].line, 2)
+	eq("row 4 is the last line, whole", rows[4].text, "end")
+	eq("row 4 is line 3 of the buffer", rows[4].line, 3)
+
+	-- The seg field: which segment of its own buffer line a screen row is,
+	-- 1-based. seg == 1 is what editScreen puts the line number on -- vi's
+	-- `number` shows it once per buffer line, not once per screen row.
+	eq("the short line is segment 1 of its own line", rows[1].seg, 1)
+	eq("the wide line's first row is its segment 1", rows[2].seg, 1)
+	eq("the wide line's overflow is its segment 2", rows[3].seg, 2)
+	eq("the last line is segment 1 of its own line", rows[4].seg, 1)
+
+	local threeSegs = string.rep("y", COLS * 2 + 5)
+	local segRows = CeroSec.editRows(threeSegs, COLS)
+	eq("a line wrapping into three segments is three rows", #segRows, 3)
+	eq("segment 1", segRows[1].seg, 1)
+	eq("segment 2", segRows[2].seg, 2)
+	eq("segment 3", segRows[3].seg, 3)
+end
+
+-- The line-number gutter width: vi's numberwidth, three columns minimum,
+-- growing to fit the buffer's highest line number.
+eq("one line fits in three columns", CeroSec.editGutterWidth(1), 3)
+eq("ninety-nine still fits in three", CeroSec.editGutterWidth(99), 3)
+eq("a hundred is still three digits", CeroSec.editGutterWidth(100), 3)
+eq("nine hundred ninety-nine is still three digits", CeroSec.editGutterWidth(999), 3)
+eq("a thousand needs four columns", CeroSec.editGutterWidth(1000), 4)
+eq("nonsense input is the three-column floor", CeroSec.editGutterWidth("x"), 3)
+eq("zero is the three-column floor", CeroSec.editGutterWidth(0), 3)
+
+-- Mapping a buffer offset onto the flattened screen grid: editScreenCursor.
+do
+	local COLS = CeroSec.COLS
+	-- A single line long enough to need more than seventeen screen rows on
+	-- its own: the buffer ceiling is 4096 bytes, so one line can need about
+	-- sixty-nine of them, and scrolling within it has to work like scrolling
+	-- across several buffer lines does. Exactly three full rows, so the end
+	-- of the line lands exactly on a wrap boundary.
+	local long = string.rep("x", COLS * 3)
+	local screenRow, col = CeroSec.editScreenCursor(long, 0, COLS)
+	eq("offset 0 is screen row 1", screenRow, 1)
+	eq("and column 0", col, 0)
+
+	screenRow, col = CeroSec.editScreenCursor(long, COLS, COLS)
+	eq("offset cols is the start of the second segment", screenRow, 2)
+	eq("at column 0 of it", col, 0)
+
+	-- The end of a line that is a whole number of rows long: column cols of
+	-- the last segment is one cell past the screen, so the cursor is at the
+	-- start of the row below -- the empty row editRows opens for it when it
+	-- is handed the same offset (editPastEdge), and only then.
+	screenRow, col = CeroSec.editScreenCursor(long, #long, COLS)
+	eq("the end of a full wrapped line is the row below it", screenRow, 4)
+	eq("at column 0 of it, never column cols", col, 0)
+	eq("that row is drawn for the cursor", #CeroSec.editRows(long, COLS, #long), 4)
+	eq("and it is empty", CeroSec.editRows(long, COLS, #long)[4].text, "")
+	eq("a continuation of the same line, so its gutter is blank",
+		CeroSec.editRows(long, COLS, #long)[4].seg, 4)
+	eq("without the cursor there is no such row", #CeroSec.editRows(long, COLS), 3)
+	eq("nor with the cursor elsewhere on the line",
+		#CeroSec.editRows(long, COLS, #long - 1), 3)
+
+	-- An offset mid-way through the last segment is not clamped.
+	screenRow, col = CeroSec.editScreenCursor(long, #long - 1, COLS)
+	eq("one short of the end is still the last segment", screenRow, 3)
+	eq("one column short of the phantom edge", col, COLS - 1)
+
+	-- Earlier buffer lines' wrap counts correctly offset a later line's
+	-- screen-row numbers: line 1 folds to 2 rows, line 2 is one row of its
+	-- own, so line 3 starts at row 4.
+	local multi = string.rep("a", COLS + 1) .. "\nb\nccc"
+	eq("row 4 is where the third buffer line starts",
+		(select(1, CeroSec.editScreenCursor(multi, #multi - 3, COLS))), 4)
+	screenRow, col = CeroSec.editScreenCursor(multi, #multi, COLS)
+	eq("and its own end is offset by everything before it", screenRow, 4)
+	eq("at its own, unwrapped, end column", col, 3)
+
+	-- The editor's own width with a three-digit gutter, the one the review
+	-- caught: a line exactly as wide as the text area, cursor after it.
+	local W = COLS - CeroSec.editGutterWidth(1) - 1
+	local full = string.rep("x", W)
+	screenRow, col = CeroSec.editScreenCursor(full, W, W)
+	eq("exact width, cursor at the end: the row below", screenRow, 2)
+	eq("exact width, cursor at the end: column 0", col, 0)
+	local shown = CeroSec.editScreen(full, 1, "/a.txt", nil, nil, W)
+	eq("exact width: the text row is drawn whole",
+		shown[2], "  1 " .. full)
+	eq("exact width: the cursor's row is drawn, gutter blank", shown[3],
+		string.rep(" ", CeroSec.editGutterWidth(1) + 1))
+	eq("without the cursor, no such row",
+		CeroSec.editScreen(full, 1, "/a.txt", nil, nil)[3], "")
+
+	-- Backspace across the fold: one character shorter, the extra row goes
+	-- and the cursor is right after the last character, on the one row.
+	local less = string.rep("x", W - 1)
+	screenRow, col = CeroSec.editScreenCursor(less, W - 1, W)
+	eq("one short: the cursor is back on row 1", screenRow, 1)
+	eq("one short: after the last character", col, W - 1)
+	eq("one short: no extra row", #CeroSec.editRows(less, W, W - 1), 1)
+
+	-- The cursor mid-way along an exact-width line opens nothing.
+	eq("exact width, cursor inside: one row", #CeroSec.editRows(full, W, 3), 1)
+	-- An empty line is never past the edge.
+	eq("empty line: no extra row", #CeroSec.editRows("", W, 0), 1)
+	eq("empty line: row 1", (CeroSec.editScreenCursor("", 0, W)), 1)
+
+	-- The next buffer line moves down only while the cursor is past the edge.
+	local two = full .. "\nb"
+	eq("two lines, cursor past the edge: line 2 is on row 3",
+		CeroSec.editRows(two, W, W)[3].line, 2)
+	eq("two lines, cursor past the edge: row 2 is the empty one",
+		CeroSec.editRows(two, W, W)[2].text, "")
+	eq("two lines, cursor on line 2: line 2 is on row 2",
+		CeroSec.editRows(two, W, #two)[2].line, 2)
+	screenRow, col = CeroSec.editScreenCursor(two, #two, W)
+	eq("two lines, cursor on line 2: row 2", screenRow, 2)
 end
 
 --
@@ -769,49 +903,117 @@ eq("no message is an empty line", CeroSec.editMessage(nil), "")
 eq("a message is scrubbed like any other line", CeroSec.editMessage("a\1b"), "ab")
 eq("and cut to the screen", #CeroSec.editMessage(string.rep("x", 90)), CeroSec.COLS)
 
--- The whole screen: twenty rows, always, whatever the buffer is.
+-- The whole screen: twenty rows, always, whatever the buffer is. The 17
+-- buffer rows now carry a left gutter, vi's `:set number`: a right-aligned
+-- line number and a space on a wrapped line's first screen row, and a blank
+-- gutter of the same width on every continuation row -- the number is what
+-- tells a wrap continuation apart from a genuinely new line.
 do
 	local text = ""
 	for i = 1, 40 do text = text .. "line " .. i .. "\n" end
+	local gutter40 = CeroSec.editGutterWidth(40)
+	eq("forty lines still fits the three-column floor", gutter40, 3)
 	local screen = CeroSec.editScreen(text, 1, "/a.txt", "modified", "Saved 412 bytes")
 	eq("twenty rows", #screen, CeroSec.ROWS)
 	eq("row 1 is the title bar", screen[1], CeroSec.editTitle("/a.txt", "modified"))
-	eq("row 2 is the first line of the buffer", screen[2], "line 1")
-	eq("row 18 is the seventeenth", screen[1 + ROWS], "line 17")
+	eq("row 2 is the first line of the buffer, numbered",
+		screen[2], CeroSec.padLeft("1", gutter40) .. " " .. "line 1")
+	eq("row 18 is the seventeenth, numbered",
+		screen[1 + ROWS], CeroSec.padLeft("17", gutter40) .. " " .. "line 17")
 	eq("row 19 is the key bar", screen[19], CeroSec.editKeys())
 	eq("row 20 is the message", screen[20], "Saved 412 bytes")
 
 	local scrolled = CeroSec.editScreen(text, 24, "/a.txt", nil, nil)
 	eq("scrolled: still twenty rows", #scrolled, CeroSec.ROWS)
-	eq("scrolled: the top row of the view", scrolled[2], "line 24")
-	eq("scrolled: the last line of the file", scrolled[2 + 40 - 24], "line 40")
-	eq("scrolled: past the end is an empty row", scrolled[2 + 40 - 24 + 2], "")
+	eq("scrolled: the top row of the view, numbered",
+		scrolled[2], CeroSec.padLeft("24", gutter40) .. " " .. "line 24")
+	eq("scrolled: the last line of the file, numbered",
+		scrolled[2 + 40 - 24], CeroSec.padLeft("40", gutter40) .. " " .. "line 40")
 	eq("scrolled: the message row is empty", scrolled[20], "")
 
 	local empty = CeroSec.editScreen("", 1, "/a.txt", nil, nil)
+	local gutter1 = CeroSec.editGutterWidth(1)
 	eq("an empty buffer is still twenty rows", #empty, CeroSec.ROWS)
-	for i = 2, 18 do eq("and row " .. i .. " is empty", empty[i], "") end
+	eq("row 2 exists -- one buffer line -- and carries its number",
+		empty[2], CeroSec.padLeft("1", gutter1) .. " ")
+	for i = 3, 18 do
+		eq("row " .. i .. " is past the end: no gutter, no text", empty[i], "")
+	end
 
-	-- No row of the screen is ever wider than the screen.
+	-- No row of the screen is ever wider than the screen. Still true, now by
+	-- wrapping rather than by clipping, with a gutter-dependent width eaten
+	-- out of the fixed sixty columns rather than added to them.
 	local wide = CeroSec.editScreen(string.rep("x", 400), 1, string.rep("p", 400), "modified", string.rep("m", 400))
 	for i = 1, #wide do
 		eq("row " .. i .. " fits the screen", #wide[i] <= CeroSec.COLS, true)
 	end
+
+	-- editScreen's top is now a screen row, not a buffer line: a single
+	-- buffer line long enough to fill the whole seventeen-row window and
+	-- more scrolls within itself exactly like several short lines would.
+	-- Each block is its own digit, so the segments can be told apart. The
+	-- wrap width is COLS minus the one-line gutter, not COLS itself.
+	local cols1 = CeroSec.COLS - gutter1 - 1
+	local single = ""
+	for i = 1, 20 do single = single .. string.rep(tostring(i % 10), cols1) end
+	local first = CeroSec.editScreen(single, 1, "/a.txt", nil, nil)
+	eq("row 2 is the line's first segment, numbered",
+		first[2], CeroSec.padLeft("1", gutter1) .. " " .. string.rep("1", cols1))
+	eq("row 18 is the seventeenth segment: still line 1, blank gutter",
+		first[1 + ROWS], string.rep(" ", gutter1 + 1) .. string.rep("7", cols1))
+
+	local scrolledSingle = CeroSec.editScreen(single, 4, "/a.txt", nil, nil)
+	eq("scrolled within one line: row 2 is the fourth segment, blank gutter",
+		scrolledSingle[2], string.rep(" ", gutter1 + 1) .. string.rep("4", cols1))
+	eq("row 2 changed, exactly as scrolling several short lines would",
+		scrolledSingle[2] ~= first[2], true)
+	eq("past the end of even a very long line, the row is empty",
+		CeroSec.editScreen(single, 20, "/a.txt", nil, nil)[1 + ROWS], "")
+end
+
+-- A multi-line buffer with one wrapped line numbers by BUFFER line, not by
+-- a running screen-row count: two segments of the same buffer line both
+-- belong to that one number, and only the first shows it.
+do
+	local COLS = CeroSec.COLS
+	local gutter = CeroSec.editGutterWidth(3)
+	local cols = COLS - gutter - 1
+	local wide = string.rep("w", cols + 5)
+	local text = "one\n" .. wide .. "\nthree"
+	local screen = CeroSec.editScreen(text, 1, "/a.txt", nil, nil)
+	eq("row 2 is buffer line 1, numbered 1", screen[2],
+		CeroSec.padLeft("1", gutter) .. " " .. "one")
+	eq("row 3 is buffer line 2's first segment, numbered 2", screen[3],
+		CeroSec.padLeft("2", gutter) .. " " .. string.rep("w", cols))
+	eq("row 4 is buffer line 2's overflow: same line, blank gutter", screen[4],
+		string.rep(" ", gutter + 1) .. string.rep("w", 5))
+	eq("row 5 is buffer line 3, numbered 3 -- not 4", screen[5],
+		CeroSec.padLeft("3", gutter) .. " " .. "three")
+
+	-- Scrolling to put the wrapped line's first segment on top of the window
+	-- (screen row 2 of the flattened grid: "one" is row 1, the wide line's
+	-- own first segment is row 2) still numbers it correctly, its overflow
+	-- keeps a blank gutter, and buffer line 3 follows, correctly numbered.
+	local scrolled = CeroSec.editScreen(text, 2, "/a.txt", nil, nil)
+	eq("scrolled: the wrapped line's first segment leads, numbered 2",
+		scrolled[2], CeroSec.padLeft("2", gutter) .. " " .. string.rep("w", cols))
+	eq("scrolled: its overflow follows, blank gutter",
+		scrolled[3], string.rep(" ", gutter + 1) .. string.rep("w", 5))
+	eq("scrolled: buffer line 3 follows, numbered 3",
+		scrolled[4], CeroSec.padLeft("3", gutter) .. " " .. "three")
 end
 
 -- What the editor will hold, and what it refuses under the fingers.
 eq("the buffer ceiling is the file ceiling", CeroSec.EDIT_MAX_BYTES, 4096)
-eq("a line is a screen line", CeroSec.EDIT_MAX_LINE, CeroSec.COLS)
 eq("plain text is fine", CeroSec.editRefusal("hello\nworld"), nil)
 eq("an empty buffer is fine", CeroSec.editRefusal(""), nil)
 eq("a tab is text", CeroSec.editRefusal("a\tb"), nil)
 eq("exactly sixty characters fit",
-	CeroSec.editRefusal(string.rep("x", CeroSec.EDIT_MAX_LINE)), nil)
-eq("sixty-one do not",
-	CeroSec.editRefusal(string.rep("x", CeroSec.EDIT_MAX_LINE + 1)),
-	"Line too long: 60 characters")
-eq("and it is the long row that counts, not the first",
-	CeroSec.editRefusal("ok\n" .. string.rep("x", 61)), "Line too long: 60 characters")
+	CeroSec.editRefusal(string.rep("x", CeroSec.COLS)), nil)
+eq("a line wider than the screen is legal too -- it wraps, it is not refused",
+	CeroSec.editRefusal(string.rep("x", CeroSec.COLS + 1)), nil)
+eq("even a line far wider than the screen is legal, up to the byte ceiling",
+	CeroSec.editRefusal("ok\n" .. string.rep("x", 500)), nil)
 eq("exactly the buffer ceiling fits",
 	CeroSec.editRefusal(string.rep("x\n", CeroSec.EDIT_MAX_BYTES / 2)), nil)
 eq("one byte over does not",
