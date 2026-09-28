@@ -8,7 +8,7 @@ date.
 
 ## Unreleased
 
-## 0.7.0 - 2026-09-23
+## 0.7.0 - 2026-09-28
 
 A computer that opens with a left click, an editor that no longer stops at the
 edge of the screen, three new cabling options for servers, and a shell that behaves
