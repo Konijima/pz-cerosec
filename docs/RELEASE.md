@@ -152,6 +152,12 @@ names the vector, what lua5.1 answers and what the game answered. A failure here
 never cosmetic: it means the game computes something differently from every bench in
 `tests/`, and it is a **stop**, not a note in the release.
 
+One stack trace in `console.txt` is expected: `KahluaException: boom` from
+`CeroSecSelfTest.lua`'s `probe`, just before the verdict. That vector raises
+`error("boom")` inside `pcall` on purpose, to prove `pcall` catches, and the
+game in debug mode prints every exception thrown, caught or not. It is a
+pass (`pcall caught false boom`), not a failure.
+
 **6b -- the shell.** Press **Give diagnostics disk** (no machine need be selected --
 it is about your inventory), then right-click a computer, insert the disk, sit down
 and:
